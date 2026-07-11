@@ -21,9 +21,9 @@ import TDLibKit
         Media.shared.onChatOpen(title: customChat.chat.title)
         
         if let draftMessage = customChat.draftMessage,
-           case .inputMessageText(let inputMessageText) = draftMessage.inputMessageText
+           case .draftMessageContentText(let draftMessageContentText) = draftMessage.content
         {
-            self.text = getAttributedString(from: inputMessageText.text)
+            self.text = getAttributedString(from: draftMessageContentText.text)
         }
         
         Task.background {
@@ -422,19 +422,22 @@ import TDLibKit
         let input = InputFile.inputFileLocal(.init(path: path))
         return .inputMessagePhoto(
             InputMessagePhoto(
-                addedStickerFileIds: [],
                 caption: FormattedText(entities: getEntities(from: text), text: text.string),
                 hasSpoiler: false,
-                height: Int(image.size.height),
-                photo: input,
-                selfDestructType: nil,
-                showCaptionAboveMedia: false,
-                thumbnail: InputThumbnail(
+                photo: InputPhoto(
+                    addedStickerFileIds: [],
                     height: Int(image.size.height),
-                    thumbnail: input,
+                    photo: input,
+                    thumbnail: InputThumbnail(
+                        height: Int(image.size.height),
+                        thumbnail: input,
+                        width: Int(image.size.width),
+                    ),
+                    video: nil,
                     width: Int(image.size.width),
                 ),
-                width: Int(image.size.width),
+                selfDestructType: nil,
+                showCaptionAboveMedia: false,
             ),
         )
     }
@@ -500,11 +503,8 @@ import TDLibKit
     
     func updateDraft() async {
         let draftMessage = DraftMessage(
-            date: Int(Date.now.timeIntervalSince1970),
-            effectId: 0,
-            inputMessageText: .inputMessageText(
-                .init(
-                    clearDraft: true,
+            content: .draftMessageContentText(
+                DraftMessageContentText(
                     linkPreviewOptions: nil,
                     text: FormattedText(
                         entities: getEntities(from: text),
@@ -512,6 +512,8 @@ import TDLibKit
                     ),
                 ),
             ),
+            date: Int(Date.now.timeIntervalSince1970),
+            effectId: 0,
             replyTo: getMessageReplyTo(from: replyMessage),
             suggestedPostInfo: nil,
         )
@@ -545,7 +547,7 @@ import TDLibKit
     
     func getMessageReplyTo(from customMessage: CustomMessage?) -> InputMessageReplyTo? {
         guard let customMessage else { return nil }
-        return .inputMessageReplyToMessage(.init(checklistTaskId: 0, messageId: customMessage.message.id, quote: nil))
+        return .inputMessageReplyToMessage(.init(checklistTaskId: 0, messageId: customMessage.message.id, pollOptionId: "", quote: nil))
     }
     
     func startTimer() {
