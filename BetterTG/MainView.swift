@@ -47,15 +47,17 @@ private struct MainNavigationRootView: View {
             prompt: "Search chats...",
         )
         .confirmationDialog(
-            "Are you sure you want to delete chat with \(rootVM.confirmChatDelete.chat?.title ?? "User")?",
+            "Delete \(rootVM.confirmChatDelete.chat?.title ?? "chat")?",
             isPresented: $rootVM.confirmChatDelete.show,
         ) {
-            Button("Delete", role: .destructive) {
-                guard let id = rootVM.confirmChatDelete.chat?.id else { return }
-                Task.background { [rootVM] in
-                    try await td.deleteChatHistory(
-                        chatId: id, removeFromChatList: true, revoke: rootVM.confirmChatDelete.forAll,
-                    )
+            if rootVM.confirmChatDelete.chat?.canBeDeletedOnlyForSelf == true {
+                Button("Delete only for me", role: .destructive) {
+                    deleteSelectedChat(forAll: false)
+                }
+            }
+            if rootVM.confirmChatDelete.chat?.canBeDeletedForAllUsers == true {
+                Button("Delete for everyone", role: .destructive) {
+                    deleteSelectedChat(forAll: true)
                 }
             }
         }
@@ -104,6 +106,13 @@ private struct MainNavigationRootView: View {
 
     var currentFolder: CustomFolder? {
         rootVM.folders.first(where: { $0.id == rootVM.currentFolder }) ?? rootVM.folders.first
+    }
+
+    func deleteSelectedChat(forAll: Bool) {
+        guard let id = rootVM.confirmChatDelete.chat?.id else { return }
+        Task.background {
+            try await td.deleteChatHistory(chatId: id, removeFromChatList: true, revoke: forAll)
+        }
     }
 
     var folderTabsBar: some View {

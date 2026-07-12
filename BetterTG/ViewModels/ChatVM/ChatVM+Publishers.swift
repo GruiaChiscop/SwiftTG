@@ -26,6 +26,16 @@ extension ChatVM {
             guard let self, updateMessageEdited.chatId == customChat.chat.id else { return }
             self.updateMessageEdited(updateMessageEdited)
         }
+        nc.publisher(&cancellables, for: .updateMessageIsPinned) { [weak self] update in
+            guard let self, update.chatId == customChat.chat.id else { return }
+            Task.background {
+                guard let refreshed = await self.getCustomMessage(fromId: update.messageId) else { return }
+                await main {
+                    guard let index = self.messages.firstIndex(where: { $0.id == update.messageId }) else { return }
+                    self.messages[index] = refreshed
+                }
+            }
+        }
         nc.publisher(&cancellables, for: .updateMessageSendSucceeded) { [weak self] updateMessageSendSucceeded in
             guard let self, updateMessageSendSucceeded.message.chatId == customChat.chat.id else { return }
             self.updateMessageSendSucceeded(updateMessageSendSucceeded)
@@ -77,6 +87,10 @@ extension ChatVM {
     func updateMessageSendSucceeded(_ updateMessageSendSucceeded: UpdateMessageSendSucceeded) {
         let message = updateMessageSendSucceeded.message
         let oldMessageId = updateMessageSendSucceeded.oldMessageId
+
+        if message.isOutgoing {
+            Task.main { ServiceSoundManager.shared.playMessageDelivered() }
+        }
         
         if message.mediaAlbumId == 0 {
             guard let index = messages.firstIndex(where: { $0.message.id == oldMessageId }) else { return }
@@ -115,6 +129,13 @@ extension ChatVM {
     
     func updateNewMessage(_ updateNewMessage: UpdateNewMessage) {
         let message = updateNewMessage.message
+        if !message.isOutgoing {
+            Task.main {
+                ServiceSoundManager.shared.playIncomingMessageIfAppropriate(
+                    isMuted: self.customChat.isMuted,
+                )
+            }
+        }
         Task.background {
             let customMessage = await self.getCustomMessage(from: message)
             if message.mediaAlbumId == 0 {

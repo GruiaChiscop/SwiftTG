@@ -14,6 +14,10 @@ struct RootView: View {
             }
         }
         .transition(.opacity)
+        .task(id: rootVM.loggedIn) {
+            guard rootVM.loggedIn else { return }
+            await PermissionsManager.shared.requestPostLoginPermissions()
+        }
     }
 
     // MARK: Private

@@ -1,0 +1,116 @@
+import AVFoundation
+import SwiftOGG
+
+final class VoiceNoteRecorder {
+    private(set) var peakPower: Float = -160
+
+    func start() throws {
+        let input = engine.inputNode
+        let inputFormat = input.inputFormat(forBus: 0)
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: true,
+        ), let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
+        else {
+            throw RecorderError.unsupportedAudioFormat
+        }
+
+        self.converter = converter
+        encoder = try OGGEncoder(
+            format: outputFormat.streamDescription.pointee,
+            opusRate: 48_000,
+            application: .voip,
+        )
+        compressedData = Data()
+        encodedFrameCount = 0
+        peakPower = -160
+
+        input.installTap(onBus: 0, bufferSize: 960, format: inputFormat) { [weak self] buffer, _ in
+            self?.encodingQueue.async { self?.encode(buffer, outputFormat: outputFormat) }
+        }
+        engine.prepare()
+        try engine.start()
+    }
+
+    func stopAndWrite(to url: URL) throws -> TimeInterval {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+
+        return try encodingQueue.sync {
+            guard let encoder else { throw RecorderError.notRecording }
+            compressedData.append(encoder.bitstream(flush: true))
+            try compressedData.write(to: url, options: .atomic)
+            self.encoder = nil
+            converter = nil
+            return Double(encodedFrameCount) / 48_000
+        }
+    }
+
+    func cancel() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        encodingQueue.sync {
+            encoder = nil
+            converter = nil
+            compressedData = Data()
+            encodedFrameCount = 0
+        }
+    }
+
+    private enum RecorderError: Error {
+        case notRecording
+        case unsupportedAudioFormat
+    }
+
+    private let engine = AVAudioEngine()
+    private let encodingQueue = DispatchQueue(label: "BetterTG.VoiceNoteRecorder")
+    private var converter: AVAudioConverter?
+    private var encoder: OGGEncoder?
+    private var compressedData = Data()
+    private var encodedFrameCount: Int64 = 0
+
+    private func encode(_ inputBuffer: AVAudioPCMBuffer, outputFormat: AVAudioFormat) {
+        guard let converter, let encoder else { return }
+        let ratio = outputFormat.sampleRate / inputBuffer.format.sampleRate
+        let capacity = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength) * ratio)) + 32
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return }
+
+        var suppliedInput = false
+        var conversionError: NSError?
+        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
+            if suppliedInput {
+                inputStatus.pointee = .noDataNow
+                return nil
+            }
+            suppliedInput = true
+            inputStatus.pointee = .haveData
+            return inputBuffer
+        }
+        guard conversionError == nil, status != .error, outputBuffer.frameLength != 0 else { return }
+
+        let audioBuffer = outputBuffer.audioBufferList.pointee.mBuffers
+        guard let bytes = audioBuffer.mData else { return }
+        let data = Data(bytes: bytes, count: Int(audioBuffer.mDataByteSize))
+        do {
+            try encoder.encode(pcm: data)
+            compressedData.append(encoder.bitstream())
+            encodedFrameCount += Int64(outputBuffer.frameLength)
+            updatePeak(from: bytes.assumingMemoryBound(to: Int16.self), count: Int(outputBuffer.frameLength))
+        } catch {
+            log("Voice-note streaming encoder failed:", error)
+        }
+    }
+
+    private func updatePeak(from samples: UnsafePointer<Int16>, count: Int) {
+        guard count > 0 else { return }
+        var peak: Int16 = 0
+        for index in 0 ..< count {
+            let sample = samples[index] == .min ? .max : abs(samples[index])
+            peak = max(peak, sample)
+        }
+        let normalized = max(Float(peak) / Float(Int16.max), 0.000_000_1)
+        peakPower = 20 * log10(normalized)
+    }
+}

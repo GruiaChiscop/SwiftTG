@@ -14,6 +14,13 @@ struct LastOrDraftMessageView: View {
                 DraftMessageView(draftMessage: draftMessage)
             } else if let lastMessage = customChat.lastMessage {
                 HStack(spacing: 3) {
+                    if customChat.showsLastMessageSender,
+                       let senderName = customChat.lastMessageSenderName
+                    {
+                        Text("\(senderName):")
+                            .foregroundStyle(.tint)
+                    }
+
                     if lastMessage.forwardInfo != nil {
                         Image(systemName: "arrowshape.turn.up.right.fill")
                     }

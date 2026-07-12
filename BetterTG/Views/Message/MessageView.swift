@@ -8,6 +8,8 @@ struct MessageView: View {
 
     @Environment(ChatVM.self) var chatVM
     @State var shownAlbum: CustomMessageAlbum?
+    @State var voiceNoteLocalPath: String?
+    @State var showDeleteOptions = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -27,7 +29,11 @@ struct MessageView: View {
                 || customMessage.messageVoiceNote != nil
                 || !customMessage.album.isEmpty
             {
-                MessageContentView(customMessage: customMessage, onPhotoTap: openAlbum)
+                MessageContentView(
+                    customMessage: customMessage,
+                    onPhotoTap: openAlbum,
+                    onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
+                )
             }
             
             if let formattedText = customMessage.formattedText {
@@ -56,11 +62,31 @@ struct MessageView: View {
         .sheet(item: $shownAlbum) { album in
             ChatViewAlbum(album: album.photos, selection: album.selection)
         }
-        .accessibilityElement(children: .combine)
+        .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
+            if customMessage.properties.canBeDeletedOnlyForSelf {
+                Button("Delete only for me", role: .destructive) {
+                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: false)
+                }
+            }
+            if customMessage.properties.canBeDeletedForAllUsers {
+                Button("Delete for everyone", role: .destructive) {
+                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: true)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        // Keep the accessibility container independent from playback controls.
+        // Their icon and elapsed time update while playing and must not recreate
+        // the focused VoiceOver element.
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("message-\(customMessage.id)")
         .accessibilityLabel(accessibilityDescription)
-        .accessibilityAction(named: "Go to Replied Message") {
-            guard let replyToMessage = customMessage.replyToMessage else { return }
-            chatVM.scrollTo(id: replyToMessage.id)
+        .modify {
+            if let replyToMessage = customMessage.replyToMessage {
+                $0.accessibilityAction(named: "Go to Replied Message") {
+                    chatVM.scrollTo(id: replyToMessage.id)
+                }
+            }
         }
         .modify {
             if customMessage.messagePhoto != nil || !customMessage.album.isEmpty {
@@ -70,6 +96,20 @@ struct MessageView: View {
         .accessibilityActions {
             ForEach(Array(contextMenuActions.flattened().enumerated()), id: \.offset) { _, item in
                 Button(item.title, action: item.action)
+            }
+        }
+        .modify {
+            if let messageVoiceNote = customMessage.messageVoiceNote {
+                $0
+                    .onTapGesture {
+                        guard let voiceNoteLocalPath else { return }
+                        Media.shared.toggle(
+                            with: voiceNoteLocalPath,
+                            duration: messageVoiceNote.voiceNote.duration,
+                        )
+                    }
+                    .accessibilityHint("Double tap to play or pause")
+                    .accessibilityAddTraits(.startsMediaSession)
             }
         }
     }

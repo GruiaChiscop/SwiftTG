@@ -25,7 +25,7 @@ enum Route: Hashable {
     @ObservationIgnored static let shared = RootVM()
     
     var path = [Route]()
-    var confirmChatDelete = ConfirmChatDelete(chat: nil, show: false, forAll: false)
+    var confirmChatDelete = ConfirmChatDelete(chat: nil, show: false)
     var folders = [CustomFolder]()
     var archive: CustomFolder?
     var currentFolder: Int?
@@ -83,27 +83,47 @@ enum Route: Hashable {
         case .chatTypeSupergroup(let chatTypeSupergroup):
             guard let supergroup = try? await td.getSupergroup(supergroupId: chatTypeSupergroup.supergroupId)
             else { return nil }
+            let senderName: String? = if supergroup.isChannel {
+                nil
+            } else {
+                await getSenderName(for: chat.lastMessage)
+            }
             return CustomChat(
                 chat: chat,
                 position: position,
                 unreadCount: chat.unreadCount,
                 type: .supergroup(supergroup),
                 lastMessage: chat.lastMessage,
+                lastMessageSenderName: senderName,
                 draftMessage: chat.draftMessage,
             )
         case .chatTypeBasicGroup(let chatTypeBasicGroup):
             guard let group = try? await td.getBasicGroup(basicGroupId: chatTypeBasicGroup.basicGroupId)
             else { return nil }
+            let senderName = await getSenderName(for: chat.lastMessage)
             return CustomChat(
                 chat: chat,
                 position: position,
                 unreadCount: chat.unreadCount,
                 type: .group(group),
                 lastMessage: chat.lastMessage,
+                lastMessageSenderName: senderName,
                 draftMessage: chat.draftMessage,
             )
         default:
             return nil
+        }
+    }
+
+    func getSenderName(for message: Message?) async -> String? {
+        guard let message else { return nil }
+
+        switch message.senderId {
+        case .messageSenderUser(let sender):
+            guard let user = try? await td.getUser(userId: sender.userId) else { return nil }
+            return "\(user.firstName) \(user.lastName)".trimmingCharacters(in: .whitespaces)
+        case .messageSenderChat(let sender):
+            return try? await td.getChat(chatId: sender.chatId).title
         }
     }
     

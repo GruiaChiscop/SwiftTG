@@ -32,7 +32,15 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { scrollViewProxy in
-                bodyView.onAppear { chatVM.scrollViewProxy = scrollViewProxy }
+                bodyView
+                    .onAppear {
+                        chatVM.scrollViewProxy = scrollViewProxy
+                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                    }
+                    .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
+                        guard loaded else { return }
+                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                    }
             }
             .overlay {
                 if chatVM.customChat.lastMessage == nil {
@@ -78,6 +86,7 @@ struct ChatView: View {
                                     userId: user.id,
                                 )
                                 .frame(width: 32, height: 32)
+                                .accessibilityHidden(true)
                             } else {
                                 Spacer()
                                     .frame(width: 32, height: 32)
@@ -148,46 +157,64 @@ struct ChatView: View {
     }
     
     var scrollToBottomButton: some View {
-        Image(systemName: "chevron.down")
-            .offset(y: 1)
-            .font(.title3)
-            .padding(10)
-            .background(.black)
-            .clipShape(.circle)
-            .overlay {
-                Circle()
-                    .stroke(.blue, lineWidth: 1)
-            }
-            .overlay(alignment: .top) {
-                if chatVM.customChat.unreadCount != 0 {
+        Button(action: chatVM.scrollToLast) {
+            Image(systemName: "chevron.down")
+                .offset(y: 1)
+                .font(.title3)
+                .padding(10)
+                .background(.black)
+                .clipShape(.circle)
+                .overlay {
                     Circle()
-                        .fill(.blue)
-                        .frame(width: 16, height: 16)
-                        .overlay {
-                            Text("\(chatVM.customChat.unreadCount)")
-                                .font(.caption)
-                                .foregroundStyle(.white)
-                                .minimumScaleFactor(0.5)
-                        }
-                        .offset(y: -5)
+                        .stroke(.blue, lineWidth: 1)
                 }
-            }
-            .transition(.move(edge: .bottom).combined(with: .scale).combined(with: .opacity))
-            .padding(.trailing)
-            .onTapGesture(perform: chatVM.scrollToLast)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                chatVM.customChat.unreadCount != 0
-                    ? "Scroll to Bottom, \(chatVM.customChat.unreadCount) unread"
-                    : "Scroll to Bottom",
-            )
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { chatVM.scrollToLast() }
+                .overlay(alignment: .top) {
+                    if chatVM.customChat.unreadCount != 0 {
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 16, height: 16)
+                            .overlay {
+                                Text("\(chatVM.customChat.unreadCount)")
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                                    .minimumScaleFactor(0.5)
+                            }
+                            .offset(y: -5)
+                            .accessibilityHidden(true)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .transition(.move(edge: .bottom).combined(with: .scale).combined(with: .opacity))
+        .padding(.trailing)
+        .accessibilityLabel("Scroll to bottom")
+        .accessibilityValue(
+            chatVM.customChat.unreadCount == 0
+                ? "No unread messages"
+                : "\(chatVM.customChat.unreadCount) unread messages",
+        )
     }
     
     // MARK: Private
 
     @State private var navigationBarHeight = CGFloat.zero
+    @State private var positionedInitialMessages = false
+
+    private func positionInitialMessagesIfNeeded(using scrollViewProxy: ScrollViewProxy) {
+        guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
+        positionedInitialMessages = true
+        Task { @MainActor in
+            // Allow List to commit the first history snapshot before positioning it.
+            await Task.yield()
+            await Task.yield()
+            guard let lastId = chatVM.messages.last?.id else { return }
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                scrollViewProxy.scrollTo(lastId, anchor: .bottom)
+            }
+        }
+    }
 
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
@@ -220,6 +247,7 @@ struct ChatView: View {
         .glassEffect(.regular.interactive())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(principalAccessibilityLabel)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private var principalAccessibilityLabel: String {
@@ -236,5 +264,6 @@ struct ChatView: View {
             userId: chat.id,
         )
         .frame(width: 32, height: 32)
+        .accessibilityHidden(true)
     }
 }

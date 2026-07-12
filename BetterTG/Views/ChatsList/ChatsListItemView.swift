@@ -27,9 +27,19 @@ struct ChatsListItemView: View {
             .frame(width: 64, height: 64)
             
             VStack(alignment: .leading, spacing: 0) {
-                Text(customChat.chat.title)
-                    .font(.title2)
-                    .foregroundStyle(.white)
+                HStack(spacing: 8) {
+                    if let systemImage = customChat.kind.systemImage {
+                        Image(systemName: systemImage)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                            .accessibilityHidden(true)
+                    }
+
+                    Text(customChat.chat.title)
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                }
                 
                 LastOrDraftMessageView(customChat: customChat)
             }
@@ -60,40 +70,52 @@ struct ChatsListItemView: View {
     }
 
     var accessibilityDescription: String {
-        var parts = [customChat.chat.title]
+        customChat.accessibilityDescription
+    }
+}
 
-        if customChat.position.isPinned {
+extension CustomChat {
+    var accessibilityDescription: String {
+        var parts: [String]
+        if case .privateChat = kind {
+            parts = [chat.title]
+        } else {
+            parts = [kind.title, chat.title]
+        }
+
+        if position.isPinned {
             parts.append("Pinned")
         }
-        if let draftMessage = customChat.draftMessage,
-           case .draftMessageContentText(let draftMessageContentText) = draftMessage.content
+        if let draftMessage,
+           case .draftMessageContentText(let content) = draftMessage.content
         {
-            parts.append("Draft: \(draftMessageContentText.text.text)")
-        } else if let lastMessage = customChat.lastMessage {
+            parts.append("Draft: \(content.text.text)")
+        } else if let lastMessage {
             if lastMessage.forwardInfo != nil {
                 parts.append("Forwarded")
             }
-            parts.append(plainText(from: lastMessage))
+            let messageText = accessiblePlainText(from: lastMessage)
+            if showsLastMessageSender, let lastMessageSenderName {
+                parts.append("\(lastMessageSenderName): \(messageText)")
+            } else {
+                parts.append(messageText)
+            }
         }
-        if customChat.unreadCount != 0 {
-            parts.append("\(customChat.unreadCount) unread")
+        if unreadCount != 0 {
+            parts.append("\(unreadCount) unread")
         }
 
         return parts.joined(separator: ", ")
     }
 
-    func plainText(from message: Message) -> String {
+    private func accessiblePlainText(from message: Message) -> String {
         switch message.content {
-        case .messageText(let messageText):
-            messageText.text.text
-        case .messagePhoto(let messagePhoto):
-            messagePhoto.caption.text.isEmpty ? "Photo" : messagePhoto.caption.text
-        case .messageVoiceNote(let messageVoiceNote):
-            messageVoiceNote.caption.text.isEmpty ? "Voice message" : "Voice message: \(messageVoiceNote.caption.text)"
-        case .messageUnsupported:
-            "Unsupported message"
-        default:
-            "Message"
+        case .messageText(let content): content.text.text
+        case .messagePhoto(let content): content.caption.text.isEmpty ? "Photo" : content.caption.text
+        case .messageVoiceNote(let content):
+            content.caption.text.isEmpty ? "Voice message" : "Voice message: \(content.caption.text)"
+        case .messageUnsupported: "Unsupported message"
+        default: "Message"
         }
     }
 }

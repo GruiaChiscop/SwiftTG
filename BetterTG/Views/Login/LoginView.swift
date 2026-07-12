@@ -19,6 +19,7 @@ struct LoginView: View {
     
     @State var errorShown = false
     @State var waitPremiumErrorShown = false
+    @State var showPhoneConfirmation = false
     @FocusState var focused: LoginState?
     
     var body: some View {
@@ -93,30 +94,7 @@ struct LoginView: View {
         #endif
         .safeAreaInset(edge: .bottom) {
             Button {
-                withAnimation {
-                    guard let focused else { return }
-                    self.focused =
-                        switch focused {
-                        case .phoneNumber: .code
-                        case .code: .twoFactor
-                        case .twoFactor: nil
-                        }
-                }
-                Task.background {
-                    switch try? await td.getAuthorizationState() {
-                    case .authorizationStateWaitPassword:
-                        _ = try? await td.checkAuthenticationPassword(password: twoFactor)
-                    case .authorizationStateWaitCode:
-                        _ = try? await td.checkAuthenticationCode(code: code)
-                    case .authorizationStateWaitPhoneNumber:
-                        _ = try? await td.setAuthenticationPhoneNumber(
-                            phoneNumber: "\(selectedCountryNum.phoneNumberPrefix)\(phoneNumber)",
-                            settings: nil,
-                        )
-                    default:
-                        break
-                    }
-                }
+                continueLogin()
             } label: {
                 Text("Continue")
                     .padding(.vertical, 5)
@@ -130,6 +108,16 @@ struct LoginView: View {
         }
         .alert("Error", isPresented: $waitPremiumErrorShown) {
             Text("In order to login, you need to upgrade to Telegram Premium. Please do it in the Telegram app.")
+        }
+        .alert(formattedPhoneNumber, isPresented: $showPhoneConfirmation) {
+            Button("Edit", role: .cancel) {
+                focused = .phoneNumber
+            }
+            Button("Yes") {
+                submitPhoneNumber()
+            }
+        } message: {
+            Text("Is this the correct number?")
         }
         .task {
             switch try? await td.getAuthorizationState() {
@@ -173,6 +161,30 @@ struct LoginView: View {
             phoneNumberPrefix: country.callingCodes[0],
             name: country.englishName,
         )
+    }
+
+    private var formattedPhoneNumber: String {
+        "+\(selectedCountryNum.phoneNumberPrefix) \(phoneNumber)"
+    }
+
+    private func continueLogin() {
+        switch loginState {
+        case .phoneNumber:
+            guard !phoneNumber.isEmpty else { return }
+            focused = nil
+            showPhoneConfirmation = true
+        case .code:
+            Task.background { _ = try? await td.checkAuthenticationCode(code: code) }
+        case .twoFactor:
+            Task.background { _ = try? await td.checkAuthenticationPassword(password: twoFactor) }
+        }
+    }
+
+    private func submitPhoneNumber() {
+        let number = "\(selectedCountryNum.phoneNumberPrefix)\(phoneNumber)"
+        Task.background {
+            _ = try? await td.setAuthenticationPhoneNumber(phoneNumber: number, settings: nil)
+        }
     }
 
     private func setPublishers() {

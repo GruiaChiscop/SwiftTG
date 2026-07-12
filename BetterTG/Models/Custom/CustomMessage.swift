@@ -18,6 +18,7 @@ import TDLibKit
         forwardedFrom: String? = nil,
         formattedText: FormattedText? = nil,
         properties: MessageProperties,
+        canReact: Bool = false,
     ) {
         self.message = message
         self.senderUser = senderUser
@@ -28,6 +29,7 @@ import TDLibKit
         self.forwardedFrom = forwardedFrom
         self.formattedText = formattedText
         self.properties = properties
+        self.canReact = canReact
     }
     
     // MARK: Internal
@@ -41,6 +43,7 @@ import TDLibKit
     var forwardedFrom: String?
     var formattedText: FormattedText?
     var properties: MessageProperties
+    var canReact: Bool
     
     var date: Foundation.Date { Date(timeIntervalSince1970: TimeInterval(message.date)) }
     

@@ -1,13 +1,22 @@
 {
-  "originHash" : "c734d81b748cfd13bd110193c30b36a1f280694d8152e50b0f2ff27d71a885ff",
+  "originHash" : "d16500271aec1af85b3cc9094fe46d24e0efcefc6cfe74e75dffaf96d90a5788",
   "pins" : [
     {
-      "identity" : "mobilevlckit",
+      "identity" : "ogg-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/levochkaa/MobileVLCKit",
+      "location" : "https://github.com/vector-im/ogg-swift.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "3847399d282a7d5ee0acb083b32c78f651fe599b"
+        "revision" : "9d82ed838404f10b607a1a1689f404563e9115c3",
+        "version" : "0.8.3"
+      }
+    },
+    {
+      "identity" : "opus-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/vector-im/opus-swift",
+      "state" : {
+        "revision" : "11f1887767cbc87c4b64b789ee830b779cc744cb",
+        "version" : "0.8.4"
       }
     },
     {
@@ -17,6 +26,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "1e77425a27b864b97501c78511382bd0a0500520"
+      }
+    },
+    {
+      "identity" : "swift-ogg",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/element-hq/swift-ogg",
+      "state" : {
+        "revision" : "a00a22b90f6230d2d3a75a18adef97a3603d9d28",
+        "version" : "0.0.4"
       }
     },
     {

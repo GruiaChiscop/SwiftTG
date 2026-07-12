@@ -12,6 +12,7 @@ struct FolderView: View {
     @Namespace var namespace
     @Environment(\.scenePhase) var scenePhase
     @State var rootVM = RootVM.shared
+    @State var chatToMute: CustomChat?
 
     var chats: [CustomChat] {
         folder.chats
@@ -68,6 +69,29 @@ struct FolderView: View {
                             .matchedGeometryEffect(id: customChat.chat.id, in: namespace)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(customChat.accessibilityDescription)
+                    .accessibilityHint("Opens chat")
+                    .accessibilityActions {
+                        Button(customChat.chat.isMarkedAsUnread ? "Mark as Read" : "Mark as Unread") {
+                            toggleRead(for: customChat)
+                        }
+                        Button(customChat.isMuted ? "Unmute" : "Mute") {
+                            toggleMuted(customChat)
+                        }
+                        Button(customChat.position.isPinned ? "Unpin" : "Pin") {
+                            togglePinned(for: customChat)
+                        }
+                        Button(folder.type == .archive ? "Unarchive" : "Archive") {
+                            toggleArchived(customChat)
+                        }
+                        if customChat.chat.canBeDeletedOnlyForSelf
+                            || customChat.chat.canBeDeletedForAllUsers
+                        {
+                            Button("Delete") {
+                                requestDelete(customChat)
+                            }
+                        }
+                    }
                     .contextMenu {
                         contextMenu(for: customChat)
                     } preview: {
@@ -105,6 +129,19 @@ struct FolderView: View {
         .scrollContentBackground(.hidden)
         .listRowSpacing(8)
         .scrollIndicators(.visible)
+        .confirmationDialog(
+            "Mute \(chatToMute?.chat.title ?? "chat")",
+            isPresented: Binding(
+                get: { chatToMute != nil },
+                set: { if !$0 { chatToMute = nil } },
+            ),
+        ) {
+            Button("Mute for 1 hour") { muteSelectedChat(for: 60 * 60) }
+            Button("Mute for 8 hours") { muteSelectedChat(for: 8 * 60 * 60) }
+            Button("Mute for 2 days") { muteSelectedChat(for: 2 * 24 * 60 * 60) }
+            Button("Mute forever") { muteSelectedChat(for: 400 * 24 * 60 * 60) }
+            Button("Cancel", role: .cancel) { chatToMute = nil }
+        }
     }
     
     @ViewBuilder func contextMenu(for customChat: CustomChat) -> some View {
@@ -116,47 +153,107 @@ struct FolderView: View {
                 ? "envelope.open"
                 : "envelope.badge",
         ) {
-            Task.background {
-                try await td.toggleChatIsMarkedAsUnread(
-                    chatId: customChat.chat.id, isMarkedAsUnread: !isMarkedAsUnread,
-                )
-            }
+            toggleRead(for: customChat)
+        }
+
+        Button(
+            customChat.isMuted ? "Unmute" : "Mute",
+            systemImage: customChat.isMuted ? "speaker.wave.2" : "speaker.slash",
+        ) {
+            toggleMuted(customChat)
         }
 
         Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash.fill" : "pin.fill") {
-            Task.background {
-                try await td.toggleChatIsPinned(
-                    chatId: customChat.chat.id, chatList: folder.chatList, isPinned: !isPinned,
-                )
-            }
+            togglePinned(for: customChat)
         }
 
-        if !customChat.chat.canBeDeletedOnlyForSelf, customChat.chat.canBeDeletedForAllUsers {
-            Button("Delete for everyone", systemImage: "trash.fill", role: .destructive) {
-                rootVM.confirmChatDelete = ConfirmChatDelete(chat: customChat.chat, show: true, forAll: true)
-            }
+        Button(
+            folder.type == .archive ? "Unarchive" : "Archive",
+            systemImage: folder.type == .archive ? "tray.and.arrow.up" : "archivebox",
+        ) {
+            toggleArchived(customChat)
         }
-        
-        if customChat.chat.canBeDeletedOnlyForSelf, !customChat.chat.canBeDeletedForAllUsers {
+
+        if customChat.chat.canBeDeletedOnlyForSelf || customChat.chat.canBeDeletedForAllUsers {
             Button("Delete", systemImage: "trash", role: .destructive) {
-                rootVM.confirmChatDelete = ConfirmChatDelete(chat: customChat.chat, show: true, forAll: false)
-            }
-        }
-        
-        if customChat.chat.canBeDeletedOnlyForSelf, customChat.chat.canBeDeletedForAllUsers {
-            Menu("Delete") {
-                Button("Delete only for me", systemImage: "trash", role: .destructive) {
-                    rootVM.confirmChatDelete = ConfirmChatDelete(chat: customChat.chat, show: true, forAll: false)
-                }
-                
-                Button("Delete for all users", systemImage: "trash.fill", role: .destructive) {
-                    rootVM.confirmChatDelete = ConfirmChatDelete(chat: customChat.chat, show: true, forAll: true)
-                }
+                requestDelete(customChat)
             }
         }
     }
 
     // MARK: Private
+
+    private func toggleRead(for customChat: CustomChat) {
+        Task.background {
+            try await td.toggleChatIsMarkedAsUnread(
+                chatId: customChat.chat.id,
+                isMarkedAsUnread: !customChat.chat.isMarkedAsUnread,
+            )
+        }
+    }
+
+    private func togglePinned(for customChat: CustomChat) {
+        Task.background {
+            try await td.toggleChatIsPinned(
+                chatId: customChat.chat.id,
+                chatList: folder.chatList,
+                isPinned: !customChat.position.isPinned,
+            )
+        }
+    }
+
+    private func requestDelete(_ customChat: CustomChat) {
+        rootVM.confirmChatDelete = ConfirmChatDelete(chat: customChat.chat, show: true)
+    }
+
+    private func toggleArchived(_ customChat: CustomChat) {
+        let destination: ChatList = folder.type == .archive ? .chatListMain : .chatListArchive
+        Task.background {
+            try await td.addChatToList(chatId: customChat.chat.id, chatList: destination)
+        }
+    }
+
+    private func toggleMuted(_ customChat: CustomChat) {
+        if customChat.isMuted {
+            setMuteDuration(0, for: customChat)
+        } else {
+            chatToMute = customChat
+        }
+    }
+
+    private func muteSelectedChat(for duration: Int) {
+        guard let chatToMute else { return }
+        self.chatToMute = nil
+        setMuteDuration(duration, for: chatToMute)
+    }
+
+    private func setMuteDuration(_ duration: Int, for customChat: CustomChat) {
+        let current = customChat.notificationSettings
+        let settings = ChatNotificationSettings(
+            disableMentionNotifications: current.disableMentionNotifications,
+            disablePinnedMessageNotifications: current.disablePinnedMessageNotifications,
+            muteFor: duration,
+            muteStories: current.muteStories,
+            showPreview: current.showPreview,
+            showStoryPoster: current.showStoryPoster,
+            soundId: current.soundId,
+            storySoundId: current.storySoundId,
+            useDefaultDisableMentionNotifications: current.useDefaultDisableMentionNotifications,
+            useDefaultDisablePinnedMessageNotifications: current.useDefaultDisablePinnedMessageNotifications,
+            useDefaultMuteFor: false,
+            useDefaultMuteStories: current.useDefaultMuteStories,
+            useDefaultShowPreview: current.useDefaultShowPreview,
+            useDefaultShowStoryPoster: current.useDefaultShowStoryPoster,
+            useDefaultSound: current.useDefaultSound,
+            useDefaultStorySound: current.useDefaultStorySound,
+        )
+        Task.background {
+            try await td.setChatNotificationSettings(
+                chatId: customChat.chat.id,
+                notificationSettings: settings,
+            )
+        }
+    }
 
     private let navigationStorage = NavigationStorage.shared
 }

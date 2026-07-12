@@ -10,7 +10,8 @@ struct ChatBottomArea: View {
 
     @Namespace var namespace
     @Environment(ChatVM.self) var chatVM
-    
+    @State private var hasBegunRecording = false
+
     var body: some View {
         @Bindable var chatVM = chatVM
         VStack(spacing: 5) {
@@ -20,19 +21,17 @@ struct ChatBottomArea: View {
             if !chatVM.displayedImages.isEmpty {
                 photosScroll
             }
-            
-            Group {
-                if !chatVM.recordingVoiceNote {
-                    HStack(alignment: .bottom, spacing: 10) {
-                        leftSide
-                        
-                        textField
-                        
-                        rightSide
-                    }
+
+            HStack(alignment: .bottom, spacing: 10) {
+                if chatVM.recordingVoiceNote {
+                    recordingIndicator
                 } else {
-                    voiceNoteRecording
+                    leftSide
+
+                    textField
                 }
+
+                rightSide
             }
         }
         .onDisappear { Task.background { [chatVM] in await chatVM.updateDraft() } }
@@ -60,8 +59,8 @@ struct ChatBottomArea: View {
                         .font(.title2)
                 }
                 .disabled(!chatVM.recordingVoiceNote)
-                .opacity(chatVM.recordingVoiceNote ? 1 : 0)
-                .scaleEffect(chatVM.recordingVoiceNote ? 1 : 0)
+                .opacity(chatVM.recordingLocked ? 1 : 0)
+                .scaleEffect(chatVM.recordingLocked ? 1 : 0)
                 .offset(x: 20, y: 20)
                 .onTapGesture { chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave) }
                 .accessibilityElement()
@@ -72,6 +71,30 @@ struct ChatBottomArea: View {
                     wave: chatVM.wave,
                 ) }
                 .accessibilityHidden(!chatVM.recordingVoiceNote)
+        }
+        .overlay(alignment: .topTrailing) {
+            if chatVM.recordingVoiceNote, !chatVM.recordingLocked {
+                VStack(spacing: 4) {
+                    Image(systemName: "lock.fill")
+                    Image(systemName: "chevron.up")
+                }
+                .font(.caption)
+                .foregroundStyle(.white)
+                .padding(10)
+                .background(Color.gray6)
+                .clipShape(.rect(cornerRadius: 18))
+                .offset(x: -20, y: max(-70, chatVM.recordingDragTranslation.height) - 10)
+                .opacity(1 - min(1, abs(chatVM.recordingDragTranslation.height) / 110))
+                .accessibilityHidden(true)
+                .transition(.opacity)
+            }
+        }
+        .onChange(of: chatVM.recordingVoiceNote) { _, isRecording in
+            if isRecording {
+                chatVM.startTimer()
+            } else {
+                chatVM.stopTimer()
+            }
         }
         .onChange(of: chatVM.displayedImages) { nc.post(name: .localScrollToLastOnFocus) }
         .onReceive(nc.publisher(for: .localOnSelectedImagesDrop)) { notification in
@@ -163,9 +186,11 @@ struct ChatBottomArea: View {
         }
     }
     
+    // Stays mounted for the whole record gesture (touch-down through lock/cancel/send) —
+    // swapping it out mid-drag would tear down the DragGesture and lose touch tracking.
     var rightSide: some View {
         Group {
-            if chatVM.showSendButton {
+            if chatVM.showSendButton || chatVM.recordingLocked {
                 Image("send")
                     .resizable()
                     .clipShape(.circle)
@@ -180,27 +205,73 @@ struct ChatBottomArea: View {
         .font(.title2)
         .contentShape(.rect)
         .transition(.scale)
-        .onTapGesture {
-            chatVM.sendMessageTask?.cancel()
-            chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
-        }
-        .onLongPressGesture(minimumDuration: 0.1, maximumDistance: 1000) {
-            Task.main { await chatVM.mediaStartRecordingVoice() }
+        .modify {
+            if chatVM.recordingLocked {
+                $0.onTapGesture { chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave) }
+            } else if chatVM.showSendButton {
+                $0.onTapGesture {
+                    chatVM.sendMessageTask?.cancel()
+                    chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
+                }
+            } else {
+                $0.gesture(voiceRecordingGesture)
+            }
         }
         .onChange(of: chatVM.editMessageText, chatVM.setShowSendButton)
         .onChange(of: chatVM.text, chatVM.setShowSendButton)
         .onChange(of: chatVM.displayedImages, chatVM.setShowSendButton)
         .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
         .accessibilityElement()
-        .accessibilityLabel(chatVM.showSendButton ? "Send Message" : "Record Voice Message")
+        .accessibilityLabel(
+            chatVM.recordingLocked ? "Send Voice Message" :
+                chatVM.showSendButton ? "Send Message" : "Record Voice Message"
+        )
         .accessibilityAddTraits(.isButton)
         .accessibilityAction {
-            chatVM.sendMessageTask?.cancel()
-            chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
+            if chatVM.recordingLocked {
+                chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
+            } else if chatVM.showSendButton {
+                chatVM.sendMessageTask?.cancel()
+                chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
+            } else {
+                Task.main { await chatVM.mediaStartRecordingVoice() }
+            }
         }
         .accessibilityAction(named: "Record Voice Message") {
             Task.main { await chatVM.mediaStartRecordingVoice() }
         }
+    }
+
+    // Thresholds mirror Telegram's own recording button: drag left to cancel,
+    // drag up to lock into hands-free recording.
+    var voiceRecordingGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard !chatVM.recordingLocked else { return }
+                if !chatVM.recordingVoiceNote, !hasBegunRecording {
+                    hasBegunRecording = true
+                    Task.main { await chatVM.mediaStartRecordingVoice() }
+                }
+                guard chatVM.recordingVoiceNote else { return }
+                chatVM.recordingDragTranslation = value.translation
+                if value.translation.height < -110 {
+                    withAnimation { chatVM.recordingLocked = true }
+                } else if value.translation.width < -150 {
+                    chatVM.cancelRecordingVoice()
+                    hasBegunRecording = false
+                }
+            }
+            .onEnded { value in
+                defer { hasBegunRecording = false }
+                guard chatVM.recordingVoiceNote, !chatVM.recordingLocked else { return }
+                if value.translation.width < -100 || value.predictedEndTranslation.width < -400 {
+                    chatVM.cancelRecordingVoice()
+                } else if value.translation.height < -60 || value.predictedEndTranslation.height < -400 {
+                    withAnimation { chatVM.recordingLocked = true }
+                } else {
+                    chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
+                }
+            }
     }
     
     @ViewBuilder var topSide: some View {
@@ -281,29 +352,42 @@ struct ChatBottomArea: View {
 //        }
     }
     
-    var voiceNoteRecording: some View {
-        HStack(alignment: .center, spacing: 0) {
+    // Cancel is always tappable (needed for VoiceOver, which never drives the slide gesture);
+    // the slide-to-cancel hint is an additional affordance for sighted users while unlocked.
+    var recordingIndicator: some View {
+        HStack(spacing: 8) {
             Button {
-                withAnimation {
-                    try? FileManager.default.removeItem(at: chatVM.savedVoiceNoteUrl)
-                    chatVM.audioRecorder?.stop()
-                    chatVM.recordingVoiceNote = false
-                }
+                chatVM.cancelRecordingVoice()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 22))
+                Image(systemName: "trash")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.white)
                     .contentShape(.rect)
             }
+            .accessibilityLabel("Cancel Recording")
+
+            Circle()
+                .fill(.red)
+                .frame(width: 8, height: 8)
+            Text(chatVM.formattedTimerCount)
+                .foregroundStyle(.white)
+                .monospacedDigit()
 
             Spacer()
-            Text(chatVM.formattedTimerCount)
-            Spacer()
-            
-            rightSide
+
+            if !chatVM.recordingLocked {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text("Slide to Cancel")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.gray)
+                .offset(x: min(0, chatVM.recordingDragTranslation.width / 3))
+                .opacity(1 - min(1, abs(chatVM.recordingDragTranslation.width) / 150))
+                .accessibilityHidden(true)
+            }
         }
-        .padding(.vertical, 2)
-        .onAppear(perform: chatVM.startTimer)
-        .onDisappear(perform: chatVM.stopTimer)
+        .padding(.bottom, 6)
     }
 
     func replyMessageView(_ customMessage: CustomMessage, type: ReplyMessageType) -> some View {

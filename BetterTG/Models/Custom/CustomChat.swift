@@ -14,13 +14,16 @@ import TDLibKit
         unreadCount: Int,
         type: CustomChatType,
         lastMessage: Message? = nil,
+        lastMessageSenderName: String? = nil,
         draftMessage: DraftMessage? = nil,
     ) {
         self.chat = chat
+        notificationSettings = chat.notificationSettings
         self.position = position
         self.unreadCount = unreadCount
         self.type = type
         self.lastMessage = lastMessage
+        self.lastMessageSenderName = lastMessageSenderName
         self.draftMessage = draftMessage
     }
     
@@ -33,12 +36,58 @@ import TDLibKit
         case bot(UserTypeBot)
     }
 
+    enum ChatKind {
+        case privateChat
+        case bot
+        case group
+        case channel
+
+        var title: String {
+            switch self {
+            case .privateChat: "Private chat"
+            case .bot: "Bot"
+            case .group: "Group"
+            case .channel: "Channel"
+            }
+        }
+
+        var systemImage: String? {
+            switch self {
+            case .privateChat: nil
+            case .bot: "cpu.fill"
+            case .group: "person.2.fill"
+            case .channel: "megaphone.fill"
+            }
+        }
+    }
+
     var chat: Chat
+    var notificationSettings: ChatNotificationSettings
     var position: ChatPosition
     var unreadCount: Int
     var lastMessage: Message?
+    var lastMessageSenderName: String?
     var draftMessage: DraftMessage?
     var type: CustomChatType
+
+    var kind: ChatKind {
+        switch type {
+        case .user: .privateChat
+        case .bot: .bot
+        case .group: .group
+        case .supergroup(let supergroup): supergroup.isChannel ? .channel : .group
+        }
+    }
+
+    var showsLastMessageSender: Bool {
+        switch type {
+        case .group: true
+        case .supergroup(let supergroup): !supergroup.isChannel
+        case .bot, .user: false
+        }
+    }
+
+    var isMuted: Bool { notificationSettings.muteFor > 0 }
     
     var bot: UserTypeBot? {
         switch type {

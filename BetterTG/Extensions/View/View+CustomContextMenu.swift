@@ -178,16 +178,17 @@ private struct CustomContextMenuView<Content: View, Preview: View>: UIViewRepres
             self.onAppear = onAppear
             self.onDisappear = onDisappear
         }
-        
+
         // MARK: Internal
 
-        let cornerRadius: CGFloat
-        let menu: UIMenu
-        let content: Content
-        let preview: Preview
-        let didTapPreview: (() -> Void)?
-        let onAppear: () -> Void
-        let onDisappear: () -> Void
+        var cornerRadius: CGFloat
+        var menu: UIMenu
+        var content: Content
+        var preview: Preview
+        var didTapPreview: (() -> Void)?
+        var onAppear: () -> Void
+        var onDisappear: () -> Void
+        weak var hostingController: UIHostingController<Content>?
         
         func contextMenuInteraction(
             _: UIContextMenuInteraction,
@@ -252,22 +253,36 @@ private struct CustomContextMenuView<Content: View, Preview: View>: UIViewRepres
         let host = UIHostingController(rootView: content)
         host.view.translatesAutoresizingMaskIntoConstraints = false
         host.view.layer.cornerRadius = cornerRadius
+        host.view.backgroundColor = .clear
         let constraints = [
             host.view.topAnchor.constraint(equalTo: view.topAnchor),
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
+
             host.view.widthAnchor.constraint(equalTo: view.widthAnchor),
             host.view.heightAnchor.constraint(equalTo: view.heightAnchor),
         ]
         view.addSubview(host.view)
         view.addConstraints(constraints)
         view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
+        context.coordinator.hostingController = host
         return view
     }
-    
-    func updateUIView(_: UIView, context _: Context) {}
+
+    // makeUIView only runs once per cell instance; every subsequent SwiftUI update (new message
+    // state, downloaded voice note, playback progress, etc.) has to be pushed in here or the
+    // UIKit-hosted content and the context menu's actions/preview go stale.
+    func updateUIView(_: UIView, context: Context) {
+        context.coordinator.cornerRadius = cornerRadius
+        context.coordinator.menu = menu
+        context.coordinator.content = content
+        context.coordinator.preview = preview
+        context.coordinator.didTapPreview = didTapPreview
+        context.coordinator.onAppear = onAppear
+        context.coordinator.onDisappear = onDisappear
+        context.coordinator.hostingController?.rootView = content
+    }
     
     func makeCoordinator() -> Coordinator {
         Coordinator(

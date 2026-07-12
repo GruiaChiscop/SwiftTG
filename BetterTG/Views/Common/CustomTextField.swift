@@ -135,6 +135,7 @@ private struct UITextViewWrapper: UIViewRepresentable {
         textView.delegate = context.coordinator
         textView.attributedText = NSMutableAttributedString(string: text.string, attributes: defaultAttributes())
         textView.font = .body
+        textView.adjustsFontForContentSizeCategory = true
         textView.isEditable = true
         textView.isSelectable = true
         textView.isUserInteractionEnabled = true
@@ -192,6 +193,7 @@ struct CustomTextField: View {
         UITextViewWrapper(text: $text, calculatedHeight: $dynamicHeight, becomeFirstResponer: focus)
             .frame(height: dynamicHeight)
             .accessibilityLabel(placeholder)
+            .accessibilityHint("Enter a message")
             .onChange(of: text) { _, newText in
                 showingPlaceholder = newText.characters.isEmpty
             }

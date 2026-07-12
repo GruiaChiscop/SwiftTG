@@ -3,10 +3,20 @@
 import SwiftUI
 
 extension UIFont {
-    static let monospaced = UIFont(name: "Menlo", size: 17) ?? UIFont.monospacedSystemFont(ofSize: 17, weight: .regular)
-    static let bold = UIFont.boldSystemFont(ofSize: 17)
-    static let italic = UIFont.italicSystemFont(ofSize: 17)
+    static var monospaced: UIFont {
+        UIFontMetrics(forTextStyle: .body).scaledFont(
+            for: UIFont(name: "Menlo", size: 17) ?? UIFont.monospacedSystemFont(ofSize: 17, weight: .regular),
+        )
+    }
 
-    static let body = UIFont.systemFont(ofSize: 17)
-    static let caption = UIFont.systemFont(ofSize: 12)
+    static var bold: UIFont {
+        UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont.boldSystemFont(ofSize: 17))
+    }
+
+    static var italic: UIFont {
+        UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont.italicSystemFont(ofSize: 17))
+    }
+
+    static var body: UIFont { UIFont.preferredFont(forTextStyle: .body) }
+    static var caption: UIFont { UIFont.preferredFont(forTextStyle: .caption1) }
 }

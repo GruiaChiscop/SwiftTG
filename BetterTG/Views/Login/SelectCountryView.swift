@@ -34,6 +34,8 @@ struct SelectCountryView: View {
                     }
                     .foregroundStyle(.white)
                 }
+                .accessibilityLabel("\(info.name), calling code plus \(info.phoneNumberPrefix)")
+                .accessibilityHint("Selects country")
             }
             .background(.black)
             .padding(.top, -20)

@@ -2,6 +2,7 @@
 
 import AVKit
 import Combine
+import SwiftOGG
 import SwiftUI
 import TDLibKit
 
@@ -50,6 +51,7 @@ import TDLibKit
     var replyMessage: CustomMessage?
     var highlightedMessageId: Int64?
     var messages = [CustomMessage]()
+    var initialMessagesLoaded = false
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
@@ -73,11 +75,13 @@ import TDLibKit
     var text: AttributedString = ""
     var editMessageText: AttributedString = ""
     var recordingVoiceNote = false
+    var recordingLocked = false
+    var recordingDragTranslation = CGSize.zero
     var errorShown = false
     var showCameraView = false
     var showPhotoPickerView = false
     @ObservationIgnored var savedVoiceNoteUrl = URL(filePath: "")
-    @ObservationIgnored var audioRecorder: AVAudioRecorder?
+    @ObservationIgnored var audioRecorder: VoiceNoteRecorder?
     
     var canEditMessage: Bool {
         guard let editCustomMessage else { return false }
@@ -175,6 +179,7 @@ import TDLibKit
     }
     
     func _loadMessages() async {
+        let isInitialLoad = messages.isEmpty
         guard let chatHistory = try? await td.getChatHistory(
             chatId: customChat.chat.id,
             fromMessageId: messages.first?.message.id ?? 0,
@@ -206,6 +211,9 @@ import TDLibKit
         
         await main { [savedMessages] in
             self.messages.insert(contentsOf: savedMessages.reversed(), at: 0)
+            if isInitialLoad {
+                self.initialMessagesLoaded = true
+            }
 
             Task.main(delay: 0.5) {
                 self.loadingMessagesTask = nil
@@ -259,6 +267,16 @@ import TDLibKit
                 chatId: customChat.chat.id, messageId: message.id,
             )) ?? .default,
         )
+        if let reactions = try? await td.getMessageAvailableReactions(
+            chatId: customChat.chat.id,
+            messageId: message.id,
+            rowSize: 8,
+        ) {
+            customMessage.canReact = reactions.unavailabilityReason == nil
+                && (reactions.topReactions + reactions.recentReactions + reactions.popularReactions).contains {
+                    $0.type == .reactionTypeEmoji(.init(emoji: "❤"))
+                }
+        }
         
         if message.mediaAlbumId != 0 {
             customMessage.album.append(message)
@@ -540,8 +558,7 @@ import TDLibKit
     func startTimer() {
         let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] timer in
             guard let self, let audioRecorder else { return }
-            audioRecorder.updateMeters()
-            wave.append(audioRecorder.peakPower(forChannel: 0))
+            wave.append(audioRecorder.peakPower)
             timerCount += timer.timeInterval
         }
         self.timer = timer
@@ -610,33 +627,54 @@ import TDLibKit
             return
         }
         
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.min.rawValue,
-        ]
-        
-        let url = URL(filePath: NSTemporaryDirectory()).appending(path: "\(UUID().uuidString).wav")
+        let url = URL(filePath: NSTemporaryDirectory()).appending(path: "\(UUID().uuidString).ogg")
         savedVoiceNoteUrl = url
-        
+
         do {
-            audioRecorder = try AVAudioRecorder(url: url, settings: settings)
-            audioRecorder?.isMeteringEnabled = true
-            audioRecorder?.prepareToRecord()
-            audioRecorder?.record()
-            withAnimation { recordingVoiceNote = true }
+            let recorder = VoiceNoteRecorder()
+            try recorder.start()
+            audioRecorder = recorder
+            withAnimation {
+                recordingVoiceNote = true
+                recordingLocked = false
+                recordingDragTranslation = .zero
+            }
             try? await tdSendChatAction(.chatActionRecordingVoiceNote)
         } catch {
             log("Error creating AudioRecorder: \(error)")
         }
     }
-    
-    func mediaStopRecordingVoice(duration: Int, wave: [Float]) {
-        audioRecorder?.stop()
-        withAnimation { recordingVoiceNote = false }
+
+    func cancelRecordingVoice() {
+        audioRecorder?.cancel()
+        audioRecorder = nil
+        try? FileManager.default.removeItem(at: savedVoiceNoteUrl)
+        withAnimation {
+            recordingVoiceNote = false
+            recordingLocked = false
+            recordingDragTranslation = .zero
+        }
         Task.background { try? await self.tdSendChatAction(.chatActionCancel) }
-        
+    }
+
+    func mediaStopRecordingVoice(duration: Int, wave: [Float]) {
+        guard let audioRecorder else { return }
+        let encodedDuration: Int
+        do {
+            encodedDuration = Int(ceil(try audioRecorder.stopAndWrite(to: savedVoiceNoteUrl)))
+        } catch {
+            log("Error finalizing voice note:", error)
+            cancelRecordingVoice()
+            return
+        }
+        self.audioRecorder = nil
+        withAnimation {
+            recordingVoiceNote = false
+            recordingLocked = false
+            recordingDragTranslation = .zero
+        }
+        Task.background { try? await self.tdSendChatAction(.chatActionCancel) }
+
         let intWave: [Int] = wave.compactMap { wave in
             let intWave = abs(Int(wave))
             if intWave == 120 || intWave == 160 { return nil }
@@ -653,10 +691,9 @@ import TDLibKit
         let endWave = collapsedWave.map { UInt8($0) }
         let bytesWave = getBytesWave(from: endWave)
         let waveform = Data(bytesWave).prefix(63)
-        
         Task.background {
             try? await self.tdSendChatAction(.chatActionUploadingVoiceNote(.init(progress: 0)))
-            await self.sendMessageVoiceNote(duration: duration, waveform: waveform)
+            await self.sendMessageVoiceNote(duration: max(encodedDuration, duration), waveform: waveform)
         }
     }
 }

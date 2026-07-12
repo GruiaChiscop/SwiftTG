@@ -6,6 +6,7 @@ import TDLibKit
 struct MessageContentView: View {
     let customMessage: CustomMessage
     let onPhotoTap: (Message?) -> Void
+    var onVoiceNoteLocalPathResolved: (String) -> Void = { _ in }
 
     var body: some View {
         ZStack {
@@ -15,7 +16,10 @@ struct MessageContentView: View {
                     makeMessagePhoto(from: messagePhoto)
                         .scaledToFit()
                 case .messageVoiceNote(let messageVoiceNote):
-                    MessageVoiceNoteView(voiceNote: messageVoiceNote.voiceNote)
+                    MessageVoiceNoteView(
+                        voiceNote: messageVoiceNote.voiceNote,
+                        onLocalPathResolved: onVoiceNoteLocalPathResolved,
+                    )
                 default:
                     EmptyView()
                 }

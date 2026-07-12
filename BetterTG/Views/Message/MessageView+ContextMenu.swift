@@ -1,85 +1,94 @@
-// MessageView+ContextMenu.swift
-
 import SwiftUI
 import TDLibKit
 
 extension MessageView {
     var contextMenuActions: [ContextMenuAction] {
         var actions = [ContextMenuAction]()
-        actions.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left") {
-            if chatVM.replyMessage != nil {
-                withAnimation {
-                    chatVM.replyMessage = nil
-                }
-                Task.main(delay: 0.4) {
-                    withAnimation {
-                        chatVM.replyMessage = customMessage
-                    }
-                }
-            } else {
-                withAnimation {
-                    chatVM.replyMessage = customMessage
-                }
-            }
-        })
-        actions.append(.button(title: "React", systemImage: "heart") {
-            Task.background {
-                try? await td.addMessageReaction(
-                    chatId: chatVM.customChat.chat.id,
-                    isBig: false,
-                    messageId: customMessage.message.id,
-                    reactionType: .reactionTypeEmoji(.init(emoji: "❤")),
-                    updateRecentReactions: true,
-                )
-            }
-        })
-        if customMessage.properties.canBeEdited {
-            actions.append(.button(title: "Edit", systemImage: "square.and.pencil") {
-                if chatVM.editCustomMessage != nil {
-                    withAnimation {
-                        chatVM.editCustomMessage = nil
-                    }
-                    Task.main(delay: 0.4) {
-                        withAnimation {
-                            chatVM.editCustomMessage = customMessage
-                        }
-                    }
-                } else {
-                    withAnimation {
-                        chatVM.editCustomMessage = customMessage
-                    }
+
+        if customMessage.properties.canBeReplied {
+            actions.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left", action: reply))
+        }
+        if customMessage.canReact {
+            actions.append(.button(title: "React", systemImage: "heart") {
+                Task.background {
+                    try? await td.addMessageReaction(
+                        chatId: chatVM.customChat.chat.id,
+                        isBig: false,
+                        messageId: customMessage.id,
+                        reactionType: .reactionTypeEmoji(.init(emoji: "❤")),
+                        updateRecentReactions: true,
+                    )
                 }
             })
         }
-        if let formattedText = getFormattedText(from: customMessage.message.content) {
+        if customMessage.properties.canBeCopied,
+           let formattedText = getFormattedText(from: customMessage.message.content)
+        {
             actions.append(.button(title: "Copy", systemImage: "rectangle.portrait.on.rectangle.portrait") {
                 UIPasteboard.setFormattedText(formattedText)
             })
         }
-        actions.append(.divider)
-        if customMessage.properties.canBeDeletedOnlyForSelf, !customMessage.properties.canBeDeletedForAllUsers {
+        if customMessage.properties.canBeEdited {
+            actions.append(.button(title: "Edit", systemImage: "square.and.pencil", action: edit))
+        }
+        if customMessage.properties.canBePinned {
+            actions.append(.button(
+                title: customMessage.message.isPinned ? "Unpin" : "Pin",
+                systemImage: customMessage.message.isPinned ? "pin.slash" : "pin",
+                action: togglePinnedMessage,
+            ))
+        }
+        if customMessage.properties.canBeDeletedOnlyForSelf
+            || customMessage.properties.canBeDeletedForAllUsers
+        {
+            actions.append(.divider)
             actions.append(.button(title: "Delete", systemImage: "trash", attributes: .destructive) {
-                chatVM.deleteMessage(id: customMessage.message.id, deleteForBoth: false)
+                showDeleteOptions = true
             })
-        }
-        if customMessage.properties.canBeDeletedForAllUsers, !customMessage.properties.canBeDeletedOnlyForSelf {
-            actions.append(.button(title: "Delete for both", systemImage: "trash.fill", attributes: .destructive) {
-                chatVM.deleteMessage(id: customMessage.message.id, deleteForBoth: true)
-            })
-        }
-        if customMessage.properties.canBeDeletedOnlyForSelf, customMessage.properties.canBeDeletedForAllUsers {
-            actions.append(.menu(title: "Delete", children: [
-                .button(title: "Delete only for me", systemImage: "trash", attributes: .destructive) {
-                    chatVM.deleteMessage(id: customMessage.message.id, deleteForBoth: false)
-                },
-                .button(title: "Delete for both", systemImage: "trash.fill", attributes: .destructive) {
-                    chatVM.deleteMessage(id: customMessage.message.id, deleteForBoth: true)
-                },
-            ]))
         }
         return actions
     }
-    
+
+    func reply() {
+        if chatVM.replyMessage != nil {
+            withAnimation { chatVM.replyMessage = nil }
+            Task.main(delay: 0.4) {
+                withAnimation { chatVM.replyMessage = customMessage }
+            }
+        } else {
+            withAnimation { chatVM.replyMessage = customMessage }
+        }
+    }
+
+    func edit() {
+        if chatVM.editCustomMessage != nil {
+            withAnimation { chatVM.editCustomMessage = nil }
+            Task.main(delay: 0.4) {
+                withAnimation { chatVM.editCustomMessage = customMessage }
+            }
+        } else {
+            withAnimation { chatVM.editCustomMessage = customMessage }
+        }
+    }
+
+    func togglePinnedMessage() {
+        Task.background {
+            if customMessage.message.isPinned {
+                try await td.unpinChatMessage(
+                    chatId: chatVM.customChat.chat.id,
+                    messageId: customMessage.id,
+                )
+            } else {
+                try await td.pinChatMessage(
+                    chatId: chatVM.customChat.chat.id,
+                    disableNotification: false,
+                    messageId: customMessage.id,
+                    onlyForSelf: false,
+                )
+            }
+        }
+    }
+
     func getFormattedText(from content: MessageContent) -> FormattedText? {
         switch content {
         case .messageText(let messageText):

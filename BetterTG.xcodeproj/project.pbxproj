@@ -7,7 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DF55E2D2295B783F00A30C76 /* MobileVLCKit in Frameworks */ = {isa = PBXBuildFile; productRef = DF55E2D1295B783F00A30C76 /* MobileVLCKit */; };
+		29D283DD1F8E47DF90BEAF36 /* SwiftOGG in Frameworks */ = {isa = PBXBuildFile; productRef = 69151C5FAB054AB894A93455 /* SwiftOGG */; };
+		A10000000000000000000001 /* TDLibKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000000B /* TDLibKit */; };
 		DF9C5CC1292698BC00ED1CA8 /* TDLibKit in Frameworks */ = {isa = PBXBuildFile; productRef = DF9C5CC0292698BC00ED1CA8 /* TDLibKit */; };
 /* End PBXBuildFile section */
 
@@ -45,6 +46,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000002 /* BetterTGMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BetterTGMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DF4B997E28C3F3F50087C1B9 /* BetterTG.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BetterTG.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -59,16 +61,25 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A10000000000000000000003 /* BetterTGMac */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BetterTGMac; sourceTree = "<group>"; };
 		DFD75B1C2D3DA0D8004E7CA6 /* BetterTG */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (DFD75B772D3DA0D8004E7CA6 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BetterTG; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* TDLibKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DF4B997B28C3F3F50087C1B9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DF55E2D2295B783F00A30C76 /* MobileVLCKit in Frameworks */,
 				DF9C5CC1292698BC00ED1CA8 /* TDLibKit in Frameworks */,
+				29D283DD1F8E47DF90BEAF36 /* SwiftOGG in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +90,7 @@
 			isa = PBXGroup;
 			children = (
 				DFD75B1C2D3DA0D8004E7CA6 /* BetterTG */,
+				A10000000000000000000003 /* BetterTGMac */,
 				DF4B997F28C3F3F50087C1B9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -87,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				DF4B997E28C3F3F50087C1B9 /* BetterTG.app */,
+				A10000000000000000000002 /* BetterTGMac.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -94,6 +107,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A10000000000000000000005 /* BetterTGMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000000000000000000000A /* Build configuration list for PBXNativeTarget "BetterTGMac" */;
+			buildPhases = (
+				A10000000000000000000006 /* Sources */,
+				A10000000000000000000004 /* Frameworks */,
+				A10000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000003 /* BetterTGMac */,
+			);
+			name = BetterTGMac;
+			packageProductDependencies = (
+				A1000000000000000000000B /* TDLibKit */,
+			);
+			productName = BetterTGMac;
+			productReference = A10000000000000000000002 /* BetterTGMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 		DF4B997D28C3F3F50087C1B9 /* BetterTG */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DF4B998C28C3F3F60087C1B9 /* Build configuration list for PBXNativeTarget "BetterTG" */;
@@ -116,7 +152,7 @@
 			name = BetterTG;
 			packageProductDependencies = (
 				DF9C5CC0292698BC00ED1CA8 /* TDLibKit */,
-				DF55E2D1295B783F00A30C76 /* MobileVLCKit */,
+				69151C5FAB054AB894A93455 /* SwiftOGG */,
 			);
 			productName = BetterTG;
 			productReference = DF4B997E28C3F3F50087C1B9 /* BetterTG.app */;
@@ -132,6 +168,9 @@
 				LastSwiftUpdateCheck = 1430;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					A10000000000000000000005 = {
+						CreatedOnToolsVersion = 26.0;
+					};
 					DF4B997D28C3F3F50087C1B9 = {
 						CreatedOnToolsVersion = 14.0;
 					};
@@ -149,18 +188,26 @@
 			packageReferences = (
 				DF820B6E28D787AD007DD293 /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
 				DF9C5CBF292698BC00ED1CA8 /* XCRemoteSwiftPackageReference "TDLibKit" */,
-				DF55E2D0295B783F00A30C76 /* XCRemoteSwiftPackageReference "MobileVLCKit" */,
+				A6E7805221DFB1D743A23E6D /* XCRemoteSwiftPackageReference "swift-ogg" */,
 			);
 			productRefGroup = DF4B997F28C3F3F50087C1B9 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				DF4B997D28C3F3F50087C1B9 /* BetterTG */,
+				A10000000000000000000005 /* BetterTGMac */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DF4B997C28C3F3F50087C1B9 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -193,6 +240,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DF4B997A28C3F3F50087C1B9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -203,6 +257,46 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		A10000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y7J75349M6;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = BetterTG;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gruiachiscop.BetterTGMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A10000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y7J75349M6;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = BetterTG;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gruiachiscop.BetterTGMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		DF4B998A28C3F3F60087C1B9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -431,6 +525,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A1000000000000000000000A /* Build configuration list for PBXNativeTarget "BetterTGMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000008 /* Debug */,
+				A10000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		DF4B997928C3F3F50087C1B9 /* Build configuration list for PBXProject "BetterTG" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -452,12 +555,12 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		DF55E2D0295B783F00A30C76 /* XCRemoteSwiftPackageReference "MobileVLCKit" */ = {
+		A6E7805221DFB1D743A23E6D /* XCRemoteSwiftPackageReference "swift-ogg" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/levochkaa/MobileVLCKit";
+			repositoryURL = "https://github.com/element-hq/swift-ogg";
 			requirement = {
-				branch = main;
-				kind = branch;
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.0.4;
 			};
 		};
 		DF820B6E28D787AD007DD293 /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
@@ -479,10 +582,15 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		DF55E2D1295B783F00A30C76 /* MobileVLCKit */ = {
+		A1000000000000000000000B /* TDLibKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = DF55E2D0295B783F00A30C76 /* XCRemoteSwiftPackageReference "MobileVLCKit" */;
-			productName = MobileVLCKit;
+			package = DF9C5CBF292698BC00ED1CA8 /* XCRemoteSwiftPackageReference "TDLibKit" */;
+			productName = TDLibKit;
+		};
+		69151C5FAB054AB894A93455 /* SwiftOGG */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A6E7805221DFB1D743A23E6D /* XCRemoteSwiftPackageReference "swift-ogg" */;
+			productName = SwiftOGG;
 		};
 		DF9C5CC0292698BC00ED1CA8 /* TDLibKit */ = {
 			isa = XCSwiftPackageProductDependency;

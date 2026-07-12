@@ -45,6 +45,12 @@ extension RootVM {
             guard let self else { return }
             self.updateChatLastMessage(updateChatLastMessage)
         }
+        nc.publisher(&cancellables, for: .updateChatNotificationSettings) { [weak self] update in
+            guard let self else { return }
+            for chat in allChats where chat.chat.id == update.chatId {
+                Task.main { chat.notificationSettings = update.notificationSettings }
+            }
+        }
     }
     
     func updateChatFolders(_ updateChatFolders: UpdateChatFolders) {
@@ -71,13 +77,25 @@ extension RootVM {
     }
     
     func updateChatPosition(_ updateChatPosition: UpdateChatPosition) {
-        guard let folder = folders.first(where: { $0.chatList == updateChatPosition.position.list }) else { return }
+        let availableFolders = folders + (archive.map { [$0] } ?? [])
+        guard let folder = availableFolders.first(where: { $0.chatList == updateChatPosition.position.list }) else {
+            return
+        }
         guard updateChatPosition.position.order != 0 else {
             Task.main { folder.chats.removeAll(where: { $0.chat.id == updateChatPosition.chatId }) }
             return
         }
-        guard let chat = folder.chats.first(where: { $0.chat.id == updateChatPosition.chatId }) else { return }
-        Task.main { withAnimation { chat.position = updateChatPosition.position } }
+        if let chat = folder.chats.first(where: { $0.chat.id == updateChatPosition.chatId }) {
+            Task.main { withAnimation { chat.position = updateChatPosition.position } }
+        } else {
+            Task.background {
+                guard let chat = await self.getCustomChat(
+                    from: updateChatPosition.chatId,
+                    for: updateChatPosition.position.list,
+                ) else { return }
+                await main { withAnimation { folder.chats.append(chat) } }
+            }
+        }
     }
     
     func updateChatDraftMessage(_ updateChatDraftMessage: UpdateChatDraftMessage) {
@@ -96,14 +114,18 @@ extension RootVM {
     }
     
     func updateChatLastMessage(_ updateChatLastMessage: UpdateChatLastMessage) {
-        for folder in folders {
-            if let chat = folder.chats.first(where: { $0.chat.id == updateChatLastMessage.chatId }),
-               let position = updateChatLastMessage.positions.first(folder.chatList)
-            {
-                Task.main {
-                    withAnimation {
-                        chat.lastMessage = updateChatLastMessage.lastMessage
-                        chat.position = position
+        Task.background {
+            let senderName = await self.getSenderName(for: updateChatLastMessage.lastMessage)
+            await main {
+                for folder in self.folders {
+                    if let chat = folder.chats.first(where: { $0.chat.id == updateChatLastMessage.chatId }),
+                       let position = updateChatLastMessage.positions.first(folder.chatList)
+                    {
+                        withAnimation {
+                            chat.lastMessage = updateChatLastMessage.lastMessage
+                            chat.lastMessageSenderName = chat.showsLastMessageSender ? senderName : nil
+                            chat.position = position
+                        }
                     }
                 }
             }

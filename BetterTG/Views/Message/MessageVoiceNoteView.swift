@@ -7,18 +7,25 @@ struct MessageVoiceNoteView: View {
     // MARK: Internal
 
     let voiceNote: VoiceNote
-    
+    var onLocalPathResolved: (String) -> Void = { _ in }
+
     @State var media = Media.shared
-    
+
     var body: some View {
         AsyncTdFile(id: voiceNote.voice.id) { voice in
             voiceNoteView
-                .onAppear { voiceLocalPath = voice.local.path }
+                .onAppear {
+                    voiceLocalPath = voice.local.path
+                    onLocalPathResolved(voice.local.path)
+                }
         } placeholder: {
             voiceNoteView
         }
         .padding(4)
         .disabled(voiceLocalPath == nil)
+        // MessageView exposes one stable accessibility element whose default
+        // activation toggles playback, matching Telegram's message behavior.
+        .accessibilityHidden(true)
     }
     
     var voiceNoteView: some View {
@@ -62,7 +69,7 @@ struct MessageVoiceNoteView: View {
                 .disabled(!isCurrentVoiceActive)
             }
             .font(.system(size: 24))
-            
+
             HStack(spacing: 0) {
                 Text(media.savedMediaPath == voiceLocalPath ? formattedDuration(from: media.currentTime) : "0:00")
                 Text(" / ")
@@ -73,6 +80,7 @@ struct MessageVoiceNoteView: View {
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 15)
+        .animation(.default, value: isCurrentVoiceActive)
     }
     
     func formattedDuration(from duration: some BinaryInteger) -> String {
