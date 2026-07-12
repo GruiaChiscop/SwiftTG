@@ -3,16 +3,6 @@
 import SwiftUI
 
 extension View {
-    func readOffset(in coordinateSpace: NamedCoordinateSpace, onChange: @escaping (CGRect) -> Void) -> some View {
-        overlay {
-            GeometryReader { geometryProxy in
-                Color.clear
-                    .preference(key: ScrollOffsetPreferenceKey.self, value: geometryProxy.frame(in: coordinateSpace))
-                    .onPreferenceChange(ScrollOffsetPreferenceKey.self, perform: onChange)
-            }
-        }
-    }
-    
     func readSize(_ onChange: @escaping (CGSize) -> Void) -> some View {
         background {
             GeometryReader { geometryProxy in
@@ -60,10 +50,5 @@ extension View {
     
     func frame(size: CGSize?, alignment: Alignment = .center) -> some View {
         frame(width: size?.width, height: size?.height, alignment: alignment)
-    }
-    
-    func flipped() -> some View {
-        rotationEffect(.init(radians: .pi))
-            .scaleEffect(x: -1, y: 1, anchor: .center)
     }
 }

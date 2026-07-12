@@ -5,9 +5,8 @@ import TDLibKit
 
 struct MessageContentView: View {
     let customMessage: CustomMessage
-    
-    @State var shownAlbum: CustomMessageAlbum?
-    
+    let onPhotoTap: (Message?) -> Void
+
     var body: some View {
         ZStack {
             if customMessage.album.isEmpty {
@@ -32,22 +31,13 @@ struct MessageContentView: View {
             }
         }
         .padding(1)
-        .sheet(item: $shownAlbum) { album in
-            ChatViewAlbum(album: album.photos, selection: album.selection)
-        }
     }
-    
+
     func makeMessagePhoto(from messagePhoto: MessagePhoto, albumMessage: Message? = nil) -> some View {
         TdImage(photo: messagePhoto.photo, size: .yBox, contentMode: .fill)
-            .onTapGesture {
-                if customMessage.album.isEmpty {
-                    shownAlbum = .init(
-                        photos: [customMessage.message],
-                        selection: customMessage.message.id,
-                    )
-                } else if let albumMessage {
-                    shownAlbum = .init(photos: customMessage.album, selection: albumMessage.id)
-                }
-            }
+            .onTapGesture { onPhotoTap(albumMessage) }
+            .accessibilityLabel(messagePhoto.caption.text.isEmpty ? "Photo" : "Photo: \(messagePhoto.caption.text)")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onPhotoTap(albumMessage) }
     }
 }

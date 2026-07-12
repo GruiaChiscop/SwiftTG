@@ -64,6 +64,14 @@ struct ChatBottomArea: View {
                 .scaleEffect(chatVM.recordingVoiceNote ? 1 : 0)
                 .offset(x: 20, y: 20)
                 .onTapGesture { chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave) }
+                .accessibilityElement()
+                .accessibilityLabel("Stop Recording")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { chatVM.mediaStopRecordingVoice(
+                    duration: Int(chatVM.timerCount),
+                    wave: chatVM.wave,
+                ) }
+                .accessibilityHidden(!chatVM.recordingVoiceNote)
         }
         .onChange(of: chatVM.displayedImages) { nc.post(name: .localScrollToLastOnFocus) }
         .onReceive(nc.publisher(for: .localOnSelectedImagesDrop)) { notification in
@@ -183,6 +191,16 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.text, chatVM.setShowSendButton)
         .onChange(of: chatVM.displayedImages, chatVM.setShowSendButton)
         .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
+        .accessibilityElement()
+        .accessibilityLabel(chatVM.showSendButton ? "Send Message" : "Record Voice Message")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            chatVM.sendMessageTask?.cancel()
+            chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
+        }
+        .accessibilityAction(named: "Record Voice Message") {
+            Task.main { await chatVM.mediaStartRecordingVoice() }
+        }
     }
     
     @ViewBuilder var topSide: some View {
@@ -196,12 +214,13 @@ struct ChatBottomArea: View {
     var photosScroll: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .center, spacing: 5) {
-                ForEach(chatVM.displayedImages) { photo in
+                ForEach(Array(chatVM.displayedImages.enumerated()), id: \.element.id) { index, photo in
                     photo.image
                         .resizable()
                         .scaledToFit()
                         .clipShape(.rect(cornerRadius: 10))
                         .transition(.scale.combined(with: .opacity))
+                        .accessibilityLabel("Photo \(index + 1) of \(chatVM.displayedImages.count)")
                         .overlay(alignment: .topTrailing) {
                             Button {
                                 withAnimation {
@@ -213,6 +232,7 @@ struct ChatBottomArea: View {
                                     .foregroundStyle(.white, .blue)
                                     .padding(5)
                             }
+                            .accessibilityLabel("Remove Photo \(index + 1)")
                         }
                 }
             }
@@ -274,7 +294,7 @@ struct ChatBottomArea: View {
                     .font(.system(size: 22))
                     .contentShape(.rect)
             }
-            
+
             Spacer()
             Text(chatVM.formattedTimerCount)
             Spacer()
@@ -300,14 +320,16 @@ struct ChatBottomArea: View {
             })
             .background(Color.gray6)
             .clipShape(.rect(cornerRadius: 15))
-            
-            Image(systemName: "xmark")
-                .onTapGesture {
-                    withAnimation {
-                        chatVM.replyMessage = nil
-                        chatVM.editCustomMessage = nil
-                    }
+
+            Button {
+                withAnimation {
+                    chatVM.replyMessage = nil
+                    chatVM.editCustomMessage = nil
                 }
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .accessibilityLabel(type == .edit ? "Cancel Edit" : "Cancel Reply")
         }
     }
 }

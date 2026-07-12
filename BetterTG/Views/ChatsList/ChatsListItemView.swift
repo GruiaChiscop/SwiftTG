@@ -4,24 +4,16 @@ import SwiftUI
 import TDLibKit
 
 struct ChatsListItemView: View {
-    @State var folder: CustomFolder
     @State var customChat: CustomChat
     
     var body: some View {
         HStack {
             if customChat.position.isPinned {
-                Button(systemImage: "pin.fill") {
-                    Task.background {
-                        try await td.toggleChatIsPinned(
-                            chatId: customChat.chat.id,
-                            chatList: folder.chatList,
-                            isPinned: !customChat.position.isPinned,
-                        )
-                    }
-                }
-                .font(.title2)
-                .foregroundStyle(.white)
-                .padding(.leading, 10)
+                Image(systemName: "pin.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                    .padding(.leading, 10)
+                    .accessibilityHidden(true)
             }
             
             let chat = customChat.chat
@@ -63,5 +55,45 @@ struct ChatsListItemView: View {
         .background(Color.gray6)
         .clipShape(.rect(cornerRadius: 20))
         .padding(.horizontal, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
+    }
+
+    var accessibilityDescription: String {
+        var parts = [customChat.chat.title]
+
+        if customChat.position.isPinned {
+            parts.append("Pinned")
+        }
+        if let draftMessage = customChat.draftMessage,
+           case .draftMessageContentText(let draftMessageContentText) = draftMessage.content
+        {
+            parts.append("Draft: \(draftMessageContentText.text.text)")
+        } else if let lastMessage = customChat.lastMessage {
+            if lastMessage.forwardInfo != nil {
+                parts.append("Forwarded")
+            }
+            parts.append(plainText(from: lastMessage))
+        }
+        if customChat.unreadCount != 0 {
+            parts.append("\(customChat.unreadCount) unread")
+        }
+
+        return parts.joined(separator: ", ")
+    }
+
+    func plainText(from message: Message) -> String {
+        switch message.content {
+        case .messageText(let messageText):
+            messageText.text.text
+        case .messagePhoto(let messagePhoto):
+            messagePhoto.caption.text.isEmpty ? "Photo" : messagePhoto.caption.text
+        case .messageVoiceNote(let messageVoiceNote):
+            messageVoiceNote.caption.text.isEmpty ? "Voice message" : "Voice message: \(messageVoiceNote.caption.text)"
+        case .messageUnsupported:
+            "Unsupported message"
+        default:
+            "Message"
+        }
     }
 }

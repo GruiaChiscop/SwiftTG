@@ -42,8 +42,7 @@ import TDLibKit
     // MARK: Internal
 
     var customChat: CustomChat
-    
-    var focused = false
+
     var bottomAreaHeight = CGFloat.zero
     var actionStatus = ""
     var onlineStatus = ""
@@ -59,7 +58,6 @@ import TDLibKit
 
     @ObservationIgnored var loadingMessagesTask: Task<Void, Never>?
     // Scroll
-    let chatScrollNamespaceId = "chatScrollNamespaceId"
     @ObservationIgnored var scrollOnFocus = true
     var showScrollToBottomButton = false
     @ObservationIgnored var scrollViewProxy: ScrollViewProxy?
@@ -81,8 +79,6 @@ import TDLibKit
     @ObservationIgnored var savedVoiceNoteUrl = URL(filePath: "")
     @ObservationIgnored var audioRecorder: AVAudioRecorder?
     
-    var extraBottomPadding: CGFloat { bottomAreaHeight + (focused ? 0 : UIApplication.safeAreaInsets.bottom) + 5 }
-
     var canEditMessage: Bool {
         guard let editCustomMessage else { return false }
         switch editCustomMessage.message.content {
@@ -110,25 +106,16 @@ import TDLibKit
         return resultString
     }
     
-    func onPreferenceChange(_ value: CGRect) {
-        if Int(value.maxY) > Int(Utils.screen.bounds.height) {
-            scrollOnFocus = false
-            if !showScrollToBottomButton {
-                withAnimation {
-                    showScrollToBottomButton = true
-                }
-            }
-        } else {
-            scrollOnFocus = true
-            if showScrollToBottomButton {
-                withAnimation {
-                    showScrollToBottomButton = false
-                }
-            }
-        }
-        
-        guard Int(value.minY) > -500 else { return }
+    func loadMoreIfNeeded(for customMessage: CustomMessage) {
+        guard customMessage.id == messages.first?.id else { return }
         loadMessages()
+    }
+
+    func updateBottomVisibility(isLastMessageVisible: Bool) {
+        scrollOnFocus = isLastMessageVisible
+        let shouldShowButton = !isLastMessageVisible
+        guard showScrollToBottomButton != shouldShowButton else { return }
+        withAnimation { showScrollToBottomButton = shouldShowButton }
     }
     
     func getLastSeenTime(_ time: Int) -> String {
@@ -152,7 +139,7 @@ import TDLibKit
     }
     
     func scrollToLast() {
-        guard let lastId = messages.first?.id, let scrollViewProxy else { return }
+        guard let lastId = messages.last?.id, let scrollViewProxy else { return }
         withAnimation { scrollViewProxy.scrollTo(lastId, anchor: .bottom) }
     }
     
@@ -190,7 +177,7 @@ import TDLibKit
     func _loadMessages() async {
         guard let chatHistory = try? await td.getChatHistory(
             chatId: customChat.chat.id,
-            fromMessageId: messages.last?.message.id ?? 0,
+            fromMessageId: messages.first?.message.id ?? 0,
             limit: 30,
             offset: 0,
             onlyLocal: false,
@@ -218,8 +205,8 @@ import TDLibKit
         }
         
         await main { [savedMessages] in
-            self.messages.append(contentsOf: savedMessages)
-            
+            self.messages.insert(contentsOf: savedMessages.reversed(), at: 0)
+
             Task.main(delay: 0.5) {
                 self.loadingMessagesTask = nil
             }

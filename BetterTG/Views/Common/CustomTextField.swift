@@ -191,6 +191,7 @@ struct CustomTextField: View {
     var body: some View {
         UITextViewWrapper(text: $text, calculatedHeight: $dynamicHeight, becomeFirstResponer: focus)
             .frame(height: dynamicHeight)
+            .accessibilityLabel(placeholder)
             .onChange(of: text) { _, newText in
                 showingPlaceholder = newText.characters.isEmpty
             }
@@ -200,6 +201,7 @@ struct CustomTextField: View {
                         .foregroundStyle(.gray)
                         .padding(.leading, 4)
                         .padding(.top, 8)
+                        .accessibilityHidden(true)
                 }
             }
     }

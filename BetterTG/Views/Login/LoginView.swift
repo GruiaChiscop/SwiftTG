@@ -39,6 +39,10 @@ struct LoginView: View {
                             Button(selectedCountryNum.name) {
                                 showSelectCountryView.toggle()
                             }
+                            .accessibilityLabel(
+                                "Country: \(selectedCountryNum.name), +\(selectedCountryNum.phoneNumberPrefix)",
+                            )
+                            .accessibilityHint("Opens country picker")
                         }
                     }
                     .sheet(isPresented: $showSelectCountryView) {
@@ -79,6 +83,14 @@ struct LoginView: View {
             )
         }
         .animation(.default, value: loginState)
+        #if DEBUG
+        .safeAreaInset(edge: .top) {
+            Button("Load Mock Data") {
+                MockData.install()
+            }
+            .padding()
+        }
+        #endif
         .safeAreaInset(edge: .bottom) {
             Button {
                 withAnimation {
@@ -114,10 +126,10 @@ struct LoginView: View {
             .padding()
         }
         .alert("Error", isPresented: $errorShown) {
-            Text("There was an error with Authorization State. Please, restart the app.")
+            Text("There was an error with Authorization State. Please restart the app.")
         }
         .alert("Error", isPresented: $waitPremiumErrorShown) {
-            Text("In order to login, you need to upgrade to Telegram Premium. Please, do it in the Telegram app.")
+            Text("In order to login, you need to upgrade to Telegram Premium. Please do it in the Telegram app.")
         }
         .task {
             switch try? await td.getAuthorizationState() {
@@ -130,9 +142,10 @@ struct LoginView: View {
             default: break
             }
         }
+        .task { await loadCurrentCountry() }
         .onAppear(perform: setPublishers)
     }
-    
+
     func loginStateView(_ content: () -> some View) -> some View {
         VStack(spacing: 10) {
             Spacer()
@@ -148,7 +161,20 @@ struct LoginView: View {
     // MARK: Private
 
     @State private var cancellables = Set<AnyCancellable>()
-    
+
+    private func loadCurrentCountry() async {
+        guard let countries = try? await td.getCountries().countries,
+              let countryCode = try? await td.getCountryCode().text,
+              let country = countries.first(where: { $0.countryCode == countryCode })
+        else { return }
+
+        selectedCountryNum = PhoneNumberInfo(
+            country: country.countryCode,
+            phoneNumberPrefix: country.callingCodes[0],
+            name: country.englishName,
+        )
+    }
+
     private func setPublishers() {
         nc.publisher(&cancellables, for: .authorizationStateWaitPassword) { notification in
             guard let waitPassword = notification.object as? AuthorizationStateWaitPassword else { return }

@@ -30,7 +30,7 @@ struct MessageVoiceNoteView: View {
                     Image(systemName: "gobackward.5")
                 }
                 .disabled(!isCurrentVoiceActive)
-                
+
                 Button {
                     guard let voiceLocalPath else { return }
                     media.toggle(with: voiceLocalPath, duration: voiceNote.duration)
@@ -52,7 +52,8 @@ struct MessageVoiceNoteView: View {
                             .foregroundStyle(Color.gray6)
                         }
                 }
-                
+                .accessibilityValue(formattedDuration(from: voiceNote.duration))
+
                 Button {
                     media.seekForward()
                 } label: {

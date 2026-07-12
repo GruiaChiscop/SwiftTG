@@ -120,7 +120,7 @@ extension ChatVM {
             if message.mediaAlbumId == 0 {
                 await main {
                     withAnimation {
-                        self.messages.add(customMessage)
+                        self.messages.append(customMessage)
                     }
                 }
             } else {
@@ -135,7 +135,7 @@ extension ChatVM {
                 } else {
                     await main {
                         withAnimation {
-                            self.messages.add(customMessage)
+                            self.messages.append(customMessage)
                         }
                     }
                 }

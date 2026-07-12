@@ -67,9 +67,10 @@ private struct ChatViewAlbumRootView: View {
             Button(systemImage: "xmark.circle.fill") {
                 dismiss()
             }
-            
+            .accessibilityLabel("Close")
+
             Spacer()
-            
+
             if let albumMessage = album.first(where: { $0.id == selection }),
                case .messagePhoto(let messagePhoto) = albumMessage.content,
                let size = messagePhoto.photo.sizes.getSize(.yBox),
@@ -79,6 +80,7 @@ private struct ChatViewAlbumRootView: View {
                 Button(systemImage: "square.and.arrow.up.circle.fill") {
                     showShareSheet([URL(filePath: path)])
                 }
+                .accessibilityLabel("Share")
             }
         }
         .font(.title)

@@ -56,8 +56,46 @@ struct ReplyMessageView: View {
                 onTap()
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            withAnimation {
+                onTap()
+            }
+        }
     }
-    
+
+    var accessibilityDescription: String {
+        switch type {
+        case .edit:
+            "Editing message: \(plainText(from: customMessage.message))"
+        case .reply:
+            "Replying to \(customMessage.senderUser?.firstName ?? "message"): \(plainText(from: customMessage.message))"
+        case .replied:
+            if let replyUser = customMessage.replyUser, let replyToMessage = customMessage.replyToMessage {
+                "Reply to \(replyUser.firstName): \(plainText(from: replyToMessage))"
+            } else {
+                "Reply"
+            }
+        }
+    }
+
+    func plainText(from message: Message) -> String {
+        switch message.content {
+        case .messageText(let messageText):
+            messageText.text.text
+        case .messagePhoto(let messagePhoto):
+            messagePhoto.caption.text.isEmpty ? "Photo" : messagePhoto.caption.text
+        case .messageVoiceNote(let messageVoiceNote):
+            messageVoiceNote.caption.text.isEmpty ? "Voice message" : "Voice message: \(messageVoiceNote.caption.text)"
+        case .messageUnsupported:
+            "Unsupported message"
+        default:
+            "Message"
+        }
+    }
+
     @ViewBuilder func inlineMessageContent(for message: Message) -> some View {
         switch message.content {
         case .messagePhoto(let messagePhoto):

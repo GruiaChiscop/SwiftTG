@@ -11,6 +11,19 @@ enum ContextMenuAction {
 }
 
 extension [ContextMenuAction] {
+    func flattened() -> [(title: String, action: () -> Void)] {
+        flatMap { action -> [(title: String, action: () -> Void)] in
+            switch action {
+            case .divider:
+                []
+            case .button(let title, _, _, let handler):
+                [(title, handler)]
+            case .menu(_, _, let children):
+                children.flattened()
+            }
+        }
+    }
+
     func uiMenu(title: String = "", systemImage: String? = nil) -> UIMenu {
         var elements = [UIMenuElement]()
         for action in self {

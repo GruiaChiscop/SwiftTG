@@ -22,6 +22,17 @@ extension MessageView {
                 }
             }
         })
+        actions.append(.button(title: "React", systemImage: "heart") {
+            Task.background {
+                try? await td.addMessageReaction(
+                    chatId: chatVM.customChat.chat.id,
+                    isBig: false,
+                    messageId: customMessage.message.id,
+                    reactionType: .reactionTypeEmoji(.init(emoji: "❤")),
+                    updateRecentReactions: true,
+                )
+            }
+        })
         if customMessage.properties.canBeEdited {
             actions.append(.button(title: "Edit", systemImage: "square.and.pencil") {
                 if chatVM.editCustomMessage != nil {

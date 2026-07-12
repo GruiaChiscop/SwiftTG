@@ -9,7 +9,15 @@ struct ChatView: View {
     // MARK: Lifecycle
 
     init(customChat: CustomChat) {
-        self._chatVM = State(wrappedValue: ChatVM(customChat: customChat))
+        let chatVM = ChatVM(customChat: customChat)
+        #if DEBUG
+        if MockData.isEnabled, let user = customChat.user {
+            let messages = MockData.makeMessages(chatId: customChat.chat.id, otherUser: user)
+            chatVM.messages = messages
+            customChat.lastMessage = messages.last?.message
+        }
+        #endif
+        self._chatVM = State(wrappedValue: chatVM)
     }
     
     // MARK: Internal
@@ -22,23 +30,25 @@ struct ChatView: View {
     @State var chatVM: ChatVM
     
     var body: some View {
-        ScrollViewReader { scrollViewProxy in
-            bodyView.onAppear { chatVM.scrollViewProxy = scrollViewProxy }
-        }
-        .ignoresSafeArea(.container)
-        .overlay {
-            if chatVM.customChat.lastMessage == nil {
-                Text("No messages")
-                    .frame(maxHeight: .infinity)
-                    .background(.black)
+        VStack(spacing: 0) {
+            ScrollViewReader { scrollViewProxy in
+                bodyView.onAppear { chatVM.scrollViewProxy = scrollViewProxy }
             }
-        }
-        .safeAreaInset(edge: .bottom) {
+            .overlay {
+                if chatVM.customChat.lastMessage == nil {
+                    Text("No messages")
+                        .frame(maxHeight: .infinity)
+                        .background(.black)
+                }
+            }
+
             if !isPreview, chatVM.customChat.canPostMessages {
                 ChatBottomArea(focused: $focused)
                     .readSize { chatVM.bottomAreaHeight = $0.height }
             }
         }
+        .background(.black)
+        .ignoresSafeArea(.container, edges: .top)
         .dropDestination(for: SelectedImage.self) { items, _ in
             nc.post(name: .localOnSelectedImagesDrop, object: Array(items.prefix(10)))
             return true
@@ -50,84 +60,90 @@ struct ChatView: View {
             ToolbarItem(placement: .topBarTrailing) { topBarTrailing }
         }
         .environment(chatVM)
-        .onChange(of: focused) { chatVM.focused = focused }
     }
     
     var bodyView: some View {
-        ScrollView {
-            LazyVStack(spacing: 5) {
-                ForEach(chatVM.messages) { customMessage in
-                    HStack(alignment: .bottom, spacing: 0) {
-                        if customMessage.message.isOutgoing { Spacer(minLength: 0) } else {
-                            if let user = customMessage.senderUser,
-                               chatVM.customChat.shouldShowProfileImage,
-                               let index = chatVM.messages.firstIndex(of: customMessage)
-                            {
-                                if chatVM.messages[safe: index - 1]?.senderUser?.id != user.id {
-                                    ProfileImageView(
-                                        photo: user.profilePhoto?.big,
-                                        minithumbnail: user.profilePhoto?.minithumbnail,
-                                        title: user.firstName,
-                                        userId: user.id,
-                                    )
-                                    .frame(width: 32, height: 32)
-                                } else {
-                                    Spacer()
-                                        .frame(width: 32, height: 32)
-                                }
+        List {
+            ForEach(Array(chatVM.messages.enumerated()), id: \.element.id) { index, customMessage in
+                HStack(alignment: .bottom, spacing: 0) {
+                    if customMessage.message.isOutgoing { Spacer(minLength: 0) } else {
+                        if let user = customMessage.senderUser,
+                           chatVM.customChat.shouldShowProfileImage
+                        {
+                            if chatVM.messages[safe: index + 1]?.senderUser?.id != user.id {
+                                ProfileImageView(
+                                    photo: user.profilePhoto?.big,
+                                    minithumbnail: user.profilePhoto?.minithumbnail,
+                                    title: user.firstName,
+                                    userId: user.id,
+                                )
+                                .frame(width: 32, height: 32)
+                            } else {
                                 Spacer()
-                                    .frame(width: 5)
+                                    .frame(width: 32, height: 32)
                             }
+                            Spacer()
+                                .frame(width: 5)
                         }
-                        
-                        MessageView(customMessage: customMessage)
-                            .frame(
-                                maxWidth: Utils.maxMessageContentWidth,
-                                alignment: customMessage.message.isOutgoing ? .trailing : .leading,
-                            )
-                            .onScrollVisibilityChange { visible in
-                                guard !isPreview, visible else { return }
-                                chatVM.viewMessage(id: customMessage.message.id)
-                            }
-                        
-                        if !customMessage.message.isOutgoing { Spacer(minLength: 0) }
                     }
-                    .padding(customMessage.message.isOutgoing ? .trailing : .leading, 16)
-                    .transition(
-                        .asymmetric(
-                            insertion: .move(edge: .top),
-                            removal: .move(edge: customMessage.message.isOutgoing ? .trailing : .leading),
+
+                    MessageView(customMessage: customMessage)
+                        .frame(
+                            maxWidth: Utils.maxMessageContentWidth,
+                            alignment: customMessage.message.isOutgoing ? .trailing : .leading,
                         )
-                        .combined(with: .opacity),
+                        .onScrollVisibilityChange { visible in
+                            guard !isPreview, visible else { return }
+                            chatVM.viewMessage(id: customMessage.message.id)
+                        }
+
+                    if !customMessage.message.isOutgoing { Spacer(minLength: 0) }
+                }
+                .padding(customMessage.message.isOutgoing ? .trailing : .leading, 16)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .bottom),
+                        removal: .move(edge: customMessage.message.isOutgoing ? .trailing : .leading),
                     )
-                    .flipped()
+                    .combined(with: .opacity),
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .onAppear { chatVM.loadMoreIfNeeded(for: customMessage) }
+                .onScrollVisibilityChange { visible in
+                    guard index == chatVM.messages.count - 1 else { return }
+                    chatVM.updateBottomVisibility(isLastMessageVisible: visible)
                 }
             }
-            .padding(.top, chatVM.extraBottomPadding)
-            .readOffset(in: .named(chatVM.chatScrollNamespaceId), onChange: chatVM.onPreferenceChange)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .listRowSpacing(5)
+        .defaultScrollAnchor(.bottom)
         .background(.black)
-        .flipped()
-        .coordinateSpace(name: chatVM.chatScrollNamespaceId)
         .scrollDismissesKeyboard(.interactively)
         .scrollBounceBehavior(.always)
         .scrollIndicators(.hidden)
         .scrollEdgeEffectHidden(true, for: .all)
         .onTapGesture { focused = false }
-        .animation(.default, value: chatVM.extraBottomPadding)
         .overlay(alignment: .bottomTrailing) {
             if chatVM.showScrollToBottomButton {
                 scrollToBottomButton
-                    .padding(.bottom, chatVM.extraBottomPadding)
+                    .padding(.bottom, 8)
             }
         }
         .overlay(alignment: .top) {
             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: topGradientHeight)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         .overlay(alignment: .bottom) {
             LinearGradient(colors: [.black, .clear], startPoint: .bottom, endPoint: .top)
-                .frame(height: bottomGradientHeight)
+                .frame(height: 24)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
     
@@ -159,6 +175,14 @@ struct ChatView: View {
             .transition(.move(edge: .bottom).combined(with: .scale).combined(with: .opacity))
             .padding(.trailing)
             .onTapGesture(perform: chatVM.scrollToLast)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                chatVM.customChat.unreadCount != 0
+                    ? "Scroll to Bottom, \(chatVM.customChat.unreadCount) unread"
+                    : "Scroll to Bottom",
+            )
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { chatVM.scrollToLast() }
     }
     
     // MARK: Private
@@ -167,10 +191,6 @@ struct ChatView: View {
 
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
-    }
-
-    private var bottomGradientHeight: CGFloat {
-        UIApplication.safeAreaInsets.bottom + chatVM.bottomAreaHeight
     }
 
     private var principal: some View {
@@ -198,6 +218,13 @@ struct ChatView: View {
         .padding(.horizontal, 12)
         .frame(height: 44)
         .glassEffect(.regular.interactive())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(principalAccessibilityLabel)
+    }
+
+    private var principalAccessibilityLabel: String {
+        let status = !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
+        return status.isEmpty ? chatVM.customChat.chat.title : "\(chatVM.customChat.chat.title), \(status)"
     }
     
     @ViewBuilder private var topBarTrailing: some View {

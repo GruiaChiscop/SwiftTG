@@ -29,7 +29,6 @@ enum Route: Hashable {
     var folders = [CustomFolder]()
     var archive: CustomFolder?
     var currentFolder: Int?
-    var scrollPosition = ScrollPosition(x: 0)
     var query = ""
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
     
@@ -51,11 +50,6 @@ enum Route: Hashable {
         if let archive { chats.append(contentsOf: archive.chats) }
         if let mainFolder { chats.append(contentsOf: mainFolder.chats) }
         return chats
-    }
-    
-    func scrollToTop(folderID: Int) {
-        guard let scrollViewProxy = folders.first(where: { $0.id == folderID })?.scrollViewProxy else { return }
-        scrollViewProxy.scrollTo("top", anchor: .top)
     }
     
     func getCustomChat(from id: Int64, for chatList: ChatList) async -> CustomChat? {
