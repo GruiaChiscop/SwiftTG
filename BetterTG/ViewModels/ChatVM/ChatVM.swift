@@ -333,34 +333,37 @@ import TDLibKit
     }
     
     func getCustomMessage(from message: Message) async -> CustomMessage {
-        let replyToMessage = await getReplyToMessage(message.replyTo)
-        let customMessage = await CustomMessage(
-            message: message,
-            replyToMessage: replyToMessage,
-            forwardedFrom: getForwardedFrom(message.forwardInfo?.origin),
-            properties: (try? service.getMessageProperties(
-                chatId: customChat.chat.id, messageId: message.id,
-            )) ?? .default,
+        async let replyToMessageTask = getReplyToMessage(message.replyTo)
+        async let forwardedFromTask = getForwardedFrom(message.forwardInfo?.origin)
+        async let propertiesTask = service.getMessageProperties(
+            chatId: customChat.chat.id, messageId: message.id,
         )
-        if let reactions = try? await service.getMessageAvailableReactions(
+        async let reactionsTask = service.getMessageAvailableReactions(
             chatId: customChat.chat.id,
             messageId: message.id,
             rowSize: 8,
-        ) {
+        )
+        async let senderUserTask = resolvedSenderUser(for: message.senderId)
+
+        let replyToMessage = await replyToMessageTask
+        let customMessage = await CustomMessage(
+            message: message,
+            replyToMessage: replyToMessage,
+            forwardedFrom: forwardedFromTask,
+            properties: (try? propertiesTask) ?? .default,
+        )
+        customMessage.senderUser = await senderUserTask
+        if let reactions = try? await reactionsTask {
             customMessage.canReact = reactions.unavailabilityReason == nil
                 && (reactions.topReactions + reactions.recentReactions + reactions.popularReactions).contains {
                     $0.type == .reactionTypeEmoji(.init(emoji: "❤"))
                 }
         }
-        
+
         if message.mediaAlbumId != 0 {
             customMessage.album.append(message)
         }
-        
-        if case .messageSenderUser(let messageSenderUser) = message.senderId {
-            customMessage.senderUser = try? await service.getUser(userId: messageSenderUser.userId)
-        }
-        
+
         if case .messageSenderUser(let messageSenderUser) = replyToMessage?.senderId {
             customMessage.replyUser = try? await service.getUser(userId: messageSenderUser.userId)
             customMessage.replySenderName = customMessage.replyUser.map(telegramUserDisplayName)
@@ -395,7 +398,12 @@ import TDLibKit
         
         return customMessage
     }
-    
+
+    func resolvedSenderUser(for senderId: MessageSender) async -> User? {
+        guard case .messageSenderUser(let sender) = senderId else { return nil }
+        return try? await service.getUser(userId: sender.userId)
+    }
+
     func getForwardedFrom(_ origin: MessageOrigin?) async -> String? {
         guard let origin else { return nil }
         return await TelegramMessageOrigin.displayName(service: service, origin: origin)
