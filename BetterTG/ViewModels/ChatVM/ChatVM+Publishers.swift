@@ -19,7 +19,9 @@ extension ChatVM {
     }
 
     @MainActor private func handle(_ snapshot: TelegramMessageSnapshot) {
-        if let appliedMessageSnapshotVersion, snapshot.version <= appliedMessageSnapshotVersion { return }
+        if let appliedMessageSnapshotVersion, snapshot.version <= appliedMessageSnapshotVersion {
+            return
+        }
         appliedMessageSnapshotVersion = snapshot.version
         latestMessageSnapshot = snapshot
         let completedRefreshes = refreshedMessagesAwaitingMerge.compactMap { messageId, message in
@@ -240,23 +242,24 @@ extension ChatVM {
         guard case .messageSenderUser(let sender) = update.senderId,
               sender.userId == customChat.chat.id
         else { return }
-        let status = switch update.action {
-        case .chatActionTyping: "typing..."
-        case .chatActionRecordingVideo: "recording video..."
-        case .chatActionUploadingVideo: "uploading video..."
-        case .chatActionRecordingVoiceNote: "recording voice note..."
-        case .chatActionUploadingVoiceNote: "uploading voice note..."
-        case .chatActionUploadingPhoto: "uploading photo..."
-        case .chatActionUploadingDocument: "uploading voice document..."
-        case .chatActionChoosingSticker: "choosing sticker..."
-        case .chatActionChoosingLocation: "choosing location..."
-        case .chatActionChoosingContact: "choosing contact..."
-        case .chatActionStartPlayingGame: "playing game..."
-        case .chatActionRecordingVideoNote: "recording video note..."
-        case .chatActionUploadingVideoNote: "uploading video note..."
-        case .chatActionWatchingAnimations(let watching): "watching animations...\(watching.emoji)"
-        case .chatActionCancel: ""
-        }
+        let status =
+            switch update.action {
+            case .chatActionTyping: "typing..."
+            case .chatActionRecordingVideo: "recording video..."
+            case .chatActionUploadingVideo: "uploading video..."
+            case .chatActionRecordingVoiceNote: "recording voice note..."
+            case .chatActionUploadingVoiceNote: "uploading voice note..."
+            case .chatActionUploadingPhoto: "uploading photo..."
+            case .chatActionUploadingDocument: "uploading voice document..."
+            case .chatActionChoosingSticker: "choosing sticker..."
+            case .chatActionChoosingLocation: "choosing location..."
+            case .chatActionChoosingContact: "choosing contact..."
+            case .chatActionStartPlayingGame: "playing game..."
+            case .chatActionRecordingVideoNote: "recording video note..."
+            case .chatActionUploadingVideoNote: "uploading video note..."
+            case .chatActionWatchingAnimations(let watching): "watching animations...\(watching.emoji)"
+            case .chatActionCancel: ""
+            }
         withAnimation { actionStatus = status }
     }
 }

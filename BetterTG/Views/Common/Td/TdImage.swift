@@ -3,6 +3,8 @@
 import SwiftUI
 import TDLibKit
 
+// MARK: - TdImage
+
 struct TdImage: View {
     let photo: Photo
     let size: PhotoSizeType
@@ -39,7 +41,11 @@ struct TdImage: View {
     }
 }
 
+// MARK: - TdVideoThumbnail
+
 struct TdVideoThumbnail: View {
+    // MARK: Internal
+
     let messageVideo: MessageVideo
     let contentMode: ContentMode
 
@@ -58,6 +64,8 @@ struct TdVideoThumbnail: View {
             placeholder
         }
     }
+
+    // MARK: Private
 
     private var placeholder: some View {
         Rectangle()

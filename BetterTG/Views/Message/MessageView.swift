@@ -4,6 +4,8 @@ import SwiftUI
 import TDLibKit
 
 struct MessageView: View {
+    // MARK: Internal
+
     let customMessage: CustomMessage
 
     @Environment(ChatVM.self) var chatVM
@@ -11,6 +13,39 @@ struct MessageView: View {
     @State var media = Media.shared
     @State var voiceNoteLocalPath: String?
     @State var showDeleteOptions = false
+
+    var accessibilityDescription: String {
+        var prefix = ""
+
+        if let forwardedFrom = customMessage.forwardedFrom {
+            prefix += "Forwarded from \(forwardedFrom). "
+        }
+        let sender = customMessage.message.isOutgoing ? "You" : (customMessage.senderUser?.firstName ?? "Unknown")
+        var parts = [String]()
+        if case .messageReplyToMessage = customMessage.message.replyTo {
+            parts.append("Replying to \(customMessage.replySenderName ?? "message")")
+        }
+        parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
+        if let editStatus = telegramMessageEditStatus(customMessage.message) {
+            parts.append(editStatus)
+        }
+        parts.append(telegramMessageDateDescription(customMessage.message.date))
+        if let status = telegramMessageDeliveryStatus(
+            customMessage.message,
+            lastReadOutboxMessageId: chatVM.customChat.lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        if let voiceNote = customMessage.messageVoiceNote {
+            let elapsed = media.savedMediaPath == voiceNoteLocalPath ? Int(media.currentTime) : 0
+            parts.append(telegramVoicePlaybackDescription(duration: voiceNote.voiceNote.duration, elapsed: elapsed))
+        }
+        if let quotedMessageExcerpt {
+            parts.append("Quoted message: \(quotedMessageExcerpt)")
+        }
+
+        return prefix + parts.joined(separator: ", ")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -63,13 +98,13 @@ struct MessageView: View {
                 }
                 Text(chatVM.dateFormatter.string(from: customMessage.date))
             }
-                .font(.system(size: 12))
-                .foregroundStyle(.white)
-                .padding(3)
-                .background(Color.gray6)
-                .clipShape(.rect(cornerRadius: 10))
-                .padding(5)
-                .opacity(0.5)
+            .font(.system(size: 12))
+            .foregroundStyle(.white)
+            .padding(3)
+            .background(Color.gray6)
+            .clipShape(.rect(cornerRadius: 10))
+            .padding(5)
+            .opacity(0.5)
         }
         .customContextMenu(cornerRadius: 20, contextMenuActions)
         .sheet(item: $shownAlbum) { album in
@@ -152,50 +187,33 @@ struct MessageView: View {
         }
     }
 
-    private var mediaAccessibilityActionName: String {
-        let containsPhoto = customMessage.messagePhoto != nil
-            || customMessage.album.contains { if case .messagePhoto = $0.content { true } else { false } }
-        let containsVideo = customMessage.messageVideo != nil
-            || customMessage.album.contains { if case .messageVideo = $0.content { true } else { false } }
-        if containsPhoto, containsVideo { return "Open Media" }
-        return containsVideo ? "Play Video" : "Open Photo"
-    }
-
-    var accessibilityDescription: String {
-        var prefix = ""
-
-        if let forwardedFrom = customMessage.forwardedFrom {
-            prefix += "Forwarded from \(forwardedFrom). "
-        }
-        let sender = customMessage.message.isOutgoing ? "You" : (customMessage.senderUser?.firstName ?? "Unknown")
-        var parts = [String]()
-        if case .messageReplyToMessage = customMessage.message.replyTo {
-            parts.append("Replying to \(customMessage.replySenderName ?? "message")")
-        }
-        parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
-        if let editStatus = telegramMessageEditStatus(customMessage.message) {
-            parts.append(editStatus)
-        }
-        parts.append(telegramMessageDateDescription(customMessage.message.date))
-        if let status = telegramMessageDeliveryStatus(
-            customMessage.message,
-            lastReadOutboxMessageId: chatVM.customChat.lastReadOutboxMessageId,
-        ) {
-            parts.append(status)
-        }
-        if let voiceNote = customMessage.messageVoiceNote {
-            let elapsed = media.savedMediaPath == voiceNoteLocalPath ? Int(media.currentTime) : 0
-            parts.append(telegramVoicePlaybackDescription(duration: voiceNote.voiceNote.duration, elapsed: elapsed))
-        }
-        if let quotedMessageExcerpt {
-            parts.append("Quoted message: \(quotedMessageExcerpt)")
-        }
-
-        return prefix + parts.joined(separator: ", ")
-    }
-
     func plainText(from message: Message) -> String {
         telegramMessageContentDescription(message)
+    }
+
+    // MARK: Private
+
+    private var mediaAccessibilityActionName: String {
+        let containsPhoto = customMessage.messagePhoto != nil
+            || customMessage.album.contains {
+                if case .messagePhoto = $0.content {
+                    true
+                } else {
+                    false
+                }
+            }
+        let containsVideo = customMessage.messageVideo != nil
+            || customMessage.album.contains {
+                if case .messageVideo = $0.content {
+                    true
+                } else {
+                    false
+                }
+            }
+        if containsPhoto, containsVideo {
+            return "Open Media"
+        }
+        return containsVideo ? "Play Video" : "Open Photo"
     }
 
     private var quotedMessageExcerpt: String? {
@@ -214,7 +232,9 @@ struct MessageView: View {
 
     private var canNavigateToForwardOrigin: Bool {
         guard let origin = customMessage.message.forwardInfo?.origin else { return false }
-        if case .messageOriginHiddenUser = origin { return false }
+        if case .messageOriginHiddenUser = origin {
+            return false
+        }
         return true
     }
 

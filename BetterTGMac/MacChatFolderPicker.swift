@@ -1,3 +1,5 @@
+// MacChatFolderPicker.swift
+
 import SwiftUI
 
 struct MacChatFolderPicker: View {

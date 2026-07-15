@@ -3,15 +3,17 @@
 import SwiftUI
 
 struct LoginView: View {
+    // MARK: Lifecycle
+
     init(service: any TelegramService = TDLib.shared.service) {
         _model = State(initialValue: LoginViewModel(service: service))
     }
 
     // MARK: Internal
 
-    @State var showSelectCountryView = false
     @FocusState var focused: LoginState?
-    
+    @State var showSelectCountryView = false
+
     var body: some View {
         ZStack {
             Group {
@@ -84,34 +86,36 @@ struct LoginView: View {
         }
         #endif
         .safeAreaInset(edge: .bottom) {
-            Button {
-                if model.loginState == .phoneNumber { focused = nil }
-                model.continueLogin()
-            } label: {
-                Text("Continue")
-                    .padding(.vertical, 5)
-                    .frame(maxWidth: .infinity)
+                Button {
+                    if model.loginState == .phoneNumber {
+                        focused = nil
+                    }
+                    model.continueLogin()
+                } label: {
+                    Text("Continue")
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding()
             }
-            .buttonStyle(.borderedProminent)
-            .padding()
-        }
-        .alert("Error", isPresented: $model.errorShown) {
-            Text("There was an error with Authorization State. Please restart the app.")
-        }
-        .alert("Error", isPresented: $model.waitPremiumErrorShown) {
-            Text("In order to login, you need to upgrade to Telegram Premium. Please do it in the Telegram app.")
-        }
-        .alert(model.formattedPhoneNumber, isPresented: $model.showPhoneConfirmation) {
-            Button("Edit", role: .cancel) {
-                focused = .phoneNumber
+            .alert("Error", isPresented: $model.errorShown) {
+                Text("There was an error with Authorization State. Please restart the app.")
             }
-            Button("Yes") {
-                model.submitPhoneNumber()
+            .alert("Error", isPresented: $model.waitPremiumErrorShown) {
+                Text("In order to login, you need to upgrade to Telegram Premium. Please do it in the Telegram app.")
             }
-        } message: {
-            Text("Is this the correct number?")
-        }
-        .task { await model.start() }
+            .alert(model.formattedPhoneNumber, isPresented: $model.showPhoneConfirmation) {
+                Button("Edit", role: .cancel) {
+                    focused = .phoneNumber
+                }
+                Button("Yes") {
+                    model.submitPhoneNumber()
+                }
+            } message: {
+                Text("Is this the correct number?")
+            }
+            .task { await model.start() }
     }
 
     func loginStateView(_ content: () -> some View) -> some View {

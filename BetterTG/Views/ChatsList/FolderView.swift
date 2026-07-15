@@ -110,7 +110,11 @@ struct FolderView: View {
             "Mute \(chatToMute?.chat.title ?? "chat")",
             isPresented: Binding(
                 get: { chatToMute != nil },
-                set: { if !$0 { chatToMute = nil } },
+                set: {
+                    if !$0 {
+                        chatToMute = nil
+                    }
+                },
             ),
         ) {
             Button("Mute for 1 hour") { muteSelectedChat(for: 60 * 60) }
@@ -120,6 +124,47 @@ struct FolderView: View {
             Button("Cancel", role: .cancel) { chatToMute = nil }
         }
     }
+
+    @ViewBuilder func contextMenu(for customChat: CustomChat) -> some View {
+        let isPinned = customChat.position.isPinned
+        let hasUnreadMessages = customChat.hasUnreadMessages
+        Button(
+            hasUnreadMessages ? "Mark as Read" : "Mark as Unread",
+            systemImage: hasUnreadMessages
+                ? "envelope.open"
+                : "envelope.badge",
+        ) {
+            rootVM.toggleRead(for: customChat)
+        }
+
+        Button(
+            customChat.isMuted ? "Unmute" : "Mute",
+            systemImage: customChat.isMuted ? "speaker.wave.2" : "speaker.slash",
+        ) {
+            toggleMuted(customChat)
+        }
+
+        Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash.fill" : "pin.fill") {
+            rootVM.togglePinned(for: customChat, in: folder.chatList)
+        }
+
+        Button(
+            folder.type == .archive ? "Unarchive" : "Archive",
+            systemImage: folder.type == .archive ? "tray.and.arrow.up" : "archivebox",
+        ) {
+            toggleArchived(customChat)
+        }
+
+        if customChat.chat.canBeDeletedOnlyForSelf || customChat.chat.canBeDeletedForAllUsers {
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                requestDelete(customChat)
+            }
+        }
+    }
+
+    // MARK: Private
+
+    private let navigationStorage = NavigationStorage.shared
 
     @ViewBuilder private var searchResults: some View {
         if !rootVM.searchChatResults.isEmpty {
@@ -192,45 +237,6 @@ struct FolderView: View {
         }
     }
     
-    @ViewBuilder func contextMenu(for customChat: CustomChat) -> some View {
-        let isPinned = customChat.position.isPinned
-        let hasUnreadMessages = customChat.hasUnreadMessages
-        Button(
-            hasUnreadMessages ? "Mark as Read" : "Mark as Unread",
-            systemImage: hasUnreadMessages
-                ? "envelope.open"
-                : "envelope.badge",
-        ) {
-            rootVM.toggleRead(for: customChat)
-        }
-
-        Button(
-            customChat.isMuted ? "Unmute" : "Mute",
-            systemImage: customChat.isMuted ? "speaker.wave.2" : "speaker.slash",
-        ) {
-            toggleMuted(customChat)
-        }
-
-        Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash.fill" : "pin.fill") {
-            rootVM.togglePinned(for: customChat, in: folder.chatList)
-        }
-
-        Button(
-            folder.type == .archive ? "Unarchive" : "Archive",
-            systemImage: folder.type == .archive ? "tray.and.arrow.up" : "archivebox",
-        ) {
-            toggleArchived(customChat)
-        }
-
-        if customChat.chat.canBeDeletedOnlyForSelf || customChat.chat.canBeDeletedForAllUsers {
-            Button("Delete", systemImage: "trash", role: .destructive) {
-                requestDelete(customChat)
-            }
-        }
-    }
-
-    // MARK: Private
-
     private func requestDelete(_ customChat: CustomChat) {
         rootVM.requestDelete(customChat)
     }
@@ -256,6 +262,4 @@ struct FolderView: View {
     private func setMuteDuration(_ duration: Int, for customChat: CustomChat) {
         rootVM.setMuteDuration(duration, for: customChat)
     }
-
-    private let navigationStorage = NavigationStorage.shared
 }

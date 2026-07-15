@@ -10,7 +10,7 @@ final class TDLib: @unchecked Sendable {
     // MARK: Lifecycle
 
     private init() {
-        session = TelegramSession()
+        self.session = TelegramSession()
     }
 
     // MARK: Internal

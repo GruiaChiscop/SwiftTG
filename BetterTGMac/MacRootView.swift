@@ -1,5 +1,9 @@
+// MacRootView.swift
+
 import SwiftUI
 import TDLibKit
+
+// MARK: - MacRootView
 
 struct MacRootView: View {
     @Bindable var model: MacSessionModel
@@ -13,9 +17,12 @@ struct MacRootView: View {
     }
 }
 
+// MARK: - MacAuthorizationView
+
 private struct MacAuthorizationView: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
-    @State private var confirmsPhoneNumber = false
 
     var body: some View {
         VStack(spacing: 18) {
@@ -46,7 +53,9 @@ private struct MacAuthorizationView: View {
                     Button("Sign In") { model.submitCode() }
                         .keyboardShortcut(.defaultAction)
                 case .authorizationStateWaitPassword(let details):
-                    Text(details.passwordHint.isEmpty ? "Enter your two-step verification password." : "Hint: \(details.passwordHint)")
+                    Text(details.passwordHint.isEmpty
+                        ? "Enter your two-step verification password."
+                        : "Hint: \(details.passwordHint)")
                     SecureField("Password", text: $model.password)
                         .onSubmit { model.submitPassword() }
                     Button("Sign In") { model.submitPassword() }
@@ -77,4 +86,8 @@ private struct MacAuthorizationView: View {
             Text("Telegram will send the login code to \(model.phoneNumber).")
         }
     }
+
+    // MARK: Private
+
+    @State private var confirmsPhoneNumber = false
 }

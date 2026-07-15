@@ -1,15 +1,16 @@
+// MacConversationView.swift
+
 import AppKit
 import SwiftUI
 
+// MARK: - MacConversationView
+
 struct MacConversationView: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
+
     let chat: ChatListItemState
-    @State private var selectedMessageId: Int64?
-    @State private var historyAnchorMessageId: Int64?
-    @State private var hasPositionedInitialMessages = false
-    @State private var isAtBottom = false
-    @AccessibilityFocusState private var voiceOverFocusedMessageId: Int64?
-    @FocusState private var messageListHasKeyboardFocus: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,6 +19,38 @@ struct MacConversationView: View {
             composer
         }
         .navigationTitle(chat.title)
+    }
+
+    // MARK: Private
+
+    @AccessibilityFocusState private var voiceOverFocusedMessageId: Int64?
+    @FocusState private var messageListHasKeyboardFocus: Bool
+    @State private var selectedMessageId: Int64?
+    @State private var historyAnchorMessageId: Int64?
+    @State private var hasPositionedInitialMessages = false
+    @State private var isAtBottom = false
+
+    private var shouldFollowLatestMessage: Bool {
+        switch model.messages.change {
+        case .newMessage(let update):
+            isAtBottom || update.message.isOutgoing
+        case .messageSendSucceeded:
+            true
+        default:
+            false
+        }
+    }
+
+    private var unreadBoundaryMessageId: Int64? {
+        guard model.openedUnreadCount > 0 else { return nil }
+        return model.messages.orderedMessageIds.first { messageId in
+            guard let message = model.messages.messages[messageId] else { return false }
+            return !message.isOutgoing && message.id > model.openedLastReadInboxMessageId
+        }
+    }
+
+    private var composerText: String {
+        model.editingMessage == nil ? model.messageText : model.editMessageText
     }
 
     private var messages: some View {
@@ -81,7 +114,7 @@ struct MacConversationView: View {
                         using: proxy,
                     )
                 } else if let targetMessageId = model.navigationTargetMessageId,
-                   model.messages.messages[targetMessageId] != nil
+                          model.messages.messages[targetMessageId] != nil
                 {
                     positionSearchResult(targetMessageId, using: proxy)
                 } else if let anchorMessageId = historyAnchorMessageId {
@@ -153,102 +186,6 @@ struct MacConversationView: View {
                         .accessibilityHidden(true)
                         .allowsHitTesting(false)
                 }
-            }
-        }
-    }
-
-    private var shouldFollowLatestMessage: Bool {
-        switch model.messages.change {
-        case .newMessage(let update):
-            isAtBottom || update.message.isOutgoing
-        case .messageSendSucceeded:
-            true
-        default:
-            false
-        }
-    }
-
-    private var unreadBoundaryMessageId: Int64? {
-        guard model.openedUnreadCount > 0 else { return nil }
-        return model.messages.orderedMessageIds.first { messageId in
-            guard let message = model.messages.messages[messageId] else { return false }
-            return !message.isOutgoing && message.id > model.openedLastReadInboxMessageId
-        }
-    }
-
-    private func startsNewDay(at index: Int) -> Bool {
-        let ids = model.messages.orderedMessageIds
-        guard ids.indices.contains(index), let message = model.messages.messages[ids[index]] else { return false }
-        guard index > ids.startIndex, let previous = model.messages.messages[ids[index - 1]] else { return true }
-        let date = Date(timeIntervalSince1970: TimeInterval(message.date))
-        let previousDate = Date(timeIntervalSince1970: TimeInterval(previous.date))
-        return !Calendar.autoupdatingCurrent.isDate(date, inSameDayAs: previousDate)
-    }
-
-    private func positionSearchResult(_ messageId: Int64, using proxy: ScrollViewProxy) {
-        proxy.scrollTo(messageId, anchor: .center)
-        selectedMessageId = messageId
-        voiceOverFocusedMessageId = messageId
-        messageListHasKeyboardFocus = true
-        model.navigationTargetMessageId = nil
-        hasPositionedInitialMessages = true
-    }
-
-    private func moveMessageFocus(_ direction: MoveCommandDirection, using proxy: ScrollViewProxy) {
-        let messageIds = model.messages.orderedMessageIds
-        guard !messageIds.isEmpty else { return }
-
-        let currentIndex = selectedMessageId.flatMap { messageIds.firstIndex(of: $0) }
-        let targetIndex: Int
-        switch direction {
-        case .up:
-            targetIndex = max(0, (currentIndex ?? messageIds.endIndex) - 1)
-        case .down:
-            targetIndex = min(messageIds.index(before: messageIds.endIndex), (currentIndex ?? messageIds.index(before: messageIds.endIndex)) + 1)
-        default:
-            return
-        }
-
-        let targetMessageId = messageIds[targetIndex]
-        selectedMessageId = targetMessageId
-        voiceOverFocusedMessageId = targetMessageId
-        proxy.scrollTo(targetMessageId)
-    }
-
-    private func positionAtBottom(_ messageId: Int64, using proxy: ScrollViewProxy) {
-        Task { @MainActor in
-            await Task.yield()
-            await Task.yield()
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                proxy.scrollTo(messageId, anchor: .bottom)
-            }
-            hasPositionedInitialMessages = true
-            isAtBottom = true
-        }
-    }
-
-    private func positionAtLatestHistory(_ messageId: Int64, using proxy: ScrollViewProxy) {
-        withAnimation {
-            proxy.scrollTo(messageId, anchor: .bottom)
-        }
-        selectedMessageId = messageId
-        voiceOverFocusedMessageId = messageId
-        messageListHasKeyboardFocus = true
-        isAtBottom = true
-        model.latestHistoryTargetMessageId = nil
-    }
-
-    private func loadOlderMessages() {
-        guard historyAnchorMessageId == nil,
-              let anchorMessageId = model.messages.orderedMessageIds.first
-        else { return }
-
-        historyAnchorMessageId = anchorMessageId
-        Task {
-            if !(await model.loadOlderMessages()) {
-                historyAnchorMessageId = nil
             }
         }
     }
@@ -345,12 +282,12 @@ struct MacConversationView: View {
 
                     if model.editingMessage == nil {
                         TextField("Message", text: $model.messageText, axis: .vertical)
-                            .lineLimit(1 ... 6)
+                            .lineLimit(1...6)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { model.submitComposer() }
                     } else {
                         TextField("Edit message", text: $model.editMessageText, axis: .vertical)
-                            .lineLimit(1 ... 6)
+                            .lineLimit(1...6)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { model.submitComposer() }
                     }
@@ -385,10 +322,88 @@ struct MacConversationView: View {
         .padding(12)
     }
 
-    private var composerText: String {
-        model.editingMessage == nil ? model.messageText : model.editMessageText
+    private func startsNewDay(at index: Int) -> Bool {
+        let ids = model.messages.orderedMessageIds
+        guard ids.indices.contains(index), let message = model.messages.messages[ids[index]] else { return false }
+        guard index > ids.startIndex, let previous = model.messages.messages[ids[index - 1]] else { return true }
+        let date = Date(timeIntervalSince1970: TimeInterval(message.date))
+        let previousDate = Date(timeIntervalSince1970: TimeInterval(previous.date))
+        return !Calendar.autoupdatingCurrent.isDate(date, inSameDayAs: previousDate)
+    }
+
+    private func positionSearchResult(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        proxy.scrollTo(messageId, anchor: .center)
+        selectedMessageId = messageId
+        voiceOverFocusedMessageId = messageId
+        messageListHasKeyboardFocus = true
+        model.navigationTargetMessageId = nil
+        hasPositionedInitialMessages = true
+    }
+
+    private func moveMessageFocus(_ direction: MoveCommandDirection, using proxy: ScrollViewProxy) {
+        let messageIds = model.messages.orderedMessageIds
+        guard !messageIds.isEmpty else { return }
+
+        let currentIndex = selectedMessageId.flatMap { messageIds.firstIndex(of: $0) }
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = max(0, (currentIndex ?? messageIds.endIndex) - 1)
+        case .down:
+            targetIndex = min(
+                messageIds.index(before: messageIds.endIndex),
+                (currentIndex ?? messageIds.index(before: messageIds.endIndex)) + 1,
+            )
+        default:
+            return
+        }
+
+        let targetMessageId = messageIds[targetIndex]
+        selectedMessageId = targetMessageId
+        voiceOverFocusedMessageId = targetMessageId
+        proxy.scrollTo(targetMessageId)
+    }
+
+    private func positionAtBottom(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            await Task.yield()
+            await Task.yield()
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                proxy.scrollTo(messageId, anchor: .bottom)
+            }
+            hasPositionedInitialMessages = true
+            isAtBottom = true
+        }
+    }
+
+    private func positionAtLatestHistory(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        withAnimation {
+            proxy.scrollTo(messageId, anchor: .bottom)
+        }
+        selectedMessageId = messageId
+        voiceOverFocusedMessageId = messageId
+        messageListHasKeyboardFocus = true
+        isAtBottom = true
+        model.latestHistoryTargetMessageId = nil
+    }
+
+    private func loadOlderMessages() {
+        guard historyAnchorMessageId == nil,
+              let anchorMessageId = model.messages.orderedMessageIds.first
+        else { return }
+
+        historyAnchorMessageId = anchorMessageId
+        Task {
+            if await !(model.loadOlderMessages()) {
+                historyAnchorMessageId = nil
+            }
+        }
     }
 }
+
+// MARK: - MacMessageDayHeader
 
 private struct MacMessageDayHeader: View {
     let title: String
@@ -410,12 +425,12 @@ private struct MacMessageDayHeader: View {
     }
 }
 
-private struct MacUnreadMessagesHeader: View {
-    let count: Int
+// MARK: - MacUnreadMessagesHeader
 
-    private var title: String {
-        "\(count) unread \(count == 1 ? "message" : "messages")"
-    }
+private struct MacUnreadMessagesHeader: View {
+    // MARK: Internal
+
+    let count: Int
 
     var body: some View {
         HStack(spacing: 10) {
@@ -429,5 +444,11 @@ private struct MacUnreadMessagesHeader: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    // MARK: Private
+
+    private var title: String {
+        "\(count) unread \(count == 1 ? "message" : "messages")"
     }
 }

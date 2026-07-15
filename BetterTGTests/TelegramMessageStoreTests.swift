@@ -55,8 +55,8 @@ struct TelegramMessageStoreTests {
         let store = TelegramMessageStore()
         let chatId: Int64 = 25
         let disconnected = TDLibFixtures.message(id: 1, chatId: chatId, date: 100)
-        let latest = TDLibFixtures.message(id: 10, chatId: chatId, date: 1_000)
-        let live = TDLibFixtures.message(id: 11, chatId: chatId, date: 1_100)
+        let latest = TDLibFixtures.message(id: 10, chatId: chatId, date: 1000)
+        let live = TDLibFixtures.message(id: 11, chatId: chatId, date: 1100)
 
         let snapshot = try waitForSnapshot(store: store, chatId: chatId, matching: {
             $0.version >= 3 && $0.messages[latest.id] != nil

@@ -1,10 +1,13 @@
+// BetterTGMacApp.swift
+
 import AppKit
 import SwiftUI
 import UserNotifications
 
+// MARK: - BetterTGMacApp
+
 @main struct BetterTGMacApp: App {
-    @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
-    @State private var model = MacSessionModel()
+    // MARK: Internal
 
     var body: some Scene {
         Window("BetterTG", id: "main") {
@@ -16,7 +19,7 @@ import UserNotifications
                     model.start()
                 }
         }
-        .defaultSize(width: 1_100, height: 760)
+        .defaultSize(width: 1100, height: 760)
         .commands {
             CommandGroup(replacing: .appTermination) {
                 Button("Quit BetterTG") {
@@ -30,9 +33,19 @@ import UserNotifications
             MacMenuBarView(model: model, appDelegate: appDelegate)
         }
     }
+
+    // MARK: Private
+
+    @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
+    @State private var model = MacSessionModel()
 }
 
-@MainActor final class MacAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
+// MARK: - MacAppDelegate
+
+@MainActor final class MacAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
+UNUserNotificationCenterDelegate {
+    // MARK: Internal
+
     weak var model: MacSessionModel?
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -122,14 +135,13 @@ import UserNotifications
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void,
     ) {
-        let chatId: Int64?
-        if let rawChatId = response.notification.request.content.userInfo["chatId"] as? String,
-           let parsedChatId = Int64(rawChatId)
-        {
-            chatId = parsedChatId
-        } else {
-            chatId = nil
-        }
+        let chatId: Int64? =
+            if let rawChatId = response.notification.request.content.userInfo["chatId"] as? String,
+            let parsedChatId = Int64(rawChatId) {
+                parsedChatId
+            } else {
+                nil
+            }
         completionHandler()
         Task { @MainActor [weak self] in
             self?.showMainWindow()
@@ -147,8 +159,12 @@ import UserNotifications
         completionHandler([.banner, .sound])
     }
 
+    // MARK: Private
+
     private var allowsImmediateTermination = false
 }
+
+// MARK: - MacWindowBridge
 
 private struct MacWindowBridge: NSViewRepresentable {
     let appDelegate: MacAppDelegate
@@ -165,9 +181,13 @@ private struct MacWindowBridge: NSViewRepresentable {
     }
 }
 
+// MARK: - MacMenuBarView
+
 private struct MacMenuBarView: View {
-    @Environment(\.openWindow) private var openWindow
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
+
     let appDelegate: MacAppDelegate
 
     var body: some View {
@@ -184,4 +204,8 @@ private struct MacMenuBarView: View {
             appDelegate.requestTermination()
         }
     }
+
+    // MARK: Private
+
+    @Environment(\.openWindow) private var openWindow
 }

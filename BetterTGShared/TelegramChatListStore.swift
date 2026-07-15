@@ -1,5 +1,9 @@
+// TelegramChatListStore.swift
+
 import Combine
 @preconcurrency import TDLibKit
+
+// MARK: - ChatListItemState
 
 struct ChatListItemState: Sendable, Equatable {
     let chatId: Int64
@@ -24,7 +28,11 @@ struct ChatListItemState: Sendable, Equatable {
     }
 }
 
+// MARK: - ChatListSnapshot
+
 struct ChatListSnapshot: Sendable, Equatable {
+    static let empty = ChatListSnapshot(version: 0, chatFolders: [], mainChatListPosition: 0, items: [:])
+
     var version: UInt64
     var chatFolders: [ChatFolderInfo]
     var mainChatListPosition: Int
@@ -39,13 +47,15 @@ struct ChatListSnapshot: Sendable, Equatable {
         }
         return positionedItems
             .sorted { $0.position.order > $1.position.order }
-            .map { $0.item.chatId }
+            .map(\.item.chatId)
     }
-
-    static let empty = ChatListSnapshot(version: 0, chatFolders: [], mainChatListPosition: 0, items: [:])
 }
 
+// MARK: - TelegramChatListStore
+
 final class TelegramChatListStore: @unchecked Sendable {
+    // MARK: Internal
+
     var publisher: AnyPublisher<ChatListSnapshot, Never> {
         subject.eraseToAnyPublisher()
     }
@@ -149,6 +159,8 @@ final class TelegramChatListStore: @unchecked Sendable {
         state.version += 1
         subject.send(state)
     }
+
+    // MARK: Private
 
     private let subject = CurrentValueSubject<ChatListSnapshot, Never>(.empty)
 }

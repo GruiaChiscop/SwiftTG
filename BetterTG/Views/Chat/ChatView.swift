@@ -5,6 +5,8 @@ import PhotosUI
 import SwiftUI
 import TDLibKit
 
+// MARK: - ChatView
+
 struct ChatView: View {
     // MARK: Lifecycle
 
@@ -22,12 +24,12 @@ struct ChatView: View {
     
     // MARK: Internal
 
+    @AccessibilityFocusState var accessibilityFocusedMessageId: Int64?
     @Environment(\.isPreview) var isPreview
     @Environment(\.dismiss) var dismiss
     
     @FocusState var focused
-    @AccessibilityFocusState var accessibilityFocusedMessageId: Int64?
-    
+
     @State var chatVM: ChatVM
     
     var body: some View {
@@ -76,7 +78,11 @@ struct ChatView: View {
             "Can't Open Destination",
             isPresented: Binding(
                 get: { chatVM.navigationError != nil },
-                set: { if !$0 { chatVM.navigationError = nil } },
+                set: {
+                    if !$0 {
+                        chatVM.navigationError = nil
+                    }
+                },
             ),
         ) {
             Button("OK") { chatVM.navigationError = nil }
@@ -104,7 +110,9 @@ struct ChatView: View {
                 }
 
                 HStack(alignment: .bottom, spacing: 0) {
-                    if customMessage.message.isOutgoing { Spacer(minLength: 0) } else {
+                    if customMessage.message.isOutgoing {
+                        Spacer(minLength: 0)
+                    } else {
                         if let user = customMessage.senderUser,
                            chatVM.customChat.shouldShowProfileImage
                         {
@@ -137,7 +145,9 @@ struct ChatView: View {
                             chatVM.viewMessage(id: customMessage.message.id)
                         }
 
-                    if !customMessage.message.isOutgoing { Spacer(minLength: 0) }
+                    if !customMessage.message.isOutgoing {
+                        Spacer(minLength: 0)
+                    }
                 }
                 .padding(customMessage.message.isOutgoing ? .trailing : .leading, 16)
                 .transition(
@@ -233,10 +243,62 @@ struct ChatView: View {
 
     private var unreadBoundaryMessageId: Int64? {
         guard chatVM.initialUnreadCount > 0 else { return nil }
-        return chatVM.messages.first { customMessage in
-            !customMessage.message.isOutgoing
-                && customMessage.id > chatVM.initialLastReadInboxMessageId
-        }?.id
+        return chatVM.messages
+            .first { customMessage in
+                !customMessage.message.isOutgoing
+                    && customMessage.id > chatVM.initialLastReadInboxMessageId
+            }?.id
+    }
+
+    private var topGradientHeight: CGFloat {
+        UIApplication.safeAreaInsets.top + navigationBarHeight
+    }
+
+    private var principalAccessibilityLabel: String {
+        let status = !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
+        return status.isEmpty ? chatVM.customChat.chat.title : "\(chatVM.customChat.chat.title), \(status)"
+    }
+    
+    private var principal: some View {
+        VStack(spacing: 0) {
+            Text(chatVM.customChat.chat.title)
+            
+            Group {
+                if !chatVM.actionStatus.isEmpty {
+                    Text(chatVM.actionStatus)
+                } else if !chatVM.onlineStatus.isEmpty {
+                    Text(chatVM.onlineStatus)
+                }
+            }
+            .transition(
+                .asymmetric(
+                    insertion: .move(edge: .top),
+                    removal: .move(edge: .bottom),
+                )
+                .combined(with: .opacity),
+            )
+            .font(.caption)
+            .foregroundStyle(!chatVM.actionStatus.isEmpty || chatVM.onlineStatus == "online" ? .blue : .gray)
+        }
+        .frame(minWidth: Utils.screen.bounds.width * 0.5)
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .glassEffect(.regular.interactive())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(principalAccessibilityLabel)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder private var topBarTrailing: some View {
+        let chat = chatVM.customChat.chat
+        ProfileImageView(
+            photo: chat.photo?.big,
+            minithumbnail: chat.photo?.minithumbnail,
+            title: chat.title,
+            userId: chat.id,
+        )
+        .frame(width: 32, height: 32)
+        .accessibilityHidden(true)
     }
 
     private func startsNewDay(at index: Int) -> Bool {
@@ -292,58 +354,9 @@ struct ChatView: View {
             }
         }
     }
-
-    private var topGradientHeight: CGFloat {
-        UIApplication.safeAreaInsets.top + navigationBarHeight
-    }
-
-    private var principal: some View {
-        VStack(spacing: 0) {
-            Text(chatVM.customChat.chat.title)
-            
-            Group {
-                if !chatVM.actionStatus.isEmpty {
-                    Text(chatVM.actionStatus)
-                } else if !chatVM.onlineStatus.isEmpty {
-                    Text(chatVM.onlineStatus)
-                }
-            }
-            .transition(
-                .asymmetric(
-                    insertion: .move(edge: .top),
-                    removal: .move(edge: .bottom),
-                )
-                .combined(with: .opacity),
-            )
-            .font(.caption)
-            .foregroundStyle(!chatVM.actionStatus.isEmpty || chatVM.onlineStatus == "online" ? .blue : .gray)
-        }
-        .frame(minWidth: Utils.screen.bounds.width * 0.5)
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .glassEffect(.regular.interactive())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(principalAccessibilityLabel)
-        .accessibilityAddTraits(.isHeader)
-    }
-
-    private var principalAccessibilityLabel: String {
-        let status = !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
-        return status.isEmpty ? chatVM.customChat.chat.title : "\(chatVM.customChat.chat.title), \(status)"
-    }
-    
-    @ViewBuilder private var topBarTrailing: some View {
-        let chat = chatVM.customChat.chat
-        ProfileImageView(
-            photo: chat.photo?.big,
-            minithumbnail: chat.photo?.minithumbnail,
-            title: chat.title,
-            userId: chat.id,
-        )
-        .frame(width: 32, height: 32)
-        .accessibilityHidden(true)
-    }
 }
+
+// MARK: - MessageDayHeader
 
 private struct MessageDayHeader: View {
     let title: String
@@ -365,12 +378,12 @@ private struct MessageDayHeader: View {
     }
 }
 
-private struct UnreadMessagesHeader: View {
-    let count: Int
+// MARK: - UnreadMessagesHeader
 
-    private var title: String {
-        "\(count) unread \(count == 1 ? "message" : "messages")"
-    }
+private struct UnreadMessagesHeader: View {
+    // MARK: Internal
+
+    let count: Int
 
     var body: some View {
         HStack(spacing: 10) {
@@ -389,5 +402,11 @@ private struct UnreadMessagesHeader: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    // MARK: Private
+
+    private var title: String {
+        "\(count) unread \(count == 1 ? "message" : "messages")"
     }
 }

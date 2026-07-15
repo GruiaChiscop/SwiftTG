@@ -12,12 +12,12 @@ import TDLibKit
     init(
         customChat: CustomChat,
         initialMessageId: Int64? = nil,
-        service: any TelegramService = TDLib.shared.service
+        service: any TelegramService = TDLib.shared.service,
     ) {
         self.customChat = customChat
         self.initialMessageId = initialMessageId
-        initialUnreadCount = customChat.unreadCount
-        initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
+        self.initialUnreadCount = customChat.unreadCount
+        self.initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
         self.service = service
         log("init \(customChat.chat.id)")
         if let user = customChat.user {
@@ -133,7 +133,9 @@ import TDLibKit
         if seconds >= 60 {
             resultString += "\(seconds / 60):" // seconds / 60 == minutes
             var estimatedSeconds = String(seconds % 60)
-            if estimatedSeconds.count == 1 { estimatedSeconds = "0\(estimatedSeconds)" }
+            if estimatedSeconds.count == 1 {
+                estimatedSeconds = "0\(estimatedSeconds)"
+            }
             resultString += "\(estimatedSeconds)"
         } else {
             resultString += "\(seconds).\(time[1])" // time[1] == millisecongs
@@ -258,16 +260,6 @@ import TDLibKit
         }
     }
 
-    private func openChat(chatId: Int64, messageId: Int64?) {
-        Task { @MainActor [weak self] in
-            guard let chat = await RootVM.shared.getCustomChat(from: chatId) else {
-                self?.navigationError = "This chat is private or unavailable."
-                return
-            }
-            NavigationStorage.shared.push(.customChat(chat, messageId: messageId))
-        }
-    }
-    
     func getOnlineStatus(from userStatus: UserStatus) -> String {
         switch userStatus {
         case .userStatusEmpty: "empty"
@@ -346,7 +338,7 @@ import TDLibKit
             message: message,
             replyToMessage: replyToMessage,
             forwardedFrom: getForwardedFrom(message.forwardInfo?.origin),
-            properties: (try? await service.getMessageProperties(
+            properties: (try? service.getMessageProperties(
                 chatId: customChat.chat.id, messageId: message.id,
             )) ?? .default,
         )
@@ -435,7 +427,7 @@ import TDLibKit
                 chatId: messageReplyToMessage.chatId == 0
                     ? customChat.chat.id
                     : messageReplyToMessage.chatId,
-                messageId: messageReplyToMessage.messageId
+                messageId: messageReplyToMessage.messageId,
             )
         }
         return nil
@@ -501,7 +493,11 @@ import TDLibKit
         let stagedURLs = await Task.detached(priority: .userInitiated) {
             urls.compactMap { source -> URL? in
                 let accessed = source.startAccessingSecurityScopedResource()
-                defer { if accessed { source.stopAccessingSecurityScopedResource() } }
+                defer {
+                    if accessed {
+                        source.stopAccessingSecurityScopedResource()
+                    }
+                }
                 let destination = URL(filePath: NSTemporaryDirectory())
                     .appending(path: "\(UUID().uuidString)-\(source.lastPathComponent)")
                 do {
@@ -679,7 +675,12 @@ import TDLibKit
     
     func getMessageReplyTo(from customMessage: CustomMessage?) -> InputMessageReplyTo? {
         guard let customMessage else { return nil }
-        return .inputMessageReplyToMessage(.init(checklistTaskId: 0, messageId: customMessage.message.id, pollOptionId: "", quote: nil))
+        return .inputMessageReplyToMessage(.init(
+            checklistTaskId: 0,
+            messageId: customMessage.message.id,
+            pollOptionId: "",
+            quote: nil,
+        ))
     }
     
     func startTimer() {
@@ -788,7 +789,7 @@ import TDLibKit
         guard let audioRecorder else { return }
         let encodedDuration: Int
         do {
-            encodedDuration = Int(ceil(try audioRecorder.stopAndWrite(to: savedVoiceNoteUrl)))
+            encodedDuration = try Int(ceil(audioRecorder.stopAndWrite(to: savedVoiceNoteUrl)))
         } catch {
             log("Error finalizing voice note:", error)
             cancelRecordingVoice()
@@ -804,7 +805,9 @@ import TDLibKit
 
         let intWave: [Int] = wave.compactMap { wave in
             let intWave = abs(Int(wave))
-            if intWave == 120 || intWave == 160 { return nil }
+            if intWave == 120 || intWave == 160 {
+                return nil
+            }
             return intWave
         }
         let resultWave: [Int] = intWave.map { wave in
@@ -812,7 +815,9 @@ import TDLibKit
             return value < 0 ? 0 : value
         }
         let collapsedWave: [Int] = resultWave.reduce([]) { result, element in
-            if result.last != element { return result + [element] }
+            if result.last != element {
+                return result + [element]
+            }
             return result
         }
         let endWave = collapsedWave.map { UInt8($0) }
@@ -821,6 +826,18 @@ import TDLibKit
         Task.background {
             try? await self.tdSendChatAction(.chatActionUploadingVoiceNote(.init(progress: 0)))
             await self.sendMessageVoiceNote(duration: max(encodedDuration, duration), waveform: waveform)
+        }
+    }
+
+    // MARK: Private
+
+    private func openChat(chatId: Int64, messageId: Int64?) {
+        Task { @MainActor [weak self] in
+            guard let chat = await RootVM.shared.getCustomChat(from: chatId) else {
+                self?.navigationError = "This chat is private or unavailable."
+                return
+            }
+            NavigationStorage.shared.push(.customChat(chat, messageId: messageId))
         }
     }
 }

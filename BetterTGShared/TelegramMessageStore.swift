@@ -1,6 +1,10 @@
+// TelegramMessageStore.swift
+
 import Combine
 import Foundation
 @preconcurrency import TDLibKit
+
+// MARK: - TelegramMessageChange
 
 enum TelegramMessageChange: Sendable {
     case chatAction(UpdateChatAction)
@@ -14,6 +18,8 @@ enum TelegramMessageChange: Sendable {
     case readOutbox(UpdateChatReadOutbox)
     case userStatus(UpdateUserStatus)
 }
+
+// MARK: - TelegramMessageSnapshot
 
 struct TelegramMessageSnapshot: Sendable {
     let chatId: Int64
@@ -49,7 +55,11 @@ struct TelegramMessageSnapshot: Sendable {
     }
 }
 
+// MARK: - TelegramMessageStore
+
 final class TelegramMessageStore: @unchecked Sendable {
+    // MARK: Internal
+
     func publisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
         stateLock.withLock {
             let initialSnapshot = (snapshots[chatId] ?? .empty(chatId: chatId)).withoutChange()
@@ -115,41 +125,6 @@ final class TelegramMessageStore: @unchecked Sendable {
         merge(chatId: chatId, messages: messages, marksHistoryLoaded: false)
     }
 
-    private func merge(chatId: Int64, messages: [Message], marksHistoryLoaded: Bool) {
-        queue.async {
-            var snapshot = self.snapshots[chatId] ?? .empty(chatId: chatId)
-            var storedMessages = snapshot.messages
-            var orderedIds = snapshot.orderedMessageIds
-            let deletedIds = self.deletedMessageIds[chatId] ?? []
-
-            for message in messages {
-                guard !deletedIds.contains(message.id) else { continue }
-                storedMessages[message.id] = message
-                if !orderedIds.contains(message.id) {
-                    orderedIds.append(message.id)
-                }
-            }
-            orderedIds.sort { lhs, rhs in
-                guard let lhsMessage = storedMessages[lhs], let rhsMessage = storedMessages[rhs] else {
-                    return lhs < rhs
-                }
-                if lhsMessage.date == rhsMessage.date { return lhsMessage.id < rhsMessage.id }
-                return lhsMessage.date < rhsMessage.date
-            }
-
-            snapshot = TelegramMessageSnapshot(
-                chatId: chatId,
-                version: snapshot.version + 1,
-                messages: storedMessages,
-                orderedMessageIds: orderedIds,
-                unreadCount: snapshot.unreadCount,
-                hasMergedHistory: snapshot.hasMergedHistory || marksHistoryLoaded,
-                change: .historyMerged,
-            )
-            self.publish(snapshot)
-        }
-    }
-
     func reduce(_ update: Update) {
         guard let reduction = reduction(for: update) else { return }
         queue.async {
@@ -201,6 +176,58 @@ final class TelegramMessageStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Private
+
+    private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.telegram-messages")
+    private let stateLock = NSLock()
+    private var deletedMessageIds = [Int64: Set<Int64>]()
+    private var snapshots = [Int64: TelegramMessageSnapshot]()
+    private var subjects = [Int64: CurrentValueSubject<TelegramMessageSnapshot, Never>]()
+
+    private static func isOrderedBefore(_ lhs: Message, _ rhs: Message) -> Bool {
+        if lhs.date == rhs.date {
+            return lhs.id < rhs.id
+        }
+        return lhs.date < rhs.date
+    }
+
+    private func merge(chatId: Int64, messages: [Message], marksHistoryLoaded: Bool) {
+        queue.async {
+            var snapshot = self.snapshots[chatId] ?? .empty(chatId: chatId)
+            var storedMessages = snapshot.messages
+            var orderedIds = snapshot.orderedMessageIds
+            let deletedIds = self.deletedMessageIds[chatId] ?? []
+
+            for message in messages {
+                guard !deletedIds.contains(message.id) else { continue }
+                storedMessages[message.id] = message
+                if !orderedIds.contains(message.id) {
+                    orderedIds.append(message.id)
+                }
+            }
+            orderedIds.sort { lhs, rhs in
+                guard let lhsMessage = storedMessages[lhs], let rhsMessage = storedMessages[rhs] else {
+                    return lhs < rhs
+                }
+                if lhsMessage.date == rhsMessage.date {
+                    return lhsMessage.id < rhsMessage.id
+                }
+                return lhsMessage.date < rhsMessage.date
+            }
+
+            snapshot = TelegramMessageSnapshot(
+                chatId: chatId,
+                version: snapshot.version + 1,
+                messages: storedMessages,
+                orderedMessageIds: orderedIds,
+                unreadCount: snapshot.unreadCount,
+                hasMergedHistory: snapshot.hasMergedHistory || marksHistoryLoaded,
+                change: .historyMerged,
+            )
+            self.publish(snapshot)
+        }
+    }
+
     private func publish(_ snapshot: TelegramMessageSnapshot) {
         dispatchPrecondition(condition: .onQueue(queue))
         let subject = stateLock.withLock {
@@ -210,39 +237,28 @@ final class TelegramMessageStore: @unchecked Sendable {
         subject?.send(snapshot)
     }
 
-    private static func isOrderedBefore(_ lhs: Message, _ rhs: Message) -> Bool {
-        if lhs.date == rhs.date { return lhs.id < rhs.id }
-        return lhs.date < rhs.date
-    }
-
     private func reduction(for update: Update) -> (chatId: Int64, change: TelegramMessageChange)? {
         switch update {
         case .updateChatAction(let value):
-            return (value.chatId, .chatAction(value))
+            (value.chatId, .chatAction(value))
         case .updateChatReadInbox(let value):
-            return (value.chatId, .readInbox(value))
+            (value.chatId, .readInbox(value))
         case .updateChatReadOutbox(let value):
-            return (value.chatId, .readOutbox(value))
+            (value.chatId, .readOutbox(value))
         case .updateDeleteMessages(let value):
-            return (value.chatId, .deleteMessages(value))
+            (value.chatId, .deleteMessages(value))
         case .updateMessageEdited(let value):
-            return (value.chatId, .messageEdited(value))
+            (value.chatId, .messageEdited(value))
         case .updateMessageIsPinned(let value):
-            return (value.chatId, .messagePinChanged(value))
+            (value.chatId, .messagePinChanged(value))
         case .updateMessageSendSucceeded(let value):
-            return (value.message.chatId, .messageSendSucceeded(value))
+            (value.message.chatId, .messageSendSucceeded(value))
         case .updateNewMessage(let value):
-            return (value.message.chatId, .newMessage(value))
+            (value.message.chatId, .newMessage(value))
         case .updateUserStatus(let value):
-            return (value.userId, .userStatus(value))
+            (value.userId, .userStatus(value))
         default:
-            return nil
+            nil
         }
     }
-
-    private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.telegram-messages")
-    private let stateLock = NSLock()
-    private var deletedMessageIds = [Int64: Set<Int64>]()
-    private var snapshots = [Int64: TelegramMessageSnapshot]()
-    private var subjects = [Int64: CurrentValueSubject<TelegramMessageSnapshot, Never>]()
 }

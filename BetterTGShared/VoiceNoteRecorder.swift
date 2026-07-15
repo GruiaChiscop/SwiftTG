@@ -1,8 +1,12 @@
+// VoiceNoteRecorder.swift
+
 import AVFoundation
 import Foundation
 import SwiftOGG
 
 final class VoiceNoteRecorder {
+    // MARK: Internal
+
     private(set) var peakPower: Float = -160
 
     func start() throws {
@@ -10,7 +14,7 @@ final class VoiceNoteRecorder {
         let inputFormat = input.inputFormat(forBus: 0)
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
-            sampleRate: 48_000,
+            sampleRate: 48000,
             channels: 1,
             interleaved: true,
         ), let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
@@ -21,7 +25,7 @@ final class VoiceNoteRecorder {
         self.converter = converter
         encoder = try OGGEncoder(
             format: outputFormat.streamDescription.pointee,
-            opusRate: 48_000,
+            opusRate: 48000,
             application: .voip,
         )
         compressedData = Data()
@@ -45,7 +49,7 @@ final class VoiceNoteRecorder {
             try compressedData.write(to: url, options: .atomic)
             self.encoder = nil
             converter = nil
-            return Double(encodedFrameCount) / 48_000
+            return Double(encodedFrameCount) / 48000
         }
     }
 
@@ -59,6 +63,8 @@ final class VoiceNoteRecorder {
             encodedFrameCount = 0
         }
     }
+
+    // MARK: Private
 
     private enum RecorderError: Error {
         case notRecording
@@ -107,7 +113,7 @@ final class VoiceNoteRecorder {
     private func updatePeak(from samples: UnsafePointer<Int16>, count: Int) {
         guard count > 0 else { return }
         var peak: Int16 = 0
-        for index in 0 ..< count {
+        for index in 0..<count {
             let sample = samples[index] == .min ? .max : abs(samples[index])
             peak = max(peak, sample)
         }

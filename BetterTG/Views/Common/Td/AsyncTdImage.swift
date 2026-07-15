@@ -7,12 +7,14 @@ import TDLibKit
 // MARK: - AsyncTdImage
 
 struct AsyncTdImage<Content: View, Placeholder: View>: View {
+    // MARK: Lifecycle
+
     init(
         id: Int,
         maxPixelSize: Int = 1024,
         service: any TelegramService = TDLib.shared.service,
         @ViewBuilder content: @escaping (Image, File) -> Content,
-        @ViewBuilder placeholder: @escaping () -> Placeholder
+        @ViewBuilder placeholder: @escaping () -> Placeholder,
     ) {
         self.id = id
         self.maxPixelSize = maxPixelSize
@@ -46,6 +48,7 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
     @State private var file: File?
     @State private var image: Image?
     @State private var decodedLocalPath: String?
+
     private let maxPixelSize: Int
     private let service: any TelegramService
     

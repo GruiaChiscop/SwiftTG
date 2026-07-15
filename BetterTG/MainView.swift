@@ -24,6 +24,10 @@ struct MainView: View {
 private struct MainNavigationRootView: View {
     // MARK: Internal
 
+    var currentFolder: CustomFolder? {
+        rootVM.folders.first(where: { $0.id == rootVM.currentFolder }) ?? rootVM.folders.first
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if rootVM.folders.count > 1 {
@@ -104,10 +108,6 @@ private struct MainNavigationRootView: View {
             guard rootVM.currentFolder == nil else { return }
             rootVM.currentFolder = rootVM.folders.first?.id
         }
-    }
-
-    var currentFolder: CustomFolder? {
-        rootVM.folders.first(where: { $0.id == rootVM.currentFolder }) ?? rootVM.folders.first
     }
 
     var folderTabsBar: some View {

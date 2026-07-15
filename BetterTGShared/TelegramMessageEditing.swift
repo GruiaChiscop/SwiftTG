@@ -2,8 +2,8 @@
 
 import TDLibKit
 
-// Message-edit logic shared between ChatVM (iOS) and MacSessionModel (macOS):
-// which content types are editable, and which TDLib call applies to each.
+/// Message-edit logic shared between ChatVM (iOS) and MacSessionModel (macOS):
+/// which content types are editable, and which TDLib call applies to each.
 enum TelegramMessageEditing {
     static func editableFormattedText(from message: Message) -> FormattedText? {
         switch message.content {
@@ -18,8 +18,7 @@ enum TelegramMessageEditing {
 
     /// Applies `newText` to `messageContent` via the matching TDLib edit call.
     /// Returns `false` without side effects if the content type isn't editable.
-    @discardableResult
-    static func editMessage(
+    @discardableResult static func editMessage(
         service: any TelegramService,
         chatId: Int64,
         messageId: Int64,

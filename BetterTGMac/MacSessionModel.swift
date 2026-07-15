@@ -1,3 +1,5 @@
+// MacSessionModel.swift
+
 import AppKit
 import AVFoundation
 import Combine
@@ -6,10 +8,14 @@ import SwiftUI
 import TDLibKit
 import UniformTypeIdentifiers
 
+// MARK: - MacMessageCapabilities
+
 struct MacMessageCapabilities {
     let properties: MessageProperties
     let canReactWithHeart: Bool
 }
+
+// MARK: - MacMessageReplyContext
 
 struct MacMessageReplyContext {
     let chatId: Int64
@@ -18,16 +24,30 @@ struct MacMessageReplyContext {
     let quotedText: String
 }
 
+// MARK: - MacMessageSenderKey
+
 private enum MacMessageSenderKey: Hashable {
     case chat(Int64)
     case user(Int64)
 }
 
+// MARK: - MacSessionModel
+
 @MainActor @Observable final class MacSessionModel {
+    // MARK: Lifecycle
+
+    init() {
+        self.session = TelegramSession()
+        self.service = session
+        observeSession()
+    }
+
+    // MARK: Internal
+
     var authorizationState: AuthorizationState?
     var authorizationStatus = "Starting Telegram…"
     var chatList = ChatListSnapshot.empty
-    var selectedChatFolderId: MacChatFolderID = .main
+    var selectedChatFolderId = MacChatFolderID.main
     var focusedChatId: Int64?
     var openedChatId: Int64?
     var messages = TelegramMessageSnapshot.empty(chatId: 0)
@@ -63,6 +83,13 @@ private enum MacMessageSenderKey: Hashable {
     var openedUnreadCount = 0
     var openedLastReadInboxMessageId: Int64 = 0
 
+    @ObservationIgnored var bootstrapTask: Task<Void, Never>?
+    @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
+    @ObservationIgnored var searchTask: Task<Void, Never>?
+    @ObservationIgnored var searchGeneration: UInt64 = 0
+    @ObservationIgnored var historyRequestGeneration: UInt64 = 0
+    @ObservationIgnored let service: any TelegramService
+
     var chatItems: [ChatListItemState] {
         chatList.chatIds(in: selectedChatList).compactMap { chatList.items[$0] }
     }
@@ -70,12 +97,6 @@ private enum MacMessageSenderKey: Hashable {
     var openedChat: ChatListItemState? {
         guard let openedChatId else { return nil }
         return chatList.items[openedChatId]
-    }
-
-    init() {
-        session = TelegramSession()
-        service = session
-        observeSession()
     }
 
     func start() {
@@ -285,8 +306,8 @@ private enum MacMessageSenderKey: Hashable {
         recordingTimer = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
-                guard let self, self.isRecordingVoice, let startedAt = self.voiceRecordingStartedAt else { return }
-                self.voiceRecordingDuration = Foundation.Date().timeIntervalSince(startedAt)
+                guard let self, isRecordingVoice, let startedAt = voiceRecordingStartedAt else { return }
+                voiceRecordingDuration = Foundation.Date().timeIntervalSince(startedAt)
             }
         }
 
@@ -304,7 +325,9 @@ private enum MacMessageSenderKey: Hashable {
         let url = voiceRecordingURL
         voiceRecorder?.cancel()
         resetVoiceRecordingState()
-        if let url { try? FileManager.default.removeItem(at: url) }
+        if let url {
+            try? FileManager.default.removeItem(at: url)
+        }
         if let chatId {
             Task {
                 _ = try? await service.sendChatAction(
@@ -329,7 +352,7 @@ private enum MacMessageSenderKey: Hashable {
 
         let duration: Int
         do {
-            duration = max(1, Int(ceil(try recorder.stopAndWrite(to: url))))
+            duration = try max(1, Int(ceil(recorder.stopAndWrite(to: url))))
         } catch {
             messageActionError = "Voice recording could not be finalized: \(error.localizedDescription)"
             cancelVoiceRecording()
@@ -382,7 +405,9 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     func localPhotoPath(fileId: Int) async -> String? {
-        if let cachedPath = photoPaths[fileId] { return cachedPath }
+        if let cachedPath = photoPaths[fileId] {
+            return cachedPath
+        }
         guard let file = try? await service.downloadFile(
             fileId: fileId,
             limit: 0,
@@ -396,7 +421,9 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     func localDocumentPath(fileId: Int) async -> String? {
-        if let cachedPath = documentPaths[fileId] { return cachedPath }
+        if let cachedPath = documentPaths[fileId] {
+            return cachedPath
+        }
         guard let file = try? await service.downloadFile(
             fileId: fileId,
             limit: 0,
@@ -410,7 +437,9 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     func localVideoPath(fileId: Int) async -> String? {
-        if let cachedPath = videoPaths[fileId] { return cachedPath }
+        if let cachedPath = videoPaths[fileId] {
+            return cachedPath
+        }
         guard let file = try? await service.downloadFile(
             fileId: fileId,
             limit: 0,
@@ -466,7 +495,7 @@ private enum MacMessageSenderKey: Hashable {
             && ((availableReactions?.topReactions ?? [])
                 + (availableReactions?.recentReactions ?? [])
                 + (availableReactions?.popularReactions ?? []))
-                .contains { $0.type == heart }
+            .contains { $0.type == heart }
         guard openedChatId == message.chatId else { return }
         messageCapabilities[message.id] = MacMessageCapabilities(
             properties: properties,
@@ -483,36 +512,36 @@ private enum MacMessageSenderKey: Hashable {
         loadingReplyContextMessageIds.insert(message.id)
         defer { loadingReplyContextMessageIds.remove(message.id) }
 
-        let repliedMessage: Message?
-        if reply.messageId != 0 {
-            repliedMessage = try? await service.getMessage(
-                chatId: reply.chatId == 0 ? message.chatId : reply.chatId,
-                messageId: reply.messageId,
-            )
-        } else {
-            repliedMessage = nil
-        }
+        let repliedMessage: Message? =
+            if reply.messageId != 0 {
+                try? await service.getMessage(
+                    chatId: reply.chatId == 0 ? message.chatId : reply.chatId,
+                    messageId: reply.messageId,
+                )
+            } else {
+                nil
+            }
 
-        let senderName: String
-        switch repliedMessage?.senderId {
-        case .messageSenderUser(let sender):
-            senderName = (try? await service.getUser(userId: sender.userId))?.firstName ?? "message"
-        case .messageSenderChat(let sender):
-            senderName = (try? await service.getChat(chatId: sender.chatId))?.title ?? "message"
-        case nil:
-            senderName = "message"
-        }
+        let senderName: String =
+            switch repliedMessage?.senderId {
+            case .messageSenderUser(let sender):
+                await (try? service.getUser(userId: sender.userId))?.firstName ?? "message"
+            case .messageSenderChat(let sender):
+                await (try? service.getChat(chatId: sender.chatId))?.title ?? "message"
+            case nil:
+                "message"
+            }
 
-        let quotedText: String
-        if let explicitQuote = reply.quote?.text.text, !explicitQuote.isEmpty {
-            quotedText = explicitQuote
-        } else if let repliedMessage {
-            quotedText = telegramMessageContentDescription(repliedMessage)
-        } else if let content = reply.content {
-            quotedText = telegramMessageContentDescription(content)
-        } else {
-            quotedText = "Message"
-        }
+        let quotedText: String =
+            if let explicitQuote = reply.quote?.text.text, !explicitQuote.isEmpty {
+                explicitQuote
+            } else if let repliedMessage {
+                telegramMessageContentDescription(repliedMessage)
+            } else if let content = reply.content {
+                telegramMessageContentDescription(content)
+            } else {
+                "Message"
+            }
         guard openedChatId == message.chatId else { return }
         messageReplyContexts[message.id] = MacMessageReplyContext(
             chatId: reply.chatId == 0 ? message.chatId : reply.chatId,
@@ -585,17 +614,17 @@ private enum MacMessageSenderKey: Hashable {
         let name: String?
         switch origin {
         case .messageOriginChat(let chat):
-            let title = (try? await service.getChat(chatId: chat.senderChatId))?.title
+            let title = await (try? service.getChat(chatId: chat.senderChatId))?.title
             name = title.map { chat.authorSignature.isEmpty ? $0 : "\($0) (\(chat.authorSignature))" }
                 ?? (chat.authorSignature.isEmpty ? nil : chat.authorSignature)
         case .messageOriginChannel(let channel):
-            let title = (try? await service.getChat(chatId: channel.chatId))?.title
+            let title = await (try? service.getChat(chatId: channel.chatId))?.title
             name = title.map { channel.authorSignature.isEmpty ? $0 : "\($0) (\(channel.authorSignature))" }
                 ?? (channel.authorSignature.isEmpty ? nil : channel.authorSignature)
         case .messageOriginHiddenUser(let user):
             name = user.senderName
         case .messageOriginUser(let user):
-            name = (try? await service.getUser(userId: user.senderUserId))?.firstName
+            name = await (try? service.getUser(userId: user.senderUserId))?.firstName
         }
         guard openedChatId == message.chatId, let name, !name.isEmpty else { return }
         messageForwardedFrom[message.id] = name
@@ -607,13 +636,13 @@ private enum MacMessageSenderKey: Hashable {
               openedChatId == message.chatId
         else { return }
 
-        let resolvedSenderKey: MacMessageSenderKey
-        switch message.senderId {
-        case .messageSenderUser(let sender):
-            resolvedSenderKey = .user(sender.userId)
-        case .messageSenderChat(let sender):
-            resolvedSenderKey = .chat(sender.chatId)
-        }
+        let resolvedSenderKey: MacMessageSenderKey =
+            switch message.senderId {
+            case .messageSenderUser(let sender):
+                .user(sender.userId)
+            case .messageSenderChat(let sender):
+                .chat(sender.chatId)
+            }
         if let cachedName = senderNamesByKey[resolvedSenderKey] {
             messageSenderNames[message.id] = cachedName
             return
@@ -646,34 +675,6 @@ private enum MacMessageSenderKey: Hashable {
 
     func cachedSenderName(for message: Message) -> String? {
         messageSenderNames[message.id] ?? senderNamesByKey[senderKey(for: message)]
-    }
-
-    private func senderKey(for message: Message) -> MacMessageSenderKey {
-        switch message.senderId {
-        case .messageSenderUser(let sender): .user(sender.userId)
-        case .messageSenderChat(let sender): .chat(sender.chatId)
-        }
-    }
-
-    private func activateResolvedChat(_ chat: Chat, messageId: Int64?) {
-        service.mergeChatListChats([chat])
-        if chatList.items[chat.id] == nil {
-            chatList.items[chat.id] = ChatListItemState(
-                chatId: chat.id,
-                title: chat.title,
-                positions: chat.positions,
-                unreadCount: chat.unreadCount,
-                lastMessage: chat.lastMessage,
-                draftMessage: chat.draftMessage,
-                notificationSettings: chat.notificationSettings,
-                lastReadInboxMessageId: chat.lastReadInboxMessageId,
-                lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
-                isMarkedAsUnread: chat.isMarkedAsUnread,
-                canBeDeletedOnlyForSelf: chat.canBeDeletedOnlyForSelf,
-                canBeDeletedForAllUsers: chat.canBeDeletedForAllUsers,
-            )
-        }
-        activateChat(chat.id, messageId: messageId)
     }
 
     func toggleRead(for chat: ChatListItemState) {
@@ -747,16 +748,17 @@ private enum MacMessageSenderKey: Hashable {
 
     func togglePin(for message: Message) {
         performMessageAction {
-            if message.isPinned {
-                _ = try await self.service.unpinChatMessage(chatId: message.chatId, messageId: message.id)
-            } else {
-                _ = try await self.service.pinChatMessage(
-                    chatId: message.chatId,
-                    disableNotification: false,
-                    messageId: message.id,
-                    onlyForSelf: false,
-                )
-            }
+            _ =
+                if message.isPinned {
+                    try await self.service.unpinChatMessage(chatId: message.chatId, messageId: message.id)
+                } else {
+                    try await self.service.pinChatMessage(
+                        chatId: message.chatId,
+                        disableNotification: false,
+                        messageId: message.id,
+                        onlyForSelf: false,
+                    )
+                }
         }
     }
 
@@ -768,6 +770,87 @@ private enum MacMessageSenderKey: Hashable {
                 revoke: forEveryone,
             )
         }
+    }
+
+    func localVoiceNotePath(fileId: Int) async -> String? {
+        if let cachedPath = voiceNotePaths[fileId] {
+            return cachedPath
+        }
+        guard let file = try? await service.downloadFile(
+            fileId: fileId,
+            limit: 0,
+            offset: 0,
+            priority: 32,
+            synchronous: true,
+        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
+        else { return nil }
+        voiceNotePaths[fileId] = file.local.path
+        return file.local.path
+    }
+
+    // MARK: Private
+
+    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored private var messageSubscription: AnyCancellable?
+    @ObservationIgnored private var loadingCapabilityMessageIds = Set<Int64>()
+    @ObservationIgnored private var loadingReplyContextMessageIds = Set<Int64>()
+    @ObservationIgnored private var loadingForwardedMessageIds = Set<Int64>()
+    @ObservationIgnored private var senderNameRequests = [MacMessageSenderKey: Task<String?, Never>]()
+    @ObservationIgnored private var senderNamesByKey = [MacMessageSenderKey: String]()
+    @ObservationIgnored private var openTask: Task<Void, Never>?
+    @ObservationIgnored private var documentPaths = [Int: String]()
+    @ObservationIgnored private var photoPaths = [Int: String]()
+    @ObservationIgnored private var videoPaths = [Int: String]()
+    @ObservationIgnored private var recordingTimer: Task<Void, Never>?
+    @ObservationIgnored private let notifications = MacLocalNotifications()
+    @ObservationIgnored private let session: TelegramSession
+    @ObservationIgnored private var started = false
+    @ObservationIgnored private var voiceNotePaths = [Int: String]()
+    @ObservationIgnored private var voiceRecorder: VoiceNoteRecorder?
+    @ObservationIgnored private var voiceRecordingChatId: Int64?
+    @ObservationIgnored private var voiceRecordingStartedAt: Foundation.Date?
+    @ObservationIgnored private var voiceRecordingURL: URL?
+
+    private static func title(for state: AuthorizationState) -> String {
+        switch state {
+        case .authorizationStateReady: "Telegram is ready"
+        case .authorizationStateWaitPhoneNumber: "Phone number required"
+        case .authorizationStateWaitCode: "Login code required"
+        case .authorizationStateWaitPassword: "Two-step verification required"
+        case .authorizationStateWaitTdlibParameters: "Configuring Telegram…"
+        case .authorizationStateClosed: "Telegram session closed"
+        case .authorizationStateClosing: "Closing Telegram session…"
+        case .authorizationStateLoggingOut: "Logging out…"
+        default: "Additional authorization required"
+        }
+    }
+
+    private func senderKey(for message: Message) -> MacMessageSenderKey {
+        switch message.senderId {
+        case .messageSenderUser(let sender): .user(sender.userId)
+        case .messageSenderChat(let sender): .chat(sender.chatId)
+        }
+    }
+
+    private func activateResolvedChat(_ chat: Chat, messageId: Int64?) {
+        service.mergeChatListChats([chat])
+        if chatList.items[chat.id] == nil {
+            chatList.items[chat.id] = ChatListItemState(
+                chatId: chat.id,
+                title: chat.title,
+                positions: chat.positions,
+                unreadCount: chat.unreadCount,
+                lastMessage: chat.lastMessage,
+                draftMessage: chat.draftMessage,
+                notificationSettings: chat.notificationSettings,
+                lastReadInboxMessageId: chat.lastReadInboxMessageId,
+                lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
+                isMarkedAsUnread: chat.isMarkedAsUnread,
+                canBeDeletedOnlyForSelf: chat.canBeDeletedOnlyForSelf,
+                canBeDeletedForAllUsers: chat.canBeDeletedForAllUsers,
+            )
+        }
+        activateChat(chat.id, messageId: messageId)
     }
 
     private func sendTextMessage() {
@@ -832,6 +915,7 @@ private enum MacMessageSenderKey: Hashable {
                     chatId: chatId,
                     topicId: nil,
                 )
+                // swiftformat:disable:next conditionalAssignment
                 if contents.count == 1, let content = contents.first {
                     _ = try await service.sendMessage(
                         chatId: chatId,
@@ -895,6 +979,7 @@ private enum MacMessageSenderKey: Hashable {
                     chatId: chatId,
                     topicId: nil,
                 )
+                // swiftformat:disable:next conditionalAssignment
                 if contents.count == 1, let content = contents.first {
                     _ = try await service.sendMessage(
                         chatId: chatId,
@@ -957,7 +1042,9 @@ private enum MacMessageSenderKey: Hashable {
     private func editMessage() {
         guard let message = editingMessage else { return }
         let text = editMessageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if case .messageText = message.content, text.isEmpty { return }
+        if case .messageText = message.content, text.isEmpty {
+            return
+        }
         editingMessage = nil
         editMessageText = ""
 
@@ -985,15 +1072,15 @@ private enum MacMessageSenderKey: Hashable {
 
     private func handleMessageSnapshot(_ snapshot: TelegramMessageSnapshot) {
         messages = snapshot
-        let messageId: Int64?
-        switch snapshot.change {
-        case .messageEdited(let update):
-            messageId = update.messageId
-        case .messagePinChanged(let update):
-            messageId = update.messageId
-        default:
-            messageId = nil
-        }
+        let messageId: Int64? =
+            switch snapshot.change {
+            case .messageEdited(let update):
+                update.messageId
+            case .messagePinChanged(let update):
+                update.messageId
+            default:
+                nil
+            }
         guard let messageId else { return }
         messageCapabilities[messageId] = nil
         Task {
@@ -1004,20 +1091,6 @@ private enum MacMessageSenderKey: Hashable {
             else { return }
             service.mergeMessages(chatId: snapshot.chatId, messages: [refreshed])
         }
-    }
-
-    func localVoiceNotePath(fileId: Int) async -> String? {
-        if let cachedPath = voiceNotePaths[fileId] { return cachedPath }
-        guard let file = try? await service.downloadFile(
-            fileId: fileId,
-            limit: 0,
-            offset: 0,
-            priority: 32,
-            synchronous: true,
-        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
-        else { return nil }
-        voiceNotePaths[fileId] = file.local.path
-        return file.local.path
     }
 
     private func observeSession() {
@@ -1075,45 +1148,4 @@ private enum MacMessageSenderKey: Hashable {
             }
         }
     }
-
-    private static func title(for state: AuthorizationState) -> String {
-        switch state {
-        case .authorizationStateReady: "Telegram is ready"
-        case .authorizationStateWaitPhoneNumber: "Phone number required"
-        case .authorizationStateWaitCode: "Login code required"
-        case .authorizationStateWaitPassword: "Two-step verification required"
-        case .authorizationStateWaitTdlibParameters: "Configuring Telegram…"
-        case .authorizationStateClosed: "Telegram session closed"
-        case .authorizationStateClosing: "Closing Telegram session…"
-        case .authorizationStateLoggingOut: "Logging out…"
-        default: "Additional authorization required"
-        }
-    }
-
-    @ObservationIgnored var bootstrapTask: Task<Void, Never>?
-    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
-    @ObservationIgnored private var messageSubscription: AnyCancellable?
-    @ObservationIgnored private var loadingCapabilityMessageIds = Set<Int64>()
-    @ObservationIgnored private var loadingReplyContextMessageIds = Set<Int64>()
-    @ObservationIgnored private var loadingForwardedMessageIds = Set<Int64>()
-    @ObservationIgnored private var senderNameRequests = [MacMessageSenderKey: Task<String?, Never>]()
-    @ObservationIgnored private var senderNamesByKey = [MacMessageSenderKey: String]()
-    @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
-    @ObservationIgnored private var openTask: Task<Void, Never>?
-    @ObservationIgnored var searchTask: Task<Void, Never>?
-    @ObservationIgnored var searchGeneration: UInt64 = 0
-    @ObservationIgnored var historyRequestGeneration: UInt64 = 0
-    @ObservationIgnored private var documentPaths = [Int: String]()
-    @ObservationIgnored private var photoPaths = [Int: String]()
-    @ObservationIgnored private var videoPaths = [Int: String]()
-    @ObservationIgnored private var recordingTimer: Task<Void, Never>?
-    @ObservationIgnored private let notifications = MacLocalNotifications()
-    @ObservationIgnored let service: any TelegramService
-    @ObservationIgnored private let session: TelegramSession
-    @ObservationIgnored private var started = false
-    @ObservationIgnored private var voiceNotePaths = [Int: String]()
-    @ObservationIgnored private var voiceRecorder: VoiceNoteRecorder?
-    @ObservationIgnored private var voiceRecordingChatId: Int64?
-    @ObservationIgnored private var voiceRecordingStartedAt: Foundation.Date?
-    @ObservationIgnored private var voiceRecordingURL: URL?
 }

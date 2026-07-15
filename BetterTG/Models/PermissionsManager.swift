@@ -1,5 +1,9 @@
+// PermissionsManager.swift
+
 import Contacts
 import TDLibKit
+
+// MARK: - ContactsAuthorizationStatus
 
 enum ContactsAuthorizationStatus: Sendable {
     case authorized
@@ -7,11 +11,15 @@ enum ContactsAuthorizationStatus: Sendable {
     case notDetermined
 }
 
+// MARK: - DeviceContactRecord
+
 struct DeviceContactRecord: Equatable, Sendable {
     let firstName: String
     let lastName: String
     let phoneNumbers: [String]
 }
+
+// MARK: - ContactsAccess
 
 protocol ContactsAccess: Sendable {
     func authorizationStatus() -> ContactsAuthorizationStatus
@@ -19,8 +27,10 @@ protocol ContactsAccess: Sendable {
     func fetchContacts() throws -> [DeviceContactRecord]
 }
 
+// MARK: - SystemContactsAccess
+
 final class SystemContactsAccess: ContactsAccess, @unchecked Sendable {
-    private let store = CNContactStore()
+    // MARK: Internal
 
     func authorizationStatus() -> ContactsAuthorizationStatus {
         switch CNContactStore.authorizationStatus(for: .contacts) {
@@ -56,13 +66,16 @@ final class SystemContactsAccess: ContactsAccess, @unchecked Sendable {
         }
         return contacts
     }
+
+    // MARK: Private
+
+    private let store = CNContactStore()
 }
 
-final class PermissionsManager: Sendable {
-    static let shared = PermissionsManager()
+// MARK: - PermissionsManager
 
-    private let contactsAccess: any ContactsAccess
-    private let contactsSync: any TelegramContactsSyncing
+final class PermissionsManager: Sendable {
+    // MARK: Lifecycle
 
     init(
         contactsAccess: any ContactsAccess = SystemContactsAccess(),
@@ -72,18 +85,9 @@ final class PermissionsManager: Sendable {
         self.contactsSync = contactsSync
     }
 
-    func requestPostLoginPermissions() async {
-        guard await contactsAreAllowed() else { return }
+    // MARK: Internal
 
-        let access = contactsAccess
-        let records = await Task.detached(priority: .utility) {
-            try? access.fetchContacts()
-        }.value
-        guard let records else { return }
-
-        let contacts = Self.importedContacts(from: records)
-        _ = try? await contactsSync.changeImportedContacts(contacts: contacts)
-    }
+    static let shared = PermissionsManager()
 
     static func importedContacts(from records: [DeviceContactRecord]) -> [ImportedContact] {
         records.flatMap { record -> [ImportedContact] in
@@ -101,6 +105,24 @@ final class PermissionsManager: Sendable {
         }
     }
 
+    func requestPostLoginPermissions() async {
+        guard await contactsAreAllowed() else { return }
+
+        let access = contactsAccess
+        let records = await Task.detached(priority: .utility) {
+            try? access.fetchContacts()
+        }.value
+        guard let records else { return }
+
+        let contacts = Self.importedContacts(from: records)
+        _ = try? await contactsSync.changeImportedContacts(contacts: contacts)
+    }
+
+    // MARK: Private
+
+    private let contactsAccess: any ContactsAccess
+    private let contactsSync: any TelegramContactsSyncing
+
     @MainActor private func contactsAreAllowed() async -> Bool {
         switch contactsAccess.authorizationStatus() {
         case .authorized:
@@ -108,7 +130,7 @@ final class PermissionsManager: Sendable {
         case .denied:
             false
         case .notDetermined:
-            (try? await contactsAccess.requestAccess()) == true
+            await (try? contactsAccess.requestAccess()) == true
         }
     }
 }

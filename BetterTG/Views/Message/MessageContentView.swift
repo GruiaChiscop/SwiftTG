@@ -78,5 +78,4 @@ struct MessageContentView: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onMediaTap(albumMessage) }
     }
-
 }

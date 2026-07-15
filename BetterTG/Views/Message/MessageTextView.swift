@@ -20,7 +20,9 @@ struct MessageTextView: View {
     // MARK: Private
 
     private func size(for formattedText: FormattedText) -> CGSize {
-        if let cached = cachedTextSizes[formattedText] { return cached }
+        if let cached = cachedTextSizes[formattedText] {
+            return cached
+        }
         let attributedString = NSMutableAttributedString(getAttributedString(from: formattedText, withDate: true))
         let textStorage = NSTextStorage(attributedString: attributedString)
         let size = CGSize(width: Utils.maxMessageContentWidth, height: .greatestFiniteMagnitude)

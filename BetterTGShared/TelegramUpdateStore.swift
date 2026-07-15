@@ -1,14 +1,27 @@
+// TelegramUpdateStore.swift
+
 import Combine
 import Foundation
 import TDLibKit
 
 final class TelegramUpdateStore: @unchecked Sendable {
+    // MARK: Internal
+
     var chatListPublisher: AnyPublisher<ChatListSnapshot, Never> {
         chatListStore.publisher
     }
 
     var updatePublisher: AnyPublisher<Update, Never> {
         updateSubject.eraseToAnyPublisher()
+    }
+
+    var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> {
+        updateSubject
+            .compactMap { update in
+                guard case .updateAuthorizationState(let value) = update else { return nil }
+                return value.authorizationState
+            }
+            .eraseToAnyPublisher()
     }
 
     func messagePublisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
@@ -42,15 +55,6 @@ final class TelegramUpdateStore: @unchecked Sendable {
         fileStore.mergeInitial(file)
     }
 
-    var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> {
-        updateSubject
-            .compactMap { update in
-                guard case .updateAuthorizationState(let value) = update else { return nil }
-                return value.authorizationState
-            }
-            .eraseToAnyPublisher()
-    }
-
     func publish(_ update: Update) {
         queue.async { [updateSubject] in
             dispatchPrecondition(condition: .onQueue(self.queue))
@@ -60,6 +64,8 @@ final class TelegramUpdateStore: @unchecked Sendable {
             updateSubject.send(update)
         }
     }
+
+    // MARK: Private
 
     private let chatListStore = TelegramChatListStore()
     private let fileStore = TelegramFileStore()

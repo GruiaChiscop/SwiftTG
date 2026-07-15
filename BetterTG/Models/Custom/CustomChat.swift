@@ -18,10 +18,10 @@ import TDLibKit
         draftMessage: DraftMessage? = nil,
     ) {
         self.chat = chat
-        notificationSettings = chat.notificationSettings
-        lastReadInboxMessageId = chat.lastReadInboxMessageId
-        lastReadOutboxMessageId = chat.lastReadOutboxMessageId
-        isMarkedAsUnread = chat.isMarkedAsUnread
+        self.notificationSettings = chat.notificationSettings
+        self.lastReadInboxMessageId = chat.lastReadInboxMessageId
+        self.lastReadOutboxMessageId = chat.lastReadOutboxMessageId
+        self.isMarkedAsUnread = chat.isMarkedAsUnread
         self.position = position
         self.unreadCount = unreadCount
         self.type = type
@@ -44,6 +44,8 @@ import TDLibKit
         case bot
         case group
         case channel
+
+        // MARK: Internal
 
         var title: String {
             switch self {

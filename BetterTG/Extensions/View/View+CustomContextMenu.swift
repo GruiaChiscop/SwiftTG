@@ -270,9 +270,9 @@ private struct CustomContextMenuView<Content: View, Preview: View>: UIViewRepres
         return view
     }
 
-    // makeUIView only runs once per cell instance; every subsequent SwiftUI update (new message
-    // state, downloaded voice note, playback progress, etc.) has to be pushed in here or the
-    // UIKit-hosted content and the context menu's actions/preview go stale.
+    /// makeUIView only runs once per cell instance; every subsequent SwiftUI update (new message
+    /// state, downloaded voice note, playback progress, etc.) has to be pushed in here or the
+    /// UIKit-hosted content and the context menu's actions/preview go stale.
     func updateUIView(_: UIView, context: Context) {
         context.coordinator.cornerRadius = cornerRadius
         context.coordinator.menu = menu

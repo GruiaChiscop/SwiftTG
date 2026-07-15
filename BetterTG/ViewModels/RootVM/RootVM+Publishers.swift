@@ -12,13 +12,13 @@ extension RootVM {
                 switch state {
                 case .authorizationStateReady:
                     withAnimation { self.loggedIn = true }
-                    self.bootstrapChatListsIfReady()
+                    bootstrapChatListsIfReady()
                 case .authorizationStateClosed,
                      .authorizationStateClosing,
                      .authorizationStateLoggingOut,
-                     .authorizationStateWaitPhoneNumber,
                      .authorizationStateWaitCode,
-                     .authorizationStateWaitPassword:
+                     .authorizationStateWaitPassword,
+                     .authorizationStateWaitPhoneNumber:
                     withAnimation { self.loggedIn = false }
                 default:
                     break
@@ -70,7 +70,9 @@ extension RootVM {
     }
 
     private func apply(_ snapshot: ChatListSnapshot) {
-        if let appliedChatListVersion, snapshot.version <= appliedChatListVersion { return }
+        if let appliedChatListVersion, snapshot.version <= appliedChatListVersion {
+            return
+        }
         appliedChatListVersion = snapshot.version
         latestChatListSnapshot = snapshot
         applyFolders(snapshot)
@@ -103,8 +105,12 @@ extension RootVM {
         }
 
         reorderFolders(using: snapshot)
-        for folder in folders { applyChats(snapshot, to: folder) }
-        if let archive { applyChats(snapshot, to: archive) }
+        for folder in folders {
+            applyChats(snapshot, to: folder)
+        }
+        if let archive {
+            applyChats(snapshot, to: archive)
+        }
     }
 
     private func loadFolder(_ info: ChatFolderInfo) {
@@ -143,7 +149,7 @@ extension RootVM {
             folder.info.map { ($0.id, folder) }
         })
         var ordered = [CustomFolder]()
-        for index in 0 ... snapshot.chatFolders.count {
+        for index in 0...snapshot.chatFolders.count {
             if index == snapshot.mainChatListPosition {
                 ordered.append(mainFolder)
             }

@@ -1,10 +1,13 @@
+// MessageDocumentView.swift
+
 import QuickLook
 import SwiftUI
 import TDLibKit
 
 struct MessageDocumentView: View {
+    // MARK: Internal
+
     let document: Document
-    @State private var previewURL: URL?
 
     var body: some View {
         AsyncTdFile(id: document.document.id) { file in
@@ -24,4 +27,8 @@ struct MessageDocumentView: View {
         }
         .quickLookPreview($previewURL)
     }
+
+    // MARK: Private
+
+    @State private var previewURL: URL?
 }

@@ -1,3 +1,5 @@
+// MacSessionModel+History.swift
+
 import TDLibKit
 
 extension MacSessionModel {
@@ -22,7 +24,7 @@ extension MacSessionModel {
         var fromMessageId: Int64 = 0
         var reachedBeginning = false
 
-        for _ in 0 ..< 10 {
+        for _ in 0..<10 {
             guard !Task.isCancelled,
                   openedChatId == chatId,
                   historyRequestGeneration == generation,
@@ -53,7 +55,9 @@ extension MacSessionModel {
               openedChatId == chatId,
               historyRequestGeneration == generation,
               let newestMessage = messagesById.values.max(by: { lhs, rhs in
-                  if lhs.date == rhs.date { return lhs.id < rhs.id }
+                  if lhs.date == rhs.date {
+                      return lhs.id < rhs.id
+                  }
                   return lhs.date < rhs.date
               })
         else { return }
@@ -93,8 +97,8 @@ extension MacSessionModel {
             offset: 0,
             onlyLocal: false,
         ), !Task.isCancelled,
-            openedChatId == chatId,
-            historyRequestGeneration == generation
+        openedChatId == chatId,
+        historyRequestGeneration == generation
         else { return false }
 
         let olderMessages = (history.messages ?? []).filter {
@@ -130,8 +134,8 @@ extension MacSessionModel {
                 offset: -25,
                 onlyLocal: false,
             ), !Task.isCancelled,
-                openedChatId == chatId,
-                historyRequestGeneration == generation
+            openedChatId == chatId,
+            historyRequestGeneration == generation
             else { return [] }
 
             let foundMessages = history.messages ?? []
@@ -145,7 +149,7 @@ extension MacSessionModel {
             return foundMessages
         }
 
-        for _ in 0 ..< maxIterations {
+        for _ in 0..<maxIterations {
             guard !Task.isCancelled,
                   openedChatId == chatId,
                   historyRequestGeneration == generation,

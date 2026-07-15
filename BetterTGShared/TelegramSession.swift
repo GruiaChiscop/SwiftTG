@@ -1,6 +1,10 @@
+// TelegramSession.swift
+
 import Combine
 import Foundation
 import TDLibKit
+
+// MARK: - TelegramSessionConfiguration
 
 struct TelegramSessionConfiguration: Sendable {
     let apiHash: String
@@ -12,7 +16,17 @@ struct TelegramSessionConfiguration: Sendable {
     let systemVersion: String
 }
 
+// MARK: - TelegramSession
+
 final class TelegramSession: @unchecked Sendable {
+    // MARK: Lifecycle
+
+    init() {
+        _ = internalClient
+    }
+
+    // MARK: Internal
+
     var client: TDLibClient { internalClient }
 
     var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> {
@@ -55,10 +69,6 @@ final class TelegramSession: @unchecked Sendable {
         updateStore.mergeInitialFile(file)
     }
 
-    init() {
-        _ = internalClient
-    }
-
     func start(configuration: TelegramSessionConfiguration) {
         stateLock.lock()
         self.configuration = configuration
@@ -72,6 +82,8 @@ final class TelegramSession: @unchecked Sendable {
         manager.closeClients()
     }
 
+    // MARK: Private
+
     private lazy var internalClient: TDLibClient = manager.createClient { [weak self] data, client in
         guard let self else { return }
         do {
@@ -81,6 +93,13 @@ final class TelegramSession: @unchecked Sendable {
             print("TDLib update decoding failed: \(error)")
         }
     }
+
+    private var configuration: TelegramSessionConfiguration?
+    private var isConfiguringParameters = false
+    private var isWaitingForParameters = false
+    private let manager = TDLibClientManager()
+    private let stateLock = NSLock()
+    private let updateStore = TelegramUpdateStore()
 
     private func process(_ update: Update) {
         if case .updateAuthorizationState(let value) = update {
@@ -136,11 +155,4 @@ final class TelegramSession: @unchecked Sendable {
         isConfiguringParameters = false
         stateLock.unlock()
     }
-
-    private var configuration: TelegramSessionConfiguration?
-    private var isConfiguringParameters = false
-    private var isWaitingForParameters = false
-    private let manager = TDLibClientManager()
-    private let stateLock = NSLock()
-    private let updateStore = TelegramUpdateStore()
 }

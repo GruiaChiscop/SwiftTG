@@ -4,11 +4,13 @@ import SwiftUI
 import TDLibKit
 
 struct AsyncTdFile<Content: View, Placeholder: View>: View {
+    // MARK: Lifecycle
+
     init(
         id: Int,
         service: any TelegramService = TDLib.shared.service,
         @ViewBuilder content: @escaping (File) -> Content,
-        @ViewBuilder placeholder: @escaping () -> Placeholder
+        @ViewBuilder placeholder: @escaping () -> Placeholder,
     ) {
         self.id = id
         self.service = service
@@ -42,6 +44,7 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
     // MARK: Private
 
     @State private var file: File?
+
     private let service: any TelegramService
     
     private func download(_ id: Int? = nil) async {

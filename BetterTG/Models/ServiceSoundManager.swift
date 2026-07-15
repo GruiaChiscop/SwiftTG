@@ -1,17 +1,14 @@
+// ServiceSoundManager.swift
+
 import AudioToolbox
 import UIKit
 
 @MainActor final class ServiceSoundManager {
-    static let shared = ServiceSoundManager()
-
-    private var incomingMessageSound: SystemSoundID = 0
-    private var messageDeliveredSound: SystemSoundID = 0
-    private var lastIncomingPlayback = Date.distantPast
-    private var lastDeliveredPlayback = Date.distantPast
+    // MARK: Lifecycle
 
     private init() {
-        messageDeliveredSound = loadSound(named: "MessageSent", extension: "mp3")
-        incomingMessageSound = loadSound(named: "notification", extension: "mp3")
+        self.messageDeliveredSound = loadSound(named: "MessageSent", extension: "mp3")
+        self.incomingMessageSound = loadSound(named: "notification", extension: "mp3")
     }
 
     deinit {
@@ -22,6 +19,10 @@ import UIKit
             AudioServicesDisposeSystemSoundID(incomingMessageSound)
         }
     }
+
+    // MARK: Internal
+
+    static let shared = ServiceSoundManager()
 
     func playMessageDelivered() {
         guard Date().timeIntervalSince(lastDeliveredPlayback) > 0.2 else { return }
@@ -35,6 +36,13 @@ import UIKit
         lastIncomingPlayback = Date()
         play(incomingMessageSound)
     }
+
+    // MARK: Private
+
+    private var incomingMessageSound: SystemSoundID = 0
+    private var messageDeliveredSound: SystemSoundID = 0
+    private var lastIncomingPlayback = Date.distantPast
+    private var lastDeliveredPlayback = Date.distantPast
 
     private func loadSound(named name: String, extension fileExtension: String) -> SystemSoundID {
         guard let url = Bundle.main.url(forResource: name, withExtension: fileExtension) else { return 0 }

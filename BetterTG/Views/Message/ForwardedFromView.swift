@@ -3,14 +3,18 @@
 import SwiftUI
 
 struct ForwardedFromView: View {
-    let name: String
-    let onTap: (() -> Void)?
+    // MARK: Lifecycle
 
     init(name: String, onTap: (() -> Void)? = nil) {
         self.name = name
         self.onTap = onTap
     }
     
+    // MARK: Internal
+
+    let name: String
+    let onTap: (() -> Void)?
+
     var body: some View {
         Group {
             if let onTap {
@@ -23,6 +27,8 @@ struct ForwardedFromView: View {
         .padding(.horizontal, 8)
         .padding(.top, 5)
     }
+
+    // MARK: Private
 
     private var label: some View {
         HStack(spacing: 3) {

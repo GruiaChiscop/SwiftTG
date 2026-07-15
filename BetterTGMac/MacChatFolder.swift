@@ -1,10 +1,16 @@
+// MacChatFolder.swift
+
 import TDLibKit
+
+// MARK: - MacChatFolderID
 
 enum MacChatFolderID: Hashable, Sendable {
     case main
     case archive
     case folder(Int)
 }
+
+// MARK: - MacChatFolder
 
 struct MacChatFolder: Identifiable, Hashable, Sendable {
     let id: MacChatFolderID

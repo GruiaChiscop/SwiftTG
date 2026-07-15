@@ -1,13 +1,16 @@
+// MacChatList.swift
+
 import SwiftUI
 import TDLibKit
 
 struct MacChatRow: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
+
     let chat: ChatListItemState
     let chatList: ChatList
     let isOpen: Bool
-    @State private var showDeleteOptions = false
-    @State private var showMuteOptions = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -73,6 +76,46 @@ struct MacChatRow: View {
         }
     }
 
+    // MARK: Private
+
+    @State private var showDeleteOptions = false
+    @State private var showMuteOptions = false
+
+    private var accessibilityLabel: String {
+        var parts = [chat.title, chat.lastMessage.map(macMessageText) ?? "No messages"]
+        if chat.unreadCount > 0 {
+            parts.append("\(chat.unreadCount) unread")
+        }
+        if chat.isMarkedAsUnread {
+            parts.append("Marked as unread")
+        }
+        if isMuted {
+            parts.append("Muted")
+        }
+        if isPinned {
+            parts.append("Pinned")
+        }
+        if isArchived {
+            parts.append("Archived")
+        }
+        if isOpen {
+            parts.append("Open")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var isMuted: Bool {
+        (chat.notificationSettings?.muteFor ?? 0) > 0
+    }
+
+    private var isPinned: Bool {
+        chat.position(in: chatList)?.isPinned == true
+    }
+
+    private var isArchived: Bool {
+        chat.position(in: .chatListArchive) != nil
+    }
+
     @ViewBuilder private var chatActions: some View {
         Button(
             chat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread",
@@ -103,28 +146,5 @@ struct MacChatRow: View {
                 showDeleteOptions = true
             }
         }
-    }
-
-    private var accessibilityLabel: String {
-        var parts = [chat.title, chat.lastMessage.map(macMessageText) ?? "No messages"]
-        if chat.unreadCount > 0 { parts.append("\(chat.unreadCount) unread") }
-        if chat.isMarkedAsUnread { parts.append("Marked as unread") }
-        if isMuted { parts.append("Muted") }
-        if isPinned { parts.append("Pinned") }
-        if isArchived { parts.append("Archived") }
-        if isOpen { parts.append("Open") }
-        return parts.joined(separator: ", ")
-    }
-
-    private var isMuted: Bool {
-        (chat.notificationSettings?.muteFor ?? 0) > 0
-    }
-
-    private var isPinned: Bool {
-        chat.position(in: chatList)?.isPinned == true
-    }
-
-    private var isArchived: Bool {
-        chat.position(in: .chatListArchive) != nil
     }
 }

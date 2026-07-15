@@ -78,6 +78,8 @@ import SwiftOGG
 
     // MARK: Private
 
+    private enum PlaybackError: Error { case invalidPCM }
+
     @ObservationIgnored private var duration = 0
     @ObservationIgnored private var title = ""
 
@@ -86,18 +88,64 @@ import SwiftOGG
     @ObservationIgnored private var audioBuffer: AVAudioPCMBuffer?
     @ObservationIgnored private var scheduledBuffer: AVAudioPCMBuffer?
     @ObservationIgnored private var scheduledStartFrame: AVAudioFramePosition = 0
-    @ObservationIgnored private var playbackSampleRate: Double = 48_000
+    @ObservationIgnored private var playbackSampleRate: Double = 48000
     @ObservationIgnored private var progressTimer: Timer?
     @ObservationIgnored private var playbackGeneration: UInt = 0
     @ObservationIgnored private let decodedBufferCache: NSCache<NSString, AVAudioPCMBuffer> = {
         let cache = NSCache<NSString, AVAudioPCMBuffer>()
-        cache.totalCostLimit = 32 * 1_024 * 1_024
+        cache.totalCostLimit = 32 * 1024 * 1024
         cache.countLimit = 12
         return cache
     }()
+
     private let audioSession = AVAudioSession.sharedInstance()
     private let nowPlayingCenter = MPNowPlayingInfoCenter.default()
     private let commandCenter = MPRemoteCommandCenter.shared()
+
+    private var playerTime: TimeInterval {
+        guard let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime)
+        else { return Double(scheduledStartFrame) / playbackSampleRate }
+        return Double(scheduledStartFrame + playerTime.sampleTime) / playerTime.sampleRate
+    }
+
+    private static func makePCMBuffer(
+        from data: Data,
+        sampleRate: Double,
+        channels: AVAudioChannelCount,
+    ) throws -> AVAudioPCMBuffer {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: channels,
+            interleaved: true,
+        ) else { throw PlaybackError.invalidPCM }
+        let frameCount = data.count / (MemoryLayout<Float>.size * Int(channels))
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))
+        else { throw PlaybackError.invalidPCM }
+        buffer.frameLength = AVAudioFrameCount(frameCount)
+        let audioBuffer = buffer.mutableAudioBufferList.pointee.mBuffers
+        guard let destination = audioBuffer.mData else { throw PlaybackError.invalidPCM }
+        data.copyBytes(to: destination.assumingMemoryBound(to: UInt8.self), count: data.count)
+        return buffer
+    }
+
+    private static func opusStreamFormat(from data: Data) -> (sampleRate: Double, channels: AVAudioChannelCount) {
+        guard let headerRange = data.range(of: Data("OpusHead".utf8)),
+              data.count >= headerRange.lowerBound + 16
+        else { return (48000, 1) }
+        let offset = headerRange.lowerBound
+        let channels = max(1, AVAudioChannelCount(data[offset + 9]))
+        let rateBytes = data[(offset + 12)..<(offset + 16)]
+        let inputRate = rateBytes.enumerated().reduce(UInt32(0)) { result, item in
+            result | UInt32(item.element) << UInt32(item.offset * 8)
+        }
+        let validRates: [UInt32] = [8000, 12000, 16000, 24000, 48000]
+        let sampleRate = validRates.min { lhs, rhs in
+            abs(Int64(lhs) - Int64(inputRate)) < abs(Int64(rhs) - Int64(inputRate))
+        } ?? 48000
+        return (Double(sampleRate), channels)
+    }
 
     private func setCommandCenterControls() {
         commandCenter.skipBackwardCommand.preferredIntervals = [5.0]
@@ -211,13 +259,6 @@ import SwiftOGG
         }
     }
 
-    private var playerTime: TimeInterval {
-        guard let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime)
-        else { return Double(scheduledStartFrame) / playbackSampleRate }
-        return Double(scheduledStartFrame + playerTime.sampleTime) / playerTime.sampleRate
-    }
-
     private func preparePlayer(for sourcePath: String) {
         let cacheKey = sourcePath as NSString
         if let cachedBuffer = decodedBufferCache.object(forKey: cacheKey) {
@@ -313,46 +354,6 @@ import SwiftOGG
         progressTimer?.invalidate()
         progressTimer = nil
     }
-
-    private static func makePCMBuffer(
-        from data: Data,
-        sampleRate: Double,
-        channels: AVAudioChannelCount,
-    ) throws -> AVAudioPCMBuffer {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: channels,
-            interleaved: true,
-        ) else { throw PlaybackError.invalidPCM }
-        let frameCount = data.count / (MemoryLayout<Float>.size * Int(channels))
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))
-        else { throw PlaybackError.invalidPCM }
-        buffer.frameLength = AVAudioFrameCount(frameCount)
-        let audioBuffer = buffer.mutableAudioBufferList.pointee.mBuffers
-        guard let destination = audioBuffer.mData else { throw PlaybackError.invalidPCM }
-        data.copyBytes(to: destination.assumingMemoryBound(to: UInt8.self), count: data.count)
-        return buffer
-    }
-
-    private static func opusStreamFormat(from data: Data) -> (sampleRate: Double, channels: AVAudioChannelCount) {
-        guard let headerRange = data.range(of: Data("OpusHead".utf8)),
-              data.count >= headerRange.lowerBound + 16
-        else { return (48_000, 1) }
-        let offset = headerRange.lowerBound
-        let channels = max(1, AVAudioChannelCount(data[offset + 9]))
-        let rateBytes = data[(offset + 12) ..< (offset + 16)]
-        let inputRate = rateBytes.enumerated().reduce(UInt32(0)) { result, item in
-            result | UInt32(item.element) << UInt32(item.offset * 8)
-        }
-        let validRates: [UInt32] = [8_000, 12_000, 16_000, 24_000, 48_000]
-        let sampleRate = validRates.min { lhs, rhs in
-            abs(Int64(lhs) - Int64(inputRate)) < abs(Int64(rhs) - Int64(inputRate))
-        } ?? 48_000
-        return (Double(sampleRate), channels)
-    }
-
-    private enum PlaybackError: Error { case invalidPCM }
 
     private func setNowPlaying() {
         var info = [String: Any]()

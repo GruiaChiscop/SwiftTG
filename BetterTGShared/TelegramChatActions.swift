@@ -2,8 +2,8 @@
 
 import TDLibKit
 
-// Chat-list actions shared between the iOS (RootVM) and macOS (MacSessionModel)
-// view models, which wrap chats in different types but call the same TDLib flow.
+/// Chat-list actions shared between the iOS (RootVM) and macOS (MacSessionModel)
+/// view models, which wrap chats in different types but call the same TDLib flow.
 enum TelegramChatActions {
     static func toggleRead(
         service: any TelegramService,

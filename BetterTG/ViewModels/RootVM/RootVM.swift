@@ -14,23 +14,28 @@ enum Route: Hashable {
 // MARK: - ChatListLoadKey
 
 struct ChatListLoadKey: Hashable, Sendable {
+    // MARK: Lifecycle
+
     init(chatId: Int64, list: ChatList) {
         self.chatId = chatId
-        listKey = switch list {
-        case .chatListMain: .main
-        case .chatListArchive: .archive
-        case .chatListFolder(let folder): .folder(folder.chatFolderId)
-        }
+        self.listKey =
+            switch list {
+            case .chatListMain: .main
+            case .chatListArchive: .archive
+            case .chatListFolder(let folder): .folder(folder.chatFolderId)
+            }
     }
 
-    let chatId: Int64
-    let listKey: ListKey
+    // MARK: Internal
 
     enum ListKey: Hashable, Sendable {
         case main
         case archive
         case folder(Int)
     }
+
+    let chatId: Int64
+    let listKey: ListKey
 }
 
 // MARK: - RootVM
@@ -86,8 +91,12 @@ struct ChatListLoadKey: Hashable, Sendable {
     var mainFolder: CustomFolder? { folders.first(where: { $0.type == .main }) }
     var allChats: [CustomChat] {
         var chats = [CustomChat]()
-        if let archive { chats.append(contentsOf: archive.chats) }
-        if let mainFolder { chats.append(contentsOf: mainFolder.chats) }
+        if let archive {
+            chats.append(contentsOf: archive.chats)
+        }
+        if let mainFolder {
+            chats.append(contentsOf: mainFolder.chats)
+        }
         return chats
     }
     
@@ -118,6 +127,35 @@ struct ChatListLoadKey: Hashable, Sendable {
         return await getCustomChat(from: chat.id)
     }
 
+    func getSenderName(for message: Message?) async -> String? {
+        guard let message else { return nil }
+
+        switch message.senderId {
+        case .messageSenderUser(let sender):
+            guard let user = try? await service.getUser(userId: sender.userId) else { return nil }
+            return "\(user.firstName) \(user.lastName)".trimmingCharacters(in: .whitespaces)
+        case .messageSenderChat(let sender):
+            return try? await service.getChat(chatId: sender.chatId).title
+        }
+    }
+    
+    func getCustomFolder(from info: ChatFolderInfo) async -> CustomFolder? {
+        guard let folder = try? await service.getChatFolder(chatFolderId: info.id),
+              let customChats = await getCustomChats(for: .chatListFolder(.init(chatFolderId: info.id)))
+        else { return nil }
+        return CustomFolder(
+            chats: customChats,
+            type: .folder(info, folder),
+        )
+    }
+    
+    func getCustomChats(for chatList: ChatList) async -> [CustomChat]? {
+        guard let chatIds = try? await service.getChats(chatList: chatList, limit: 200).chatIds else { return nil }
+        return await chatIds.asyncCompactMap { await getCustomChat(from: $0, for: chatList) }
+    }
+
+    // MARK: Private
+
     private func makeCustomChat(from chat: Chat, position: ChatPosition) async -> CustomChat? {
         switch chat.type {
         case .chatTypePrivate(let chatTypePrivate):
@@ -147,11 +185,12 @@ struct ChatListLoadKey: Hashable, Sendable {
         case .chatTypeSupergroup(let chatTypeSupergroup):
             guard let supergroup = try? await service.getSupergroup(supergroupId: chatTypeSupergroup.supergroupId)
             else { return nil }
-            let senderName: String? = if supergroup.isChannel {
-                nil
-            } else {
-                await getSenderName(for: chat.lastMessage)
-            }
+            let senderName: String? =
+                if supergroup.isChannel {
+                    nil
+                } else {
+                    await getSenderName(for: chat.lastMessage)
+                }
             return CustomChat(
                 chat: chat,
                 position: position,
@@ -177,32 +216,5 @@ struct ChatListLoadKey: Hashable, Sendable {
         default:
             return nil
         }
-    }
-
-    func getSenderName(for message: Message?) async -> String? {
-        guard let message else { return nil }
-
-        switch message.senderId {
-        case .messageSenderUser(let sender):
-            guard let user = try? await service.getUser(userId: sender.userId) else { return nil }
-            return "\(user.firstName) \(user.lastName)".trimmingCharacters(in: .whitespaces)
-        case .messageSenderChat(let sender):
-            return try? await service.getChat(chatId: sender.chatId).title
-        }
-    }
-    
-    func getCustomFolder(from info: ChatFolderInfo) async -> CustomFolder? {
-        guard let folder = try? await service.getChatFolder(chatFolderId: info.id),
-              let customChats = await getCustomChats(for: .chatListFolder(.init(chatFolderId: info.id)))
-        else { return nil }
-        return CustomFolder(
-            chats: customChats,
-            type: .folder(info, folder),
-        )
-    }
-    
-    func getCustomChats(for chatList: ChatList) async -> [CustomChat]? {
-        guard let chatIds = try? await service.getChats(chatList: chatList, limit: 200).chatIds else { return nil }
-        return await chatIds.asyncCompactMap { await getCustomChat(from: $0, for: chatList) }
     }
 }

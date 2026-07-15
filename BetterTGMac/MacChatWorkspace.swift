@@ -1,6 +1,10 @@
+// MacChatWorkspace.swift
+
 import SwiftUI
 
 struct MacChatWorkspace: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
 
     var body: some View {
@@ -39,7 +43,11 @@ struct MacChatWorkspace: View {
             "Action Failed",
             isPresented: Binding(
                 get: { model.messageActionError != nil },
-                set: { if !$0 { model.messageActionError = nil } },
+                set: {
+                    if !$0 {
+                        model.messageActionError = nil
+                    }
+                },
             ),
         ) {
             Button("OK") { model.messageActionError = nil }
@@ -47,6 +55,8 @@ struct MacChatWorkspace: View {
             Text(model.messageActionError ?? "Unknown error")
         }
     }
+
+    // MARK: Private
 
     private var chatList: some View {
         List(selection: $model.focusedChatId) {
@@ -98,9 +108,9 @@ struct MacChatWorkspace: View {
                             chatList: result.chatList,
                             isOpen: model.openedChatId == result.chatId,
                         )
-                            .tag(result.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture { model.activateChat(result.chatId) }
+                        .tag(result.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.activateChat(result.chatId) }
                     }
                 } header: {
                     Text("Chats (\(model.chatSearchResults.count))")

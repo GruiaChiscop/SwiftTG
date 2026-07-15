@@ -1,3 +1,5 @@
+// MacSessionModel+ChatFolders.swift
+
 import TDLibKit
 
 extension MacSessionModel {
@@ -58,7 +60,9 @@ extension MacSessionModel {
                     }
                 }
                 for await chat in group {
-                    if let chat { loadedChats.append(chat) }
+                    if let chat {
+                        loadedChats.append(chat)
+                    }
                 }
             }
             guard !Task.isCancelled else { return }

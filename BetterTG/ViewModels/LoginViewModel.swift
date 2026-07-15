@@ -1,11 +1,17 @@
+// LoginViewModel.swift
+
 import Combine
 import SwiftUI
 import TDLibKit
 
 @MainActor @Observable final class LoginViewModel {
+    // MARK: Lifecycle
+
     init(service: any TelegramService) {
         self.service = service
     }
+
+    // MARK: Internal
 
     var code = ""
     var countryNums = [PhoneNumberInfo]()
@@ -16,7 +22,7 @@ import TDLibKit
     var selectedCountryNum = PhoneNumberInfo(
         country: "RU",
         phoneNumberPrefix: "7",
-        name: "Russian Federation"
+        name: "Russian Federation",
     )
     var showPhoneConfirmation = false
     var twoFactor = ""
@@ -64,6 +70,21 @@ import TDLibKit
         }
     }
 
+    // MARK: Private
+
+    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored private let service: any TelegramService
+    @ObservationIgnored private var started = false
+
+    private static func phoneNumberInfo(_ country: CountryInfo) -> PhoneNumberInfo? {
+        guard let callingCode = country.callingCodes.first else { return nil }
+        return PhoneNumberInfo(
+            country: country.countryCode,
+            phoneNumberPrefix: callingCode,
+            name: country.englishName,
+        )
+    }
+
     private func observeAuthorizationState() {
         service.authorizationStatePublisher
             .receive(on: DispatchQueue.main)
@@ -100,17 +121,4 @@ import TDLibKit
             selectedCountryNum = info
         }
     }
-
-    private static func phoneNumberInfo(_ country: CountryInfo) -> PhoneNumberInfo? {
-        guard let callingCode = country.callingCodes.first else { return nil }
-        return PhoneNumberInfo(
-            country: country.countryCode,
-            phoneNumberPrefix: callingCode,
-            name: country.englishName
-        )
-    }
-
-    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
-    @ObservationIgnored private let service: any TelegramService
-    @ObservationIgnored private var started = false
 }

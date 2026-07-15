@@ -1,27 +1,25 @@
+// MacMessageRow.swift
+
 import AppKit
 import AVKit
 import SwiftUI
 import TDLibKit
 
+// MARK: - MacMessageRow
+
 struct MacMessageRow: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
+
     let message: Message
     let lastReadOutboxMessageId: Int64
-    @State private var player = MacVoicePlayer.shared
-    @State private var documentPath: String?
-    @State private var isLoadingDocument = false
-    @State private var photoImage: NSImage?
-    @State private var photoPath: String?
-    @State private var videoThumbnailImage: NSImage?
-    @State private var voicePath: String?
-    @State private var showDeleteOptions = false
-    @State private var showPhotoPreview = false
-    @State private var showVideoPreview = false
-    @State private var isVisible = false
 
     var body: some View {
         HStack {
-            if message.isOutgoing { Spacer(minLength: 80) }
+            if message.isOutgoing {
+                Spacer(minLength: 80)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 if let forwardedFrom = model.messageForwardedFrom[message.id] {
                     if canNavigateToForwardOrigin {
@@ -106,7 +104,9 @@ struct MacMessageRow: View {
                 message.isOutgoing ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12),
                 in: RoundedRectangle(cornerRadius: 12),
             )
-            if !message.isOutgoing { Spacer(minLength: 80) }
+            if !message.isOutgoing {
+                Spacer(minLength: 80)
+            }
         }
         .onScrollVisibilityChange(threshold: 0.01) { isVisible in
             self.isVisible = isVisible
@@ -233,6 +233,139 @@ struct MacMessageRow: View {
         .contextMenu { messageActions }
     }
 
+    // MARK: Private
+
+    @State private var player = MacVoicePlayer.shared
+    @State private var documentPath: String?
+    @State private var isLoadingDocument = false
+    @State private var photoImage: NSImage?
+    @State private var photoPath: String?
+    @State private var videoThumbnailImage: NSImage?
+    @State private var voicePath: String?
+    @State private var showDeleteOptions = false
+    @State private var showPhotoPreview = false
+    @State private var showVideoPreview = false
+    @State private var isVisible = false
+
+    private var capabilities: MacMessageCapabilities? {
+        model.messageCapabilities[message.id]
+    }
+
+    private var presentationTaskID: String {
+        "\(isVisible):\(message.id):\(message.editDate)"
+    }
+
+    private var canNavigateToForwardOrigin: Bool {
+        guard let origin = message.forwardInfo?.origin else { return false }
+        if case .messageOriginHiddenUser = origin {
+            return false
+        }
+        return true
+    }
+
+    private var canCopy: Bool {
+        capabilities?.properties.canBeCopied == true && copyableMessageText(message) != nil
+    }
+
+    private var canDelete: Bool {
+        capabilities?.properties.canBeDeletedOnlyForSelf == true
+            || capabilities?.properties.canBeDeletedForAllUsers == true
+    }
+
+    private var voiceFileId: Int? {
+        guard case .messageVoiceNote(let content) = message.content else { return nil }
+        return content.voiceNote.voice.id
+    }
+
+    private var documentFileId: Int? {
+        guard case .messageDocument(let content) = message.content else { return nil }
+        return content.document.document.id
+    }
+
+    private var activationHint: String {
+        if voiceFileId != nil {
+            return "Press to play or pause"
+        }
+        if documentFileId != nil {
+            return "Press to open document"
+        }
+        if photoFileId != nil {
+            return "Press to open photo"
+        }
+        if videoFileId != nil {
+            return "Press to play video"
+        }
+        return ""
+    }
+
+    private var hasDefaultActivation: Bool {
+        voiceFileId != nil || documentFileId != nil || photoFileId != nil || videoFileId != nil
+    }
+
+    private var photoFileId: Int? {
+        guard case .messagePhoto(let content) = message.content else { return nil }
+        return content.photo
+            .sizes
+            .max {
+                $0.width * $0.height < $1.width * $1.height
+            }?.photo
+            .id
+    }
+
+    private var videoFileId: Int? {
+        guard case .messageVideo(let content) = message.content else { return nil }
+        return content.video.video.id
+    }
+
+    private var videoThumbnailFileId: Int? {
+        guard case .messageVideo(let content) = message.content else { return nil }
+        if let cover = content.cover {
+            return cover.sizes
+                .max {
+                    $0.width * $0.height < $1.width * $1.height
+                }?.photo
+                .id
+        }
+        return content.video.thumbnail?.file.id
+    }
+
+    private var accessibilityDescription: String {
+        var parts = [String]()
+        if let forwardedFrom = model.messageForwardedFrom[message.id] {
+            parts.append("Forwarded from \(forwardedFrom)")
+        }
+        if let replyContext = model.messageReplyContexts[message.id] {
+            parts.append("Replying to \(replyContext.senderName)")
+        }
+        if message.isOutgoing {
+            parts.append("You")
+        } else if let senderName = model.cachedSenderName(for: message) {
+            parts.append(senderName)
+        }
+        parts.append(telegramMessageContentDescription(message))
+        if let editStatus = telegramMessageEditStatus(message) {
+            parts.append(editStatus)
+        }
+        parts.append(telegramMessageDateDescription(message.date))
+        if let status = telegramMessageDeliveryStatus(
+            message,
+            lastReadOutboxMessageId: lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        if case .messageVoiceNote(let content) = message.content {
+            let elapsed = player.currentFileId == content.voiceNote.voice.id ? player.currentTime : 0
+            parts.append(telegramVoicePlaybackDescription(
+                duration: content.voiceNote.duration,
+                elapsed: elapsed,
+            ))
+        }
+        if let replyContext = model.messageReplyContexts[message.id] {
+            parts.append("Quoted message: \(replyContext.quotedText)")
+        }
+        return parts.joined(separator: ", ")
+    }
+
     @ViewBuilder private var messageActions: some View {
         if capabilities?.properties.canBeReplied == true {
             Button("Reply", systemImage: "arrowshape.turn.up.left") { model.beginReply(to: message) }
@@ -275,29 +408,6 @@ struct MacMessageRow: View {
         }
     }
 
-    private var capabilities: MacMessageCapabilities? {
-        model.messageCapabilities[message.id]
-    }
-
-    private var presentationTaskID: String {
-        "\(isVisible):\(message.id):\(message.editDate)"
-    }
-
-    private var canNavigateToForwardOrigin: Bool {
-        guard let origin = message.forwardInfo?.origin else { return false }
-        if case .messageOriginHiddenUser = origin { return false }
-        return true
-    }
-
-    private var canCopy: Bool {
-        capabilities?.properties.canBeCopied == true && copyableMessageText(message) != nil
-    }
-
-    private var canDelete: Bool {
-        capabilities?.properties.canBeDeletedOnlyForSelf == true
-            || capabilities?.properties.canBeDeletedForAllUsers == true
-    }
-
     private func copyMessageText() {
         guard let text = copyableMessageText(message) else { return }
         NSPasteboard.general.clearContents()
@@ -328,28 +438,6 @@ struct MacMessageRow: View {
         return isVisible && !Task.isCancelled
     }
 
-    private var voiceFileId: Int? {
-        guard case .messageVoiceNote(let content) = message.content else { return nil }
-        return content.voiceNote.voice.id
-    }
-
-    private var documentFileId: Int? {
-        guard case .messageDocument(let content) = message.content else { return nil }
-        return content.document.document.id
-    }
-
-    private var activationHint: String {
-        if voiceFileId != nil { return "Press to play or pause" }
-        if documentFileId != nil { return "Press to open document" }
-        if photoFileId != nil { return "Press to open photo" }
-        if videoFileId != nil { return "Press to play video" }
-        return ""
-    }
-
-    private var hasDefaultActivation: Bool {
-        voiceFileId != nil || documentFileId != nil || photoFileId != nil || videoFileId != nil
-    }
-
     private func activateMessage() {
         if case .messageVoiceNote(let content) = message.content, let voicePath {
             player.toggle(
@@ -365,72 +453,15 @@ struct MacMessageRow: View {
             showVideoPreview = true
         }
     }
-
-    private var photoFileId: Int? {
-        guard case .messagePhoto(let content) = message.content else { return nil }
-        return content.photo.sizes.max {
-            $0.width * $0.height < $1.width * $1.height
-        }?.photo.id
-    }
-
-    private var videoFileId: Int? {
-        guard case .messageVideo(let content) = message.content else { return nil }
-        return content.video.video.id
-    }
-
-    private var videoThumbnailFileId: Int? {
-        guard case .messageVideo(let content) = message.content else { return nil }
-        if let cover = content.cover {
-            return cover.sizes.max {
-                $0.width * $0.height < $1.width * $1.height
-            }?.photo.id
-        }
-        return content.video.thumbnail?.file.id
-    }
-
-    private var accessibilityDescription: String {
-        var parts = [String]()
-        if let forwardedFrom = model.messageForwardedFrom[message.id] {
-            parts.append("Forwarded from \(forwardedFrom)")
-        }
-        if let replyContext = model.messageReplyContexts[message.id] {
-            parts.append("Replying to \(replyContext.senderName)")
-        }
-        if message.isOutgoing {
-            parts.append("You")
-        } else if let senderName = model.cachedSenderName(for: message) {
-            parts.append(senderName)
-        }
-        parts.append(telegramMessageContentDescription(message))
-        if let editStatus = telegramMessageEditStatus(message) {
-            parts.append(editStatus)
-        }
-        parts.append(telegramMessageDateDescription(message.date))
-        if let status = telegramMessageDeliveryStatus(
-            message,
-            lastReadOutboxMessageId: lastReadOutboxMessageId,
-        ) {
-            parts.append(status)
-        }
-        if case .messageVoiceNote(let content) = message.content {
-            let elapsed = player.currentFileId == content.voiceNote.voice.id ? player.currentTime : 0
-            parts.append(telegramVoicePlaybackDescription(
-                duration: content.voiceNote.duration,
-                elapsed: elapsed,
-            ))
-        }
-        if let replyContext = model.messageReplyContexts[message.id] {
-            parts.append("Quoted message: \(replyContext.quotedText)")
-        }
-        return parts.joined(separator: ", ")
-    }
 }
+
+// MARK: - OptionalAccessibilityActivation
 
 private struct OptionalAccessibilityActivation: ViewModifier {
     let isEnabled: Bool
     let action: () -> Void
 
-    @ViewBuilder func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         if isEnabled {
             content.accessibilityAction {
                 action()
@@ -440,6 +471,8 @@ private struct OptionalAccessibilityActivation: ViewModifier {
         }
     }
 }
+
+// MARK: - MacDocumentMessageContent
 
 private struct MacDocumentMessageContent: View {
     let content: MessageDocument
@@ -473,6 +506,8 @@ private struct MacDocumentMessageContent: View {
     }
 }
 
+// MARK: - MacPhotoMessageContent
+
 private struct MacPhotoMessageContent: View {
     let content: MessagePhoto
     let image: NSImage?
@@ -503,11 +538,14 @@ private struct MacPhotoMessageContent: View {
     }
 }
 
+// MARK: - MacPhotoPreview
+
 private struct MacPhotoPreview: View {
+    // MARK: Internal
+
     let image: NSImage
     let caption: String
     let fileURL: URL
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 12) {
@@ -545,9 +583,17 @@ private struct MacPhotoPreview: View {
         .padding(16)
         .frame(minWidth: 600, minHeight: 480)
     }
+
+    // MARK: Private
+
+    @Environment(\.dismiss) private var dismiss
 }
 
+// MARK: - MacVideoMessageContent
+
 private struct MacVideoMessageContent: View {
+    // MARK: Internal
+
     let content: MessageVideo
     let thumbnail: NSImage?
     let onOpen: () -> Void
@@ -596,22 +642,25 @@ private struct MacVideoMessageContent: View {
         .accessibilityHidden(true)
     }
 
+    // MARK: Private
+
     private var caption: some View {
         Text(content.caption.text)
             .textSelection(.enabled)
     }
 }
 
+// MARK: - MacVideoPreview
+
 private struct MacVideoPreview: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
+
     let fileId: Int
     let caption: String
     let duration: Int
     let startTimestamp: Int
-    @Environment(\.dismiss) private var dismiss
-    @State private var player: AVPlayer?
-    @State private var fileURL: URL?
-    @State private var didFail = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -675,11 +724,23 @@ private struct MacVideoPreview: View {
         }
         .onDisappear { player?.pause() }
     }
+
+    // MARK: Private
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var player: AVPlayer?
+    @State private var fileURL: URL?
+    @State private var didFail = false
 }
 
+// MARK: - MacVoiceMessageContent
+
 private struct MacVoiceMessageContent: View {
+    // MARK: Internal
+
     let voiceNote: VoiceNote
     let path: String?
+
     @Bindable var player: MacVoicePlayer
 
     var body: some View {
@@ -691,7 +752,12 @@ private struct MacVoiceMessageContent: View {
                 .labelStyle(.iconOnly)
                 .disabled(!isCurrent)
 
-                Button(isPlaying ? "Pause Voice Message" : "Play Voice Message", systemImage: isPlaying ? "pause.fill" : "play.fill") {
+                Button(
+                    isPlaying ? "Pause Voice Message" : "Play Voice Message",
+                    systemImage: isPlaying
+                        ? "pause.fill"
+                        : "play.fill",
+                ) {
                     guard let path else { return }
                     player.toggle(fileId: voiceNote.voice.id, path: path, duration: voiceNote.duration)
                 }
@@ -714,6 +780,8 @@ private struct MacVoiceMessageContent: View {
         }
         .accessibilityHidden(true)
     }
+
+    // MARK: Private
 
     private var elapsed: Int {
         isCurrent ? player.currentTime : 0

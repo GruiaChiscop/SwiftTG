@@ -1,3 +1,5 @@
+// TelegramMessageMetadata.swift
+
 import Foundation
 import TDLibKit
 
@@ -45,7 +47,7 @@ func telegramMessageDateDescription(_ timestamp: Int) -> String {
 func telegramMessageDayHeading(
     _ timestamp: Int,
     relativeTo now: Foundation.Date = Foundation.Date(),
-    calendar: Calendar = .autoupdatingCurrent
+    calendar: Calendar = .autoupdatingCurrent,
 ) -> String {
     let date = Foundation.Date(timeIntervalSince1970: TimeInterval(timestamp))
     if calendar.isDate(date, inSameDayAs: now) {

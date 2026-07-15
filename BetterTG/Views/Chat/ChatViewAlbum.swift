@@ -71,33 +71,6 @@ private struct ChatViewAlbumRootView: View {
     @State private var photos = [Int: String]()
     @State private var videos = [Int: String]()
 
-    private var toolbar: some View {
-        HStack {
-            Button(systemImage: "xmark.circle.fill") {
-                dismiss()
-            }
-            .accessibilityLabel("Close")
-
-            Spacer()
-
-            if let shareURL
-            {
-                Button(systemImage: "square.and.arrow.up.circle.fill") {
-                    showShareSheet([shareURL])
-                }
-                .accessibilityLabel("Share")
-            }
-        }
-        .font(.title)
-        .foregroundStyle(.white)
-    }
-
-    private func makeMessagePhoto(from messagePhoto: MessagePhoto) -> some View {
-        TdImage(photo: messagePhoto.photo, size: .yBox, contentMode: .fit) { size, file in
-            withAnimation { photos[size.photo.id] = file.local.path }
-        }
-    }
-
     private var shareURL: URL? {
         guard let selectedMessage = album.first(where: { $0.id == selection }) else { return nil }
         let path: String?
@@ -113,7 +86,35 @@ private struct ChatViewAlbumRootView: View {
         guard let path, FileManager.default.fileExists(atPath: path) else { return nil }
         return URL(filePath: path)
     }
+
+    private var toolbar: some View {
+        HStack {
+            Button(systemImage: "xmark.circle.fill") {
+                dismiss()
+            }
+            .accessibilityLabel("Close")
+
+            Spacer()
+
+            if let shareURL {
+                Button(systemImage: "square.and.arrow.up.circle.fill") {
+                    showShareSheet([shareURL])
+                }
+                .accessibilityLabel("Share")
+            }
+        }
+        .font(.title)
+        .foregroundStyle(.white)
+    }
+
+    private func makeMessagePhoto(from messagePhoto: MessagePhoto) -> some View {
+        TdImage(photo: messagePhoto.photo, size: .yBox, contentMode: .fit) { size, file in
+            withAnimation { photos[size.photo.id] = file.local.path }
+        }
+    }
 }
+
+// MARK: - ChatVideoPage
 
 private struct ChatVideoPage: View {
     let messageVideo: MessageVideo
@@ -136,7 +137,11 @@ private struct ChatVideoPage: View {
     }
 }
 
+// MARK: - ChatVideoPlayer
+
 private struct ChatVideoPlayer: View {
+    // MARK: Lifecycle
+
     init(fileURL: URL, duration: Int, startTimestamp: Int, isSelected: Bool) {
         self.duration = duration
         self.startTimestamp = startTimestamp
@@ -144,11 +149,11 @@ private struct ChatVideoPlayer: View {
         _player = State(initialValue: AVPlayer(url: fileURL))
     }
 
+    // MARK: Internal
+
     let duration: Int
     let startTimestamp: Int
     let isSelected: Bool
-    @State private var player: AVPlayer
-    @State private var prepared = false
 
     var body: some View {
         VideoPlayer(player: player)
@@ -166,4 +171,9 @@ private struct ChatVideoPlayer: View {
             }
             .onDisappear { player.pause() }
     }
+
+    // MARK: Private
+
+    @State private var player: AVPlayer
+    @State private var prepared = false
 }

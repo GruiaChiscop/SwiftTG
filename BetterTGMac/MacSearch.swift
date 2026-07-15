@@ -1,10 +1,16 @@
+// MacSearch.swift
+
 import Foundation
 import TDLibKit
+
+// MARK: - MacSearchResultID
 
 enum MacSearchResultID: Hashable {
     case chat(Int64)
     case message(chatId: Int64, messageId: Int64)
 }
+
+// MARK: - MacChatSearchResult
 
 struct MacChatSearchResult: Identifiable {
     let chat: ChatListItemState
@@ -13,6 +19,8 @@ struct MacChatSearchResult: Identifiable {
     var chatId: Int64 { chat.chatId }
     var id: MacSearchResultID { .chat(chat.chatId) }
 }
+
+// MARK: - MacMessageSearchResult
 
 struct MacMessageSearchResult: Identifiable {
     let message: Message

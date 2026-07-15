@@ -1,10 +1,22 @@
+// MacVoicePlayer.swift
+
 import AVFoundation
 import Observation
 import SwiftOGG
 
+// MARK: - MacVoicePlaybackError
+
 private enum MacVoicePlaybackError: Error { case invalidPCM }
 
+// MARK: - MacVoicePlayer
+
 @MainActor @Observable final class MacVoicePlayer {
+    // MARK: Lifecycle
+
+    private init() {}
+
+    // MARK: Internal
+
     static let shared = MacVoicePlayer()
 
     var currentFileId: Int?
@@ -32,11 +44,79 @@ private enum MacVoicePlaybackError: Error { case invalidPCM }
         seek(to: min(Double(duration), playerTime + 5))
     }
 
-    private init() {}
+    func stop() {
+        generation &+= 1
+        player.stop()
+        isPlaying = false
+        currentTime = 0
+        currentFileId = nil
+        audioBuffer = nil
+        stopTimer()
+    }
+
+    // MARK: Private
+
+    @ObservationIgnored private var audioBuffer: AVAudioPCMBuffer?
+    @ObservationIgnored private var duration = 0
+    @ObservationIgnored private let engine = AVAudioEngine()
+    @ObservationIgnored private var generation: UInt = 0
+    @ObservationIgnored private let player = AVAudioPlayerNode()
+    @ObservationIgnored private var sampleRate = 48000.0
+    @ObservationIgnored private var scheduledStartFrame: AVAudioFramePosition = 0
+    @ObservationIgnored private var timer: Timer?
+
+    private var playerTime: TimeInterval {
+        guard let nodeTime = player.lastRenderTime,
+              let time = player.playerTime(forNodeTime: nodeTime)
+        else { return Double(scheduledStartFrame) / sampleRate }
+        return Double(scheduledStartFrame + time.sampleTime) / time.sampleRate
+    }
+
+    private nonisolated static func makePCMBuffer(
+        from data: Data,
+        sampleRate: Double,
+        channels: AVAudioChannelCount,
+    ) throws -> AVAudioPCMBuffer {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: channels,
+            interleaved: true,
+        ) else { throw MacVoicePlaybackError.invalidPCM }
+        let frameCount = data.count / (MemoryLayout<Float>.size * Int(channels))
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))
+        else { throw MacVoicePlaybackError.invalidPCM }
+        buffer.frameLength = AVAudioFrameCount(frameCount)
+        guard let destination = buffer.mutableAudioBufferList.pointee.mBuffers.mData else {
+            throw MacVoicePlaybackError.invalidPCM
+        }
+        data.copyBytes(to: destination.assumingMemoryBound(to: UInt8.self), count: data.count)
+        return buffer
+    }
+
+    private nonisolated static func opusStreamFormat(from data: Data)
+    -> (sampleRate: Double, channels: AVAudioChannelCount) {
+        guard let headerRange = data.range(of: Data("OpusHead".utf8)),
+              data.count >= headerRange.lowerBound + 16
+        else { return (48000, 1) }
+        let offset = headerRange.lowerBound
+        let channels = max(1, AVAudioChannelCount(data[offset + 9]))
+        let rateBytes = data[(offset + 12)..<(offset + 16)]
+        let inputRate = rateBytes.enumerated().reduce(UInt32(0)) { result, item in
+            result | UInt32(item.element) << UInt32(item.offset * 8)
+        }
+        let validRates: [UInt32] = [8000, 12000, 16000, 24000, 48000]
+        let rate = validRates.min {
+            abs(Int64($0) - Int64(inputRate)) < abs(Int64($1) - Int64(inputRate))
+        } ?? 48000
+        return (Double(rate), channels)
+    }
 
     private func play() {
         guard audioBuffer != nil else { return }
-        if !engine.isRunning { try? engine.start() }
+        if !engine.isRunning {
+            try? engine.start()
+        }
         player.play()
         isPlaying = true
         startTimer()
@@ -48,30 +128,15 @@ private enum MacVoicePlaybackError: Error { case invalidPCM }
         stopTimer()
     }
 
-    func stop() {
-        generation &+= 1
-        player.stop()
-        isPlaying = false
-        currentTime = 0
-        currentFileId = nil
-        audioBuffer = nil
-        stopTimer()
-    }
-
     private func seek(to seconds: TimeInterval) {
         guard let audioBuffer else { return }
         let wasPlaying = isPlaying
         let frame = AVAudioFramePosition(max(0, min(seconds, Double(duration))) * sampleRate)
         schedule(buffer: audioBuffer, from: frame)
         currentTime = Int(Double(frame) / sampleRate)
-        if wasPlaying { player.play() }
-    }
-
-    private var playerTime: TimeInterval {
-        guard let nodeTime = player.lastRenderTime,
-              let time = player.playerTime(forNodeTime: nodeTime)
-        else { return Double(scheduledStartFrame) / sampleRate }
-        return Double(scheduledStartFrame + time.sampleTime) / time.sampleRate
+        if wasPlaying {
+            player.play()
+        }
     }
 
     private func preparePlayer(path: String, fileId: Int) {
@@ -101,7 +166,9 @@ private enum MacVoicePlaybackError: Error { case invalidPCM }
 
     private func configure(with buffer: AVAudioPCMBuffer) {
         player.stop()
-        if player.engine == nil { engine.attach(player) }
+        if player.engine == nil {
+            engine.attach(player)
+        }
         engine.disconnectNodeOutput(player)
         engine.connect(player, to: engine.mainMixerNode, format: buffer.format)
         audioBuffer = buffer
@@ -146,8 +213,8 @@ private enum MacVoicePlaybackError: Error { case invalidPCM }
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.isPlaying else { return }
-                self.currentTime = Int(self.playerTime)
+                guard let self, isPlaying else { return }
+                currentTime = Int(playerTime)
             }
         }
     }
@@ -156,52 +223,4 @@ private enum MacVoicePlaybackError: Error { case invalidPCM }
         timer?.invalidate()
         timer = nil
     }
-
-    nonisolated private static func makePCMBuffer(
-        from data: Data,
-        sampleRate: Double,
-        channels: AVAudioChannelCount,
-    ) throws -> AVAudioPCMBuffer {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: channels,
-            interleaved: true,
-        ) else { throw MacVoicePlaybackError.invalidPCM }
-        let frameCount = data.count / (MemoryLayout<Float>.size * Int(channels))
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))
-        else { throw MacVoicePlaybackError.invalidPCM }
-        buffer.frameLength = AVAudioFrameCount(frameCount)
-        guard let destination = buffer.mutableAudioBufferList.pointee.mBuffers.mData else {
-            throw MacVoicePlaybackError.invalidPCM
-        }
-        data.copyBytes(to: destination.assumingMemoryBound(to: UInt8.self), count: data.count)
-        return buffer
-    }
-
-    nonisolated private static func opusStreamFormat(from data: Data) -> (sampleRate: Double, channels: AVAudioChannelCount) {
-        guard let headerRange = data.range(of: Data("OpusHead".utf8)),
-              data.count >= headerRange.lowerBound + 16
-        else { return (48_000, 1) }
-        let offset = headerRange.lowerBound
-        let channels = max(1, AVAudioChannelCount(data[offset + 9]))
-        let rateBytes = data[(offset + 12) ..< (offset + 16)]
-        let inputRate = rateBytes.enumerated().reduce(UInt32(0)) { result, item in
-            result | UInt32(item.element) << UInt32(item.offset * 8)
-        }
-        let validRates: [UInt32] = [8_000, 12_000, 16_000, 24_000, 48_000]
-        let rate = validRates.min {
-            abs(Int64($0) - Int64(inputRate)) < abs(Int64($1) - Int64(inputRate))
-        } ?? 48_000
-        return (Double(rate), channels)
-    }
-
-    @ObservationIgnored private var audioBuffer: AVAudioPCMBuffer?
-    @ObservationIgnored private var duration = 0
-    @ObservationIgnored private let engine = AVAudioEngine()
-    @ObservationIgnored private var generation: UInt = 0
-    @ObservationIgnored private let player = AVAudioPlayerNode()
-    @ObservationIgnored private var sampleRate = 48_000.0
-    @ObservationIgnored private var scheduledStartFrame: AVAudioFramePosition = 0
-    @ObservationIgnored private var timer: Timer?
 }

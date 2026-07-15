@@ -1,3 +1,5 @@
+// TelegramMessageMetadataTests.swift
+
 @testable import BetterTG
 import Foundation
 import TDLibKit
@@ -10,8 +12,10 @@ struct TelegramMessageMetadataTests {
         let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 12)))
         let yesterday = try #require(calendar.date(byAdding: .day, value: -1, to: now))
 
-        #expect(telegramMessageDayHeading(Int(now.timeIntervalSince1970), relativeTo: now, calendar: calendar) == "Today")
-        #expect(telegramMessageDayHeading(Int(yesterday.timeIntervalSince1970), relativeTo: now, calendar: calendar) == "Yesterday")
+        #expect(telegramMessageDayHeading(Int(now.timeIntervalSince1970), relativeTo: now, calendar: calendar) ==
+            "Today")
+        #expect(telegramMessageDayHeading(Int(yesterday.timeIntervalSince1970), relativeTo: now, calendar: calendar) ==
+            "Yesterday")
     }
 
     @Test func `delivery status is only exposed for outgoing messages`() {

@@ -3,9 +3,15 @@
 import SwiftUI
 import TDLibKit
 
+// MARK: - ChatsListItemView
+
 struct ChatsListItemView: View {
     @State var customChat: CustomChat
     
+    var accessibilityDescription: String {
+        customChat.accessibilityDescription
+    }
+
     var body: some View {
         HStack {
             if customChat.position.isPinned {
@@ -68,20 +74,16 @@ struct ChatsListItemView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
     }
-
-    var accessibilityDescription: String {
-        customChat.accessibilityDescription
-    }
 }
 
 extension CustomChat {
     var accessibilityDescription: String {
-        var parts: [String]
-        if case .privateChat = kind {
-            parts = [chat.title]
-        } else {
-            parts = [kind.title, chat.title]
-        }
+        var parts: [String] =
+            if case .privateChat = kind {
+                [chat.title]
+            } else {
+                [kind.title, chat.title]
+            }
 
         if position.isPinned {
             parts.append("Pinned")

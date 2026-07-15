@@ -7,12 +7,45 @@ import TDLibKit
 import UniformTypeIdentifiers
 
 struct ChatBottomArea: View {
+    // MARK: Internal
+
     var focused: FocusState<Bool>.Binding
 
     @Namespace var namespace
     @Environment(ChatVM.self) var chatVM
-    @State private var hasBegunRecording = false
 
+    /// Thresholds mirror Telegram's own recording button: drag left to cancel,
+    /// drag up to lock into hands-free recording.
+    var voiceRecordingGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard !chatVM.recordingLocked else { return }
+                if !chatVM.recordingVoiceNote, !hasBegunRecording {
+                    hasBegunRecording = true
+                    Task.main { await chatVM.mediaStartRecordingVoice() }
+                }
+                guard chatVM.recordingVoiceNote else { return }
+                chatVM.recordingDragTranslation = value.translation
+                if value.translation.height < -110 {
+                    withAnimation { chatVM.recordingLocked = true }
+                } else if value.translation.width < -150 {
+                    chatVM.cancelRecordingVoice()
+                    hasBegunRecording = false
+                }
+            }
+            .onEnded { value in
+                defer { hasBegunRecording = false }
+                guard chatVM.recordingVoiceNote, !chatVM.recordingLocked else { return }
+                if value.translation.width < -100 || value.predictedEndTranslation.width < -400 {
+                    chatVM.cancelRecordingVoice()
+                } else if value.translation.height < -60 || value.predictedEndTranslation.height < -400 {
+                    withAnimation { chatVM.recordingLocked = true }
+                } else {
+                    chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
+                }
+            }
+    }
+    
     var body: some View {
         @Bindable var chatVM = chatVM
         VStack(spacing: 5) {
@@ -205,8 +238,8 @@ struct ChatBottomArea: View {
         }
     }
     
-    // Stays mounted for the whole record gesture (touch-down through lock/cancel/send) —
-    // swapping it out mid-drag would tear down the DragGesture and lose touch tracking.
+    /// Stays mounted for the whole record gesture (touch-down through lock/cancel/send) —
+    /// swapping it out mid-drag would tear down the DragGesture and lose touch tracking.
     var rightSide: some View {
         Group {
             if chatVM.showSendButton || chatVM.recordingLocked {
@@ -243,8 +276,9 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
         .accessibilityElement()
         .accessibilityLabel(
-            chatVM.recordingLocked ? "Send Voice Message" :
-                chatVM.showSendButton ? "Send Message" : "Record Voice Message"
+            chatVM.recordingLocked
+                ? "Send Voice Message"
+                : chatVM.showSendButton ? "Send Message" : "Record Voice Message",
         )
         .accessibilityAddTraits(.isButton)
         .accessibilityAction {
@@ -262,62 +296,6 @@ struct ChatBottomArea: View {
         }
     }
 
-    private var documentsList: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(chatVM.displayedDocuments, id: \.self) { url in
-                HStack {
-                    Image(systemName: "doc.fill")
-                        .accessibilityHidden(true)
-                    Text(url.lastPathComponent)
-                        .lineLimit(1)
-                    Spacer()
-                    Button("Remove \(url.lastPathComponent)", systemImage: "xmark.circle.fill") {
-                        chatVM.displayedDocuments.removeAll { $0 == url }
-                        chatVM.setShowSendButton()
-                    }
-                    .labelStyle(.iconOnly)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Attached file \(url.lastPathComponent)")
-            }
-        }
-        .padding(8)
-        .background(Color.gray6)
-        .clipShape(.rect(cornerRadius: 10))
-    }
-
-    // Thresholds mirror Telegram's own recording button: drag left to cancel,
-    // drag up to lock into hands-free recording.
-    var voiceRecordingGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                guard !chatVM.recordingLocked else { return }
-                if !chatVM.recordingVoiceNote, !hasBegunRecording {
-                    hasBegunRecording = true
-                    Task.main { await chatVM.mediaStartRecordingVoice() }
-                }
-                guard chatVM.recordingVoiceNote else { return }
-                chatVM.recordingDragTranslation = value.translation
-                if value.translation.height < -110 {
-                    withAnimation { chatVM.recordingLocked = true }
-                } else if value.translation.width < -150 {
-                    chatVM.cancelRecordingVoice()
-                    hasBegunRecording = false
-                }
-            }
-            .onEnded { value in
-                defer { hasBegunRecording = false }
-                guard chatVM.recordingVoiceNote, !chatVM.recordingLocked else { return }
-                if value.translation.width < -100 || value.predictedEndTranslation.width < -400 {
-                    chatVM.cancelRecordingVoice()
-                } else if value.translation.height < -60 || value.predictedEndTranslation.height < -400 {
-                    withAnimation { chatVM.recordingLocked = true }
-                } else {
-                    chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
-                }
-            }
-    }
-    
     @ViewBuilder var topSide: some View {
         if let editCustomMessage = chatVM.editCustomMessage {
             replyMessageView(editCustomMessage, type: .edit)
@@ -396,8 +374,8 @@ struct ChatBottomArea: View {
 //        }
     }
     
-    // Cancel is always tappable (needed for VoiceOver, which never drives the slide gesture);
-    // the slide-to-cancel hint is an additional affordance for sighted users while unlocked.
+    /// Cancel is always tappable (needed for VoiceOver, which never drives the slide gesture);
+    /// the slide-to-cancel hint is an additional affordance for sighted users while unlocked.
     var recordingIndicator: some View {
         HStack(spacing: 8) {
             Button {
@@ -459,5 +437,33 @@ struct ChatBottomArea: View {
             }
             .accessibilityLabel(type == .edit ? "Cancel Edit" : "Cancel Reply")
         }
+    }
+
+    // MARK: Private
+
+    @State private var hasBegunRecording = false
+
+    private var documentsList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(chatVM.displayedDocuments, id: \.self) { url in
+                HStack {
+                    Image(systemName: "doc.fill")
+                        .accessibilityHidden(true)
+                    Text(url.lastPathComponent)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Remove \(url.lastPathComponent)", systemImage: "xmark.circle.fill") {
+                        chatVM.displayedDocuments.removeAll { $0 == url }
+                        chatVM.setShowSendButton()
+                    }
+                    .labelStyle(.iconOnly)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Attached file \(url.lastPathComponent)")
+            }
+        }
+        .padding(8)
+        .background(Color.gray6)
+        .clipShape(.rect(cornerRadius: 10))
     }
 }

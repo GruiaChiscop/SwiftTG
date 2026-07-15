@@ -6,6 +6,7 @@ struct SelectCountryView: View {
     @Binding var showSelectCountryView: Bool
     @Binding var selectedCountryNum: PhoneNumberInfo
     let countryNums: [PhoneNumberInfo]
+
     @State var query = ""
     
     var filteredCountries: [PhoneNumberInfo] {

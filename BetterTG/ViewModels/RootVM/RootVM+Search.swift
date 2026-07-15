@@ -1,3 +1,5 @@
+// RootVM+Search.swift
+
 import Foundation
 import TDLibKit
 
@@ -18,10 +20,11 @@ extension RootVM {
         let generation = searchGeneration
         let service = service
         let knownChats = Dictionary(uniqueKeysWithValues: allChats.map { ($0.id, $0) })
-        let messageChatList: ChatList? = switch chatList {
-        case .chatListMain, .chatListArchive: chatList
-        case .chatListFolder: nil
-        }
+        let messageChatList: ChatList? =
+            switch chatList {
+            case .chatListArchive, .chatListMain: chatList
+            case .chatListFolder: nil
+            }
         isSearching = true
 
         searchTask = Task.background {

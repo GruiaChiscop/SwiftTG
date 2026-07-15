@@ -5,6 +5,8 @@ import Foundation
 import TDLibKit
 import Testing
 
+// MARK: - PermissionsManagerTests
+
 struct PermissionsManagerTests {
     @Test func `denied contacts permission does not fetch or sync`() async {
         let access = ContactsAccessMock(status: .denied)
@@ -55,13 +57,10 @@ struct PermissionsManagerTests {
     }
 }
 
+// MARK: - ContactsAccessMock
+
 private final class ContactsAccessMock: ContactsAccess, @unchecked Sendable {
-    private let lock = NSLock()
-    private let status: ContactsAuthorizationStatus
-    private let requestResult: Bool
-    private let contacts: [DeviceContactRecord]
-    private var storedFetchCount = 0
-    private var storedRequestCount = 0
+    // MARK: Lifecycle
 
     init(
         status: ContactsAuthorizationStatus,
@@ -72,6 +71,8 @@ private final class ContactsAccessMock: ContactsAccess, @unchecked Sendable {
         self.requestResult = requestResult
         self.contacts = contacts
     }
+
+    // MARK: Internal
 
     var fetchCount: Int {
         lock.withLock { storedFetchCount }
@@ -85,21 +86,32 @@ private final class ContactsAccessMock: ContactsAccess, @unchecked Sendable {
         status
     }
 
-    func requestAccess() async throws -> Bool {
+    func requestAccess() -> Bool {
         lock.withLock { storedRequestCount += 1 }
         return requestResult
     }
 
-    func fetchContacts() throws -> [DeviceContactRecord] {
+    func fetchContacts() -> [DeviceContactRecord] {
         lock.withLock { storedFetchCount += 1 }
         return contacts
     }
+
+    // MARK: Private
+
+    private let lock = NSLock()
+    private let status: ContactsAuthorizationStatus
+    private let requestResult: Bool
+    private let contacts: [DeviceContactRecord]
+    private var storedFetchCount = 0
+    private var storedRequestCount = 0
 }
 
-private actor ContactsSyncMock: TelegramContactsSyncing {
-    private var contacts: [ImportedContact]?
+// MARK: - ContactsSyncMock
 
-    func changeImportedContacts(contacts: [ImportedContact]?) async throws -> ImportedContacts {
+private actor ContactsSyncMock: TelegramContactsSyncing {
+    // MARK: Internal
+
+    func changeImportedContacts(contacts: [ImportedContact]?) -> ImportedContacts {
         self.contacts = contacts
         return ImportedContacts(importerCount: [], userIds: [])
     }
@@ -107,4 +119,8 @@ private actor ContactsSyncMock: TelegramContactsSyncing {
     func receivedContacts() -> [ImportedContact]? {
         contacts
     }
+
+    // MARK: Private
+
+    private var contacts: [ImportedContact]?
 }
