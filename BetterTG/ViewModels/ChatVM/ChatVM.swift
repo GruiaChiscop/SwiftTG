@@ -363,9 +363,7 @@ import TDLibKit
         
         if case .messageSenderUser(let messageSenderUser) = replyToMessage?.senderId {
             customMessage.replyUser = try? await service.getUser(userId: messageSenderUser.userId)
-            customMessage.replySenderName = customMessage.replyUser.map {
-                "\($0.firstName) \($0.lastName)".trimmingCharacters(in: .whitespaces)
-            }
+            customMessage.replySenderName = customMessage.replyUser.map(telegramUserDisplayName)
         } else if case .messageSenderChat(let messageSenderChat) = replyToMessage?.senderId {
             customMessage.replySenderName = try? await service.getChat(chatId: messageSenderChat.chatId).title
         }
@@ -400,25 +398,7 @@ import TDLibKit
     
     func getForwardedFrom(_ origin: MessageOrigin?) async -> String? {
         guard let origin else { return nil }
-        
-        switch origin {
-        case .messageOriginChat(let chat):
-            if let title = await (try? service.getChat(chatId: chat.senderChatId))?.title {
-                return !chat.authorSignature.isEmpty ? "\(title) (\(chat.authorSignature))" : title
-            } else {
-                return !chat.authorSignature.isEmpty ? chat.authorSignature : nil
-            }
-        case .messageOriginChannel(let channel):
-            if let title = await (try? service.getChat(chatId: channel.chatId))?.title {
-                return !channel.authorSignature.isEmpty ? "\(title) (\(channel.authorSignature))" : title
-            } else {
-                return !channel.authorSignature.isEmpty ? channel.authorSignature : nil
-            }
-        case .messageOriginHiddenUser(let messageOriginHiddenUser):
-            return messageOriginHiddenUser.senderName
-        case .messageOriginUser(let messageOriginUser):
-            return await (try? service.getUser(userId: messageOriginUser.senderUserId))?.firstName
-        }
+        return await TelegramMessageOrigin.displayName(service: service, origin: origin)
     }
     
     func getReplyToMessage(_ replyTo: MessageReplyTo?) async -> Message? {

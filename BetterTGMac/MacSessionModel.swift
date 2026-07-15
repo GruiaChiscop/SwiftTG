@@ -611,21 +611,7 @@ private enum MacMessageSenderKey: Hashable {
         loadingForwardedMessageIds.insert(message.id)
         defer { loadingForwardedMessageIds.remove(message.id) }
 
-        let name: String?
-        switch origin {
-        case .messageOriginChat(let chat):
-            let title = await (try? service.getChat(chatId: chat.senderChatId))?.title
-            name = title.map { chat.authorSignature.isEmpty ? $0 : "\($0) (\(chat.authorSignature))" }
-                ?? (chat.authorSignature.isEmpty ? nil : chat.authorSignature)
-        case .messageOriginChannel(let channel):
-            let title = await (try? service.getChat(chatId: channel.chatId))?.title
-            name = title.map { channel.authorSignature.isEmpty ? $0 : "\($0) (\(channel.authorSignature))" }
-                ?? (channel.authorSignature.isEmpty ? nil : channel.authorSignature)
-        case .messageOriginHiddenUser(let user):
-            name = user.senderName
-        case .messageOriginUser(let user):
-            name = await (try? service.getUser(userId: user.senderUserId))?.firstName
-        }
+        let name = await TelegramMessageOrigin.displayName(service: service, origin: origin)
         guard openedChatId == message.chatId, let name, !name.isEmpty else { return }
         messageForwardedFrom[message.id] = name
     }
@@ -651,14 +637,9 @@ private enum MacMessageSenderKey: Hashable {
         if let pendingRequest = senderNameRequests[resolvedSenderKey] {
             request = pendingRequest
         } else {
+            let senderId = message.senderId
             request = Task { [service] in
-                switch resolvedSenderKey {
-                case .user(let userId):
-                    guard let user = try? await service.getUser(userId: userId) else { return nil }
-                    return "\(user.firstName) \(user.lastName)".trimmingCharacters(in: .whitespaces)
-                case .chat(let chatId):
-                    return try? await service.getChat(chatId: chatId).title
-                }
+                await TelegramSenderName.displayName(service: service, senderId: senderId)
             }
             senderNameRequests[resolvedSenderKey] = request
         }

@@ -129,14 +129,7 @@ struct ChatListLoadKey: Hashable, Sendable {
 
     func getSenderName(for message: Message?) async -> String? {
         guard let message else { return nil }
-
-        switch message.senderId {
-        case .messageSenderUser(let sender):
-            guard let user = try? await service.getUser(userId: sender.userId) else { return nil }
-            return "\(user.firstName) \(user.lastName)".trimmingCharacters(in: .whitespaces)
-        case .messageSenderChat(let sender):
-            return try? await service.getChat(chatId: sender.chatId).title
-        }
+        return await TelegramSenderName.displayName(service: service, senderId: message.senderId)
     }
     
     func getCustomFolder(from info: ChatFolderInfo) async -> CustomFolder? {
