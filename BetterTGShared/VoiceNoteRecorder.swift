@@ -1,4 +1,5 @@
 import AVFoundation
+import Foundation
 import SwiftOGG
 
 final class VoiceNoteRecorder {
@@ -99,7 +100,7 @@ final class VoiceNoteRecorder {
             encodedFrameCount += Int64(outputBuffer.frameLength)
             updatePeak(from: bytes.assumingMemoryBound(to: Int16.self), count: Int(outputBuffer.frameLength))
         } catch {
-            log("Voice-note streaming encoder failed:", error)
+            NSLog("Voice-note streaming encoder failed: %@", String(describing: error))
         }
     }
 

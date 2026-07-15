@@ -7,6 +7,20 @@ import TDLibKit
 // MARK: - AsyncTdImage
 
 struct AsyncTdImage<Content: View, Placeholder: View>: View {
+    init(
+        id: Int,
+        maxPixelSize: Int = 1024,
+        service: any TelegramService = TDLib.shared.service,
+        @ViewBuilder content: @escaping (Image, File) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.id = id
+        self.maxPixelSize = maxPixelSize
+        self.service = service
+        self.content = content
+        self.placeholder = placeholder
+    }
+
     // MARK: Internal
 
     let id: Int
@@ -22,9 +36,8 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
             }
         }
         .task(id: id) { await download(id) }
-        .onReceive(nc.publisher(for: .updateFile)) { updateFile in
-            guard updateFile.file.id == id else { return }
-            Task.main { await setImage(from: updateFile.file) }
+        .onReceive(service.filePublisher(fileId: id)) { file in
+            Task.main { await setImage(from: file) }
         }
     }
     
@@ -32,17 +45,19 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
 
     @State private var file: File?
     @State private var image: Image?
+    @State private var decodedLocalPath: String?
+    private let maxPixelSize: Int
+    private let service: any TelegramService
     
     private func download(_ id: Int? = nil) async {
         do {
-            let file = try await td.downloadFile(
+            _ = try await service.downloadFile(
                 fileId: id ?? self.id,
                 limit: 0,
                 offset: 0,
                 priority: 1,
                 synchronous: false,
             )
-            await setImage(from: file)
         } catch {
             log("Error downloading file: \(error)")
         }
@@ -51,38 +66,19 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
     @MainActor private func setImage(from file: File) async {
         guard file.local.isDownloadingCompleted else { return }
         let localPath = file.local.path
+        guard !localPath.isEmpty, decodedLocalPath != localPath else { return }
+        decodedLocalPath = localPath
         guard let uiImage = await Task.detached(priority: .userInitiated, operation: {
-            createThumbnailImage(at: localPath)
+            downsampledImage(at: URL(filePath: localPath), maxPixelSize: maxPixelSize)
         })
-        .value else { return }
-
-        withAnimation {
-            self.file = file
-            image = Image(uiImage: uiImage)
+        .value else {
+            decodedLocalPath = nil
+            return
         }
+
+        // An animated replacement invalidates more of the accessibility tree and
+        // is especially noticeable while VoiceOver is traversing the message list.
+        self.file = file
+        image = Image(uiImage: uiImage)
     }
-}
-
-private func createThumbnailImage(at localPath: String) -> UIImage? {
-    guard FileManager.default.fileExists(atPath: localPath), // Avoid spamming logs for missing files.
-          let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: localPath) as CFURL, nil)
-    else { return nil }
-
-    let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-    let maxPixelSize = max(
-        (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue ?? 0,
-        (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0,
-    )
-
-    guard maxPixelSize > 0,
-          let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-              kCGImageSourceCreateThumbnailFromImageAlways: true,
-              kCGImageSourceCreateThumbnailWithTransform: true,
-              kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-              kCGImageSourceShouldCache: false,
-              kCGImageSourceShouldCacheImmediately: false,
-          ] as CFDictionary)
-    else { return nil }
-
-    return UIImage(cgImage: cgImage)
 }

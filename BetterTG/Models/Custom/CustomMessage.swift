@@ -12,6 +12,7 @@ import TDLibKit
         message: Message,
         senderUser: User? = nil,
         replyUser: User? = nil,
+        replySenderName: String? = nil,
         replyToMessage: Message? = nil,
         album: [Message] = [Message](),
         sendFailed: Bool = false,
@@ -23,6 +24,7 @@ import TDLibKit
         self.message = message
         self.senderUser = senderUser
         self.replyUser = replyUser
+        self.replySenderName = replySenderName
         self.replyToMessage = replyToMessage
         self.album = album
         self.sendFailed = sendFailed
@@ -37,6 +39,7 @@ import TDLibKit
     var message: Message
     var senderUser: User?
     var replyUser: User?
+    var replySenderName: String?
     var replyToMessage: Message?
     var album = [Message]()
     var sendFailed = false
@@ -60,6 +63,20 @@ import TDLibKit
         }
         return nil
     }
+
+    var messageVideo: MessageVideo? {
+        if case .messageVideo(let messageVideo) = message.content {
+            return messageVideo
+        }
+        return nil
+    }
+
+    var messageDocument: MessageDocument? {
+        if case .messageDocument(let messageDocument) = message.content {
+            return messageDocument
+        }
+        return nil
+    }
 }
 
 // MARK: Hashable
@@ -69,6 +86,7 @@ extension CustomMessage: Hashable {
         hasher.combine(message)
         hasher.combine(senderUser)
         hasher.combine(replyUser)
+        hasher.combine(replySenderName)
         hasher.combine(replyToMessage)
         hasher.combine(album)
         hasher.combine(sendFailed)

@@ -75,6 +75,17 @@ private struct LastMesssageView: View {
                     Text(getAttributedString(from: messagePhoto.caption, .gray))
                 }
             }
+        case .messageVideo(let messageVideo):
+            HStack(alignment: .center, spacing: 3) {
+                TdVideoThumbnail(messageVideo: messageVideo, contentMode: .fit)
+                    .frame(width: 20, height: 20)
+
+                if messageVideo.caption.text.isEmpty {
+                    Text("Video")
+                } else {
+                    Text(getAttributedString(from: messageVideo.caption, .gray))
+                }
+            }
         case .messageVoiceNote(let messageVoiceNote):
             HStack(alignment: .bottom, spacing: 0) {
                 Text("Voice")
@@ -86,6 +97,12 @@ private struct LastMesssageView: View {
                         
                     Text(getAttributedString(from: messageVoiceNote.caption, .gray))
                 }
+            }
+        case .messageDocument(let messageDocument):
+            if messageDocument.caption.text.isEmpty {
+                Text("File: \(messageDocument.document.fileName)")
+            } else {
+                Text(getAttributedString(from: messageDocument.caption, .gray))
             }
         case .messageText(let messageText):
             Text(getAttributedString(from: messageText.text, .gray))

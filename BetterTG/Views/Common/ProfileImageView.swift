@@ -15,7 +15,7 @@ struct ProfileImageView: View {
     var body: some View {
         ZStack {
             if let photo {
-                AsyncTdImage(id: photo.id) { image, _ in
+                AsyncTdImage(id: photo.id, maxPixelSize: 256) { image, _ in
                     image
                         .resizable()
                         .scaledToFit()

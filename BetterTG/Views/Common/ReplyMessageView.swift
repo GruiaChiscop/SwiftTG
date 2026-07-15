@@ -32,10 +32,10 @@ struct ReplyMessageView: View {
                         Text(type == .edit ? "Edit message" : customMessage.senderUser?.firstName ?? "Name")
                         inlineMessageContentText(from: customMessage.message)
                     case .replied:
-                        if let replyUser = customMessage.replyUser,
+                        if let replySenderName = customMessage.replySenderName,
                            let replyToMessage = customMessage.replyToMessage
                         {
-                            Text(replyUser.firstName)
+                            Text(replySenderName)
                             inlineMessageContentText(from: replyToMessage)
                         }
                     }
@@ -73,8 +73,10 @@ struct ReplyMessageView: View {
         case .reply:
             "Replying to \(customMessage.senderUser?.firstName ?? "message"): \(plainText(from: customMessage.message))"
         case .replied:
-            if let replyUser = customMessage.replyUser, let replyToMessage = customMessage.replyToMessage {
-                "Reply to \(replyUser.firstName): \(plainText(from: replyToMessage))"
+            if let replySenderName = customMessage.replySenderName,
+               let replyToMessage = customMessage.replyToMessage
+            {
+                "Reply to \(replySenderName): \(plainText(from: replyToMessage))"
             } else {
                 "Reply"
             }
@@ -87,8 +89,12 @@ struct ReplyMessageView: View {
             messageText.text.text
         case .messagePhoto(let messagePhoto):
             messagePhoto.caption.text.isEmpty ? "Photo" : messagePhoto.caption.text
+        case .messageVideo(let messageVideo):
+            messageVideo.caption.text.isEmpty ? "Video" : "Video: \(messageVideo.caption.text)"
         case .messageVoiceNote(let messageVoiceNote):
             messageVoiceNote.caption.text.isEmpty ? "Voice message" : "Voice message: \(messageVoiceNote.caption.text)"
+        case .messageDocument(let messageDocument):
+            messageDocument.caption.text.isEmpty ? "File: \(messageDocument.document.fileName)" : messageDocument.caption.text
         case .messageUnsupported:
             "Unsupported message"
         default:
@@ -100,6 +106,9 @@ struct ReplyMessageView: View {
         switch message.content {
         case .messagePhoto(let messagePhoto):
             TdImage(photo: messagePhoto.photo, size: .sBox, contentMode: .fit)
+                .frame(width: 30, height: 30)
+        case .messageVideo(let messageVideo):
+            TdVideoThumbnail(messageVideo: messageVideo, contentMode: .fit)
                 .frame(width: 30, height: 30)
         default:
             EmptyView()
@@ -116,6 +125,12 @@ struct ReplyMessageView: View {
             } else {
                 Text(getAttributedString(from: messagePhoto.caption))
             }
+        case .messageVideo(let messageVideo):
+            if messageVideo.caption.text.isEmpty {
+                Text("Video")
+            } else {
+                Text(getAttributedString(from: messageVideo.caption))
+            }
         case .messageVoiceNote(let messageVoiceNote):
             HStack(alignment: .bottom, spacing: 0) {
                 Text("Voice")
@@ -127,6 +142,12 @@ struct ReplyMessageView: View {
                         
                     Text(getAttributedString(from: messageVoiceNote.caption))
                 }
+            }
+        case .messageDocument(let messageDocument):
+            if messageDocument.caption.text.isEmpty {
+                Text("File: \(messageDocument.document.fileName)")
+            } else {
+                Text(getAttributedString(from: messageDocument.caption))
             }
         case .messageUnsupported:
             Text("TDLib not supported")

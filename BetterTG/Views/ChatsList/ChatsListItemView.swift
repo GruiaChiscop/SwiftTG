@@ -114,6 +114,8 @@ extension CustomChat {
         case .messagePhoto(let content): content.caption.text.isEmpty ? "Photo" : content.caption.text
         case .messageVoiceNote(let content):
             content.caption.text.isEmpty ? "Voice message" : "Voice message: \(content.caption.text)"
+        case .messageDocument(let content):
+            content.caption.text.isEmpty ? "File: \(content.document.fileName)" : "File: \(content.caption.text)"
         case .messageUnsupported: "Unsupported message"
         default: "Message"
         }

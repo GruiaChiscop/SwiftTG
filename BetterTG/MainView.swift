@@ -1,7 +1,6 @@
 // MainView.swift
 
 import SwiftUI
-import TDLibKit
 
 // MARK: - MainView
 
@@ -40,7 +39,7 @@ private struct MainNavigationRootView: View {
         .animation(.default, value: rootVM.currentFolder)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationTitle("BetterTG")
+        .navigationTitle("SwiftTG")
         .searchable(
             text: $rootVM.query,
             placement: .navigationBarDrawer(displayMode: .always),
@@ -52,13 +51,16 @@ private struct MainNavigationRootView: View {
         ) {
             if rootVM.confirmChatDelete.chat?.canBeDeletedOnlyForSelf == true {
                 Button("Delete only for me", role: .destructive) {
-                    deleteSelectedChat(forAll: false)
+                    rootVM.deleteSelectedChat(forAll: false)
                 }
             }
             if rootVM.confirmChatDelete.chat?.canBeDeletedForAllUsers == true {
                 Button("Delete for everyone", role: .destructive) {
-                    deleteSelectedChat(forAll: true)
+                    rootVM.deleteSelectedChat(forAll: true)
                 }
+            }
+            Button("Cancel", role: .cancel) {
+                rootVM.confirmChatDelete = ConfirmChatDelete(chat: nil, show: false)
             }
         }
         .toolbar {
@@ -74,8 +76,8 @@ private struct MainNavigationRootView: View {
         .onAppear {
             navigationStorage.setDestinationBuilder { route in
                 switch route {
-                case .customChat(let customChat):
-                    ChatView(customChat: customChat)
+                case .customChat(let customChat, let messageId):
+                    ChatView(customChat: customChat, initialMessageId: messageId)
                 case .archive(let customFolder):
                     FolderView(folder: customFolder)
                         .navigationTitle(customFolder.name)
@@ -91,7 +93,7 @@ private struct MainNavigationRootView: View {
             if MockData.isEnabled, CommandLine.arguments.contains("-mockChat"),
                let chat = rootVM.mainFolder?.chats.first
             {
-                navigationStorage.push(.customChat(chat))
+                navigationStorage.push(.customChat(chat, messageId: nil))
             }
             #endif
             if rootVM.currentFolder == nil {
@@ -106,13 +108,6 @@ private struct MainNavigationRootView: View {
 
     var currentFolder: CustomFolder? {
         rootVM.folders.first(where: { $0.id == rootVM.currentFolder }) ?? rootVM.folders.first
-    }
-
-    func deleteSelectedChat(forAll: Bool) {
-        guard let id = rootVM.confirmChatDelete.chat?.id else { return }
-        Task.background {
-            try await td.deleteChatHistory(chatId: id, removeFromChatList: true, revoke: forAll)
-        }
     }
 
     var folderTabsBar: some View {

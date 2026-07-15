@@ -4,6 +4,7 @@ import Combine
 import PhotosUI
 import SwiftUI
 import TDLibKit
+import UniformTypeIdentifiers
 
 struct ChatBottomArea: View {
     var focused: FocusState<Bool>.Binding
@@ -20,6 +21,10 @@ struct ChatBottomArea: View {
             
             if !chatVM.displayedImages.isEmpty {
                 photosScroll
+            }
+
+            if !chatVM.displayedDocuments.isEmpty {
+                documentsList
             }
 
             HStack(alignment: .bottom, spacing: 10) {
@@ -43,6 +48,14 @@ struct ChatBottomArea: View {
             Go to Settings -> BetterTG -> Microphone
             if you want to record Voice
             """)
+        }
+        .fileImporter(
+            isPresented: $chatVM.showDocumentPicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true,
+        ) { result in
+            guard case .success(let urls) = result else { return }
+            Task { await chatVM.stageDocuments(urls) }
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 10)
@@ -99,7 +112,10 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.displayedImages) { nc.post(name: .localScrollToLastOnFocus) }
         .onReceive(nc.publisher(for: .localOnSelectedImagesDrop)) { notification in
             guard let selectedImages = notification.object as? [SelectedImage] else { return }
-            withAnimation { chatVM.displayedImages = selectedImages }
+            withAnimation {
+                chatVM.displayedDocuments.removeAll()
+                chatVM.displayedImages = selectedImages
+            }
         }
     }
     
@@ -110,21 +126,24 @@ struct ChatBottomArea: View {
                 Button {
                     withAnimation {
                         chatVM.displayedImages.removeAll()
+                        chatVM.displayedDocuments.removeAll()
                     }
                     chatVM.showPhotoPickerView = true
                 } label: {
                     Label("Attach Photos", systemImage: "photo")
                 }
                 Button {
+                    chatVM.displayedDocuments.removeAll()
                     chatVM.showCameraView = true
                 } label: {
                     Label("Take Photo", systemImage: "camera.fill")
                 }
-//                Button {
-//                    showDocumentPicker = true
-//                } label: {
-//                    Label("Attach Files", systemImage: "folder")
-//                }
+                Button {
+                    chatVM.displayedImages.removeAll()
+                    chatVM.showDocumentPicker = true
+                } label: {
+                    Label("Attach Files", systemImage: "folder")
+                }
             } label: {
                 Image(systemName: "plus")
                     .foregroundStyle(.white)
@@ -220,6 +239,7 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.editMessageText, chatVM.setShowSendButton)
         .onChange(of: chatVM.text, chatVM.setShowSendButton)
         .onChange(of: chatVM.displayedImages, chatVM.setShowSendButton)
+        .onChange(of: chatVM.displayedDocuments, chatVM.setShowSendButton)
         .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
         .accessibilityElement()
         .accessibilityLabel(
@@ -240,6 +260,30 @@ struct ChatBottomArea: View {
         .accessibilityAction(named: "Record Voice Message") {
             Task.main { await chatVM.mediaStartRecordingVoice() }
         }
+    }
+
+    private var documentsList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(chatVM.displayedDocuments, id: \.self) { url in
+                HStack {
+                    Image(systemName: "doc.fill")
+                        .accessibilityHidden(true)
+                    Text(url.lastPathComponent)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Remove \(url.lastPathComponent)", systemImage: "xmark.circle.fill") {
+                        chatVM.displayedDocuments.removeAll { $0 == url }
+                        chatVM.setShowSendButton()
+                    }
+                    .labelStyle(.iconOnly)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Attached file \(url.lastPathComponent)")
+            }
+        }
+        .padding(8)
+        .background(Color.gray6)
+        .clipShape(.rect(cornerRadius: 10))
     }
 
     // Thresholds mirror Telegram's own recording button: drag left to cancel,

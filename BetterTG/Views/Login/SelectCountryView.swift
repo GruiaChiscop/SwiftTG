@@ -1,13 +1,11 @@
 // SelectCountryView.swift
 
 import SwiftUI
-import TDLibKit
 
 struct SelectCountryView: View {
     @Binding var showSelectCountryView: Bool
     @Binding var selectedCountryNum: PhoneNumberInfo
-    
-    @State var countryNums = [PhoneNumberInfo]()
+    let countryNums: [PhoneNumberInfo]
     @State var query = ""
     
     var filteredCountries: [PhoneNumberInfo] {
@@ -50,31 +48,5 @@ struct SelectCountryView: View {
                 }
             }
         }
-        .task { await loadCountries() }
-    }
-    
-    func loadCountries() async {
-        guard let countries = try? await td.getCountries().countries,
-              let countryCode = try? await td.getCountryCode().text,
-              let country = countries.first(where: { $0.countryCode == countryCode })
-        else { return }
-        
-        let selectedCountryNum = PhoneNumberInfo(
-            country: country.countryCode,
-            phoneNumberPrefix: country.callingCodes[0],
-            name: country.englishName,
-        )
-        let countryNums = countries
-            .map {
-                PhoneNumberInfo(
-                    country: $0.countryCode,
-                    phoneNumberPrefix: $0.callingCodes[0],
-                    name: $0.englishName,
-                )
-            }
-            .sorted { $0.name < $1.name }
-        
-        self.selectedCountryNum = selectedCountryNum
-        self.countryNums = countryNums
     }
 }

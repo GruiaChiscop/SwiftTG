@@ -19,6 +19,9 @@ import TDLibKit
     ) {
         self.chat = chat
         notificationSettings = chat.notificationSettings
+        lastReadInboxMessageId = chat.lastReadInboxMessageId
+        lastReadOutboxMessageId = chat.lastReadOutboxMessageId
+        isMarkedAsUnread = chat.isMarkedAsUnread
         self.position = position
         self.unreadCount = unreadCount
         self.type = type
@@ -65,6 +68,9 @@ import TDLibKit
     var notificationSettings: ChatNotificationSettings
     var position: ChatPosition
     var unreadCount: Int
+    var isMarkedAsUnread: Bool
+    var lastReadInboxMessageId: Int64
+    var lastReadOutboxMessageId: Int64
     var lastMessage: Message?
     var lastMessageSenderName: String?
     var draftMessage: DraftMessage?
@@ -88,6 +94,7 @@ import TDLibKit
     }
 
     var isMuted: Bool { notificationSettings.muteFor > 0 }
+    var hasUnreadMessages: Bool { unreadCount > 0 || isMarkedAsUnread }
     
     var bot: UserTypeBot? {
         switch type {

@@ -1,8 +1,6 @@
 // FolderView.swift
 
-import Combine
 import SwiftUI
-import TDLibKit
 
 struct FolderView: View {
     // MARK: Internal
@@ -10,38 +8,24 @@ struct FolderView: View {
     @State var folder: CustomFolder
 
     @Namespace var namespace
-    @Environment(\.scenePhase) var scenePhase
     @State var rootVM = RootVM.shared
     @State var chatToMute: CustomChat?
 
     var chats: [CustomChat] {
         folder.chats
             .sorted { $0.position.order > $1.position.order }
-            .filter {
-                rootVM.query.isEmpty
-                    || $0.chat.title.lowercased().contains(rootVM.query.lowercased())
-                    || $0.user?.firstName.lowercased().contains(rootVM.query.lowercased()) == true
-                    || $0.user?.lastName.lowercased().contains(rootVM.query.lowercased()) == true
-            }
     }
     
     var body: some View {
         ScrollViewReader { scrollViewProxy in
             bodyView.onAppear { folder.scrollViewProxy = scrollViewProxy }
         }
-        .onChange(of: scenePhase) { _, newPhase in
-            guard case .active = newPhase else { return }
-            Task.background {
-                await chats.asyncForEach { customChat in
-                    _ = try? await td.getChatHistory(
-                        chatId: customChat.chat.id,
-                        fromMessageId: 0,
-                        limit: 30,
-                        offset: 0,
-                        onlyLocal: false,
-                    )
-                }
-            }
+        .onChange(of: rootVM.query) { _, query in
+            rootVM.search(query, in: folder.chatList)
+        }
+        .onAppear {
+            guard !rootVM.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            rootVM.search(rootVM.query, in: folder.chatList)
         }
     }
     
@@ -55,15 +39,17 @@ struct FolderView: View {
                 .accessibilityHidden(true)
                 .id("top")
 
-            if chats.isEmpty {
-                Text(rootVM.query.isEmpty ? "Empty folder :(" : "No chats found for \"\(rootVM.query)\"")
+            if !rootVM.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                searchResults
+            } else if chats.isEmpty {
+                Text("Empty folder")
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             } else {
                 ForEach(chats) { customChat in
                     Button {
-                        navigationStorage.push(.customChat(customChat))
+                        navigationStorage.push(.customChat(customChat, messageId: nil))
                     } label: {
                         ChatsListItemView(customChat: customChat)
                             .matchedGeometryEffect(id: customChat.chat.id, in: namespace)
@@ -72,14 +58,14 @@ struct FolderView: View {
                     .accessibilityLabel(customChat.accessibilityDescription)
                     .accessibilityHint("Opens chat")
                     .accessibilityActions {
-                        Button(customChat.chat.isMarkedAsUnread ? "Mark as Read" : "Mark as Unread") {
-                            toggleRead(for: customChat)
+                        Button(customChat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread") {
+                            rootVM.toggleRead(for: customChat)
                         }
                         Button(customChat.isMuted ? "Unmute" : "Mute") {
                             toggleMuted(customChat)
                         }
                         Button(customChat.position.isPinned ? "Unpin" : "Pin") {
-                            togglePinned(for: customChat)
+                            rootVM.togglePinned(for: customChat, in: folder.chatList)
                         }
                         Button(folder.type == .archive ? "Unarchive" : "Archive") {
                             toggleArchived(customChat)
@@ -101,15 +87,6 @@ struct FolderView: View {
                                     .environment(\.isPreview, true)
                             }
                         }
-                    }
-                    .task {
-                        _ = try? await td.getChatHistory(
-                            chatId: customChat.chat.id,
-                            fromMessageId: 0,
-                            limit: 30,
-                            offset: 0,
-                            onlyLocal: false,
-                        )
                     }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -139,21 +116,92 @@ struct FolderView: View {
             Button("Mute for 1 hour") { muteSelectedChat(for: 60 * 60) }
             Button("Mute for 8 hours") { muteSelectedChat(for: 8 * 60 * 60) }
             Button("Mute for 2 days") { muteSelectedChat(for: 2 * 24 * 60 * 60) }
-            Button("Mute forever") { muteSelectedChat(for: 400 * 24 * 60 * 60) }
+            Button("Mute forever") { muteSelectedChat(for: Int(Int32.max)) }
             Button("Cancel", role: .cancel) { chatToMute = nil }
+        }
+    }
+
+    @ViewBuilder private var searchResults: some View {
+        if !rootVM.searchChatResults.isEmpty {
+            Section {
+                ForEach(rootVM.searchChatResults) { customChat in
+                    Button {
+                        navigationStorage.push(.customChat(customChat, messageId: nil))
+                    } label: {
+                        ChatsListItemView(customChat: customChat)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens chat")
+                }
+            } header: {
+                Text("Chats (\(rootVM.searchChatResults.count))")
+                    .font(.headline)
+                    .accessibilityLabel("Chats, \(rootVM.searchChatResults.count) found")
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+
+        if !rootVM.searchMessageResults.isEmpty {
+            Section {
+                ForEach(Array(rootVM.searchMessageResults.enumerated()), id: \.offset) { _, message in
+                    if let customChat = rootVM.searchResultChatsById[message.chatId] {
+                        Button {
+                            navigationStorage.push(.customChat(customChat, messageId: message.id))
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(rootVM.searchMessageChatTitles[message.chatId] ?? customChat.chat.title)
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                    Text(
+                                        Date(timeIntervalSince1970: TimeInterval(message.date)),
+                                        format: .dateTime.day().month().hour().minute(),
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+                                Text(telegramMessageContentDescription(message))
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens this message in the chat")
+                    }
+                }
+            } header: {
+                Text("Messages (\(rootVM.searchMessageResults.count))")
+                    .font(.headline)
+                    .accessibilityLabel("Messages, \(rootVM.searchMessageResults.count) found")
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+
+        if rootVM.isSearching {
+            HStack {
+                Spacer()
+                ProgressView("Searching…")
+                Spacer()
+            }
+            .padding()
+        } else if rootVM.searchChatResults.isEmpty, rootVM.searchMessageResults.isEmpty {
+            ContentUnavailableView.search(text: rootVM.query)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
     }
     
     @ViewBuilder func contextMenu(for customChat: CustomChat) -> some View {
         let isPinned = customChat.position.isPinned
-        let isMarkedAsUnread = customChat.chat.isMarkedAsUnread
+        let hasUnreadMessages = customChat.hasUnreadMessages
         Button(
-            isMarkedAsUnread ? "Mark as Read" : "Mark as Unread",
-            systemImage: isMarkedAsUnread
+            hasUnreadMessages ? "Mark as Read" : "Mark as Unread",
+            systemImage: hasUnreadMessages
                 ? "envelope.open"
                 : "envelope.badge",
         ) {
-            toggleRead(for: customChat)
+            rootVM.toggleRead(for: customChat)
         }
 
         Button(
@@ -164,7 +212,7 @@ struct FolderView: View {
         }
 
         Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash.fill" : "pin.fill") {
-            togglePinned(for: customChat)
+            rootVM.togglePinned(for: customChat, in: folder.chatList)
         }
 
         Button(
@@ -183,34 +231,12 @@ struct FolderView: View {
 
     // MARK: Private
 
-    private func toggleRead(for customChat: CustomChat) {
-        Task.background {
-            try await td.toggleChatIsMarkedAsUnread(
-                chatId: customChat.chat.id,
-                isMarkedAsUnread: !customChat.chat.isMarkedAsUnread,
-            )
-        }
-    }
-
-    private func togglePinned(for customChat: CustomChat) {
-        Task.background {
-            try await td.toggleChatIsPinned(
-                chatId: customChat.chat.id,
-                chatList: folder.chatList,
-                isPinned: !customChat.position.isPinned,
-            )
-        }
-    }
-
     private func requestDelete(_ customChat: CustomChat) {
-        rootVM.confirmChatDelete = ConfirmChatDelete(chat: customChat.chat, show: true)
+        rootVM.requestDelete(customChat)
     }
 
     private func toggleArchived(_ customChat: CustomChat) {
-        let destination: ChatList = folder.type == .archive ? .chatListMain : .chatListArchive
-        Task.background {
-            try await td.addChatToList(chatId: customChat.chat.id, chatList: destination)
-        }
+        rootVM.toggleArchived(customChat, isCurrentlyArchived: folder.type == .archive)
     }
 
     private func toggleMuted(_ customChat: CustomChat) {
@@ -228,31 +254,7 @@ struct FolderView: View {
     }
 
     private func setMuteDuration(_ duration: Int, for customChat: CustomChat) {
-        let current = customChat.notificationSettings
-        let settings = ChatNotificationSettings(
-            disableMentionNotifications: current.disableMentionNotifications,
-            disablePinnedMessageNotifications: current.disablePinnedMessageNotifications,
-            muteFor: duration,
-            muteStories: current.muteStories,
-            showPreview: current.showPreview,
-            showStoryPoster: current.showStoryPoster,
-            soundId: current.soundId,
-            storySoundId: current.storySoundId,
-            useDefaultDisableMentionNotifications: current.useDefaultDisableMentionNotifications,
-            useDefaultDisablePinnedMessageNotifications: current.useDefaultDisablePinnedMessageNotifications,
-            useDefaultMuteFor: false,
-            useDefaultMuteStories: current.useDefaultMuteStories,
-            useDefaultShowPreview: current.useDefaultShowPreview,
-            useDefaultShowStoryPoster: current.useDefaultShowStoryPoster,
-            useDefaultSound: current.useDefaultSound,
-            useDefaultStorySound: current.useDefaultStorySound,
-        )
-        Task.background {
-            try await td.setChatNotificationSettings(
-                chatId: customChat.chat.id,
-                notificationSettings: settings,
-            )
-        }
+        rootVM.setMuteDuration(duration, for: customChat)
     }
 
     private let navigationStorage = NavigationStorage.shared

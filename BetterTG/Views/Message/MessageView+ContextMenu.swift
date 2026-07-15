@@ -11,7 +11,7 @@ extension MessageView {
         if customMessage.canReact {
             actions.append(.button(title: "React", systemImage: "heart") {
                 Task.background {
-                    try? await td.addMessageReaction(
+                    try? await chatVM.service.addMessageReaction(
                         chatId: chatVM.customChat.chat.id,
                         isBig: false,
                         messageId: customMessage.id,
@@ -72,17 +72,21 @@ extension MessageView {
     }
 
     func togglePinnedMessage() {
+        let isPinned = customMessage.message.isPinned
+        let messageId = customMessage.id
+        let chatId = chatVM.customChat.chat.id
+        let service = chatVM.service
         Task.background {
-            if customMessage.message.isPinned {
-                try await td.unpinChatMessage(
-                    chatId: chatVM.customChat.chat.id,
-                    messageId: customMessage.id,
+            if isPinned {
+                try await service.unpinChatMessage(
+                    chatId: chatId,
+                    messageId: messageId,
                 )
             } else {
-                try await td.pinChatMessage(
-                    chatId: chatVM.customChat.chat.id,
+                try await service.pinChatMessage(
+                    chatId: chatId,
                     disableNotification: false,
-                    messageId: customMessage.id,
+                    messageId: messageId,
                     onlyForSelf: false,
                 )
             }
@@ -97,9 +101,15 @@ extension MessageView {
         case .messagePhoto(let messagePhoto):
             guard !messagePhoto.caption.text.isEmpty else { return nil }
             return messagePhoto.caption
+        case .messageVideo(let messageVideo):
+            guard !messageVideo.caption.text.isEmpty else { return nil }
+            return messageVideo.caption
         case .messageVoiceNote(let messageVoiceNote):
             guard !messageVoiceNote.caption.text.isEmpty else { return nil }
             return messageVoiceNote.caption
+        case .messageDocument(let messageDocument):
+            guard !messageDocument.caption.text.isEmpty else { return nil }
+            return messageDocument.caption
         default:
             return nil
         }

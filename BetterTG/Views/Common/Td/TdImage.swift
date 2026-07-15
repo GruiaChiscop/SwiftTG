@@ -38,3 +38,33 @@ struct TdImage: View {
         .blur(radius: 5)
     }
 }
+
+struct TdVideoThumbnail: View {
+    let messageVideo: MessageVideo
+    let contentMode: ContentMode
+
+    var body: some View {
+        if let cover = messageVideo.cover {
+            TdImage(photo: cover, size: .xBox, contentMode: contentMode)
+        } else if let thumbnail = messageVideo.video.thumbnail {
+            AsyncTdImage(id: thumbnail.file.id) { image, _ in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+            } placeholder: {
+                placeholder
+            }
+        } else {
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
+        Rectangle()
+            .fill(.black.opacity(0.35))
+            .overlay {
+                Image(systemName: "video")
+                    .foregroundStyle(.secondary)
+            }
+    }
+}

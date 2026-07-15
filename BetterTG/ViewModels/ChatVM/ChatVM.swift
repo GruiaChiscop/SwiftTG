@@ -9,14 +9,22 @@ import TDLibKit
 @Observable final class ChatVM {
     // MARK: Lifecycle
 
-    init(customChat: CustomChat) {
+    init(
+        customChat: CustomChat,
+        initialMessageId: Int64? = nil,
+        service: any TelegramService = TDLib.shared.service
+    ) {
         self.customChat = customChat
+        self.initialMessageId = initialMessageId
+        initialUnreadCount = customChat.unreadCount
+        initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
+        self.service = service
         log("init \(customChat.chat.id)")
         if let user = customChat.user {
             self.onlineStatus = getOnlineStatus(from: user.status)
         }
         
-        try? td.openChat(chatId: customChat.chat.id) { _ in }
+        Task { _ = try? await service.openChat(chatId: customChat.chat.id) }
         setPublishers()
         loadMessages()
         Media.shared.onChatOpen(title: customChat.chat.title)
@@ -36,13 +44,18 @@ import TDLibKit
     
     deinit {
         log("deinit \(customChat.chat.id)")
-        try? td.closeChat(chatId: customChat.chat.id) { _ in }
+        let chatId = customChat.chat.id
+        let service = service
+        Task { _ = try? await service.closeChat(chatId: chatId) }
         Media.shared.onChatDismiss()
     }
     
     // MARK: Internal
 
     var customChat: CustomChat
+    let initialMessageId: Int64?
+    let initialUnreadCount: Int
+    let initialLastReadInboxMessageId: Int64
 
     var bottomAreaHeight = CGFloat.zero
     var actionStatus = ""
@@ -50,6 +63,8 @@ import TDLibKit
     var editCustomMessage: CustomMessage?
     var replyMessage: CustomMessage?
     var highlightedMessageId: Int64?
+    var accessibilityFocusRequestMessageId: Int64?
+    var navigationError: String?
     var messages = [CustomMessage]()
     var initialMessagesLoaded = false
     @ObservationIgnored var dateFormatter: DateFormatter = {
@@ -59,12 +74,27 @@ import TDLibKit
     }()
 
     @ObservationIgnored var loadingMessagesTask: Task<Void, Never>?
+    @ObservationIgnored let service: any TelegramService
+    @ObservationIgnored var appliedMessageSnapshotVersion: UInt64?
+    @ObservationIgnored var latestMessageSnapshot: TelegramMessageSnapshot?
+    @ObservationIgnored var renderedMessages = [Int64: CustomMessage]()
+    @ObservationIgnored var renderedInvalidationVersions = [Int64: UInt64]()
+    @ObservationIgnored var renderingMessages = [Int64: Message]()
+    @ObservationIgnored var renderingInvalidationVersions = [Int64: UInt64]()
+    @ObservationIgnored var renderGenerations = [Int64: UInt64]()
+    @ObservationIgnored var messageInvalidationVersions = [Int64: UInt64]()
+    @ObservationIgnored var refreshVersions = [Int64: UInt64]()
+    @ObservationIgnored var refreshedMessagesAwaitingMerge = [Int64: Message]()
+    @ObservationIgnored var pendingScrollMessageIds = Set<Int64>()
+    @ObservationIgnored var pendingNavigationMessageId: Int64?
+    @ObservationIgnored var nextRenderGeneration: UInt64 = 0
     // Scroll
     @ObservationIgnored var scrollOnFocus = true
     var showScrollToBottomButton = false
     @ObservationIgnored var scrollViewProxy: ScrollViewProxy?
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
     var displayedImages = [SelectedImage]()
+    var displayedDocuments = [URL]()
     var timerCount = 0.0
     @ObservationIgnored var timer: Timer?
     @ObservationIgnored var wave = [Float]()
@@ -79,6 +109,7 @@ import TDLibKit
     var recordingDragTranslation = CGSize.zero
     var errorShown = false
     var showCameraView = false
+    var showDocumentPicker = false
     var showPhotoPickerView = false
     @ObservationIgnored var savedVoiceNoteUrl = URL(filePath: "")
     @ObservationIgnored var audioRecorder: VoiceNoteRecorder?
@@ -86,7 +117,7 @@ import TDLibKit
     var canEditMessage: Bool {
         guard let editCustomMessage else { return false }
         switch editCustomMessage.message.content {
-        case .messagePhoto, .messageVoiceNote:
+        case .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
             return true
         case .messageText:
             return !editMessageText.characters.isEmpty
@@ -161,6 +192,81 @@ import TDLibKit
             }
         }
     }
+
+    func navigateToMessage(id: Int64) {
+        if messages.contains(where: { $0.id == id }) {
+            accessibilityFocusRequestMessageId = id
+            return
+        }
+
+        loadingMessagesTask?.cancel()
+        pendingNavigationMessageId = id
+        loadingMessagesTask = Task.background {
+            guard let history = try? await self.service.getChatHistory(
+                chatId: self.customChat.chat.id,
+                fromMessageId: id,
+                limit: 31,
+                offset: -15,
+                onlyLocal: false,
+            ), !Task.isCancelled
+            else {
+                await main {
+                    self.pendingNavigationMessageId = nil
+                    self.loadingMessagesTask = nil
+                }
+                return
+            }
+            self.service.mergeMessageHistory(
+                chatId: self.customChat.chat.id,
+                messages: history.messages ?? [],
+            )
+            await main {
+                self.loadingMessagesTask = nil
+            }
+        }
+    }
+
+    func navigateToRepliedMessage(from message: Message) {
+        guard case .messageReplyToMessage(let reply) = message.replyTo,
+              reply.messageId != 0
+        else { return }
+        let chatId = reply.chatId == 0 ? customChat.chat.id : reply.chatId
+        guard chatId != customChat.chat.id else {
+            navigateToMessage(id: reply.messageId)
+            return
+        }
+        openChat(chatId: chatId, messageId: reply.messageId)
+    }
+
+    func navigateToForwardOrigin(from message: Message) {
+        guard let origin = message.forwardInfo?.origin else { return }
+        switch origin {
+        case .messageOriginUser(let user):
+            Task { @MainActor [weak self] in
+                guard let chat = await RootVM.shared.getPrivateCustomChat(userId: user.senderUserId) else {
+                    self?.navigationError = "This user can't be opened."
+                    return
+                }
+                NavigationStorage.shared.push(.customChat(chat, messageId: nil))
+            }
+        case .messageOriginChat(let chat):
+            openChat(chatId: chat.senderChatId, messageId: nil)
+        case .messageOriginChannel(let channel):
+            openChat(chatId: channel.chatId, messageId: channel.messageId == 0 ? nil : channel.messageId)
+        case .messageOriginHiddenUser:
+            break
+        }
+    }
+
+    private func openChat(chatId: Int64, messageId: Int64?) {
+        Task { @MainActor [weak self] in
+            guard let chat = await RootVM.shared.getCustomChat(from: chatId) else {
+                self?.navigationError = "This chat is private or unavailable."
+                return
+            }
+            NavigationStorage.shared.push(.customChat(chat, messageId: messageId))
+        }
+    }
     
     func getOnlineStatus(from userStatus: UserStatus) -> String {
         switch userStatus {
@@ -175,64 +281,41 @@ import TDLibKit
     
     func loadMessages() {
         guard loadingMessagesTask == nil else { return }
-        loadingMessagesTask = Task.background { await self._loadMessages() }
+        let fromMessageId = messages.first?.message.id ?? initialMessageId ?? 0
+        loadingMessagesTask = Task.background {
+            await self._loadMessages(fromMessageId: fromMessageId)
+        }
     }
     
-    func _loadMessages() async {
-        let isInitialLoad = messages.isEmpty
-        guard let chatHistory = try? await td.getChatHistory(
+    func _loadMessages(fromMessageId: Int64) async {
+        guard let chatHistory = try? await service.getChatHistory(
             chatId: customChat.chat.id,
-            fromMessageId: messages.first?.message.id ?? 0,
-            limit: 30,
-            offset: 0,
+            fromMessageId: fromMessageId,
+            limit: initialMessageId != nil && messages.isEmpty ? 31 : 30,
+            offset: initialMessageId != nil && messages.isEmpty ? -15 : 0,
             onlyLocal: false,
         )
-        .messages else { return }
-        
-        let customMessages = await chatHistory.asyncMap { chatMessage in
-            await getCustomMessage(from: chatMessage)
+        .messages else {
+            await main { self.loadingMessagesTask = nil }
+            return
         }
-        
-        var savedMessages = [CustomMessage]()
-        for customMessage in customMessages {
-            if customMessage.message.mediaAlbumId != 0 {
-                if let index = savedMessages.firstIndex(where: {
-                    $0.message.mediaAlbumId == customMessage.message.mediaAlbumId
-                }) {
-                    savedMessages[index].album.append(customMessage.message)
-                } else {
-                    customMessage.album = [customMessage.message]
-                    savedMessages.append(customMessage)
-                }
-            } else {
-                savedMessages.append(customMessage)
-            }
-        }
-        
-        await main { [savedMessages] in
-            self.messages.insert(contentsOf: savedMessages.reversed(), at: 0)
-            if isInitialLoad {
-                self.initialMessagesLoaded = true
-            }
 
-            Task.main(delay: 0.5) {
-                self.loadingMessagesTask = nil
-            }
-        }
+        service.mergeMessageHistory(chatId: customChat.chat.id, messages: chatHistory)
+        await main { self.loadingMessagesTask = nil }
     }
     
     func deleteMessage(id: Int64, deleteForBoth: Bool) {
         guard let customMessage = messages.first(where: { $0.message.id == id }) else { return }
         Task.background {
             if customMessage.album.isEmpty {
-                _ = try? await td.deleteMessages(
+                _ = try? await self.service.deleteMessages(
                     chatId: self.customChat.chat.id,
                     messageIds: [id],
                     revoke: deleteForBoth,
                 )
             } else {
                 let ids = customMessage.album.map(\.id)
-                _ = try? await td.deleteMessages(
+                _ = try? await self.service.deleteMessages(
                     chatId: self.customChat.chat.id,
                     messageIds: ids,
                     revoke: deleteForBoth,
@@ -243,7 +326,7 @@ import TDLibKit
     
     func viewMessage(id: Int64) {
         Task.background {
-            try await td.viewMessages(
+            try await self.service.viewMessages(
                 chatId: self.customChat.chat.id,
                 forceRead: true,
                 messageIds: [id],
@@ -253,7 +336,7 @@ import TDLibKit
     }
     
     func getCustomMessage(fromId id: Int64) async -> CustomMessage? {
-        guard let message = try? await td.getMessage(chatId: customChat.chat.id, messageId: id) else { return nil }
+        guard let message = try? await service.getMessage(chatId: customChat.chat.id, messageId: id) else { return nil }
         return await getCustomMessage(from: message)
     }
     
@@ -263,11 +346,11 @@ import TDLibKit
             message: message,
             replyToMessage: replyToMessage,
             forwardedFrom: getForwardedFrom(message.forwardInfo?.origin),
-            properties: (try? td.getMessageProperties(
+            properties: (try? await service.getMessageProperties(
                 chatId: customChat.chat.id, messageId: message.id,
             )) ?? .default,
         )
-        if let reactions = try? await td.getMessageAvailableReactions(
+        if let reactions = try? await service.getMessageAvailableReactions(
             chatId: customChat.chat.id,
             messageId: message.id,
             rowSize: 8,
@@ -283,11 +366,16 @@ import TDLibKit
         }
         
         if case .messageSenderUser(let messageSenderUser) = message.senderId {
-            customMessage.senderUser = try? await td.getUser(userId: messageSenderUser.userId)
+            customMessage.senderUser = try? await service.getUser(userId: messageSenderUser.userId)
         }
         
         if case .messageSenderUser(let messageSenderUser) = replyToMessage?.senderId {
-            customMessage.replyUser = try? await td.getUser(userId: messageSenderUser.userId)
+            customMessage.replyUser = try? await service.getUser(userId: messageSenderUser.userId)
+            customMessage.replySenderName = customMessage.replyUser.map {
+                "\($0.firstName) \($0.lastName)".trimmingCharacters(in: .whitespaces)
+            }
+        } else if case .messageSenderChat(let messageSenderChat) = replyToMessage?.senderId {
+            customMessage.replySenderName = try? await service.getChat(chatId: messageSenderChat.chatId).title
         }
         
         switch message.content {
@@ -296,6 +384,14 @@ import TDLibKit
         case .messagePhoto(let messagePhoto):
             if !messagePhoto.caption.text.isEmpty {
                 customMessage.formattedText = messagePhoto.caption
+            }
+        case .messageVideo(let messageVideo):
+            if !messageVideo.caption.text.isEmpty {
+                customMessage.formattedText = messageVideo.caption
+            }
+        case .messageDocument(let messageDocument):
+            if !messageDocument.caption.text.isEmpty {
+                customMessage.formattedText = messageDocument.caption
             }
         case .messageVoiceNote(let messageVoiceNote):
             if !messageVoiceNote.caption.text.isEmpty {
@@ -315,13 +411,13 @@ import TDLibKit
         
         switch origin {
         case .messageOriginChat(let chat):
-            if let title = await (try? td.getChat(chatId: chat.senderChatId))?.title {
+            if let title = await (try? service.getChat(chatId: chat.senderChatId))?.title {
                 return !chat.authorSignature.isEmpty ? "\(title) (\(chat.authorSignature))" : title
             } else {
                 return !chat.authorSignature.isEmpty ? chat.authorSignature : nil
             }
         case .messageOriginChannel(let channel):
-            if let title = await (try? td.getChat(chatId: channel.chatId))?.title {
+            if let title = await (try? service.getChat(chatId: channel.chatId))?.title {
                 return !channel.authorSignature.isEmpty ? "\(title) (\(channel.authorSignature))" : title
             } else {
                 return !channel.authorSignature.isEmpty ? channel.authorSignature : nil
@@ -329,13 +425,18 @@ import TDLibKit
         case .messageOriginHiddenUser(let messageOriginHiddenUser):
             return messageOriginHiddenUser.senderName
         case .messageOriginUser(let messageOriginUser):
-            return await (try? td.getUser(userId: messageOriginUser.senderUserId))?.firstName
+            return await (try? service.getUser(userId: messageOriginUser.senderUserId))?.firstName
         }
     }
     
     func getReplyToMessage(_ replyTo: MessageReplyTo?) async -> Message? {
         if case .messageReplyToMessage(let messageReplyToMessage) = replyTo, messageReplyToMessage.messageId != 0 {
-            return try? await td.getMessage(chatId: customChat.chat.id, messageId: messageReplyToMessage.messageId)
+            return try? await service.getMessage(
+                chatId: messageReplyToMessage.chatId == 0
+                    ? customChat.chat.id
+                    : messageReplyToMessage.chatId,
+                messageId: messageReplyToMessage.messageId
+            )
         }
         return nil
     }
@@ -348,7 +449,7 @@ import TDLibKit
     }
     
     func sendMessageVoiceNote(duration: Int, waveform: Data) async {
-        _ = try? await td.sendMessage(
+        _ = try? await service.sendMessage(
             chatId: customChat.chat.id,
             inputMessageContent: .inputMessageVoiceNote(
                 .init(
@@ -372,7 +473,9 @@ import TDLibKit
     }
     
     func sendMessage() async {
-        if !displayedImages.isEmpty {
+        if !displayedDocuments.isEmpty {
+            await sendMessageDocuments()
+        } else if !displayedImages.isEmpty {
             await sendMessagePhotos()
         } else if canEditMessage {
             await editMessage()
@@ -385,6 +488,7 @@ import TDLibKit
         await main {
             withAnimation {
                 self.displayedImages.removeAll()
+                self.displayedDocuments.removeAll()
                 self.editMessageText = ""
                 self.text = ""
                 self.replyMessage = nil
@@ -392,12 +496,65 @@ import TDLibKit
             }
         }
     }
+
+    func stageDocuments(_ urls: [URL]) async {
+        let stagedURLs = await Task.detached(priority: .userInitiated) {
+            urls.compactMap { source -> URL? in
+                let accessed = source.startAccessingSecurityScopedResource()
+                defer { if accessed { source.stopAccessingSecurityScopedResource() } }
+                let destination = URL(filePath: NSTemporaryDirectory())
+                    .appending(path: "\(UUID().uuidString)-\(source.lastPathComponent)")
+                do {
+                    try FileManager.default.copyItem(at: source, to: destination)
+                    return destination
+                } catch {
+                    return nil
+                }
+            }
+        }.value
+        displayedImages.removeAll()
+        displayedDocuments = stagedURLs
+        setShowSendButton()
+    }
+
+    func sendMessageDocuments() async {
+        try? await tdSendChatAction(.chatActionUploadingDocument(.init(progress: 0)))
+        let contents = displayedDocuments.map { url in
+            InputMessageContent.inputMessageDocument(.init(
+                caption: FormattedText(entities: getEntities(from: text), text: text.string),
+                document: InputDocument(
+                    disableContentTypeDetection: true,
+                    document: .inputFileLocal(.init(path: url.path())),
+                    thumbnail: nil,
+                ),
+            ))
+        }
+        if contents.count == 1, let content = contents.first {
+            _ = try? await service.sendMessage(
+                chatId: customChat.chat.id,
+                inputMessageContent: content,
+                options: nil,
+                replyMarkup: nil,
+                replyTo: getMessageReplyTo(from: replyMessage),
+                topicId: nil,
+            )
+        } else if !contents.isEmpty {
+            _ = try? await service.sendMessageAlbum(
+                chatId: customChat.chat.id,
+                inputMessageContents: contents,
+                options: nil,
+                replyTo: getMessageReplyTo(from: replyMessage),
+                topicId: nil,
+            )
+        }
+        try? await tdSendChatAction(.chatActionCancel)
+    }
     
     func sendMessagePhotos() async {
         try? await tdSendChatAction(.chatActionUploadingPhoto(.init(progress: 0)))
         
         if displayedImages.count == 1, let photo = displayedImages.first {
-            _ = try? await td.sendMessage(
+            _ = try? await service.sendMessage(
                 chatId: customChat.chat.id,
                 inputMessageContent: makeInputMessageContent(for: photo.url),
                 options: nil,
@@ -409,7 +566,7 @@ import TDLibKit
             let messageContents = displayedImages.map {
                 makeInputMessageContent(for: $0.url)
             }
-            _ = try? await td.sendMessageAlbum(
+            _ = try? await service.sendMessageAlbum(
                 chatId: customChat.chat.id,
                 inputMessageContents: messageContents,
                 options: nil,
@@ -423,7 +580,7 @@ import TDLibKit
     
     func makeInputMessageContent(for url: URL) -> InputMessageContent {
         let path = url.path()
-        let image = UIImage(contentsOfFile: path) ?? UIImage()
+        let pixelSize = imagePixelSize(at: url) ?? .zero
         let input = InputFile.inputFileLocal(.init(path: path))
         return .inputMessagePhoto(
             InputMessagePhoto(
@@ -431,15 +588,13 @@ import TDLibKit
                 hasSpoiler: false,
                 photo: InputPhoto(
                     addedStickerFileIds: [],
-                    height: Int(image.size.height),
+                    height: Int(pixelSize.height),
                     photo: input,
-                    thumbnail: InputThumbnail(
-                        height: Int(image.size.height),
-                        thumbnail: input,
-                        width: Int(image.size.width),
-                    ),
+                    // TDLib generates the appropriate thumbnail. Passing the
+                    // original photo here made it process the full file twice.
+                    thumbnail: nil,
                     video: nil,
-                    width: Int(image.size.width),
+                    width: Int(pixelSize.width),
                 ),
                 selfDestructType: nil,
                 showCaptionAboveMedia: false,
@@ -448,7 +603,7 @@ import TDLibKit
     }
     
     func sendMessageText() async {
-        _ = try? await td.sendMessage(
+        _ = try? await service.sendMessage(
             chatId: customChat.chat.id,
             inputMessageContent: .inputMessageText(
                 .init(
@@ -471,37 +626,15 @@ import TDLibKit
     
     func editMessage() async {
         guard let message = editCustomMessage?.message else { return }
-        
-        switch message.content {
-        case .messageText:
-            _ = try? await td.editMessageText(
-                chatId: customChat.chat.id,
-                inputMessageContent:
-                .inputMessageText(
-                    .init(
-                        clearDraft: true,
-                        linkPreviewOptions: nil,
-                        text: FormattedText(
-                            entities: getEntities(from: editMessageText),
-                            text: editMessageText.string,
-                        ),
-                    ),
-                ),
-                messageId: message.id,
-                replyMarkup: nil,
-            )
-        case .messagePhoto, .messageVoiceNote:
-            _ = try? await td.editMessageCaption(
-                caption: FormattedText(
-                    entities: getEntities(from: editMessageText),
-                    text: editMessageText.string,
-                ),
-                chatId: customChat.chat.id,
-                messageId: message.id,
-                replyMarkup: nil,
-                showCaptionAboveMedia: false,
-            )
-        default:
+        let newText = FormattedText(entities: getEntities(from: editMessageText), text: editMessageText.string)
+        let supported = await TelegramMessageEditing.editMessage(
+            service: service,
+            chatId: customChat.chat.id,
+            messageId: message.id,
+            messageContent: message.content,
+            newText: newText,
+        )
+        if !supported {
             log("Unsupported edit message type")
         }
     }
@@ -522,7 +655,7 @@ import TDLibKit
             replyTo: getMessageReplyTo(from: replyMessage),
             suggestedPostInfo: nil,
         )
-        _ = try? await td.setChatDraftMessage(
+        _ = try? await service.setChatDraftMessage(
             chatId: customChat.chat.id,
             draftMessage: draftMessage,
             topicId: nil,
@@ -531,22 +664,16 @@ import TDLibKit
     
     func setShowSendButton() {
         guard editCustomMessage == nil else { return withAnimation { showSendButton = true } }
-        let value = !displayedImages.isEmpty || !editMessageText.characters.isEmpty || !text.characters.isEmpty
+        let value = !displayedDocuments.isEmpty || !displayedImages.isEmpty
+            || !editMessageText.characters.isEmpty || !text.characters.isEmpty
         withAnimation { showSendButton = value }
     }
     
     func setEditMessageText(from message: Message?) {
         withAnimation {
-            switch message?.content {
-            case .messageText(let messageText):
-                editMessageText = getAttributedString(from: messageText.text)
-            case .messagePhoto(let messagePhoto):
-                editMessageText = getAttributedString(from: messagePhoto.caption)
-            case .messageVoiceNote(let messageVoiceNote):
-                editMessageText = getAttributedString(from: messageVoiceNote.caption)
-            default:
-                break
-            }
+            guard let message, let formattedText = TelegramMessageEditing.editableFormattedText(from: message)
+            else { return }
+            editMessageText = getAttributedString(from: formattedText)
         }
     }
     
@@ -606,7 +733,7 @@ import TDLibKit
     }
     
     func tdSendChatAction(_ chatAction: ChatAction) async throws {
-        try await td.sendChatAction(
+        _ = try await service.sendChatAction(
             action: chatAction,
             businessConnectionId: nil,
             chatId: customChat.chat.id,

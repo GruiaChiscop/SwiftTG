@@ -8,30 +8,38 @@ struct MessageView: View {
 
     @Environment(ChatVM.self) var chatVM
     @State var shownAlbum: CustomMessageAlbum?
+    @State var media = Media.shared
     @State var voiceNoteLocalPath: String?
     @State var showDeleteOptions = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             if let forwardedFrom = customMessage.forwardedFrom {
-                ForwardedFromView(name: forwardedFrom)
-            }
-
-            if customMessage.replyUser != nil, let replyToMessage = customMessage.replyToMessage {
-                ReplyMessageView(
-                    customMessage: customMessage,
-                    type: .replied,
-                    onTap: { chatVM.scrollTo(id: replyToMessage.id) },
+                ForwardedFromView(
+                    name: forwardedFrom,
+                    onTap: canNavigateToForwardOrigin
+                        ? { chatVM.navigateToForwardOrigin(from: customMessage.message) }
+                        : nil,
                 )
             }
 
-            if customMessage.messagePhoto != nil
+            if customMessage.replySenderName != nil, customMessage.replyToMessage != nil {
+                ReplyMessageView(
+                    customMessage: customMessage,
+                    type: .replied,
+                    onTap: { chatVM.navigateToRepliedMessage(from: customMessage.message) },
+                )
+            }
+
+            if customMessage.messageDocument != nil
+                || customMessage.messagePhoto != nil
+                || customMessage.messageVideo != nil
                 || customMessage.messageVoiceNote != nil
                 || !customMessage.album.isEmpty
             {
                 MessageContentView(
                     customMessage: customMessage,
-                    onPhotoTap: openAlbum,
+                    onMediaTap: openAlbum,
                     onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
                 )
             }
@@ -41,7 +49,7 @@ struct MessageView: View {
                     .padding(8)
                     .padding(
                         .top,
-                        customMessage.replyUser != nil && customMessage.replyToMessage != nil
+                        customMessage.replySenderName != nil && customMessage.replyToMessage != nil
                             || customMessage.forwardedFrom != nil ? -8 : 0,
                     )
             }
@@ -49,7 +57,12 @@ struct MessageView: View {
         .background(chatVM.highlightedMessageId == customMessage.id ? .white.opacity(0.5) : .gray6)
         .clipShape(.rect(cornerRadius: 20))
         .overlay(alignment: .bottomTrailing) {
-            Text(chatVM.dateFormatter.string(from: customMessage.date))
+            HStack(spacing: 3) {
+                if let editStatus = telegramMessageEditStatus(customMessage.message) {
+                    Text(editStatus)
+                }
+                Text(chatVM.dateFormatter.string(from: customMessage.date))
+            }
                 .font(.system(size: 12))
                 .foregroundStyle(.white)
                 .padding(3)
@@ -82,15 +95,27 @@ struct MessageView: View {
         .accessibilityIdentifier("message-\(customMessage.id)")
         .accessibilityLabel(accessibilityDescription)
         .modify {
-            if let replyToMessage = customMessage.replyToMessage {
+            if hasNavigableReply {
                 $0.accessibilityAction(named: "Go to Replied Message") {
-                    chatVM.scrollTo(id: replyToMessage.id)
+                    chatVM.navigateToRepliedMessage(from: customMessage.message)
                 }
             }
         }
         .modify {
-            if customMessage.messagePhoto != nil || !customMessage.album.isEmpty {
-                $0.accessibilityAction(named: "Open Photo") { openAlbum(albumMessage: nil) }
+            if let forwardedFrom = customMessage.forwardedFrom, canNavigateToForwardOrigin {
+                $0.accessibilityAction(named: "Go to \(forwardedFrom)") {
+                    chatVM.navigateToForwardOrigin(from: customMessage.message)
+                }
+            }
+        }
+        .modify {
+            if customMessage.messagePhoto != nil
+                || customMessage.messageVideo != nil
+                || !customMessage.album.isEmpty
+            {
+                $0.accessibilityAction(named: mediaAccessibilityActionName) {
+                    openAlbum(albumMessage: nil)
+                }
             }
         }
         .accessibilityActions {
@@ -127,44 +152,74 @@ struct MessageView: View {
         }
     }
 
+    private var mediaAccessibilityActionName: String {
+        let containsPhoto = customMessage.messagePhoto != nil
+            || customMessage.album.contains { if case .messagePhoto = $0.content { true } else { false } }
+        let containsVideo = customMessage.messageVideo != nil
+            || customMessage.album.contains { if case .messageVideo = $0.content { true } else { false } }
+        if containsPhoto, containsVideo { return "Open Media" }
+        return containsVideo ? "Play Video" : "Open Photo"
+    }
+
     var accessibilityDescription: String {
         var prefix = ""
 
         if let forwardedFrom = customMessage.forwardedFrom {
             prefix += "Forwarded from \(forwardedFrom). "
         }
-        if customMessage.replyUser != nil, let replyToMessage = customMessage.replyToMessage {
-            prefix += "Replying to \(customMessage.replyUser?.firstName ?? "message"): \(plainText(from: replyToMessage)). "
-        }
-
         let sender = customMessage.message.isOutgoing ? "You" : (customMessage.senderUser?.firstName ?? "Unknown")
-        var parts = [
-            "\(sender): \(plainText(from: customMessage.message))",
-            chatVM.dateFormatter.string(from: customMessage.date),
-        ]
-        if customMessage.message.isOutgoing {
-            parts.append(isSeen ? "Seen" : "Sent")
+        var parts = [String]()
+        if case .messageReplyToMessage = customMessage.message.replyTo {
+            parts.append("Replying to \(customMessage.replySenderName ?? "message")")
+        }
+        parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
+        if let editStatus = telegramMessageEditStatus(customMessage.message) {
+            parts.append(editStatus)
+        }
+        parts.append(telegramMessageDateDescription(customMessage.message.date))
+        if let status = telegramMessageDeliveryStatus(
+            customMessage.message,
+            lastReadOutboxMessageId: chatVM.customChat.lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        if let voiceNote = customMessage.messageVoiceNote {
+            let elapsed = media.savedMediaPath == voiceNoteLocalPath ? Int(media.currentTime) : 0
+            parts.append(telegramVoicePlaybackDescription(duration: voiceNote.voiceNote.duration, elapsed: elapsed))
+        }
+        if let quotedMessageExcerpt {
+            parts.append("Quoted message: \(quotedMessageExcerpt)")
         }
 
         return prefix + parts.joined(separator: ", ")
     }
 
-    var isSeen: Bool {
-        customMessage.message.id <= chatVM.customChat.chat.lastReadOutboxMessageId
+    func plainText(from message: Message) -> String {
+        telegramMessageContentDescription(message)
     }
 
-    func plainText(from message: Message) -> String {
-        switch message.content {
-        case .messageText(let messageText):
-            messageText.text.text
-        case .messagePhoto(let messagePhoto):
-            messagePhoto.caption.text.isEmpty ? "Photo" : "Photo: \(messagePhoto.caption.text)"
-        case .messageVoiceNote(let messageVoiceNote):
-            messageVoiceNote.caption.text.isEmpty ? "Voice message" : "Voice message: \(messageVoiceNote.caption.text)"
-        case .messageUnsupported:
-            "Unsupported message"
-        default:
-            "Message"
+    private var quotedMessageExcerpt: String? {
+        guard case .messageReplyToMessage(let reply) = customMessage.message.replyTo else { return nil }
+        if let quote = reply.quote?.text.text, !quote.isEmpty {
+            return telegramQuotedMessageExcerpt(quote)
         }
+        if let replyToMessage = customMessage.replyToMessage {
+            return telegramQuotedMessageExcerpt(plainText(from: replyToMessage))
+        }
+        if let content = reply.content {
+            return telegramQuotedMessageExcerpt(telegramMessageContentDescription(content))
+        }
+        return nil
+    }
+
+    private var canNavigateToForwardOrigin: Bool {
+        guard let origin = customMessage.message.forwardInfo?.origin else { return false }
+        if case .messageOriginHiddenUser = origin { return false }
+        return true
+    }
+
+    private var hasNavigableReply: Bool {
+        guard case .messageReplyToMessage(let reply) = customMessage.message.replyTo else { return false }
+        return reply.messageId != 0
     }
 }
