@@ -245,13 +245,45 @@ final class TelegramMessageStore: @unchecked Sendable {
         }
     }
 
+    /// Chats stay subscribed (and keep accumulating merged history) for as long as the app process
+    /// runs, so retention has to be capped here rather than left to each platform's view layer -
+    /// otherwise a chat that's been scrolled through extensively earlier in the session makes every
+    /// later reopen, or even an unrelated live update, redo work proportional to its entire history.
+    private static let maxRetainedMessagesPerChat = 500
+
     private func publish(_ snapshot: TelegramMessageSnapshot) {
         dispatchPrecondition(condition: .onQueue(queue))
+        let trimmedSnapshot = Self.trimmed(snapshot, keeping: Self.maxRetainedMessagesPerChat)
         let subject = stateLock.withLock {
-            snapshots[snapshot.chatId] = snapshot
-            return subjects[snapshot.chatId]
+            snapshots[trimmedSnapshot.chatId] = trimmedSnapshot
+            return subjects[trimmedSnapshot.chatId]
         }
-        subject?.send(snapshot)
+        subject?.send(trimmedSnapshot)
+    }
+
+    /// Drops the oldest messages beyond `limit`. `orderedMessageIds` is sorted chronologically, so
+    /// this only ever discards the far end of scrollback the user isn't currently looking at -
+    /// scrolling back up past the cap simply re-fetches it from TDLib's local cache.
+    private static func trimmed(_ snapshot: TelegramMessageSnapshot, keeping limit: Int) -> TelegramMessageSnapshot {
+        let overflow = snapshot.orderedMessageIds.count - limit
+        guard overflow > 0 else { return snapshot }
+
+        let droppedIds = snapshot.orderedMessageIds.prefix(overflow)
+        let keptIds = Array(snapshot.orderedMessageIds.suffix(from: overflow))
+        var keptMessages = snapshot.messages
+        for id in droppedIds {
+            keptMessages.removeValue(forKey: id)
+        }
+
+        return TelegramMessageSnapshot(
+            chatId: snapshot.chatId,
+            version: snapshot.version,
+            messages: keptMessages,
+            orderedMessageIds: keptIds,
+            unreadCount: snapshot.unreadCount,
+            hasMergedHistory: snapshot.hasMergedHistory,
+            change: snapshot.change,
+        )
     }
 
     private func reduction(for update: Update) -> (chatId: Int64, change: TelegramMessageChange)? {

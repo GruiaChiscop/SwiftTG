@@ -132,6 +132,26 @@ struct TelegramMessageStoreTests {
         #expect(initialSnapshot?.messages[message.id] == message)
     }
 
+    @Test func `retention is capped to the most recent messages regardless of how history arrived`() throws {
+        let store = TelegramMessageStore()
+        let chatId: Int64 = 70
+        let firstBatch = (1...300).map { TDLibFixtures.message(id: Int64($0), chatId: chatId, date: $0) }
+        let secondBatch = (301...600).map { TDLibFixtures.message(id: Int64($0), chatId: chatId, date: $0) }
+
+        let snapshot = try waitForSnapshot(store: store, chatId: chatId, matching: {
+            $0.messages[600] != nil
+        }) {
+            store.mergeHistory(chatId: chatId, messages: firstBatch)
+            store.mergeHistory(chatId: chatId, messages: secondBatch)
+        }
+
+        #expect(snapshot.orderedMessageIds.count == 500)
+        #expect(snapshot.orderedMessageIds == Array(101...600).map(Int64.init))
+        #expect(snapshot.messages[100] == nil)
+        #expect(snapshot.messages[101] != nil)
+        #expect(snapshot.messages[600] != nil)
+    }
+
     @Test func `interaction updates are published for the affected message`() throws {
         let store = TelegramMessageStore()
         let chatId: Int64 = 60
