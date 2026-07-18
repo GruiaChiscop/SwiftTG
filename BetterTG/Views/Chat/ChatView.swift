@@ -73,7 +73,6 @@ struct ChatView: View {
         .navigationBarHeight($navigationBarHeight)
         .toolbar {
             ToolbarItem(placement: .principal) { principal }
-            ToolbarItem(placement: .topBarTrailing) { topBarTrailing }
         }
         .alert(
             "Can't Open Destination",
@@ -102,6 +101,16 @@ struct ChatView: View {
                     chatVM.navigateToMessage(id: messageId)
                 }
             }
+        }
+        .sheet(isPresented: $showsChatInfo) {
+            ChatInfoView {
+                showsChatInfo = false
+                Task { @MainActor in
+                    await Task.yield()
+                    showsSharedMedia = true
+                }
+            }
+            .environment(chatVM)
         }
         .environment(chatVM)
     }
@@ -195,6 +204,7 @@ struct ChatView: View {
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var showsSharedMedia = false
+    @State private var showsChatInfo = false
 
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
@@ -206,57 +216,39 @@ struct ChatView: View {
     }
     
     private var principal: some View {
-        VStack(spacing: 0) {
-            Text(chatVM.customChat.chat.title)
-            
-            Group {
-                if !chatVM.actionStatus.isEmpty {
-                    Text(chatVM.actionStatus)
-                } else if !chatVM.onlineStatus.isEmpty {
-                    Text(chatVM.onlineStatus)
+        Button {
+            showsChatInfo = true
+        } label: {
+            VStack(spacing: 0) {
+                Text(chatVM.customChat.chat.title)
+
+                Group {
+                    if !chatVM.actionStatus.isEmpty {
+                        Text(chatVM.actionStatus)
+                    } else if !chatVM.onlineStatus.isEmpty {
+                        Text(chatVM.onlineStatus)
+                    }
                 }
-            }
-            .transition(
-                .asymmetric(
-                    insertion: .move(edge: .top),
-                    removal: .move(edge: .bottom),
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .top),
+                        removal: .move(edge: .bottom),
+                    )
+                    .combined(with: .opacity),
                 )
-                .combined(with: .opacity),
-            )
-            .font(.caption)
-            .foregroundStyle(!chatVM.actionStatus.isEmpty || chatVM.onlineStatus == "online" ? .blue : .gray)
+                .font(.caption)
+                .foregroundStyle(!chatVM.actionStatus.isEmpty || chatVM.onlineStatus == "online" ? .blue : .gray)
+            }
+            .frame(minWidth: Utils.screen.bounds.width * 0.5)
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .glassEffect(.regular.interactive())
         }
-        .frame(minWidth: Utils.screen.bounds.width * 0.5)
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .glassEffect(.regular.interactive())
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(principalAccessibilityLabel)
         .accessibilityAddTraits(.isHeader)
-    }
-
-    @ViewBuilder private var topBarTrailing: some View {
-        let chat = chatVM.customChat.chat
-        Menu {
-            Button("Shared Media", systemImage: "photo.on.rectangle") {
-                showsSharedMedia = true
-            }
-            if chat.canBeDeletedOnlyForSelf || chat.canBeDeletedForAllUsers {
-                Divider()
-                Button("Clear History", systemImage: "eraser", role: .destructive) {
-                    RootVM.shared.requestClearHistory(chatVM.customChat)
-                }
-            }
-        } label: {
-            ProfileImageView(
-                photo: chat.photo?.big,
-                minithumbnail: chat.photo?.minithumbnail,
-                title: chat.title,
-                userId: chat.id,
-            )
-            .frame(width: 32, height: 32)
-        }
-        .accessibilityLabel("Chat actions")
+        .accessibilityHint("Opens chat information")
     }
 
     private func positionInitialMessagesIfNeeded(using scrollViewProxy: ScrollViewProxy) {
