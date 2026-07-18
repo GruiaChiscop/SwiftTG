@@ -60,15 +60,30 @@ struct MacMessageTable: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        /// One entry per table row. Unread/day dividers get their own row - matching how SwiftUI's
+        /// `List` gives iOS separate rows for free from a `@ViewBuilder` - rather than being stacked
+        /// on top of a message's content inside a shared row/accessibility container.
+        enum Row {
+            case dayHeader(String)
+            case unreadHeader(Int)
+            case message(Int64)
+
+            var messageId: Int64? {
+                if case .message(let id) = self { id } else { nil }
+            }
+        }
+
         var parent: MacMessageTable
         weak var tableView: MessageNSTableView?
         weak var scrollView: NSScrollView?
 
         private var messageIds = [Int64]()
+        private var rows = [Row]()
         private var previousChatId: Int64?
         private var previousVersion: UInt64?
         private var previousIsLoadingMessages = false
         private var previousSelectedMessageId: Int64?
+        private var previousUnreadBoundaryMessageId: Int64?
         private var hasPositionedInitialMessages = false
         private var scrollObserver: NSObjectProtocol?
         private var isRestoringScrollPosition = false
@@ -78,15 +93,13 @@ struct MacMessageTable: NSViewRepresentable {
         }
 
         func numberOfRows(in _: NSTableView) -> Int {
-            messageIds.count
+            rows.count
         }
 
         func tableView(_ tableView: NSTableView, viewFor _: NSTableColumn?, row: Int) -> NSView? {
-            guard messageIds.indices.contains(row),
-                  let message = parent.model.messages.messages[messageIds[row]]
-            else { return nil }
+            guard let entry = entry(at: row) else { return nil }
 
-            let identifier = NSUserInterfaceItemIdentifier("HostedMessage")
+            let identifier = NSUserInterfaceItemIdentifier("HostedMessageCell")
             let cell: HostedMessageCell
             if let reused = tableView.makeView(withIdentifier: identifier, owner: nil) as? HostedMessageCell {
                 cell = reused
@@ -94,12 +107,13 @@ struct MacMessageTable: NSViewRepresentable {
                 cell = HostedMessageCell()
                 cell.identifier = identifier
             }
-            cell.setRootView(rowView(for: message, at: row))
+            cell.setRootView(rowView(for: entry))
             return cell
         }
 
-        func tableView(_: NSTableView, rowViewForRow _: Int) -> NSTableRowView? {
+        func tableView(_: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
             let rowView = MessageTableRowView()
+            guard self.entry(at: row)?.messageId != nil else { return rowView }
             rowView.accessibilityMenuHandler = { [weak self, weak rowView] in
                 guard let self, let rowView, let tableView = self.tableView else { return false }
                 return self.showMenu(for: tableView.row(for: rowView))
@@ -107,11 +121,15 @@ struct MacMessageTable: NSViewRepresentable {
             return rowView
         }
 
+        func tableView(_: NSTableView, shouldSelectRow row: Int) -> Bool {
+            self.entry(at: row)?.messageId != nil
+        }
+
         func tableViewSelectionDidChange(_ notification: Foundation.Notification) {
             guard let tableView = notification.object as? NSTableView,
-                  messageIds.indices.contains(tableView.selectedRow)
+                  let messageId = entry(at: tableView.selectedRow)?.messageId
             else { return }
-            parent.selectedMessageId = messageIds[tableView.selectedRow]
+            parent.selectedMessageId = messageId
         }
 
         func showMenuForSelectedRow() -> Bool {
@@ -125,40 +143,47 @@ struct MacMessageTable: NSViewRepresentable {
             let chatChanged = previousChatId != parent.chat.chatId
             let versionChanged = previousVersion != parent.model.messages.version
             let loadingChanged = previousIsLoadingMessages != parent.model.isLoadingMessages
+            let unreadBoundaryChanged = previousUnreadBoundaryMessageId != parent.unreadBoundaryMessageId
 
             if chatChanged {
                 previousChatId = parent.chat.chatId
                 previousVersion = nil
                 previousIsLoadingMessages = parent.model.isLoadingMessages
                 previousSelectedMessageId = nil
+                previousUnreadBoundaryMessageId = nil
                 hasPositionedInitialMessages = false
                 messageIds = []
+                rows = []
             }
 
             let selectionChanged = previousSelectedMessageId != parent.selectedMessageId
-            guard chatChanged || versionChanged || loadingChanged || newIds != messageIds || selectionChanged else {
+            guard chatChanged || versionChanged || loadingChanged || newIds != messageIds || selectionChanged
+                || unreadBoundaryChanged
+            else {
                 synchronizeSelection(in: tableView)
                 _ = handleExplicitNavigation(in: tableView)
                 return
             }
 
-            if selectionChanged, !chatChanged, !versionChanged, newIds == messageIds {
+            if selectionChanged, !chatChanged, !versionChanged, !unreadBoundaryChanged, newIds == messageIds {
                 previousSelectedMessageId = parent.selectedMessageId
                 synchronizeSelection(in: tableView)
                 return
             }
 
-            let oldIds = messageIds
-            let oldFirstId = oldIds.first
-            let oldFirstOffset = oldFirstId.flatMap { id -> CGFloat? in
-                guard let row = oldIds.firstIndex(of: id) else { return nil }
-                return tableView.rect(ofRow: row).minY - scrollView.contentView.bounds.minY
+            let oldRows = rows
+            let oldFirstMessageId = messageIds.first
+            let oldFirstRow = oldFirstMessageId.flatMap { id in oldRows.firstIndex { $0.messageId == id } }
+            let oldFirstOffset = oldFirstRow.flatMap { row -> CGFloat? in
+                tableView.rect(ofRow: row).minY - scrollView.contentView.bounds.minY
             }
 
             messageIds = newIds
+            rows = computeRows(for: newIds)
             previousVersion = parent.model.messages.version
             previousIsLoadingMessages = parent.model.isLoadingMessages
             previousSelectedMessageId = parent.selectedMessageId
+            previousUnreadBoundaryMessageId = parent.unreadBoundaryMessageId
             tableView.reloadData()
             synchronizeSelection(in: tableView)
 
@@ -168,13 +193,13 @@ struct MacMessageTable: NSViewRepresentable {
                 scrollToBottom(in: tableView, focus: false)
                 hasPositionedInitialMessages = true
                 parent.isAtBottom = true
-            } else if let oldFirstId,
+            } else if let oldFirstMessageId,
                       let oldFirstOffset,
-                      oldIds.first != newIds.first,
-                      let newRow = newIds.firstIndex(of: oldFirstId)
+                      messageIds.first != oldFirstMessageId,
+                      let newRow = rows.firstIndex(where: { $0.messageId == oldFirstMessageId })
             {
                 restore(row: newRow, offset: oldFirstOffset, in: tableView)
-            } else if parent.shouldFollowLatestMessage, oldIds.last != newIds.last {
+            } else if parent.shouldFollowLatestMessage, oldRows.last?.messageId != rows.last?.messageId {
                 scrollToBottom(in: tableView, focus: false)
             }
             updateVisibleState()
@@ -199,29 +224,56 @@ struct MacMessageTable: NSViewRepresentable {
             scrollObserver = nil
         }
 
-        private func rowView(for message: Message, at row: Int) -> AnyView {
-            AnyView(
-                MacMessageTableRow(
-                    model: parent.model,
-                    message: message,
-                    lastReadOutboxMessageId: parent.chat.lastReadOutboxMessageId,
-                    dayHeading: startsNewDay(at: row) ? telegramMessageDayHeading(message.date) : nil,
-                    unreadCount: parent.unreadBoundaryMessageId == message.id ? parent.model.openedUnreadCount : nil,
-                ),
-            )
+        private func entry(at index: Int) -> Row? {
+            rows.indices.contains(index) ? rows[index] : nil
         }
 
-        private func startsNewDay(at index: Int) -> Bool {
-            guard messageIds.indices.contains(index),
-                  let message = parent.model.messages.messages[messageIds[index]]
-            else { return false }
-            guard index > 0,
-                  let previous = parent.model.messages.messages[messageIds[index - 1]]
-            else { return true }
-            return !Calendar.autoupdatingCurrent.isDate(
-                Date(timeIntervalSince1970: TimeInterval(message.date)),
-                inSameDayAs: Date(timeIntervalSince1970: TimeInterval(previous.date)),
-            )
+        /// Walks the chronological message ids once, inserting a day divider whenever the calendar
+        /// day changes and the unread divider right before the first unread message - each as its
+        /// own row, never bundled into a message's row.
+        private func computeRows(for messageIds: [Int64]) -> [Row] {
+            var result = [Row]()
+            result.reserveCapacity(messageIds.count + 2)
+            var previousMessage: Message?
+            for id in messageIds {
+                guard let message = parent.model.messages.messages[id] else { continue }
+                let startsNewDay = previousMessage.map {
+                    !Calendar.autoupdatingCurrent.isDate(
+                        Date(timeIntervalSince1970: TimeInterval(message.date)),
+                        inSameDayAs: Date(timeIntervalSince1970: TimeInterval($0.date)),
+                    )
+                } ?? true
+                if startsNewDay {
+                    result.append(.dayHeader(telegramMessageDayHeading(message.date)))
+                }
+                if parent.unreadBoundaryMessageId == id {
+                    result.append(.unreadHeader(parent.model.openedUnreadCount))
+                }
+                result.append(.message(id))
+                previousMessage = message
+            }
+            return result
+        }
+
+        private func rowView(for entry: Row) -> AnyView {
+            switch entry {
+            case .dayHeader(let title):
+                AnyView(MacMessageDayHeader(title: title))
+            case .unreadHeader(let count):
+                AnyView(MacUnreadMessagesHeader(count: count))
+            case .message(let id):
+                if let message = parent.model.messages.messages[id] {
+                    AnyView(
+                        MacMessageTableRow(
+                            model: parent.model,
+                            message: message,
+                            lastReadOutboxMessageId: parent.chat.lastReadOutboxMessageId,
+                        ),
+                    )
+                } else {
+                    AnyView(EmptyView())
+                }
+            }
         }
 
         @discardableResult
@@ -236,7 +288,7 @@ struct MacMessageTable: NSViewRepresentable {
                 return true
             }
             if let targetId = parent.model.navigationTargetMessageId,
-               let row = messageIds.firstIndex(of: targetId)
+               let row = rows.firstIndex(where: { $0.messageId == targetId })
             {
                 selectAndFocus(row: row, in: tableView, centered: true)
                 parent.model.navigationTargetMessageId = nil
@@ -248,14 +300,14 @@ struct MacMessageTable: NSViewRepresentable {
 
         private func synchronizeSelection(in tableView: NSTableView) {
             guard let selectedMessageId = parent.selectedMessageId,
-                  let row = messageIds.firstIndex(of: selectedMessageId),
+                  let row = rows.firstIndex(where: { $0.messageId == selectedMessageId }),
                   tableView.selectedRow != row
             else { return }
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         }
 
         private func selectAndFocus(row: Int, in tableView: NSTableView, centered: Bool) {
-            guard messageIds.indices.contains(row) else { return }
+            guard rows.indices.contains(row) else { return }
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             if centered {
                 let rowRect = tableView.rect(ofRow: row)
@@ -268,8 +320,8 @@ struct MacMessageTable: NSViewRepresentable {
         }
 
         private func scrollToBottom(in tableView: NSTableView, focus: Bool) {
-            guard !messageIds.isEmpty else { return }
-            let row = messageIds.index(before: messageIds.endIndex)
+            guard !rows.isEmpty else { return }
+            let row = rows.index(before: rows.endIndex)
             isRestoringScrollPosition = true
             DispatchQueue.main.async { [weak self, weak tableView] in
                 guard let self, let tableView else { return }
@@ -302,12 +354,12 @@ struct MacMessageTable: NSViewRepresentable {
             guard !isRestoringScrollPosition,
                   hasPositionedInitialMessages,
                   let tableView,
-                  !messageIds.isEmpty
+                  !rows.isEmpty
             else { return }
             let visibleRows = tableView.rows(in: tableView.visibleRect)
             guard visibleRows.location != NSNotFound else { return }
             let lastVisibleRow = visibleRows.location + visibleRows.length - 1
-            let atBottom = lastVisibleRow >= messageIds.count - 1
+            let atBottom = lastVisibleRow >= rows.count - 1
             if parent.isAtBottom != atBottom { parent.isAtBottom = atBottom }
             if visibleRows.location == 0,
                !parent.model.isLoadingMessages,
@@ -318,7 +370,7 @@ struct MacMessageTable: NSViewRepresentable {
         }
 
         private func showMenu(for row: Int) -> Bool {
-            guard let tableView, messageIds.indices.contains(row) else { return false }
+            guard let tableView, self.entry(at: row)?.messageId != nil else { return false }
             if tableView.selectedRow != row {
                 tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             }
@@ -402,21 +454,15 @@ private struct MacMessageTableRow: View {
     @Bindable var model: MacSessionModel
     let message: Message
     let lastReadOutboxMessageId: Int64
-    let dayHeading: String?
-    let unreadCount: Int?
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let dayHeading { MacMessageDayHeader(title: dayHeading) }
-            if let unreadCount { MacUnreadMessagesHeader(count: unreadCount) }
-            MacMessageRow(
-                model: model,
-                message: message,
-                lastReadOutboxMessageId: lastReadOutboxMessageId,
-            )
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-        }
+        MacMessageRow(
+            model: model,
+            message: message,
+            lastReadOutboxMessageId: lastReadOutboxMessageId,
+        )
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
         .frame(maxWidth: .infinity)
     }
 }

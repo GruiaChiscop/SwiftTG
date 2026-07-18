@@ -159,13 +159,21 @@ extension MacSessionModel {
             for message in newMessages {
                 messagesById[message.id] = message
             }
-            service.mergeMessageHistory(chatId: chatId, messages: newMessages)
             fromMessageId = messagesById.keys.min() ?? 0
         }
 
-        if openedChatId == chatId, historyRequestGeneration == generation {
-            canLoadOlderMessages = !reachedBeginning && !messagesById.isEmpty
+        guard !Task.isCancelled, openedChatId == chatId, historyRequestGeneration == generation else {
+            return Array(messagesById.values)
         }
+
+        // Merge once the full initial batch is assembled rather than after each network page - a
+        // cold chat (nothing synced locally yet) can need several sequential round trips here, and
+        // publishing after every single one forces a full table reload each time, turning what
+        // should be one clean reveal into a visibly janky, multi-second churn.
+        if !messagesById.isEmpty {
+            service.mergeMessageHistory(chatId: chatId, messages: Array(messagesById.values))
+        }
+        canLoadOlderMessages = !reachedBeginning && !messagesById.isEmpty
         return Array(messagesById.values)
     }
 
