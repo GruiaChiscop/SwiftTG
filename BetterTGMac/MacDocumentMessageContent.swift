@@ -10,27 +10,27 @@ struct MacDocumentMessageContent: View {
     let onOpen: () -> Void
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: 8) {
-                Image(systemName: "doc.fill")
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: onOpen) {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.fill")
                     Text(content.document.fileName)
                         .lineLimit(2)
-                    if !content.caption.text.isEmpty {
-                        Text(content.caption.text)
+                    if isLoading {
+                        ProgressView()
+                    } else if !isDownloaded {
+                        Image(systemName: "arrow.down.circle")
                             .foregroundStyle(.secondary)
                     }
                 }
-                if isLoading {
-                    ProgressView()
-                } else if !isDownloaded {
-                    Image(systemName: "arrow.down.circle")
-                        .foregroundStyle(.secondary)
-                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoading)
+            .accessibilityHidden(true)
+            if !content.caption.text.isEmpty {
+                MacFormattedTextView(formattedText: content.caption)
+                    .foregroundStyle(.secondary)
             }
         }
-        .buttonStyle(.plain)
-        .disabled(isLoading)
-        .accessibilityHidden(true)
     }
 }

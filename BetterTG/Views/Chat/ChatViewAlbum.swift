@@ -11,7 +11,7 @@ struct ChatViewAlbum: View {
     let selection: Int64
     
     var body: some View {
-        NavigationControllerWrapper {
+        NavigationStack {
             ChatViewAlbumRootView(album: album, selection: selection)
         }
         .ignoresSafeArea()

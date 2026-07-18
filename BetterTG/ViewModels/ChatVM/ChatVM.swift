@@ -5,6 +5,7 @@ import Combine
 import SwiftOGG
 import SwiftUI
 import TDLibKit
+import UniformTypeIdentifiers
 
 @Observable final class ChatVM {
     // MARK: Lifecycle
@@ -19,38 +20,46 @@ import TDLibKit
         self.initialUnreadCount = customChat.unreadCount
         self.initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
         self.service = service
-        log("init \(customChat.chat.id)")
         if let user = customChat.user {
             self.onlineStatus = getOnlineStatus(from: user.status)
         }
-        
-        Task { _ = try? await service.openChat(chatId: customChat.chat.id) }
-        setPublishers()
-        loadMessages()
-        Media.shared.onChatOpen(title: customChat.chat.title)
-        
+
         if let draftMessage = customChat.draftMessage,
            case .draftMessageContentText(let draftMessageContentText) = draftMessage.content
         {
             self.text = getAttributedString(from: draftMessageContentText.text)
         }
-        
+    }
+
+    deinit {
+        guard hasStarted else { return }
+        let chatId = customChat.chat.id
+        let service = service
+        Task { _ = try? await service.closeChat(chatId: chatId) }
+    }
+
+    // MARK: Internal
+
+    /// Opens the chat and kicks off history loading. `ChatView` is a SwiftUI value type that gets
+    /// reconstructed (and this `ChatVM` re-initialized) on every unrelated body re-evaluation of its
+    /// parent, so opening the chat and fetching history must not happen in `init` - only when the
+    /// view genuinely appears, exactly once, via `.task`.
+    func start() {
+        guard !hasStarted else { return }
+        hasStarted = true
+
+        let chatId = customChat.chat.id
+        Task { _ = try? await service.openChat(chatId: chatId) }
+        setPublishers()
+        loadMessages()
+        Media.shared.onChatOpen(title: customChat.chat.title)
+
         Task.background {
-            guard let draftMessage = customChat.draftMessage else { return }
+            guard let draftMessage = self.customChat.draftMessage else { return }
             let replyMessage = await self.getInputReplyToMessage(draftMessage.replyTo)
             withAnimation { self.replyMessage = replyMessage }
         }
     }
-    
-    deinit {
-        log("deinit \(customChat.chat.id)")
-        let chatId = customChat.chat.id
-        let service = service
-        Task { _ = try? await service.closeChat(chatId: chatId) }
-        Media.shared.onChatDismiss()
-    }
-    
-    // MARK: Internal
 
     var customChat: CustomChat
     let initialMessageId: Int64?
@@ -73,21 +82,24 @@ import TDLibKit
         return dateFormatter
     }()
 
+    @ObservationIgnored private var hasStarted = false
     @ObservationIgnored var loadingMessagesTask: Task<Void, Never>?
     @ObservationIgnored let service: any TelegramService
     @ObservationIgnored var appliedMessageSnapshotVersion: UInt64?
     @ObservationIgnored var latestMessageSnapshot: TelegramMessageSnapshot?
     @ObservationIgnored var renderedMessages = [Int64: CustomMessage]()
-    @ObservationIgnored var renderedInvalidationVersions = [Int64: UInt64]()
-    @ObservationIgnored var renderingMessages = [Int64: Message]()
-    @ObservationIgnored var renderingInvalidationVersions = [Int64: UInt64]()
-    @ObservationIgnored var renderGenerations = [Int64: UInt64]()
-    @ObservationIgnored var messageInvalidationVersions = [Int64: UInt64]()
-    @ObservationIgnored var refreshVersions = [Int64: UInt64]()
-    @ObservationIgnored var refreshedMessagesAwaitingMerge = [Int64: Message]()
+    /// Ids explicitly paged in or received live by this ChatVM instance. The shared message store
+    /// retains a chat's full history for the app's lifetime, so reconcile/render only ever
+    /// consider this bounded set rather than everything the store has ever accumulated.
+    @ObservationIgnored var loadedMessageIds = Set<Int64>()
+    @ObservationIgnored var renderStore = MessageRenderStore()
+    @ObservationIgnored let messageRenderLimiter = MessageRenderLimiter(limit: 8)
+    @ObservationIgnored var audioPlaylist = [Audio]()
+    @ObservationIgnored var displayedMessagesRebuildTask: Task<Void, Never>?
     @ObservationIgnored var pendingScrollMessageIds = Set<Int64>()
     @ObservationIgnored var pendingNavigationMessageId: Int64?
-    @ObservationIgnored var nextRenderGeneration: UInt64 = 0
+    @ObservationIgnored var pendingViewedMessageIds = Set<Int64>()
+    @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
     // Scroll
     @ObservationIgnored var scrollOnFocus = true
     var showScrollToBottomButton = false
@@ -117,7 +129,7 @@ import TDLibKit
     var canEditMessage: Bool {
         guard let editCustomMessage else { return false }
         switch editCustomMessage.message.content {
-        case .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
+        case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
             return true
         case .messageText:
             return !editMessageText.characters.isEmpty
@@ -143,8 +155,14 @@ import TDLibKit
         return resultString
     }
     
-    func loadMoreIfNeeded(for customMessage: CustomMessage) {
-        guard customMessage.id == messages.first?.id else { return }
+    /// Starts fetching the next batch once the user is getting close to the start of what's loaded,
+    /// not only once they've hit it exactly - a VoiceOver swipe (or a fast scroll) that lands right on
+    /// the edge would otherwise stall waiting on the network round trip before it has anything further
+    /// to move to.
+    static let loadMoreLookahead = 10
+
+    func loadMoreIfNeeded(distanceFromStart: Int) {
+        guard distanceFromStart <= Self.loadMoreLookahead else { return }
         loadMessages()
     }
 
@@ -218,9 +236,11 @@ import TDLibKit
                 }
                 return
             }
+            let fetchedMessages = history.messages ?? []
+            await main { self.loadedMessageIds.formUnion(fetchedMessages.map(\.id)) }
             self.service.mergeMessageHistory(
                 chatId: self.customChat.chat.id,
-                messages: history.messages ?? [],
+                messages: fetchedMessages,
             )
             await main {
                 self.loadingMessagesTask = nil
@@ -249,7 +269,7 @@ import TDLibKit
                     self?.navigationError = "This user can't be opened."
                     return
                 }
-                NavigationStorage.shared.push(.customChat(chat, messageId: nil))
+                RootVM.shared.navigate(to: .customChat(chat, messageId: nil))
             }
         case .messageOriginChat(let chat):
             openChat(chatId: chat.senderChatId, messageId: nil)
@@ -292,38 +312,48 @@ import TDLibKit
             return
         }
 
+        await main { self.loadedMessageIds.formUnion(chatHistory.map(\.id)) }
         service.mergeMessageHistory(chatId: customChat.chat.id, messages: chatHistory)
         await main { self.loadingMessagesTask = nil }
     }
     
     func deleteMessage(id: Int64, deleteForBoth: Bool) {
         guard let customMessage = messages.first(where: { $0.message.id == id }) else { return }
+        let messageIds = customMessage.album.isEmpty ? [id] : customMessage.album.map(\.id)
         Task.background {
-            if customMessage.album.isEmpty {
-                _ = try? await self.service.deleteMessages(
-                    chatId: self.customChat.chat.id,
-                    messageIds: [id],
-                    revoke: deleteForBoth,
-                )
-            } else {
-                let ids = customMessage.album.map(\.id)
-                _ = try? await self.service.deleteMessages(
-                    chatId: self.customChat.chat.id,
-                    messageIds: ids,
-                    revoke: deleteForBoth,
-                )
-            }
+            try? await TelegramMessageActions.delete(
+                service: self.service,
+                chatId: self.customChat.chat.id,
+                messageIds: messageIds,
+                forEveryone: deleteForBoth,
+            )
         }
     }
     
+    @MainActor
     func viewMessage(id: Int64) {
-        Task.background {
-            try await self.service.viewMessages(
-                chatId: self.customChat.chat.id,
-                forceRead: true,
-                messageIds: [id],
-                source: nil,
-            )
+        pendingViewedMessageIds.insert(id)
+        guard viewMessagesTask == nil else { return }
+
+        viewMessagesTask = Task { @MainActor [weak self] in
+            try? await Task<Never, Never>.sleep(for: .milliseconds(50))
+            guard let self, !Task.isCancelled else { return }
+
+            let messageIds = Array(pendingViewedMessageIds)
+            pendingViewedMessageIds.removeAll(keepingCapacity: true)
+            viewMessagesTask = nil
+            guard !messageIds.isEmpty else { return }
+
+            let chatId = customChat.chat.id
+            let service = service
+            Task.background {
+                try? await service.viewMessages(
+                    chatId: chatId,
+                    forceRead: true,
+                    messageIds: messageIds,
+                    source: nil,
+                )
+            }
         }
     }
     
@@ -344,6 +374,7 @@ import TDLibKit
             rowSize: 8,
         )
         async let senderUserTask = resolvedSenderUser(for: message.senderId)
+        async let serviceMessageTextTask = TelegramServiceMessage.description(service: service, message: message)
 
         let replyToMessage = await replyToMessageTask
         let customMessage = await CustomMessage(
@@ -353,11 +384,9 @@ import TDLibKit
             properties: (try? propertiesTask) ?? .default,
         )
         customMessage.senderUser = await senderUserTask
+        customMessage.serviceMessageText = await serviceMessageTextTask
         if let reactions = try? await reactionsTask {
-            customMessage.canReact = reactions.unavailabilityReason == nil
-                && (reactions.topReactions + reactions.recentReactions + reactions.popularReactions).contains {
-                    $0.type == .reactionTypeEmoji(.init(emoji: "❤"))
-                }
+            customMessage.availableReactions = telegramAvailableReactions(reactions)
         }
 
         if message.mediaAlbumId != 0 {
@@ -371,29 +400,37 @@ import TDLibKit
             customMessage.replySenderName = try? await service.getChat(chatId: messageSenderChat.chatId).title
         }
         
-        switch message.content {
-        case .messageText(let messageText):
-            customMessage.formattedText = messageText.text
-        case .messagePhoto(let messagePhoto):
-            if !messagePhoto.caption.text.isEmpty {
-                customMessage.formattedText = messagePhoto.caption
+        if let serviceMessageText = customMessage.serviceMessageText {
+            customMessage.formattedText = FormattedText(entities: [], text: serviceMessageText)
+        } else {
+            switch message.content {
+            case .messageText(let messageText):
+                customMessage.formattedText = messageText.text
+            case .messagePhoto(let messagePhoto):
+                if !messagePhoto.caption.text.isEmpty {
+                    customMessage.formattedText = messagePhoto.caption
+                }
+            case .messageVideo(let messageVideo):
+                if !messageVideo.caption.text.isEmpty {
+                    customMessage.formattedText = messageVideo.caption
+                }
+            case .messageDocument(let messageDocument):
+                if !messageDocument.caption.text.isEmpty {
+                    customMessage.formattedText = messageDocument.caption
+                }
+            case .messageVoiceNote(let messageVoiceNote):
+                if !messageVoiceNote.caption.text.isEmpty {
+                    customMessage.formattedText = messageVoiceNote.caption
+                }
+            case .messageAudio(let messageAudio):
+                if !messageAudio.caption.text.isEmpty {
+                    customMessage.formattedText = messageAudio.caption
+                }
+            case .messageUnsupported:
+                customMessage.formattedText = FormattedText(entities: [], text: "TDLib not supported")
+            default:
+                customMessage.formattedText = FormattedText(entities: [], text: "BTG not supported")
             }
-        case .messageVideo(let messageVideo):
-            if !messageVideo.caption.text.isEmpty {
-                customMessage.formattedText = messageVideo.caption
-            }
-        case .messageDocument(let messageDocument):
-            if !messageDocument.caption.text.isEmpty {
-                customMessage.formattedText = messageDocument.caption
-            }
-        case .messageVoiceNote(let messageVoiceNote):
-            if !messageVoiceNote.caption.text.isEmpty {
-                customMessage.formattedText = messageVoiceNote.caption
-            }
-        case .messageUnsupported:
-            customMessage.formattedText = FormattedText(entities: [], text: "TDLib not supported")
-        default:
-            customMessage.formattedText = FormattedText(entities: [], text: "BTG not supported")
         }
         
         return customMessage
@@ -429,27 +466,19 @@ import TDLibKit
     }
     
     func sendMessageVoiceNote(duration: Int, waveform: Data) async {
-        _ = try? await service.sendMessage(
+        try? await TelegramVoiceNoteSending.send(
+            service: service,
             chatId: customChat.chat.id,
-            inputMessageContent: .inputMessageVoiceNote(
-                .init(
-                    caption: FormattedText(
-                        entities: getEntities(from: text),
-                        text: text.string,
-                    ),
-                    duration: duration,
-                    selfDestructType: nil,
-                    voiceNote: .inputFileLocal(.init(path: savedVoiceNoteUrl.path())),
-                    waveform: waveform,
-                ),
+            url: savedVoiceNoteUrl,
+            caption: FormattedText(
+                entities: getEntities(from: text),
+                text: text.string,
             ),
-            options: nil,
-            replyMarkup: nil,
+            duration: duration,
+            waveform: waveform,
             replyTo: getMessageReplyTo(from: replyMessage),
-            topicId: nil,
         )
         text = ""
-        try? await tdSendChatAction(.chatActionCancel)
     }
     
     func sendMessage() async {
@@ -478,7 +507,39 @@ import TDLibKit
     }
 
     func stageDocuments(_ urls: [URL]) async {
-        let stagedURLs = await Task.detached(priority: .userInitiated) {
+        let stagedURLs = await stageAttachmentURLs(urls)
+        displayedImages.removeAll()
+        displayedDocuments = stagedURLs
+        setShowSendButton()
+    }
+
+    func stagePastedAttachments(_ urls: [URL]) async {
+        let stagedURLs = await stageAttachmentURLs(urls)
+        guard !stagedURLs.isEmpty else { return }
+        var seenURLs = Set<URL>()
+        let combined = (displayedImages.map(\.url) + displayedDocuments + stagedURLs).filter {
+            seenURLs.insert($0).inserted
+        }
+        let containsOnlyImages = combined.allSatisfy { url in
+            let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
+            guard let type = type ?? UTType(filenameExtension: url.pathExtension) else { return false }
+            return type.conforms(to: .image)
+        }
+        if containsOnlyImages {
+            displayedDocuments.removeAll()
+            displayedImages = combined.compactMap { url in
+                guard let preview = downsampledImage(at: url, maxPixelSize: 320) else { return nil }
+                return SelectedImage(image: Image(uiImage: preview), url: url)
+            }
+        } else {
+            displayedImages.removeAll()
+            displayedDocuments = combined
+        }
+        setShowSendButton()
+    }
+
+    private func stageAttachmentURLs(_ urls: [URL]) async -> [URL] {
+        await Task.detached(priority: .userInitiated) {
             urls.compactMap { source -> URL? in
                 let accessed = source.startAccessingSecurityScopedResource()
                 defer {
@@ -496,116 +557,62 @@ import TDLibKit
                 }
             }
         }.value
-        displayedImages.removeAll()
-        displayedDocuments = stagedURLs
-        setShowSendButton()
     }
 
     func sendMessageDocuments() async {
-        try? await tdSendChatAction(.chatActionUploadingDocument(.init(progress: 0)))
+        let caption = await TelegramTextFormatting.addingAutomaticEntities(
+            service: service,
+            to: FormattedText(entities: getEntities(from: text), text: text.string),
+        )
         let contents = displayedDocuments.map { url in
-            InputMessageContent.inputMessageDocument(.init(
-                caption: FormattedText(entities: getEntities(from: text), text: text.string),
-                document: InputDocument(
-                    disableContentTypeDetection: true,
-                    document: .inputFileLocal(.init(path: url.path())),
-                    thumbnail: nil,
-                ),
-            ))
+            TelegramMessageSending.documentContent(url: url, caption: caption)
         }
-        if contents.count == 1, let content = contents.first {
-            _ = try? await service.sendMessage(
-                chatId: customChat.chat.id,
-                inputMessageContent: content,
-                options: nil,
-                replyMarkup: nil,
-                replyTo: getMessageReplyTo(from: replyMessage),
-                topicId: nil,
-            )
-        } else if !contents.isEmpty {
-            _ = try? await service.sendMessageAlbum(
-                chatId: customChat.chat.id,
-                inputMessageContents: contents,
-                options: nil,
-                replyTo: getMessageReplyTo(from: replyMessage),
-                topicId: nil,
-            )
-        }
-        try? await tdSendChatAction(.chatActionCancel)
+        _ = try? await TelegramMessageSending.send(
+            service: service,
+            chatId: customChat.chat.id,
+            contents: contents,
+            replyTo: getMessageReplyTo(from: replyMessage),
+            uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
+        )
     }
     
     func sendMessagePhotos() async {
-        try? await tdSendChatAction(.chatActionUploadingPhoto(.init(progress: 0)))
-        
-        if displayedImages.count == 1, let photo = displayedImages.first {
-            _ = try? await service.sendMessage(
-                chatId: customChat.chat.id,
-                inputMessageContent: makeInputMessageContent(for: photo.url),
-                options: nil,
-                replyMarkup: nil,
-                replyTo: getMessageReplyTo(from: replyMessage),
-                topicId: nil,
-            )
-        } else {
-            let messageContents = displayedImages.map {
-                makeInputMessageContent(for: $0.url)
-            }
-            _ = try? await service.sendMessageAlbum(
-                chatId: customChat.chat.id,
-                inputMessageContents: messageContents,
-                options: nil,
-                replyTo: getMessageReplyTo(from: replyMessage),
-                topicId: nil,
-            )
-        }
-        
-        try? await tdSendChatAction(.chatActionCancel)
+        let caption = await TelegramTextFormatting.addingAutomaticEntities(
+            service: service,
+            to: FormattedText(entities: getEntities(from: text), text: text.string),
+        )
+        let contents = displayedImages.map { makeInputMessageContent(for: $0.url, caption: caption) }
+        _ = try? await TelegramMessageSending.send(
+            service: service,
+            chatId: customChat.chat.id,
+            contents: contents,
+            replyTo: getMessageReplyTo(from: replyMessage),
+            uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
+        )
     }
     
-    func makeInputMessageContent(for url: URL) -> InputMessageContent {
-        let path = url.path()
+    func makeInputMessageContent(for url: URL, caption: FormattedText) -> InputMessageContent {
         let pixelSize = imagePixelSize(at: url) ?? .zero
-        let input = InputFile.inputFileLocal(.init(path: path))
-        return .inputMessagePhoto(
-            InputMessagePhoto(
-                caption: FormattedText(entities: getEntities(from: text), text: text.string),
-                hasSpoiler: false,
-                photo: InputPhoto(
-                    addedStickerFileIds: [],
-                    height: Int(pixelSize.height),
-                    photo: input,
-                    // TDLib generates the appropriate thumbnail. Passing the
-                    // original photo here made it process the full file twice.
-                    thumbnail: nil,
-                    video: nil,
-                    width: Int(pixelSize.width),
-                ),
-                selfDestructType: nil,
-                showCaptionAboveMedia: false,
-            ),
+        return TelegramMessageSending.photoContent(
+            url: url,
+            caption: caption,
+            width: Int(pixelSize.width),
+            height: Int(pixelSize.height),
         )
     }
     
     func sendMessageText() async {
-        _ = try? await service.sendMessage(
-            chatId: customChat.chat.id,
-            inputMessageContent: .inputMessageText(
-                .init(
-                    clearDraft: true,
-                    linkPreviewOptions: nil,
-                    text: FormattedText(
-                        entities: getEntities(from: text),
-                        text: text.string,
-                    ),
-                ),
-            ),
-            options: nil,
-            replyMarkup: nil,
-            replyTo: getMessageReplyTo(from: replyMessage),
-            topicId: nil,
+        let formattedText = await TelegramTextFormatting.addingAutomaticEntities(
+            service: service,
+            to: FormattedText(entities: getEntities(from: text), text: text.string),
         )
-        
-        try? await tdSendChatAction(.chatActionCancel)
+        let content = TelegramMessageSending.textContent(formattedText)
+        _ = try? await TelegramMessageSending.send(
+            service: service,
+            chatId: customChat.chat.id,
+            contents: [content],
+            replyTo: getMessageReplyTo(from: replyMessage),
+        )
     }
     
     func editMessage() async {
@@ -662,13 +669,7 @@ import TDLibKit
     }
     
     func getMessageReplyTo(from customMessage: CustomMessage?) -> InputMessageReplyTo? {
-        guard let customMessage else { return nil }
-        return .inputMessageReplyToMessage(.init(
-            checklistTaskId: 0,
-            messageId: customMessage.message.id,
-            pollOptionId: "",
-            quote: nil,
-        ))
+        TelegramMessageSending.replyTo(messageId: customMessage?.message.id)
     }
     
     func startTimer() {
@@ -685,40 +686,6 @@ import TDLibKit
         timer?.invalidate()
         timer = nil
         timerCount = 0
-    }
-    
-    func getBytesWave(from waves: [UInt8]) -> [UInt8] {
-        var bytesWave = [UInt8]()
-        var count = 0
-        for wave in waves {
-            let index = bytesWave.count - 1
-            switch count {
-            case 0:
-                bytesWave.append((wave & 0b0001_1111) << 3)
-            case 1:
-                bytesWave[index] = bytesWave.last! | ((wave & 0b0001_1100) >> 2)
-                bytesWave.append((wave & 0b0000_0011) << 6)
-            case 2:
-                bytesWave[index] = bytesWave.last! | ((wave & 0b0001_1111) << 1)
-            case 3:
-                bytesWave[index] = bytesWave.last! | ((wave & 0b0001_0000) >> 4)
-                bytesWave.append((wave & 0b0000_1111) << 4)
-            case 4:
-                bytesWave[index] = bytesWave.last! | ((wave & 0b0001_1110) >> 1)
-                bytesWave.append((wave & 0b0000_0001) << 7)
-            case 5:
-                bytesWave[index] = bytesWave.last! | ((wave & 0b0001_1111) << 2)
-            case 6:
-                bytesWave[index] = bytesWave.last! | ((wave & 0b0001_1000) >> 3)
-                bytesWave.append((wave & 0b0000_0111) << 5)
-            case 7:
-                bytesWave[index] = bytesWave.last! | wave
-            default:
-                break
-            }
-            count += count == 7 ? -7 : 1
-        }
-        return bytesWave
     }
     
     func tdSendChatAction(_ chatAction: ChatAction) async throws {
@@ -743,7 +710,7 @@ import TDLibKit
             return
         }
         
-        let url = URL(filePath: NSTemporaryDirectory()).appending(path: "\(UUID().uuidString).ogg")
+        let url = TelegramVoiceNoteSending.temporaryFileURL()
         savedVoiceNoteUrl = url
 
         do {
@@ -764,7 +731,7 @@ import TDLibKit
     func cancelRecordingVoice() {
         audioRecorder?.cancel()
         audioRecorder = nil
-        try? FileManager.default.removeItem(at: savedVoiceNoteUrl)
+        TelegramVoiceNoteStaging.shared.discard(fileURL: savedVoiceNoteUrl)
         withAnimation {
             recordingVoiceNote = false
             recordingLocked = false
@@ -791,28 +758,8 @@ import TDLibKit
         }
         Task.background { try? await self.tdSendChatAction(.chatActionCancel) }
 
-        let intWave: [Int] = wave.compactMap { wave in
-            let intWave = abs(Int(wave))
-            if intWave == 120 || intWave == 160 {
-                return nil
-            }
-            return intWave
-        }
-        let resultWave: [Int] = intWave.map { wave in
-            let value = 32 - Int(Double(wave) * Double(32) / Double(66)) // 66 is a random number, need to be tested
-            return value < 0 ? 0 : value
-        }
-        let collapsedWave: [Int] = resultWave.reduce([]) { result, element in
-            if result.last != element {
-                return result + [element]
-            }
-            return result
-        }
-        let endWave = collapsedWave.map { UInt8($0) }
-        let bytesWave = getBytesWave(from: endWave)
-        let waveform = Data(bytesWave).prefix(63)
+        let waveform = TelegramVoiceNoteSending.waveform(from: wave)
         Task.background {
-            try? await self.tdSendChatAction(.chatActionUploadingVoiceNote(.init(progress: 0)))
             await self.sendMessageVoiceNote(duration: max(encodedDuration, duration), waveform: waveform)
         }
     }
@@ -825,7 +772,7 @@ import TDLibKit
                 self?.navigationError = "This chat is private or unavailable."
                 return
             }
-            NavigationStorage.shared.push(.customChat(chat, messageId: messageId))
+            RootVM.shared.navigate(to: .customChat(chat, messageId: messageId))
         }
     }
 }

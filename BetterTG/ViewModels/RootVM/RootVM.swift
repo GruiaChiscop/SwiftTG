@@ -9,6 +9,31 @@ import TDLibKit
 enum Route: Hashable {
     case customChat(CustomChat, messageId: Int64? = nil)
     case archive(CustomFolder)
+
+    // MARK: Internal
+
+    static func == (lhs: Route, rhs: Route) -> Bool {
+        switch (lhs, rhs) {
+        case (.customChat(let lhsChat, let lhsMessageId), .customChat(let rhsChat, let rhsMessageId)):
+            lhsChat.id == rhsChat.id && lhsMessageId == rhsMessageId
+        case (.archive(let lhsFolder), .archive(let rhsFolder)):
+            lhsFolder.id == rhsFolder.id
+        default:
+            false
+        }
+    }
+
+    func hash(into hasher: inout Hasher) {
+        switch self {
+        case .customChat(let customChat, let messageId):
+            hasher.combine("customChat")
+            hasher.combine(customChat.id)
+            hasher.combine(messageId)
+        case .archive(let customFolder):
+            hasher.combine("archive")
+            hasher.combine(customFolder.id)
+        }
+    }
 }
 
 // MARK: - ChatListLoadKey
@@ -54,7 +79,9 @@ struct ChatListLoadKey: Hashable, Sendable {
     @ObservationIgnored static let shared = RootVM()
     
     var path = [Route]()
+    var confirmChatClearHistory = ConfirmChatClearHistory(chat: nil, show: false)
     var confirmChatDelete = ConfirmChatDelete(chat: nil, show: false)
+    var confirmChatLeave = ConfirmChatLeave(chat: nil, isChannel: false, show: false)
     var folders = [CustomFolder]()
     var archive: CustomFolder?
     var currentFolder: Int?
@@ -75,6 +102,8 @@ struct ChatListLoadKey: Hashable, Sendable {
     @ObservationIgnored var didBootstrapChatLists = false
     @ObservationIgnored var searchTask: Task<Void, Never>?
     @ObservationIgnored var searchGeneration: UInt64 = 0
+    @ObservationIgnored var pendingNotificationTarget: TelegramNotificationTarget?
+    @ObservationIgnored var notificationOpenGeneration: UInt64 = 0
     
     var loggedIn: Bool {
         get {
@@ -98,6 +127,10 @@ struct ChatListLoadKey: Hashable, Sendable {
             chats.append(contentsOf: mainFolder.chats)
         }
         return chats
+    }
+
+    func navigate(to route: Route) {
+        path.append(route)
     }
     
     func getCustomChat(from id: Int64, for chatList: ChatList) async -> CustomChat? {

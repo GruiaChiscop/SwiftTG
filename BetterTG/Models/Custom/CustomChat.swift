@@ -97,6 +97,15 @@ import TDLibKit
 
     var isMuted: Bool { notificationSettings.muteFor > 0 }
     var hasUnreadMessages: Bool { unreadCount > 0 || isMarkedAsUnread }
+
+    var actionPolicy: TelegramChatActionPolicy {
+        TelegramChatActionPolicy(
+            kind: ChatListItemKind(chat.type),
+            membership: membershipStatus.map(ChatListMembership.init),
+            canBeDeletedOnlyForSelf: chat.canBeDeletedOnlyForSelf,
+            canBeDeletedForAllUsers: chat.canBeDeletedForAllUsers,
+        )
+    }
     
     var bot: UserTypeBot? {
         switch type {
@@ -125,7 +134,7 @@ import TDLibKit
         default: nil
         }
     }
-    
+
     var adminRights: ChatAdministratorRights? {
         switch supergroup?.status {
         case .chatMemberStatusAdministrator(let chatMemberStatusAdministrator): chatMemberStatusAdministrator.rights
@@ -142,18 +151,19 @@ import TDLibKit
     
     var canPostMessages: Bool {
         if let supergroup {
-            if adminRights?.canPostMessages == true {
-                return true
-            }
-            if case .chatMemberStatusCreator = supergroup.status {
-                return true
-            }
-            if case .chatMemberStatusBanned = supergroup.status {
-                return false
-            }
-            return supergroup.status != .chatMemberStatusLeft
+            return telegramCanPostMessages(in: supergroup)
         }
         return true
+    }
+
+    // MARK: Private
+
+    private var membershipStatus: ChatMemberStatus? {
+        switch type {
+        case .group(let group): group.status
+        case .supergroup(let supergroup): supergroup.status
+        case .bot, .user: nil
+        }
     }
 }
 

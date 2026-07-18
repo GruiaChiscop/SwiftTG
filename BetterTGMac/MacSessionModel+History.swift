@@ -65,11 +65,6 @@ extension MacSessionModel {
         canLoadOlderMessages = !reachedBeginning
         latestHistoryTargetMessageId = newestMessage.id
         let latestMessages = Array(messagesById.values)
-        await preloadAccessibilityMetadata(for: latestMessages)
-        guard !Task.isCancelled,
-              openedChatId == chatId,
-              historyRequestGeneration == generation
-        else { return }
         service.replaceMessageHistory(chatId: chatId, messages: latestMessages)
     }
 
@@ -109,11 +104,6 @@ extension MacSessionModel {
             return false
         }
 
-        await preloadAccessibilityMetadata(for: olderMessages)
-        guard !Task.isCancelled,
-              openedChatId == chatId,
-              historyRequestGeneration == generation
-        else { return false }
         service.mergeMessageHistory(chatId: chatId, messages: olderMessages)
         return true
     }
@@ -139,11 +129,6 @@ extension MacSessionModel {
             else { return [] }
 
             let foundMessages = history.messages ?? []
-            await preloadAccessibilityMetadata(for: foundMessages)
-            guard !Task.isCancelled,
-                  openedChatId == chatId,
-                  historyRequestGeneration == generation
-            else { return [] }
             service.mergeMessageHistory(chatId: chatId, messages: foundMessages)
             canLoadOlderMessages = !foundMessages.isEmpty
             return foundMessages
@@ -171,11 +156,6 @@ extension MacSessionModel {
                 break
             }
 
-            await preloadAccessibilityMetadata(for: newMessages)
-            guard !Task.isCancelled,
-                  openedChatId == chatId,
-                  historyRequestGeneration == generation
-            else { break }
             for message in newMessages {
                 messagesById[message.id] = message
             }
@@ -189,29 +169,4 @@ extension MacSessionModel {
         return Array(messagesById.values)
     }
 
-    private func preloadAccessibilityMetadata(for historyMessages: [Message]) async {
-        var requests = [Task<Void, Never>]()
-        for message in historyMessages {
-            if !message.isOutgoing, messageSenderNames[message.id] == nil {
-                requests.append(Task { [weak self] in
-                    await self?.loadSenderName(for: message)
-                })
-            }
-            if case .messageReplyToMessage = message.replyTo,
-               messageReplyContexts[message.id] == nil
-            {
-                requests.append(Task { [weak self] in
-                    await self?.loadReplyContext(for: message)
-                })
-            }
-            if message.forwardInfo != nil, messageForwardedFrom[message.id] == nil {
-                requests.append(Task { [weak self] in
-                    await self?.loadForwardedFrom(for: message)
-                })
-            }
-        }
-        for request in requests {
-            await request.value
-        }
-    }
 }

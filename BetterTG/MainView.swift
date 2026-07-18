@@ -8,15 +8,29 @@ struct MainView: View {
     // MARK: Internal
 
     var body: some View {
-        NavigationControllerWrapper(navigationController: navigationStorage.navigationController) {
+        NavigationStack(path: $rootVM.path) {
             MainNavigationRootView()
+                .navigationDestination(for: Route.self) { route in
+                    switch route {
+                    case .customChat(let customChat, let messageId):
+                        ChatView(customChat: customChat, initialMessageId: messageId)
+                    case .archive(let customFolder):
+                        FolderView(folder: customFolder)
+                            .navigationTitle(customFolder.name)
+                            .navigationBarTitleDisplayMode(.inline)
+                            .searchable(
+                                text: $rootVM.query,
+                                placement: .navigationBarDrawer(displayMode: .always),
+                                prompt: "Search archive...",
+                            )
+                    }
+                }
         }
-        .ignoresSafeArea()
     }
 
     // MARK: Private
 
-    private let navigationStorage = NavigationStorage.shared
+    @Bindable private var rootVM = RootVM.shared
 }
 
 // MARK: - MainNavigationRootView
@@ -53,12 +67,18 @@ private struct MainNavigationRootView: View {
             "Delete \(rootVM.confirmChatDelete.chat?.title ?? "chat")?",
             isPresented: $rootVM.confirmChatDelete.show,
         ) {
-            if rootVM.confirmChatDelete.chat?.canBeDeletedOnlyForSelf == true {
+            if rootVM.confirmChatDelete.deletesCommunity {
+                Button("Delete for everyone", role: .destructive) {
+                    rootVM.deleteSelectedChat(forAll: true)
+                }
+            } else if rootVM.confirmChatDelete.chat?.canBeDeletedOnlyForSelf == true {
                 Button("Delete only for me", role: .destructive) {
                     rootVM.deleteSelectedChat(forAll: false)
                 }
             }
-            if rootVM.confirmChatDelete.chat?.canBeDeletedForAllUsers == true {
+            if !rootVM.confirmChatDelete.deletesCommunity,
+               rootVM.confirmChatDelete.chat?.canBeDeletedForAllUsers == true
+            {
                 Button("Delete for everyone", role: .destructive) {
                     rootVM.deleteSelectedChat(forAll: true)
                 }
@@ -67,37 +87,55 @@ private struct MainNavigationRootView: View {
                 rootVM.confirmChatDelete = ConfirmChatDelete(chat: nil, show: false)
             }
         }
+        .confirmationDialog(
+            "Clear history in \(rootVM.confirmChatClearHistory.chat?.title ?? "chat")?",
+            isPresented: $rootVM.confirmChatClearHistory.show,
+        ) {
+            if rootVM.confirmChatClearHistory.chat?.canBeDeletedOnlyForSelf == true {
+                Button("Clear only for me", role: .destructive) {
+                    rootVM.clearSelectedChatHistory(forAll: false)
+                }
+            }
+            if rootVM.confirmChatClearHistory.chat?.canBeDeletedForAllUsers == true {
+                Button("Clear for everyone", role: .destructive) {
+                    rootVM.clearSelectedChatHistory(forAll: true)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                rootVM.confirmChatClearHistory = ConfirmChatClearHistory(chat: nil, show: false)
+            }
+        } message: {
+            Text("All messages will be removed, but the chat will remain in your chat list.")
+        }
+        .confirmationDialog(
+            "Leave \(rootVM.confirmChatLeave.chat?.title ?? "chat")?",
+            isPresented: $rootVM.confirmChatLeave.show,
+        ) {
+            Button(rootVM.confirmChatLeave.isChannel ? "Leave Channel" : "Leave Group", role: .destructive) {
+                rootVM.leaveSelectedChat()
+            }
+            Button("Cancel", role: .cancel) {
+                rootVM.confirmChatLeave = ConfirmChatLeave(chat: nil, isChannel: false, show: false)
+            }
+        } message: {
+            Text("You will leave this chat and it will be removed from your chat list.")
+        }
         .toolbar {
             if let archive = rootVM.archive {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(systemImage: "archivebox") {
-                        navigationStorage.push(.archive(archive))
+                        rootVM.navigate(to: .archive(archive))
                     }
                     .accessibilityLabel("Archive")
                 }
             }
         }
         .onAppear {
-            navigationStorage.setDestinationBuilder { route in
-                switch route {
-                case .customChat(let customChat, let messageId):
-                    ChatView(customChat: customChat, initialMessageId: messageId)
-                case .archive(let customFolder):
-                    FolderView(folder: customFolder)
-                        .navigationTitle(customFolder.name)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .searchable(
-                            text: $rootVM.query,
-                            placement: .navigationBarDrawer(displayMode: .always),
-                            prompt: "Search archive...",
-                        )
-                }
-            }
             #if DEBUG
             if MockData.isEnabled, CommandLine.arguments.contains("-mockChat"),
                let chat = rootVM.mainFolder?.chats.first
             {
-                navigationStorage.push(.customChat(chat, messageId: nil))
+                rootVM.navigate(to: .customChat(chat, messageId: nil))
             }
             #endif
             if rootVM.currentFolder == nil {
@@ -142,6 +180,4 @@ private struct MainNavigationRootView: View {
     // MARK: Private
 
     @Bindable private var rootVM = RootVM.shared
-
-    private let navigationStorage = NavigationStorage.shared
 }

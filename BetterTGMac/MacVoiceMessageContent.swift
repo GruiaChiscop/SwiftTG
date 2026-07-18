@@ -6,6 +6,7 @@ import TDLibKit
 struct MacVoiceMessageContent: View {
     // MARK: Internal
 
+    let caption: FormattedText
     let voiceNote: VoiceNote
     let path: String?
 
@@ -27,6 +28,7 @@ struct MacVoiceMessageContent: View {
                         : "play.fill",
                 ) {
                     guard let path else { return }
+                    TelegramAudioPlayer.shared.stop()
                     player.toggle(fileId: voiceNote.voice.id, path: path, duration: voiceNote.duration)
                 }
                 .labelStyle(.iconOnly)
@@ -41,12 +43,16 @@ struct MacVoiceMessageContent: View {
                 ProgressView(value: Double(elapsed), total: Double(max(1, voiceNote.duration)))
                     .frame(minWidth: 100)
             }
+            .accessibilityHidden(true)
 
             Text("\(telegramClockDuration(elapsed)) / \(telegramClockDuration(voiceNote.duration))")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            if !caption.text.isEmpty {
+                MacFormattedTextView(formattedText: caption)
+            }
         }
-        .accessibilityHidden(true)
     }
 
     // MARK: Private

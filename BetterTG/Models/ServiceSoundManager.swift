@@ -7,8 +7,14 @@ import UIKit
     // MARK: Lifecycle
 
     private init() {
-        self.messageDeliveredSound = loadSound(named: "MessageSent", extension: "mp3")
-        self.incomingMessageSound = loadSound(named: "notification", extension: "mp3")
+        self.messageDeliveredSound = loadSound(
+            named: TelegramServiceSoundPolicy.deliveredResourceName,
+            extension: TelegramServiceSoundPolicy.resourceExtension,
+        )
+        self.incomingMessageSound = loadSound(
+            named: TelegramServiceSoundPolicy.incomingResourceName,
+            extension: TelegramServiceSoundPolicy.resourceExtension,
+        )
     }
 
     deinit {
@@ -25,15 +31,15 @@ import UIKit
     static let shared = ServiceSoundManager()
 
     func playMessageDelivered() {
-        guard Date().timeIntervalSince(lastDeliveredPlayback) > 0.2 else { return }
-        lastDeliveredPlayback = Date()
+        guard policy.shouldPlayDelivered() else { return }
         play(messageDeliveredSound)
     }
 
     func playIncomingMessageIfAppropriate(isMuted: Bool) {
-        guard UIApplication.shared.applicationState == .active, !isMuted else { return }
-        guard Date().timeIntervalSince(lastIncomingPlayback) > 0.2 else { return }
-        lastIncomingPlayback = Date()
+        guard policy.shouldPlayIncoming(
+            applicationIsActive: UIApplication.shared.applicationState == .active,
+            isMuted: isMuted,
+        ) else { return }
         play(incomingMessageSound)
     }
 
@@ -41,8 +47,7 @@ import UIKit
 
     private var incomingMessageSound: SystemSoundID = 0
     private var messageDeliveredSound: SystemSoundID = 0
-    private var lastIncomingPlayback = Date.distantPast
-    private var lastDeliveredPlayback = Date.distantPast
+    private var policy = TelegramServiceSoundPolicy()
 
     private func loadSound(named name: String, extension fileExtension: String) -> SystemSoundID {
         guard let url = Bundle.main.url(forResource: name, withExtension: fileExtension) else { return 0 }

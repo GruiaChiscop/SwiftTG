@@ -98,6 +98,8 @@ private struct LastMesssageView: View {
                     Text(getAttributedString(from: messageVoiceNote.caption, .gray))
                 }
             }
+        case .messageAudio(let messageAudio):
+            Text(telegramAudioDescription(messageAudio))
         case .messageDocument(let messageDocument):
             if messageDocument.caption.text.isEmpty {
                 Text("File: \(messageDocument.document.fileName)")

@@ -19,5 +19,6 @@ extension Foundation.Notification.Name {
 
     static let localScrollToLastOnFocus = Self("localScrollToLastOnFocus")
     static let localPasteImages = Self("localPasteImages")
+    static let localPasteFiles = Self("localPasteFiles")
     static let localOnSelectedImagesDrop = Self("localOnSelectedImagesDrop")
 }

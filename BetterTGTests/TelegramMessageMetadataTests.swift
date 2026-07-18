@@ -79,4 +79,33 @@ struct TelegramMessageMetadataTests {
         #expect(telegramMessageContentDescription(withoutCaption) == "File: report.pdf")
         #expect(telegramMessageContentDescription(withCaption) == "File: report.pdf, Final version")
     }
+
+    @Test func `service messages have useful immediate descriptions`() {
+        #expect(telegramMessageContentDescription(.messageChatJoinByLink) ==
+            "A member joined via an invite link")
+        #expect(telegramMessageContentDescription(.messageChatAddMembers(.init(memberUserIds: [2]))) ==
+            "New members were added")
+        #expect(telegramMessageContentDescription(.messageCustomServiceAction(.init(text: "Custom event"))) ==
+            "Custom event")
+    }
+
+    @Test func `reaction choices are deduplicated and include a chosen removable reaction`() {
+        let heart = ReactionType.reactionTypeEmoji(.init(emoji: "❤"))
+        let thumbsUp = ReactionType.reactionTypeEmoji(.init(emoji: "👍"))
+        let existing = [MessageReaction(
+            isChosen: true,
+            recentSenderIds: [],
+            totalCount: 2,
+            type: heart,
+            usedSenderId: nil,
+        )]
+        let available = [
+            AvailableReaction(needsPremium: false, type: heart),
+            AvailableReaction(needsPremium: false, type: thumbsUp),
+        ]
+
+        #expect(telegramReactionChoices(existing: existing, available: available) == [heart, thumbsUp])
+        #expect(telegramReactionActionTitle(heart, existing: existing) == "Remove reaction ❤")
+        #expect(telegramReactionDescription(existing) == "Reactions: ❤ 2. You reacted with ❤")
+    }
 }

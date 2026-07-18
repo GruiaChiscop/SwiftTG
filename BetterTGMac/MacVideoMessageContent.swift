@@ -12,12 +12,12 @@ struct MacVideoMessageContent: View {
     let onOpen: () -> Void
 
     var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 6) {
-                if content.showCaptionAboveMedia, !content.caption.text.isEmpty {
-                    caption
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            if content.showCaptionAboveMedia, !content.caption.text.isEmpty {
+                caption
+            }
 
+            Button(action: onOpen) {
                 ZStack {
                     if let thumbnail {
                         Image(nsImage: thumbnail)
@@ -45,20 +45,19 @@ struct MacVideoMessageContent: View {
                         .padding(8)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
 
-                if !content.showCaptionAboveMedia, !content.caption.text.isEmpty {
-                    caption
-                }
+            if !content.showCaptionAboveMedia, !content.caption.text.isEmpty {
+                caption
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityHidden(true)
     }
 
     // MARK: Private
 
     private var caption: some View {
-        Text(content.caption.text)
-            .textSelection(.enabled)
+        MacFormattedTextView(formattedText: content.caption)
     }
 }

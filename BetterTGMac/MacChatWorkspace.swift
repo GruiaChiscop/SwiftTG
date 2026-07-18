@@ -25,7 +25,6 @@ struct MacChatWorkspace: View {
                 ),
                 prompt: "Search chats and messages",
             )
-            .navigationTitle("Chats")
             .navigationSplitViewColumnWidth(min: 250, ideal: 310, max: 420)
         } detail: {
             if let chat = model.openedChat {
@@ -38,6 +37,10 @@ struct MacChatWorkspace: View {
                     description: Text("Select a chat"),
                 )
             }
+        }
+        .navigationTitle("BetterTG")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            TelegramAudioPlayerBar()
         }
         .alert(
             "Action Failed",

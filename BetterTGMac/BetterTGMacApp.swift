@@ -53,6 +53,26 @@ UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
     }
 
+    func application(
+        _: NSApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data,
+    ) {
+        model?.didRegisterForRemoteNotifications(deviceToken: deviceToken)
+    }
+
+    func application(
+        _: NSApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: any Swift.Error,
+    ) {
+        model?.didFailToRegisterForRemoteNotifications(error: error)
+    }
+
+    func application(_: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
+        Task { @MainActor [weak self] in
+            await self?.model?.processRemoteNotification(userInfo: userInfo)
+        }
+    }
+
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard !allowsImmediateTermination else { return .terminateNow }
 

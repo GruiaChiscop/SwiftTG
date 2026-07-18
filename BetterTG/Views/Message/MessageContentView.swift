@@ -5,6 +5,7 @@ import TDLibKit
 
 struct MessageContentView: View {
     let customMessage: CustomMessage
+    let audioPlaylist: [Audio]
     let onMediaTap: (Message?) -> Void
     var onVoiceNoteLocalPathResolved: (String) -> Void = { _ in }
 
@@ -24,6 +25,8 @@ struct MessageContentView: View {
                         voiceNote: messageVoiceNote.voiceNote,
                         onLocalPathResolved: onVoiceNoteLocalPathResolved,
                     )
+                case .messageAudio(let messageAudio):
+                    MessageAudioView(audio: messageAudio.audio, playlist: audioPlaylist)
                 default:
                     EmptyView()
                 }

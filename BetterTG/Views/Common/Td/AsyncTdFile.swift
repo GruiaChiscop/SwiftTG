@@ -27,7 +27,10 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
     var body: some View {
         ZStack {
             Group {
-                if let file, file.local.isDownloadingCompleted {
+                if let file,
+                   file.local.isDownloadingCompleted,
+                   !file.local.path.isEmpty
+                {
                     content(file)
                 } else {
                     placeholder()
@@ -47,15 +50,16 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
 
     private let service: any TelegramService
     
-    private func download(_ id: Int? = nil) async {
+    @MainActor private func download(_ id: Int? = nil) async {
         do {
-            _ = try await service.downloadFile(
+            let downloadedFile = try await service.downloadFile(
                 fileId: id ?? self.id,
                 limit: 0,
                 offset: 0,
                 priority: 1,
                 synchronous: false,
             )
+            file = downloadedFile
         } catch {
             log("Error downloading file: \(error)")
         }

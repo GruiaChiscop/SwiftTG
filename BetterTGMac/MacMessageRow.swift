@@ -17,97 +17,155 @@ struct MacMessageRow: View {
 
     var body: some View {
         HStack {
-            if message.isOutgoing {
+            if isServiceMessage || message.isOutgoing {
                 Spacer(minLength: 80)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                if let forwardedFrom = model.messageForwardedFrom[message.id] {
-                    if canNavigateToForwardOrigin {
-                        Button {
-                            model.navigateToForwardOrigin(from: message)
-                        } label: {
+            HStack(alignment: .bottom, spacing: 5) {
+                if message.isOutgoing, !messageReactions.isEmpty {
+                    reactionsButton
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    if let forwardedFrom = model.messageForwardedFrom[message.id] {
+                        if canNavigateToForwardOrigin {
+                            Button {
+                                model.navigateToForwardOrigin(from: message)
+                            } label: {
+                                Text("Forwarded from \(forwardedFrom)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
                             Text("Forwarded from \(forwardedFrom)")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
-                    } else {
-                        Text("Forwarded from \(forwardedFrom)")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
                     }
-                }
-                if let replyContext = model.messageReplyContexts[message.id] {
-                    Button {
-                        model.navigateToRepliedMessage(from: message)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Replying to \(replyContext.senderName)")
-                                .font(.caption.weight(.semibold))
-                            Text(replyContext.quotedText)
-                                .lineLimit(2)
-                                .foregroundStyle(.secondary)
+                    if let replyContext = model.messageReplyContexts[message.id] {
+                        Button {
+                            model.navigateToRepliedMessage(from: message)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Replying to \(replyContext.senderName)")
+                                    .font(.caption.weight(.semibold))
+                                Text(replyContext.quotedText)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Go to Replied Message")
+                        .accessibilityHint(replyContext.quotedText)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Go to Replied Message")
-                    .accessibilityHint(replyContext.quotedText)
-                }
-                if case .messageDocument(let content) = message.content {
-                    MacDocumentMessageContent(
-                        content: content,
-                        isDownloaded: documentPath != nil,
-                        isLoading: isLoadingDocument,
-                        onOpen: openDocument,
-                    )
-                } else if case .messagePhoto(let content) = message.content {
-                    MacPhotoMessageContent(
-                        content: content,
-                        image: photoImage,
-                        onOpen: { showPhotoPreview = true },
-                    )
-                } else if case .messageVideo(let content) = message.content {
-                    MacVideoMessageContent(
-                        content: content,
-                        thumbnail: videoThumbnailImage,
-                        onOpen: { showVideoPreview = true },
-                    )
-                } else if case .messageVoiceNote(let content) = message.content {
-                    MacVoiceMessageContent(
-                        voiceNote: content.voiceNote,
-                        path: voicePath,
-                        player: player,
-                    )
-                } else {
-                    Text(macMessageText(message))
-                        .textSelection(.enabled)
-                }
-                HStack(spacing: 5) {
-                    if let editStatus = telegramMessageEditStatus(message) {
-                        Text(editStatus)
+                    if case .messageDocument(let content) = message.content {
+                        MacDocumentMessageContent(
+                            content: content,
+                            isDownloaded: documentPath != nil,
+                            isLoading: isLoadingDocument,
+                            onOpen: openDocument,
+                        )
+                    } else if case .messagePhoto(let content) = message.content {
+                        MacPhotoMessageContent(
+                            content: content,
+                            image: photoImage,
+                            onOpen: { showPhotoPreview = true },
+                        )
+                    } else if case .messageVideo(let content) = message.content {
+                        MacVideoMessageContent(
+                            content: content,
+                            thumbnail: videoThumbnailImage,
+                            onOpen: { showVideoPreview = true },
+                        )
+                    } else if case .messageVoiceNote(let content) = message.content {
+                        MacVoiceMessageContent(
+                            caption: content.caption,
+                            voiceNote: content.voiceNote,
+                            path: voicePath,
+                            player: player,
+                        )
+                    } else if case .messageAudio(let content) = message.content {
+                        MacAudioMessageContent(
+                            audio: content.audio,
+                            caption: content.caption,
+                            playlist: audioPlaylist,
+                            service: model.service,
+                            player: audioPlayer,
+                        )
+                    } else if let formattedText = telegramMessageFormattedText(message) {
+                        MacFormattedTextView(formattedText: formattedText)
+                    } else {
+                        Text(displayedMessageText)
+                            .textSelection(.enabled)
                     }
-                    Text(Date(timeIntervalSince1970: TimeInterval(message.date)), format: .dateTime.hour().minute())
-                    if let status = telegramMessageDeliveryStatus(
-                        message,
-                        lastReadOutboxMessageId: lastReadOutboxMessageId,
-                    ) {
-                        Text(status)
+                    HStack(spacing: 5) {
+                        if let editStatus = telegramMessageEditStatus(message) {
+                            Text(editStatus)
+                        }
+                        Text(Date(timeIntervalSince1970: TimeInterval(message.date)), format: .dateTime.hour().minute())
+                        if let status = telegramMessageDeliveryStatus(
+                            message,
+                            lastReadOutboxMessageId: lastReadOutboxMessageId,
+                        ) {
+                            Text(status)
+                        }
                     }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(
+                    isServiceMessage
+                        ? Color.secondary.opacity(0.12)
+                        : (message.isOutgoing ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12)),
+                    in: RoundedRectangle(cornerRadius: 12),
+                )
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityDescription)
+                .accessibilityHint(activationHint)
+                .modifier(OptionalAccessibilityActivation(
+                    isEnabled: hasDefaultActivation,
+                    action: activateMessage,
+                ))
+                .accessibilityActions { messageAccessibilityActions }
+                .accessibilityHidden(!messageReactions.isEmpty || !messageLinks.isEmpty)
+                .contextMenu { messageActions }
+                if !message.isOutgoing, !messageReactions.isEmpty {
+                    reactionsButton
+                }
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .background(
-                message.isOutgoing ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12),
-                in: RoundedRectangle(cornerRadius: 12),
-            )
-            if !message.isOutgoing {
+            .macModified {
+                if !messageReactions.isEmpty || !messageLinks.isEmpty {
+                    $0
+                        .accessibilityElement(children: .contain)
+                        .accessibilityChildren {
+                            ForEach(messageLinks) { link in
+                                Link(link.displayedText, destination: link.url)
+                            }
+                            if !messageReactions.isEmpty {
+                                Button("Reactions") { showReactionDetails = true }
+                                    .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
+                            }
+                        }
+                        .accessibilityLabel(accessibilityDescription)
+                        .accessibilityHint(activationHint)
+                        .modifier(OptionalAccessibilityActivation(
+                            isEnabled: hasDefaultActivation,
+                            action: activateMessage,
+                        ))
+                        .accessibilityActions { messageAccessibilityActions }
+                        .contextMenu { messageActions }
+                } else {
+                    $0
+                }
+            }
+            if isServiceMessage || !message.isOutgoing {
                 Spacer(minLength: 80)
             }
         }
+        .contentShape(Rectangle())
+        .contextMenu { messageActions }
         .onScrollVisibilityChange(threshold: 0.01) { isVisible in
             self.isVisible = isVisible
         }
@@ -153,6 +211,10 @@ struct MacMessageRow: View {
             guard await waitForStableVisibility() else { return }
             await model.loadSenderName(for: message)
         }
+        .task(id: presentationTaskID) {
+            guard await waitForStableVisibility() else { return }
+            await model.loadServiceDescription(for: message)
+        }
         .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
             if capabilities?.properties.canBeDeletedOnlyForSelf == true {
                 Button("Delete only for me", role: .destructive) {
@@ -162,6 +224,14 @@ struct MacMessageRow: View {
             if capabilities?.properties.canBeDeletedForAllUsers == true {
                 Button("Delete for everyone", role: .destructive) {
                     model.delete(message, forEveryone: true)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("React", isPresented: $showReactionOptions) {
+            ForEach(reactionChoices, id: \.self) { reaction in
+                Button(telegramReactionActionTitle(reaction, existing: messageReactions)) {
+                    model.toggleReaction(reaction, on: message)
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -189,53 +259,19 @@ struct MacMessageRow: View {
                 )
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityDescription)
-        .accessibilityHint(activationHint)
-        .modifier(OptionalAccessibilityActivation(
-            isEnabled: hasDefaultActivation,
-            action: activateMessage,
-        ))
-        .accessibilityActions {
-            if capabilities?.properties.canBeReplied == true {
-                Button("Reply") { model.beginReply(to: message) }
-            }
-            if model.messageReplyContexts[message.id]?.messageId != nil {
-                Button("Go to Replied Message") { model.navigateToRepliedMessage(from: message) }
-            }
-            if let forwardedFrom = model.messageForwardedFrom[message.id], canNavigateToForwardOrigin {
-                Button("Go to \(forwardedFrom)") { model.navigateToForwardOrigin(from: message) }
-            }
-            if capabilities?.canReactWithHeart == true {
-                Button("React") { model.reactWithHeart(to: message) }
-            }
-            if canCopy {
-                Button("Copy") { copyMessageText() }
-            }
-            if photoImage != nil {
-                Button("Open Photo") { showPhotoPreview = true }
-            }
-            if videoFileId != nil {
-                Button("Play Video") { showVideoPreview = true }
-            }
-            if capabilities?.properties.canBeEdited == true, editableMessageText(message) != nil {
-                Button("Edit") { model.beginEditing(message) }
-            }
-            if capabilities?.properties.canBePinned == true {
-                Button(message.isPinned ? "Unpin" : "Pin") { model.togglePin(for: message) }
-            }
-            if canDelete {
-                Button("Delete") { showDeleteOptions = true }
-            }
+        .sheet(isPresented: $showReactionDetails) {
+            TelegramReactionDetailsView(
+                service: model.service,
+                chatId: message.chatId,
+                messageId: message.id,
+            )
         }
-        // Attach the context menu after creating the combined accessibility
-        // element so VoiceOver's VO-Shift-M "Show Menu" action reaches it.
-        .contextMenu { messageActions }
     }
 
     // MARK: Private
 
     @State private var player = MacVoicePlayer.shared
+    @State private var audioPlayer = TelegramAudioPlayer.shared
     @State private var documentPath: String?
     @State private var isLoadingDocument = false
     @State private var photoImage: NSImage?
@@ -243,12 +279,23 @@ struct MacMessageRow: View {
     @State private var videoThumbnailImage: NSImage?
     @State private var voicePath: String?
     @State private var showDeleteOptions = false
+    @State private var showReactionOptions = false
+    @State private var showReactionDetails = false
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
     @State private var isVisible = false
 
     private var capabilities: MacMessageCapabilities? {
         model.messageCapabilities[message.id]
+    }
+
+    private var audioPlaylist: [Audio] {
+        model.messages.orderedMessageIds.compactMap { messageId in
+            guard let queuedMessage = model.messages.messages[messageId],
+                  case .messageAudio(let content) = queuedMessage.content
+            else { return nil }
+            return content.audio
+        }
     }
 
     private var presentationTaskID: String {
@@ -277,13 +324,18 @@ struct MacMessageRow: View {
         return content.voiceNote.voice.id
     }
 
+    private var audioFileId: Int? {
+        guard case .messageAudio(let content) = message.content else { return nil }
+        return content.audio.audio.id
+    }
+
     private var documentFileId: Int? {
         guard case .messageDocument(let content) = message.content else { return nil }
         return content.document.document.id
     }
 
     private var activationHint: String {
-        if voiceFileId != nil {
+        if voiceFileId != nil || audioFileId != nil {
             return "Press to play or pause"
         }
         if documentFileId != nil {
@@ -299,7 +351,7 @@ struct MacMessageRow: View {
     }
 
     private var hasDefaultActivation: Bool {
-        voiceFileId != nil || documentFileId != nil || photoFileId != nil || videoFileId != nil
+        voiceFileId != nil || audioFileId != nil || documentFileId != nil || photoFileId != nil || videoFileId != nil
     }
 
     private var photoFileId: Int? {
@@ -330,74 +382,102 @@ struct MacMessageRow: View {
     }
 
     private var accessibilityDescription: String {
-        var parts = [String]()
-        if let forwardedFrom = model.messageForwardedFrom[message.id] {
-            parts.append("Forwarded from \(forwardedFrom)")
-        }
-        if let replyContext = model.messageReplyContexts[message.id] {
-            parts.append("Replying to \(replyContext.senderName)")
-        }
-        if message.isOutgoing {
-            parts.append("You")
-        } else if let senderName = model.cachedSenderName(for: message) {
-            parts.append(senderName)
-        }
-        parts.append(telegramMessageContentDescription(message))
-        if let editStatus = telegramMessageEditStatus(message) {
-            parts.append(editStatus)
-        }
-        parts.append(telegramMessageDateDescription(message.date))
-        if let status = telegramMessageDeliveryStatus(
-            message,
+        macMessageAccessibilityDescription(
+            model: model,
+            message: message,
             lastReadOutboxMessageId: lastReadOutboxMessageId,
-        ) {
-            parts.append(status)
+            voicePlayer: player,
+            audioPlayer: audioPlayer,
+        )
+    }
+
+    private var messageReactions: [MessageReaction] {
+        message.interactionInfo?.reactions?.reactions ?? []
+    }
+
+    private var reactionChoices: [ReactionType] {
+        telegramReactionChoices(
+            existing: messageReactions,
+            available: capabilities?.availableReactions ?? [],
+        )
+    }
+
+    private var displayedMessageText: String {
+        model.messageServiceDescriptions[message.id] ?? telegramMessageContentDescription(message)
+    }
+
+    private var isServiceMessage: Bool {
+        TelegramServiceMessage.isServiceMessage(message.content)
+    }
+
+    private var messageLinks: [TelegramTextLink] {
+        guard let formattedText = telegramMessageFormattedText(message) else { return [] }
+        return TelegramTextFormatting.links(in: formattedText)
+    }
+
+    /// Actions common to the context menu and VoiceOver's accessibility actions; kept as one list so
+    /// the two presentations (menu buttons with icons vs. plain accessibility actions) can't drift.
+    /// "React" and "Delete" are still special-cased below since each renders differently per surface
+    /// (a reactions submenu vs. a single toggle; a destructive button with a leading divider vs. plain).
+    private enum MacRowAction {
+        case button(title: String, systemImage: String, action: () -> Void)
+        case reactions
+    }
+
+    private var rowActions: [MacRowAction] {
+        var items = [MacRowAction]()
+        if capabilities?.properties.canBeReplied == true {
+            items.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left") {
+                model.beginReply(to: message)
+            })
         }
-        if case .messageVoiceNote(let content) = message.content {
-            let elapsed = player.currentFileId == content.voiceNote.voice.id ? player.currentTime : 0
-            parts.append(telegramVoicePlaybackDescription(
-                duration: content.voiceNote.duration,
-                elapsed: elapsed,
-            ))
+        if model.messageReplyContexts[message.id]?.messageId != nil {
+            items.append(.button(title: "Go to Replied Message", systemImage: "arrow.up.left") {
+                model.navigateToRepliedMessage(from: message)
+            })
         }
-        if let replyContext = model.messageReplyContexts[message.id] {
-            parts.append("Quoted message: \(replyContext.quotedText)")
+        if let forwardedFrom = model.messageForwardedFrom[message.id], canNavigateToForwardOrigin {
+            items.append(.button(title: "Go to \(forwardedFrom)", systemImage: "arrow.up.right.square") {
+                model.navigateToForwardOrigin(from: message)
+            })
         }
-        return parts.joined(separator: ", ")
+        if !reactionChoices.isEmpty {
+            items.append(.reactions)
+        }
+        if canCopy {
+            items.append(.button(title: "Copy", systemImage: "doc.on.doc") { copyMessageText() })
+        }
+        if photoImage != nil {
+            items.append(.button(title: "Open Photo", systemImage: "photo") { showPhotoPreview = true })
+        }
+        if videoFileId != nil {
+            items.append(.button(title: "Play Video", systemImage: "play.rectangle") { showVideoPreview = true })
+        }
+        if capabilities?.properties.canBeEdited == true, editableMessageText(message) != nil {
+            items.append(.button(title: "Edit", systemImage: "square.and.pencil") { model.beginEditing(message) })
+        }
+        if capabilities?.properties.canBePinned == true {
+            items.append(.button(
+                title: message.isPinned ? "Unpin" : "Pin",
+                systemImage: message.isPinned ? "pin.slash" : "pin",
+            ) { model.togglePin(for: message) })
+        }
+        return items
     }
 
     @ViewBuilder private var messageActions: some View {
-        if capabilities?.properties.canBeReplied == true {
-            Button("Reply", systemImage: "arrowshape.turn.up.left") { model.beginReply(to: message) }
-        }
-        if model.messageReplyContexts[message.id]?.messageId != nil {
-            Button("Go to Replied Message", systemImage: "arrow.up.left") {
-                model.navigateToRepliedMessage(from: message)
-            }
-        }
-        if let forwardedFrom = model.messageForwardedFrom[message.id], canNavigateToForwardOrigin {
-            Button("Go to \(forwardedFrom)", systemImage: "arrow.up.right.square") {
-                model.navigateToForwardOrigin(from: message)
-            }
-        }
-        if capabilities?.canReactWithHeart == true {
-            Button("React", systemImage: "heart") { model.reactWithHeart(to: message) }
-        }
-        if canCopy {
-            Button("Copy", systemImage: "doc.on.doc") { copyMessageText() }
-        }
-        if photoImage != nil {
-            Button("Open Photo", systemImage: "photo") { showPhotoPreview = true }
-        }
-        if videoFileId != nil {
-            Button("Play Video", systemImage: "play.rectangle") { showVideoPreview = true }
-        }
-        if capabilities?.properties.canBeEdited == true, editableMessageText(message) != nil {
-            Button("Edit", systemImage: "square.and.pencil") { model.beginEditing(message) }
-        }
-        if capabilities?.properties.canBePinned == true {
-            Button(message.isPinned ? "Unpin" : "Pin", systemImage: message.isPinned ? "pin.slash" : "pin") {
-                model.togglePin(for: message)
+        ForEach(Array(rowActions.enumerated()), id: \.offset) { _, item in
+            switch item {
+            case .button(let title, let systemImage, let action):
+                Button(title, systemImage: systemImage, action: action)
+            case .reactions:
+                Menu("React", systemImage: "face.smiling") {
+                    ForEach(reactionChoices, id: \.self) { reaction in
+                        Button(telegramReactionActionTitle(reaction, existing: messageReactions)) {
+                            model.toggleReaction(reaction, on: message)
+                        }
+                    }
+                }
             }
         }
         if canDelete {
@@ -406,6 +486,30 @@ struct MacMessageRow: View {
                 showDeleteOptions = true
             }
         }
+    }
+
+    @ViewBuilder private var messageAccessibilityActions: some View {
+        ForEach(Array(rowActions.enumerated()), id: \.offset) { _, item in
+            switch item {
+            case .button(let title, _, let action):
+                Button(title, action: action)
+            case .reactions:
+                Button("React") { showReactionOptions = true }
+            }
+        }
+        if canDelete {
+            Button("Delete") { showDeleteOptions = true }
+        }
+    }
+
+    private var reactionsButton: some View {
+        TelegramMessageReactionsView(reactions: messageReactions) {
+            showReactionDetails = true
+        }
+        .accessibilityHidden(true)
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
+        .contextMenu { messageActions }
     }
 
     private func copyMessageText() {
@@ -440,10 +544,18 @@ struct MacMessageRow: View {
 
     private func activateMessage() {
         if case .messageVoiceNote(let content) = message.content, let voicePath {
+            audioPlayer.stop()
             player.toggle(
                 fileId: content.voiceNote.voice.id,
                 path: voicePath,
                 duration: content.voiceNote.duration,
+            )
+        } else if case .messageAudio(let content) = message.content {
+            player.stop()
+            audioPlayer.toggle(
+                audio: content.audio,
+                service: model.service,
+                playlist: audioPlaylist,
             )
         } else if case .messageDocument = message.content {
             openDocument()
@@ -453,6 +565,77 @@ struct MacMessageRow: View {
             showVideoPreview = true
         }
     }
+}
+
+@MainActor
+func macMessageAccessibilityDescription(
+    model: MacSessionModel,
+    message: Message,
+    lastReadOutboxMessageId: Int64,
+    voicePlayer: MacVoicePlayer,
+    audioPlayer: TelegramAudioPlayer,
+) -> String {
+    var parts = [String]()
+    if let forwardedFrom = model.messageForwardedFrom[message.id] {
+        parts.append("Forwarded from \(forwardedFrom)")
+    }
+    if let replyContext = model.messageReplyContexts[message.id] {
+        parts.append("Replying to \(replyContext.senderName)")
+    }
+
+    let displayedText = model.messageServiceDescriptions[message.id]
+        ?? telegramMessageContentDescription(message)
+    if TelegramServiceMessage.isServiceMessage(message.content) {
+        parts.append(displayedText)
+    } else {
+        if message.isOutgoing {
+            parts.append("You")
+        } else if let senderName = model.cachedSenderName(for: message) {
+            parts.append(senderName)
+        }
+        parts.append(displayedText)
+    }
+
+    if let editStatus = telegramMessageEditStatus(message) {
+        parts.append(editStatus)
+    }
+    parts.append(telegramMessageDateDescription(message.date))
+    if let status = telegramMessageDeliveryStatus(
+        message,
+        lastReadOutboxMessageId: lastReadOutboxMessageId,
+    ) {
+        parts.append(status)
+    }
+    if case .messageVoiceNote(let content) = message.content {
+        let elapsed = voicePlayer.currentFileId == content.voiceNote.voice.id
+            ? voicePlayer.currentTime
+            : 0
+        parts.append(telegramVoicePlaybackDescription(
+            duration: content.voiceNote.duration,
+            elapsed: elapsed,
+        ))
+    }
+    if case .messageAudio(let content) = message.content {
+        let elapsed = audioPlayer.currentFileId == content.audio.audio.id
+            ? audioPlayer.currentTime
+            : 0
+        parts.append(telegramVoicePlaybackDescription(
+            duration: content.audio.duration,
+            elapsed: elapsed,
+        ))
+        if audioPlayer.currentFileId == content.audio.audio.id {
+            if audioPlayer.isBuffering {
+                parts.append("Buffering")
+            }
+            if let playbackError = audioPlayer.playbackError {
+                parts.append(playbackError)
+            }
+        }
+    }
+    if let replyContext = model.messageReplyContexts[message.id] {
+        parts.append("Quoted message: \(replyContext.quotedText)")
+    }
+    return parts.joined(separator: ", ")
 }
 
 // MARK: - OptionalAccessibilityActivation
@@ -472,6 +655,14 @@ private struct OptionalAccessibilityActivation: ViewModifier {
     }
 }
 
+private extension View {
+    func macModified(
+        @ViewBuilder _ transform: (Self) -> some View,
+    ) -> some View {
+        transform(self)
+    }
+}
+
 func macMessageText(_ message: Message) -> String {
     telegramMessageContentDescription(message)
 }
@@ -482,6 +673,7 @@ private func copyableMessageText(_ message: Message) -> String? {
     case .messagePhoto(let content): content.caption.text.isEmpty ? nil : content.caption.text
     case .messageVideo(let content): content.caption.text.isEmpty ? nil : content.caption.text
     case .messageVoiceNote(let content): content.caption.text.isEmpty ? nil : content.caption.text
+    case .messageAudio(let content): content.caption.text.isEmpty ? nil : content.caption.text
     case .messageDocument(let content): content.caption.text.isEmpty ? nil : content.caption.text
     default: nil
     }
@@ -493,6 +685,7 @@ private func editableMessageText(_ message: Message) -> String? {
     case .messagePhoto(let content): content.caption.text
     case .messageVideo(let content): content.caption.text
     case .messageVoiceNote(let content): content.caption.text
+    case .messageAudio(let content): content.caption.text
     case .messageDocument(let content): content.caption.text
     default: nil
     }

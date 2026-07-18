@@ -40,6 +40,7 @@ struct MessageVoiceNoteView: View {
 
                 Button {
                     guard let voiceLocalPath else { return }
+                    TelegramAudioPlayer.shared.stop()
                     media.toggle(with: voiceLocalPath, duration: voiceNote.duration)
                 } label: {
                     Circle()

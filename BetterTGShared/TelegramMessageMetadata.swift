@@ -7,6 +7,18 @@ func telegramMessageContentDescription(_ message: Message) -> String {
     telegramMessageContentDescription(message.content)
 }
 
+func telegramMessageFormattedText(_ message: Message) -> FormattedText? {
+    switch message.content {
+    case .messageAudio(let content): content.caption.text.isEmpty ? nil : content.caption
+    case .messageDocument(let content): content.caption.text.isEmpty ? nil : content.caption
+    case .messagePhoto(let content): content.caption.text.isEmpty ? nil : content.caption
+    case .messageText(let content): content.text.text.isEmpty ? nil : content.text
+    case .messageVideo(let content): content.caption.text.isEmpty ? nil : content.caption
+    case .messageVoiceNote(let content): content.caption.text.isEmpty ? nil : content.caption
+    default: nil
+    }
+}
+
 func telegramMessageContentDescription(_ content: MessageContent) -> String {
     switch content {
     case .messageText(let content):
@@ -16,7 +28,7 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
     case .messageVoiceNote(let content):
         content.caption.text.isEmpty ? "Voice message" : "Voice message: \(content.caption.text)"
     case .messageAudio(let content):
-        content.caption.text.isEmpty ? "Audio" : "Audio: \(content.caption.text)"
+        telegramAudioDescription(content)
     case .messageVideo(let content):
         content.caption.text.isEmpty ? "Video" : "Video: \(content.caption.text)"
     case .messageDocument(let content):
@@ -27,6 +39,34 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
         content.sticker.emoji.isEmpty ? "Sticker" : "Sticker \(content.sticker.emoji)"
     case .messageCall:
         "Call"
+    case .messageBasicGroupChatCreate, .messageSupergroupChatCreate:
+        "Group created"
+    case .messageChatChangeTitle:
+        "Group name changed"
+    case .messageChatChangePhoto:
+        "Group photo changed"
+    case .messageChatDeletePhoto:
+        "Group photo removed"
+    case .messageChatAddMembers:
+        "New members were added"
+    case .messageChatJoinByLink:
+        "A member joined via an invite link"
+    case .messageChatJoinByRequest:
+        "A member joined the group"
+    case .messageChatDeleteMember:
+        "A member left or was removed"
+    case .messageChatOwnerChanged, .messageChatOwnerLeft:
+        "Group owner changed"
+    case .messageChatUpgradeFrom, .messageChatUpgradeTo:
+        "Group upgraded"
+    case .messagePinMessage:
+        "A message was pinned"
+    case .messageScreenshotTaken:
+        "Screenshot taken"
+    case .messageChatSetMessageAutoDeleteTime:
+        "Auto-delete settings changed"
+    case .messageCustomServiceAction(let content):
+        content.text
     case .messageUnsupported:
         "Unsupported message"
     default:
@@ -86,6 +126,28 @@ func telegramMessageDeliveryStatus(_ message: Message, lastReadOutboxMessageId: 
 
 func telegramVoicePlaybackDescription(duration: Int, elapsed: Int) -> String {
     "Duration \(telegramSpokenDuration(duration)), played \(telegramSpokenDuration(elapsed))"
+}
+
+func telegramAudioDescription(_ content: MessageAudio) -> String {
+    var parts = ["Audio", telegramAudioTitle(content.audio)]
+    if !content.audio.performer.isEmpty {
+        parts.append("by \(content.audio.performer)")
+    }
+    parts.append("duration \(telegramClockDuration(content.audio.duration))")
+    if !content.caption.text.isEmpty {
+        parts.append(content.caption.text)
+    }
+    return parts.joined(separator: ", ")
+}
+
+func telegramAudioTitle(_ audio: Audio) -> String {
+    if !audio.title.isEmpty {
+        return audio.title
+    }
+    if !audio.fileName.isEmpty {
+        return audio.fileName
+    }
+    return "Unknown track"
 }
 
 func telegramClockDuration(_ seconds: Int) -> String {

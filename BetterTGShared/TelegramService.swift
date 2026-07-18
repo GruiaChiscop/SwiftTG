@@ -31,11 +31,16 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         reactionType: ReactionType?,
         updateRecentReactions: Bool?,
     ) async throws -> Ok
+    func removeMessageReaction(chatId: Int64?, messageId: Int64?, reactionType: ReactionType?) async throws -> Ok
     func addChatToList(chatId: Int64?, chatList: ChatList?) async throws -> Ok
+    func cancelDownloadFile(fileId: Int?, onlyIfPending: Bool?) async throws -> Ok
     func checkAuthenticationCode(code: String?) async throws -> Ok
     func checkAuthenticationPassword(password: String?) async throws -> Ok
     func closeChat(chatId: Int64?) async throws -> Ok
+    func createBasicGroupChat(basicGroupId: Int64?, force: Bool?) async throws -> Chat
     func createPrivateChat(force: Bool?, userId: Int64?) async throws -> Chat
+    func createSupergroupChat(force: Bool?, supergroupId: Int64?) async throws -> Chat
+    func deleteChat(chatId: Int64?) async throws -> Ok
     func deleteChatHistory(chatId: Int64?, removeFromChatList: Bool?, revoke: Bool?) async throws -> Ok
     func deleteMessages(chatId: Int64?, messageIds: [Int64]?, revoke: Bool?) async throws -> Ok
     func downloadFile(fileId: Int?, limit: Int64?, offset: Int64?, priority: Int?, synchronous: Bool?) async throws
@@ -54,6 +59,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         replyMarkup: ReplyMarkup?,
     ) async throws -> Message
     func getBasicGroup(basicGroupId: Int64?) async throws -> BasicGroup
+    func getBasicGroupFullInfo(basicGroupId: Int64?) async throws -> BasicGroupFullInfo
     func getChat(chatId: Int64?) async throws -> Chat
     func getChatFolder(chatFolderId: Int?) async throws -> ChatFolder
     func getChatHistory(
@@ -67,18 +73,40 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getAuthorizationState() async throws -> AuthorizationState
     func getCountries() async throws -> Countries
     func getCountryCode() async throws -> Text
+    func getGroupsInCommon(limit: Int?, offsetChatId: Int64?, userId: Int64?) async throws -> Chats
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message
     func getMessageAvailableReactions(
         chatId: Int64?,
         messageId: Int64?,
         rowSize: Int?,
     ) async throws -> AvailableReactions
+    func getMessageAddedReactions(
+        chatId: Int64?,
+        limit: Int?,
+        messageId: Int64?,
+        offset: String?,
+        reactionType: ReactionType?,
+    ) async throws -> AddedReactions
     func getMessageProperties(chatId: Int64?, messageId: Int64?) async throws -> MessageProperties
+    func getMe() async throws -> User
+    func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings
     func getSupergroup(supergroupId: Int64?) async throws -> Supergroup
+    func getSupergroupFullInfo(supergroupId: Int64?) async throws -> SupergroupFullInfo
+    func getTextEntities(text: String?) async throws -> TextEntities
     func getUser(userId: Int64?) async throws -> User
+    func getUserFullInfo(userId: Int64?) async throws -> UserFullInfo
+    func getSupergroupMembers(
+        filter: SupergroupMembersFilter?,
+        limit: Int?,
+        offset: Int?,
+        supergroupId: Int64?,
+    ) async throws -> ChatMembers
+    func leaveChat(chatId: Int64?) async throws -> Ok
     func openChat(chatId: Int64?) async throws -> Ok
     func pinChatMessage(chatId: Int64?, disableNotification: Bool?, messageId: Int64?, onlyForSelf: Bool?) async throws
         -> Ok
+    func processPushNotification(payload: String?) async throws -> Ok
+    func registerDevice(deviceToken: DeviceToken?, otherUserIds: [Int64]?) async throws -> PushReceiverId
     func sendChatAction(
         action: ChatAction?,
         businessConnectionId: String?,
@@ -101,6 +129,22 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         topicId: MessageTopic?,
     ) async throws -> Messages
     func searchChats(limit: Int?, query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats
+    func searchChatMembers(
+        chatId: Int64?,
+        filter: ChatMembersFilter?,
+        limit: Int?,
+        query: String?,
+    ) async throws -> ChatMembers
+    func searchChatMessages(
+        chatId: Int64?,
+        filter: SearchMessagesFilter?,
+        fromMessageId: Int64?,
+        limit: Int?,
+        offset: Int?,
+        query: String?,
+        senderId: MessageSender?,
+        topicId: MessageTopic?,
+    ) async throws -> FoundChatMessages
     func searchMessages(
         chatList: ChatList?,
         chatTypeFilter: SearchMessagesChatTypeFilter?,
@@ -117,6 +161,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         phoneNumber: String?,
         settings: PhoneNumberAuthenticationSettings?,
     ) async throws -> Ok
+    func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
     func toggleChatIsMarkedAsUnread(chatId: Int64?, isMarkedAsUnread: Bool?) async throws -> Ok
     func toggleChatIsPinned(chatId: Int64?, chatList: ChatList?, isPinned: Bool?) async throws -> Ok
     func unpinChatMessage(chatId: Int64?, messageId: Int64?) async throws -> Ok
@@ -126,12 +171,71 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
 // MARK: - TelegramSession + TelegramService
 
 extension TelegramSession: TelegramService {
+    func getTextEntities(text: String?) async throws -> TextEntities {
+        try await client.getTextEntities(text: text)
+    }
+
+    func cancelDownloadFile(fileId: Int?, onlyIfPending: Bool?) async throws -> Ok {
+        try await client.cancelDownloadFile(fileId: fileId, onlyIfPending: onlyIfPending)
+    }
+
+    func processPushNotification(payload: String?) async throws -> Ok {
+        try await client.processPushNotification(payload: payload)
+    }
+
+    func registerDevice(deviceToken: DeviceToken?, otherUserIds: [Int64]?) async throws -> PushReceiverId {
+        try await client.registerDevice(deviceToken: deviceToken, otherUserIds: otherUserIds)
+    }
+
     func changeImportedContacts(contacts: [ImportedContact]?) async throws -> ImportedContacts {
         try await client.changeImportedContacts(contacts: contacts)
     }
 
+    func createBasicGroupChat(basicGroupId: Int64?, force: Bool?) async throws -> Chat {
+        try await client.createBasicGroupChat(basicGroupId: basicGroupId, force: force)
+    }
+
+    func createSupergroupChat(force: Bool?, supergroupId: Int64?) async throws -> Chat {
+        try await client.createSupergroupChat(force: force, supergroupId: supergroupId)
+    }
+
+    func deleteChat(chatId: Int64?) async throws -> Ok {
+        try await client.deleteChat(chatId: chatId)
+    }
+
     func searchChats(limit: Int?, query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats {
         try await client.searchChats(limit: limit, query: query, typeFilter: typeFilter)
+    }
+
+    func searchChatMembers(
+        chatId: Int64?,
+        filter: ChatMembersFilter?,
+        limit: Int?,
+        query: String?,
+    ) async throws -> ChatMembers {
+        try await client.searchChatMembers(chatId: chatId, filter: filter, limit: limit, query: query)
+    }
+
+    func searchChatMessages(
+        chatId: Int64?,
+        filter: SearchMessagesFilter?,
+        fromMessageId: Int64?,
+        limit: Int?,
+        offset: Int?,
+        query: String?,
+        senderId: MessageSender?,
+        topicId: MessageTopic?,
+    ) async throws -> FoundChatMessages {
+        try await client.searchChatMessages(
+            chatId: chatId,
+            filter: filter,
+            fromMessageId: fromMessageId,
+            limit: limit,
+            offset: offset,
+            query: query,
+            senderId: senderId,
+            topicId: topicId,
+        )
     }
 
     func searchMessages(
@@ -173,6 +277,30 @@ extension TelegramSession: TelegramService {
             messageId: messageId,
             reactionType: reactionType,
             updateRecentReactions: updateRecentReactions,
+        )
+    }
+
+    func removeMessageReaction(chatId: Int64?, messageId: Int64?, reactionType: ReactionType?) async throws -> Ok {
+        try await client.removeMessageReaction(
+            chatId: chatId,
+            messageId: messageId,
+            reactionType: reactionType,
+        )
+    }
+
+    func getMessageAddedReactions(
+        chatId: Int64?,
+        limit: Int?,
+        messageId: Int64?,
+        offset: String?,
+        reactionType: ReactionType?,
+    ) async throws -> AddedReactions {
+        try await client.getMessageAddedReactions(
+            chatId: chatId,
+            limit: limit,
+            messageId: messageId,
+            offset: offset,
+            reactionType: reactionType,
         )
     }
 
@@ -256,6 +384,10 @@ extension TelegramSession: TelegramService {
         try await client.getBasicGroup(basicGroupId: basicGroupId)
     }
 
+    func getBasicGroupFullInfo(basicGroupId: Int64?) async throws -> BasicGroupFullInfo {
+        try await client.getBasicGroupFullInfo(basicGroupId: basicGroupId)
+    }
+
     func getChat(chatId: Int64?) async throws -> Chat {
         try await client.getChat(chatId: chatId)
     }
@@ -333,6 +465,10 @@ extension TelegramSession: TelegramService {
         try await client.getCountryCode()
     }
 
+    func getGroupsInCommon(limit: Int?, offsetChatId: Int64?, userId: Int64?) async throws -> Chats {
+        try await client.getGroupsInCommon(limit: limit, offsetChatId: offsetChatId, userId: userId)
+    }
+
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message {
         try await client.getMessage(chatId: chatId, messageId: messageId)
     }
@@ -349,12 +485,46 @@ extension TelegramSession: TelegramService {
         try await client.getMessageProperties(chatId: chatId, messageId: messageId)
     }
 
+    func getMe() async throws -> User {
+        try await client.getMe()
+    }
+
+    func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings {
+        try await client.getScopeNotificationSettings(scope: scope)
+    }
+
     func getSupergroup(supergroupId: Int64?) async throws -> Supergroup {
         try await client.getSupergroup(supergroupId: supergroupId)
     }
 
+    func getSupergroupFullInfo(supergroupId: Int64?) async throws -> SupergroupFullInfo {
+        try await client.getSupergroupFullInfo(supergroupId: supergroupId)
+    }
+
     func getUser(userId: Int64?) async throws -> User {
         try await client.getUser(userId: userId)
+    }
+
+    func getUserFullInfo(userId: Int64?) async throws -> UserFullInfo {
+        try await client.getUserFullInfo(userId: userId)
+    }
+
+    func getSupergroupMembers(
+        filter: SupergroupMembersFilter?,
+        limit: Int?,
+        offset: Int?,
+        supergroupId: Int64?,
+    ) async throws -> ChatMembers {
+        try await client.getSupergroupMembers(
+            filter: filter,
+            limit: limit,
+            offset: offset,
+            supergroupId: supergroupId,
+        )
+    }
+
+    func leaveChat(chatId: Int64?) async throws -> Ok {
+        try await client.leaveChat(chatId: chatId)
     }
 
     func openChat(chatId: Int64?) async throws -> Ok {
@@ -431,6 +601,10 @@ extension TelegramSession: TelegramService {
             chatId: chatId,
             notificationSettings: notificationSettings,
         )
+    }
+
+    func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok {
+        try await client.setMessageSenderBlockList(blockList: blockList, senderId: senderId)
     }
 
     func setChatDraftMessage(chatId: Int64?, draftMessage: DraftMessage?, topicId: MessageTopic?) async throws -> Ok {

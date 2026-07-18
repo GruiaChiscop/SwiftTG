@@ -11,8 +11,12 @@ struct MessageView: View {
     @Environment(ChatVM.self) var chatVM
     @State var shownAlbum: CustomMessageAlbum?
     @State var media = Media.shared
+    @State var audioPlayer = TelegramAudioPlayer.shared
     @State var voiceNoteLocalPath: String?
+    @State var isPreparingVoiceNote = false
     @State var showDeleteOptions = false
+    @State var showReactionOptions = false
+    @State var showReactionDetails = false
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -20,12 +24,16 @@ struct MessageView: View {
         if let forwardedFrom = customMessage.forwardedFrom {
             prefix += "Forwarded from \(forwardedFrom). "
         }
-        let sender = customMessage.message.isOutgoing ? "You" : (customMessage.senderUser?.firstName ?? "Unknown")
         var parts = [String]()
         if case .messageReplyToMessage = customMessage.message.replyTo {
             parts.append("Replying to \(customMessage.replySenderName ?? "message")")
         }
-        parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
+        if let serviceMessageText = customMessage.serviceMessageText {
+            parts.append(serviceMessageText)
+        } else {
+            let sender = customMessage.message.isOutgoing ? "You" : (customMessage.senderUser?.firstName ?? "Unknown")
+            parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
+        }
         if let editStatus = telegramMessageEditStatus(customMessage.message) {
             parts.append(editStatus)
         }
@@ -40,75 +48,176 @@ struct MessageView: View {
             let elapsed = media.savedMediaPath == voiceNoteLocalPath ? Int(media.currentTime) : 0
             parts.append(telegramVoicePlaybackDescription(duration: voiceNote.voiceNote.duration, elapsed: elapsed))
         }
+        if let messageAudio = customMessage.messageAudio {
+            let elapsed = audioPlayer.currentFileId == messageAudio.audio.audio.id
+                ? audioPlayer.currentTime
+                : 0
+            parts.append(telegramVoicePlaybackDescription(duration: messageAudio.audio.duration, elapsed: elapsed))
+            if audioPlayer.currentFileId == messageAudio.audio.audio.id {
+                if audioPlayer.isBuffering {
+                    parts.append("Buffering")
+                }
+                if let playbackError = audioPlayer.playbackError {
+                    parts.append(playbackError)
+                }
+            }
+        }
         if let quotedMessageExcerpt {
             parts.append("Quoted message: \(quotedMessageExcerpt)")
         }
-
         return prefix + parts.joined(separator: ", ")
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            if let forwardedFrom = customMessage.forwardedFrom {
-                ForwardedFromView(
-                    name: forwardedFrom,
-                    onTap: canNavigateToForwardOrigin
-                        ? { chatVM.navigateToForwardOrigin(from: customMessage.message) }
-                        : nil,
-                )
+        HStack(alignment: .bottom, spacing: 5) {
+            if customMessage.message.isOutgoing, !messageReactions.isEmpty {
+                reactionsButton
             }
 
-            if customMessage.replySenderName != nil, customMessage.replyToMessage != nil {
-                ReplyMessageView(
-                    customMessage: customMessage,
-                    type: .replied,
-                    onTap: { chatVM.navigateToRepliedMessage(from: customMessage.message) },
-                )
-            }
-
-            if customMessage.messageDocument != nil
-                || customMessage.messagePhoto != nil
-                || customMessage.messageVideo != nil
-                || customMessage.messageVoiceNote != nil
-                || !customMessage.album.isEmpty
-            {
-                MessageContentView(
-                    customMessage: customMessage,
-                    onMediaTap: openAlbum,
-                    onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
-                )
-            }
-            
-            if let formattedText = customMessage.formattedText {
-                MessageTextView(formattedText: formattedText)
-                    .padding(8)
-                    .padding(
-                        .top,
-                        customMessage.replySenderName != nil && customMessage.replyToMessage != nil
-                            || customMessage.forwardedFrom != nil ? -8 : 0,
+            VStack(alignment: .leading, spacing: 1) {
+                if let forwardedFrom = customMessage.forwardedFrom {
+                    ForwardedFromView(
+                        name: forwardedFrom,
+                        onTap: canNavigateToForwardOrigin
+                            ? { chatVM.navigateToForwardOrigin(from: customMessage.message) }
+                            : nil,
                     )
-            }
-        }
-        .background(chatVM.highlightedMessageId == customMessage.id ? .white.opacity(0.5) : .gray6)
-        .clipShape(.rect(cornerRadius: 20))
-        .overlay(alignment: .bottomTrailing) {
-            HStack(spacing: 3) {
-                if let editStatus = telegramMessageEditStatus(customMessage.message) {
-                    Text(editStatus)
                 }
-                Text(chatVM.dateFormatter.string(from: customMessage.date))
+
+                if customMessage.replySenderName != nil, customMessage.replyToMessage != nil {
+                    ReplyMessageView(
+                        customMessage: customMessage,
+                        type: .replied,
+                        onTap: { chatVM.navigateToRepliedMessage(from: customMessage.message) },
+                    )
+                }
+
+                if customMessage.messageDocument != nil
+                    || customMessage.messagePhoto != nil
+                    || customMessage.messageVideo != nil
+                    || customMessage.messageVoiceNote != nil
+                    || customMessage.messageAudio != nil
+                    || !customMessage.album.isEmpty
+                {
+                    MessageContentView(
+                        customMessage: customMessage,
+                        audioPlaylist: audioPlaylist,
+                        onMediaTap: openAlbum,
+                        onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
+                    )
+                }
+
+                if let formattedText = customMessage.formattedText {
+                    MessageTextView(formattedText: formattedText)
+                        .padding(8)
+                        .padding(
+                            .top,
+                            customMessage.replySenderName != nil && customMessage.replyToMessage != nil
+                                || customMessage.forwardedFrom != nil ? -8 : 0,
+                        )
+                }
             }
-            .font(.system(size: 12))
-            .foregroundStyle(.white)
-            .padding(3)
-            .background(Color.gray6)
-            .clipShape(.rect(cornerRadius: 10))
-            .padding(5)
-            .opacity(0.5)
+            .background(
+                chatVM.highlightedMessageId == customMessage.id
+                    ? .white.opacity(0.5)
+                    : (customMessage.serviceMessageText == nil ? .gray6 : .gray6.opacity(0.75)),
+            )
+            .clipShape(.rect(cornerRadius: 20))
+            .overlay(alignment: .bottomTrailing) {
+                HStack(spacing: 3) {
+                    if let editStatus = telegramMessageEditStatus(customMessage.message) {
+                        Text(editStatus)
+                    }
+                    Text(chatVM.dateFormatter.string(from: customMessage.date))
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(.white)
+                .padding(3)
+                .background(Color.gray6)
+                .clipShape(.rect(cornerRadius: 10))
+                .padding(5)
+                .opacity(0.5)
+            }
+            .customContextMenu(cornerRadius: 20, contextMenuActions)
+            // Keep the message and its adjacent Reactions button as separate
+            // accessibility elements.
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("message-\(customMessage.id)")
+            .accessibilityLabel(accessibilityDescription)
+            .modify {
+                if hasNavigableReply {
+                    $0.accessibilityAction(named: "Go to Replied Message") {
+                        chatVM.navigateToRepliedMessage(from: customMessage.message)
+                    }
+                }
+            }
+            .modify {
+                if let forwardedFrom = customMessage.forwardedFrom, canNavigateToForwardOrigin {
+                    $0.accessibilityAction(named: "Go to \(forwardedFrom)") {
+                        chatVM.navigateToForwardOrigin(from: customMessage.message)
+                    }
+                }
+            }
+            .modify {
+                if customMessage.messagePhoto != nil
+                    || customMessage.messageVideo != nil
+                    || !customMessage.album.isEmpty
+                {
+                    $0.accessibilityAction(named: mediaAccessibilityActionName) {
+                        openAlbum(albumMessage: nil)
+                    }
+                }
+            }
+            .accessibilityActions {
+                ForEach(Array(accessibilityContextMenuActions.flattened().enumerated()), id: \.offset) { _, item in
+                    Button(item.title, action: item.action)
+                }
+            }
+            .modify {
+                if let messageVoiceNote = customMessage.messageVoiceNote {
+                    $0
+                        .accessibilityAction {
+                            toggleVoiceMessage(messageVoiceNote)
+                        }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .modify {
+                if let messageAudio = customMessage.messageAudio {
+                    $0
+                        .onTapGesture {
+                            toggleAudioMessage(messageAudio)
+                        }
+                        .accessibilityAction {
+                            toggleAudioMessage(messageAudio)
+                        }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .accessibilityHidden(!textLinks.isEmpty)
+
+            if !customMessage.message.isOutgoing, !messageReactions.isEmpty {
+                reactionsButton
+            }
         }
-        .customContextMenu(cornerRadius: 20, contextMenuActions)
+        .modify {
+            if textLinks.isEmpty {
+                $0
+            } else {
+                linkAccessibilityGroup($0)
+            }
+        }
         .sheet(item: $shownAlbum) { album in
             ChatViewAlbum(album: album.photos, selection: album.selection)
+        }
+        .sheet(isPresented: $showReactionDetails) {
+            TelegramReactionDetailsView(
+                service: chatVM.service,
+                chatId: customMessage.message.chatId,
+                messageId: customMessage.id,
+            )
         }
         .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
             if customMessage.properties.canBeDeletedOnlyForSelf {
@@ -123,54 +232,13 @@ struct MessageView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        // Keep the accessibility container independent from playback controls.
-        // Their icon and elapsed time update while playing and must not recreate
-        // the focused VoiceOver element.
-        .accessibilityElement(children: .ignore)
-        .accessibilityIdentifier("message-\(customMessage.id)")
-        .accessibilityLabel(accessibilityDescription)
-        .modify {
-            if hasNavigableReply {
-                $0.accessibilityAction(named: "Go to Replied Message") {
-                    chatVM.navigateToRepliedMessage(from: customMessage.message)
+        .confirmationDialog("React", isPresented: $showReactionOptions) {
+            ForEach(reactionChoices, id: \.self) { reaction in
+                Button(telegramReactionActionTitle(reaction, existing: messageReactions)) {
+                    toggleReaction(reaction)
                 }
             }
-        }
-        .modify {
-            if let forwardedFrom = customMessage.forwardedFrom, canNavigateToForwardOrigin {
-                $0.accessibilityAction(named: "Go to \(forwardedFrom)") {
-                    chatVM.navigateToForwardOrigin(from: customMessage.message)
-                }
-            }
-        }
-        .modify {
-            if customMessage.messagePhoto != nil
-                || customMessage.messageVideo != nil
-                || !customMessage.album.isEmpty
-            {
-                $0.accessibilityAction(named: mediaAccessibilityActionName) {
-                    openAlbum(albumMessage: nil)
-                }
-            }
-        }
-        .accessibilityActions {
-            ForEach(Array(contextMenuActions.flattened().enumerated()), id: \.offset) { _, item in
-                Button(item.title, action: item.action)
-            }
-        }
-        .modify {
-            if let messageVoiceNote = customMessage.messageVoiceNote {
-                $0
-                    .onTapGesture {
-                        guard let voiceNoteLocalPath else { return }
-                        Media.shared.toggle(
-                            with: voiceNoteLocalPath,
-                            duration: messageVoiceNote.voiceNote.duration,
-                        )
-                    }
-                    .accessibilityHint("Double tap to play or pause")
-                    .accessibilityAddTraits(.startsMediaSession)
-            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -192,6 +260,15 @@ struct MessageView: View {
     }
 
     // MARK: Private
+
+    private var textLinks: [TelegramTextLink] {
+        guard let formattedText = customMessage.formattedText else { return [] }
+        return TelegramTextFormatting.links(in: formattedText)
+    }
+
+    private var audioPlaylist: [Audio] {
+        chatVM.audioPlaylist
+    }
 
     private var mediaAccessibilityActionName: String {
         let containsPhoto = customMessage.messagePhoto != nil
@@ -241,5 +318,131 @@ struct MessageView: View {
     private var hasNavigableReply: Bool {
         guard case .messageReplyToMessage(let reply) = customMessage.message.replyTo else { return false }
         return reply.messageId != 0
+    }
+
+    private var reactionsButton: some View {
+        TelegramMessageReactionsView(reactions: messageReactions) {
+            showReactionDetails = true
+        }
+        .accessibilityHidden(!textLinks.isEmpty)
+    }
+
+    private func linkAccessibilityGroup(_ content: some View) -> some View {
+        content
+            .accessibilityElement(children: .contain)
+            .accessibilityChildren {
+                ForEach(textLinks) { link in
+                    Link(link.displayedText, destination: link.url)
+                }
+                if !messageReactions.isEmpty {
+                    Button("Reactions") { showReactionDetails = true }
+                        .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
+                }
+            }
+            .accessibilityIdentifier("message-\(customMessage.id)")
+            .accessibilityLabel(accessibilityDescription)
+            .modify {
+                if hasNavigableReply {
+                    $0.accessibilityAction(named: "Go to Replied Message") {
+                        chatVM.navigateToRepliedMessage(from: customMessage.message)
+                    }
+                }
+            }
+            .modify {
+                if let forwardedFrom = customMessage.forwardedFrom, canNavigateToForwardOrigin {
+                    $0.accessibilityAction(named: "Go to \(forwardedFrom)") {
+                        chatVM.navigateToForwardOrigin(from: customMessage.message)
+                    }
+                }
+            }
+            .modify {
+                if customMessage.messagePhoto != nil
+                    || customMessage.messageVideo != nil
+                    || !customMessage.album.isEmpty
+                {
+                    $0.accessibilityAction(named: mediaAccessibilityActionName) {
+                        openAlbum(albumMessage: nil)
+                    }
+                }
+            }
+            .accessibilityActions {
+                ForEach(Array(accessibilityContextMenuActions.flattened().enumerated()), id: \.offset) { _, item in
+                    Button(item.title, action: item.action)
+                }
+            }
+            .modify {
+                if let messageVoiceNote = customMessage.messageVoiceNote {
+                    $0
+                        .accessibilityAction { toggleVoiceMessage(messageVoiceNote) }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .modify {
+                if let messageAudio = customMessage.messageAudio {
+                    $0
+                        .accessibilityAction { toggleAudioMessage(messageAudio) }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+    }
+
+    private func toggleAudioMessage(_ messageAudio: MessageAudio) {
+        Media.shared.stop()
+        audioPlayer.toggle(
+            audio: messageAudio.audio,
+            service: chatVM.service,
+            playlist: audioPlaylist,
+        )
+    }
+
+    private func toggleVoiceMessage(_ messageVoiceNote: MessageVoiceNote) {
+        voicePlaybackTrace(
+            "activation fileId=\(messageVoiceNote.voiceNote.voice.id) "
+                + "hasPath=\(voiceNoteLocalPath != nil) preparing=\(isPreparingVoiceNote)",
+        )
+        if let voiceNoteLocalPath {
+            startVoicePlayback(
+                path: voiceNoteLocalPath,
+                duration: messageVoiceNote.voiceNote.duration,
+            )
+            return
+        }
+        guard !isPreparingVoiceNote else { return }
+        isPreparingVoiceNote = true
+        TelegramAudioPlayer.shared.stop()
+        Task { @MainActor in
+            defer { isPreparingVoiceNote = false }
+            do {
+                let file = try await chatVM.service.downloadFile(
+                    fileId: messageVoiceNote.voiceNote.voice.id,
+                    limit: 0,
+                    offset: 0,
+                    priority: 32,
+                    synchronous: true,
+                )
+                guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else { return }
+                voicePlaybackTrace(
+                    "download completed fileId=\(file.id) size=\(file.local.downloadedSize)",
+                )
+                voiceNoteLocalPath = file.local.path
+                startVoicePlayback(
+                    path: file.local.path,
+                    duration: messageVoiceNote.voiceNote.duration,
+                )
+            } catch {
+                voicePlaybackTrace("download failed: \(error.localizedDescription)")
+                log("Failed to download voice message:", error)
+            }
+        }
+    }
+
+    private func startVoicePlayback(path: String, duration: Int) {
+        voicePlaybackTrace(
+            "start requested exists=\(FileManager.default.fileExists(atPath: path)) duration=\(duration)",
+        )
+        TelegramAudioPlayer.shared.stop()
+        Media.shared.toggle(with: path, duration: duration)
     }
 }

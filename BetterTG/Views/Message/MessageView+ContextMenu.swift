@@ -4,24 +4,35 @@ import SwiftUI
 import TDLibKit
 
 extension MessageView {
+    var accessibilityContextMenuActions: [ContextMenuAction] {
+        contextMenuActions.map { action in
+            if case .menu(let title, _, _) = action, title == "React" {
+                return .button(title: "React", systemImage: "face.smiling") {
+                    showReactionOptions = true
+                }
+            }
+            return action
+        }
+    }
+
     var contextMenuActions: [ContextMenuAction] {
         var actions = [ContextMenuAction]()
 
         if customMessage.properties.canBeReplied {
             actions.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left", action: reply))
         }
-        if customMessage.canReact {
-            actions.append(.button(title: "React", systemImage: "heart") {
-                Task.background {
-                    try? await chatVM.service.addMessageReaction(
-                        chatId: chatVM.customChat.chat.id,
-                        isBig: false,
-                        messageId: customMessage.id,
-                        reactionType: .reactionTypeEmoji(.init(emoji: "❤")),
-                        updateRecentReactions: true,
+        if !reactionChoices.isEmpty {
+            actions.append(.menu(
+                title: "React",
+                systemImage: "face.smiling",
+                children: reactionChoices.map { reaction in
+                    .button(
+                        title: telegramReactionActionTitle(reaction, existing: messageReactions),
+                        systemImage: "face.smiling",
+                        action: { toggleReaction(reaction) },
                     )
-                }
-            })
+                },
+            ))
         }
         if customMessage.properties.canBeCopied,
            let formattedText = getFormattedText(from: customMessage.message.content)
@@ -51,6 +62,26 @@ extension MessageView {
         return actions
     }
 
+    var messageReactions: [MessageReaction] {
+        customMessage.message.interactionInfo?.reactions?.reactions ?? []
+    }
+
+    var reactionChoices: [ReactionType] {
+        telegramReactionChoices(existing: messageReactions, available: customMessage.availableReactions)
+    }
+
+    func toggleReaction(_ reaction: ReactionType) {
+        let service = chatVM.service
+        let message = customMessage.message
+        Task.background {
+            try? await TelegramMessageActions.toggleReaction(
+                service: service,
+                message: message,
+                reaction: reaction,
+            )
+        }
+    }
+
     func reply() {
         if chatVM.replyMessage != nil {
             withAnimation { chatVM.replyMessage = nil }
@@ -74,24 +105,10 @@ extension MessageView {
     }
 
     func togglePinnedMessage() {
-        let isPinned = customMessage.message.isPinned
-        let messageId = customMessage.id
-        let chatId = chatVM.customChat.chat.id
+        let message = customMessage.message
         let service = chatVM.service
         Task.background {
-            if isPinned {
-                try await service.unpinChatMessage(
-                    chatId: chatId,
-                    messageId: messageId,
-                )
-            } else {
-                try await service.pinChatMessage(
-                    chatId: chatId,
-                    disableNotification: false,
-                    messageId: messageId,
-                    onlyForSelf: false,
-                )
-            }
+            try await TelegramMessageActions.togglePinned(service: service, message: message)
         }
     }
 
@@ -109,6 +126,9 @@ extension MessageView {
         case .messageVoiceNote(let messageVoiceNote):
             guard !messageVoiceNote.caption.text.isEmpty else { return nil }
             return messageVoiceNote.caption
+        case .messageAudio(let messageAudio):
+            guard !messageAudio.caption.text.isEmpty else { return nil }
+            return messageAudio.caption
         case .messageDocument(let messageDocument):
             guard !messageDocument.caption.text.isEmpty else { return nil }
             return messageDocument.caption

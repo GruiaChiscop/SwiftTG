@@ -85,6 +85,9 @@ extension CustomChat {
                 [kind.title, chat.title]
             }
 
+        if unreadCount != 0 {
+            parts.append("\(unreadCount) unread")
+        }
         if position.isPinned {
             parts.append("Pinned")
         }
@@ -96,30 +99,15 @@ extension CustomChat {
             if lastMessage.forwardInfo != nil {
                 parts.append("Forwarded")
             }
-            let messageText = accessiblePlainText(from: lastMessage)
+            let messageText = telegramMessageContentDescription(lastMessage)
             if showsLastMessageSender, let lastMessageSenderName {
                 parts.append("\(lastMessageSenderName): \(messageText)")
             } else {
                 parts.append(messageText)
             }
-        }
-        if unreadCount != 0 {
-            parts.append("\(unreadCount) unread")
+            parts.append(telegramMessageDateDescription(lastMessage.date))
         }
 
         return parts.joined(separator: ", ")
-    }
-
-    private func accessiblePlainText(from message: Message) -> String {
-        switch message.content {
-        case .messageText(let content): content.text.text
-        case .messagePhoto(let content): content.caption.text.isEmpty ? "Photo" : content.caption.text
-        case .messageVoiceNote(let content):
-            content.caption.text.isEmpty ? "Voice message" : "Voice message: \(content.caption.text)"
-        case .messageDocument(let content):
-            content.caption.text.isEmpty ? "File: \(content.document.fileName)" : "File: \(content.caption.text)"
-        case .messageUnsupported: "Unsupported message"
-        default: "Message"
-        }
     }
 }

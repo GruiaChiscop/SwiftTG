@@ -3,6 +3,7 @@
 import AVKit
 import SwiftUI
 import TDLibKit
+import UserNotifications
 
 // MARK: - BetterTGApp
 
@@ -39,7 +40,72 @@ import TDLibKit
 
 // MARK: - AppDelegate
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _: UIApplication,
+        didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil,
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        PushNotificationsManager.shared.start()
+        return true
+    }
+
+    func application(
+        _: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data,
+    ) {
+        PushNotificationsManager.shared.didRegister(deviceToken: deviceToken)
+    }
+
+    func application(
+        _: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: any Swift.Error,
+    ) {
+        PushNotificationsManager.shared.didFailToRegister(error: error)
+    }
+
+    func application(
+        _: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void,
+    ) {
+        Task {
+            let result = await PushNotificationsManager.shared.process(userInfo: userInfo)
+            completionHandler(result)
+        }
+    }
+
+    nonisolated func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
+    ) {
+        completionHandler([.banner, .list, .sound, .badge])
+        let userInfo = notification.request.content.userInfo
+        Task { @MainActor in
+            _ = await PushNotificationsManager.shared.process(userInfo: userInfo)
+        }
+    }
+
+    nonisolated func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void,
+    ) {
+        let content = response.notification.request.content
+        var userInfo = content.userInfo
+        if !content.threadIdentifier.isEmpty {
+            userInfo["thread-id"] = content.threadIdentifier
+        }
+        Task { @MainActor in
+            _ = await PushNotificationsManager.shared.process(userInfo: userInfo)
+            if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+                await RootVM.shared.openChatFromNotification(userInfo: userInfo)
+            }
+            completionHandler()
+        }
+    }
+
     func application(
         _: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,

@@ -11,6 +11,7 @@ enum TelegramMessageChange: Sendable {
     case deleteMessages(UpdateDeleteMessages)
     case historyMerged
     case messageEdited(UpdateMessageEdited)
+    case messageInteractionInfo(UpdateMessageInteractionInfo)
     case messagePinChanged(UpdateMessageIsPinned)
     case messageSendSucceeded(UpdateMessageSendSucceeded)
     case newMessage(UpdateNewMessage)
@@ -126,6 +127,13 @@ final class TelegramMessageStore: @unchecked Sendable {
     }
 
     func reduce(_ update: Update) {
+        if case .updateMessageSendFailed(let value) = update {
+            TelegramVoiceNoteStaging.shared.messageSendFailed(
+                chatId: value.message.chatId,
+                oldMessageId: value.oldMessageId,
+                failedMessageId: value.message.id,
+            )
+        }
         guard let reduction = reduction(for: update) else { return }
         queue.async {
             let chatId = reduction.chatId
@@ -143,12 +151,20 @@ final class TelegramMessageStore: @unchecked Sendable {
                 }
             case .deleteMessages(let value):
                 guard !value.fromCache, value.isPermanent else { return }
+                TelegramVoiceNoteStaging.shared.messagesDeleted(
+                    chatId: chatId,
+                    messageIds: value.messageIds,
+                )
                 for messageId in value.messageIds {
                     messages[messageId] = nil
                     self.deletedMessageIds[chatId, default: []].insert(messageId)
                 }
                 orderedIds.removeAll { value.messageIds.contains($0) }
             case .messageSendSucceeded(let value):
+                TelegramVoiceNoteStaging.shared.messageSendSucceeded(
+                    chatId: chatId,
+                    oldMessageId: value.oldMessageId,
+                )
                 self.deletedMessageIds[chatId]?.remove(value.message.id)
                 messages[value.oldMessageId] = nil
                 messages[value.message.id] = value.message
@@ -159,7 +175,8 @@ final class TelegramMessageStore: @unchecked Sendable {
                 }
             case .readInbox(let value):
                 unreadCount = value.unreadCount
-            case .chatAction, .historyMerged, .messageEdited, .messagePinChanged, .readOutbox, .userStatus:
+            case .chatAction, .historyMerged, .messageEdited, .messageInteractionInfo, .messagePinChanged, .readOutbox,
+                 .userStatus:
                 break
             }
 
@@ -249,6 +266,8 @@ final class TelegramMessageStore: @unchecked Sendable {
             (value.chatId, .deleteMessages(value))
         case .updateMessageEdited(let value):
             (value.chatId, .messageEdited(value))
+        case .updateMessageInteractionInfo(let value):
+            (value.chatId, .messageInteractionInfo(value))
         case .updateMessageIsPinned(let value):
             (value.chatId, .messagePinChanged(value))
         case .updateMessageSendSucceeded(let value):

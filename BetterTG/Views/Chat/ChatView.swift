@@ -36,6 +36,7 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { scrollViewProxy in
                 bodyView
+                    .task { chatVM.start() }
                     .onAppear {
                         chatVM.scrollViewProxy = scrollViewProxy
                         positionInitialMessagesIfNeeded(using: scrollViewProxy)
@@ -89,82 +90,35 @@ struct ChatView: View {
         } message: {
             Text(chatVM.navigationError ?? "The destination is unavailable.")
         }
+        .sheet(isPresented: $showsSharedMedia) {
+            SharedMediaView(
+                chatId: chatVM.customChat.chat.id,
+                chatTitle: chatVM.customChat.chat.title,
+                service: chatVM.service,
+            ) { messageId in
+                showsSharedMedia = false
+                Task { @MainActor in
+                    await Task.yield()
+                    chatVM.navigateToMessage(id: messageId)
+                }
+            }
+        }
         .environment(chatVM)
     }
     
     var bodyView: some View {
         List {
             ForEach(Array(chatVM.messages.enumerated()), id: \.element.id) { index, customMessage in
-                if startsNewDay(at: index) {
-                    MessageDayHeader(title: telegramMessageDayHeading(customMessage.message.date))
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                }
-
-                if unreadBoundaryMessageId == customMessage.id {
-                    UnreadMessagesHeader(count: chatVM.initialUnreadCount)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                }
-
-                HStack(alignment: .bottom, spacing: 0) {
-                    if customMessage.message.isOutgoing {
-                        Spacer(minLength: 0)
-                    } else {
-                        if let user = customMessage.senderUser,
-                           chatVM.customChat.shouldShowProfileImage
-                        {
-                            if chatVM.messages[safe: index + 1]?.senderUser?.id != user.id {
-                                ProfileImageView(
-                                    photo: user.profilePhoto?.big,
-                                    minithumbnail: user.profilePhoto?.minithumbnail,
-                                    title: user.firstName,
-                                    userId: user.id,
-                                )
-                                .frame(width: 32, height: 32)
-                                .accessibilityHidden(true)
-                            } else {
-                                Spacer()
-                                    .frame(width: 32, height: 32)
-                            }
-                            Spacer()
-                                .frame(width: 5)
-                        }
-                    }
-
-                    MessageView(customMessage: customMessage)
-                        .accessibilityFocused($accessibilityFocusedMessageId, equals: customMessage.id)
-                        .frame(
-                            maxWidth: Utils.maxMessageContentWidth,
-                            alignment: customMessage.message.isOutgoing ? .trailing : .leading,
-                        )
-                        .onScrollVisibilityChange { visible in
-                            guard !isPreview, visible else { return }
-                            chatVM.viewMessage(id: customMessage.message.id)
-                        }
-
-                    if !customMessage.message.isOutgoing {
-                        Spacer(minLength: 0)
-                    }
-                }
-                .padding(customMessage.message.isOutgoing ? .trailing : .leading, 16)
-                .transition(
-                    .asymmetric(
-                        insertion: .move(edge: .bottom),
-                        removal: .move(edge: customMessage.message.isOutgoing ? .trailing : .leading),
-                    )
-                    .combined(with: .opacity),
+                ChatMessageListRows(
+                    customMessage: customMessage,
+                    previousMessage: chatVM.messages[safe: index - 1],
+                    nextMessage: chatVM.messages[safe: index + 1],
+                    isLastMessage: index == chatVM.messages.count - 1,
+                    distanceFromStart: index,
+                    shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
+                    isPreview: isPreview,
                 )
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .onAppear { chatVM.loadMoreIfNeeded(for: customMessage) }
-                .onScrollVisibilityChange { visible in
-                    guard index == chatVM.messages.count - 1 else { return }
-                    chatVM.updateBottomVisibility(isLastMessageVisible: visible)
-                }
+                .accessibilityFocused($accessibilityFocusedMessageId, equals: customMessage.id)
             }
         }
         .listStyle(.plain)
@@ -240,15 +194,7 @@ struct ChatView: View {
 
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
-
-    private var unreadBoundaryMessageId: Int64? {
-        guard chatVM.initialUnreadCount > 0 else { return nil }
-        return chatVM.messages
-            .first { customMessage in
-                !customMessage.message.isOutgoing
-                    && customMessage.id > chatVM.initialLastReadInboxMessageId
-            }?.id
-    }
+    @State private var showsSharedMedia = false
 
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
@@ -291,22 +237,26 @@ struct ChatView: View {
 
     @ViewBuilder private var topBarTrailing: some View {
         let chat = chatVM.customChat.chat
-        ProfileImageView(
-            photo: chat.photo?.big,
-            minithumbnail: chat.photo?.minithumbnail,
-            title: chat.title,
-            userId: chat.id,
-        )
-        .frame(width: 32, height: 32)
-        .accessibilityHidden(true)
-    }
-
-    private func startsNewDay(at index: Int) -> Bool {
-        guard chatVM.messages.indices.contains(index) else { return false }
-        guard index > chatVM.messages.startIndex else { return true }
-        let messageDate = Date(timeIntervalSince1970: TimeInterval(chatVM.messages[index].message.date))
-        let previousDate = Date(timeIntervalSince1970: TimeInterval(chatVM.messages[index - 1].message.date))
-        return !Calendar.autoupdatingCurrent.isDate(messageDate, inSameDayAs: previousDate)
+        Menu {
+            Button("Shared Media", systemImage: "photo.on.rectangle") {
+                showsSharedMedia = true
+            }
+            if chat.canBeDeletedOnlyForSelf || chat.canBeDeletedForAllUsers {
+                Divider()
+                Button("Clear History", systemImage: "eraser", role: .destructive) {
+                    RootVM.shared.requestClearHistory(chatVM.customChat)
+                }
+            }
+        } label: {
+            ProfileImageView(
+                photo: chat.photo?.big,
+                minithumbnail: chat.photo?.minithumbnail,
+                title: chat.title,
+                userId: chat.id,
+            )
+            .frame(width: 32, height: 32)
+        }
+        .accessibilityLabel("Chat actions")
     }
 
     private func positionInitialMessagesIfNeeded(using scrollViewProxy: ScrollViewProxy) {
@@ -353,6 +303,112 @@ struct ChatView: View {
                 withAnimation { chatVM.highlightedMessageId = nil }
             }
         }
+    }
+}
+
+// MARK: - ChatMessageListRows
+
+/// Keeps per-message observation local so a metadata update does not invalidate
+/// and rebuild the entire chat list.
+private struct ChatMessageListRows: View {
+    @Environment(ChatVM.self) private var chatVM
+
+    let customMessage: CustomMessage
+    let previousMessage: CustomMessage?
+    let nextMessage: CustomMessage?
+    let isLastMessage: Bool
+    let distanceFromStart: Int
+    let shouldShowProfileImage: Bool
+    let isPreview: Bool
+
+    var body: some View {
+        if startsNewDay {
+            MessageDayHeader(title: telegramMessageDayHeading(customMessage.message.date))
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+
+        if startsUnreadMessages {
+            UnreadMessagesHeader(count: chatVM.initialUnreadCount)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+
+        HStack(alignment: .bottom, spacing: 0) {
+            if customMessage.serviceMessageText != nil || customMessage.message.isOutgoing {
+                Spacer(minLength: 0)
+            } else if let user = customMessage.senderUser, shouldShowProfileImage {
+                if nextMessage?.senderUser?.id != user.id {
+                    ProfileImageView(
+                        photo: user.profilePhoto?.big,
+                        minithumbnail: user.profilePhoto?.minithumbnail,
+                        title: user.firstName,
+                        userId: user.id,
+                    )
+                    .frame(width: 32, height: 32)
+                    .accessibilityHidden(true)
+                } else {
+                    Spacer().frame(width: 32, height: 32)
+                }
+                Spacer().frame(width: 5)
+            }
+
+            MessageView(customMessage: customMessage)
+                .frame(
+                    maxWidth: Utils.maxMessageContentWidth,
+                    alignment: customMessage.serviceMessageText != nil
+                        ? .center
+                        : (customMessage.message.isOutgoing ? .trailing : .leading),
+                )
+                .onScrollVisibilityChange { visible in
+                    guard !isPreview, visible else { return }
+                    chatVM.viewMessage(id: customMessage.message.id)
+                }
+
+            if customMessage.serviceMessageText != nil || !customMessage.message.isOutgoing {
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(
+            customMessage.serviceMessageText != nil
+                ? .horizontal
+                : (customMessage.message.isOutgoing ? .trailing : .leading),
+            16,
+        )
+        .transition(
+            .asymmetric(
+                insertion: .move(edge: .bottom),
+                removal: .move(edge: customMessage.message.isOutgoing ? .trailing : .leading),
+            )
+            .combined(with: .opacity),
+        )
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .onAppear { chatVM.loadMoreIfNeeded(distanceFromStart: distanceFromStart) }
+        .onScrollVisibilityChange { visible in
+            guard isLastMessage else { return }
+            chatVM.updateBottomVisibility(isLastMessageVisible: visible)
+        }
+    }
+
+    private var startsNewDay: Bool {
+        guard let previousMessage else { return true }
+        let date = Date(timeIntervalSince1970: TimeInterval(customMessage.message.date))
+        let previousDate = Date(timeIntervalSince1970: TimeInterval(previousMessage.message.date))
+        return !Calendar.autoupdatingCurrent.isDate(date, inSameDayAs: previousDate)
+    }
+
+    private var startsUnreadMessages: Bool {
+        guard chatVM.initialUnreadCount > 0,
+              !customMessage.message.isOutgoing,
+              customMessage.id > chatVM.initialLastReadInboxMessageId
+        else { return false }
+        guard let previousMessage else { return true }
+        return previousMessage.message.isOutgoing
+            || previousMessage.id <= chatVM.initialLastReadInboxMessageId
     }
 }
 

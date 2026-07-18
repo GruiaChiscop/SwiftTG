@@ -10,8 +10,8 @@ struct MacPhotoMessageContent: View {
     let onOpen: () -> Void
 
     var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: onOpen) {
                 if let image {
                     Image(nsImage: image)
                         .resizable()
@@ -22,14 +22,13 @@ struct MacPhotoMessageContent: View {
                     ProgressView("Loading photo…")
                         .frame(minWidth: 180, minHeight: 100)
                 }
-                if !content.caption.text.isEmpty {
-                    Text(content.caption.text)
-                        .textSelection(.enabled)
-                }
+            }
+            .buttonStyle(.plain)
+            .disabled(image == nil)
+            .accessibilityHidden(true)
+            if !content.caption.text.isEmpty {
+                MacFormattedTextView(formattedText: content.caption)
             }
         }
-        .buttonStyle(.plain)
-        .disabled(image == nil)
-        .accessibilityHidden(true)
     }
 }

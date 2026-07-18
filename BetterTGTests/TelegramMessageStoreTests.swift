@@ -132,6 +132,32 @@ struct TelegramMessageStoreTests {
         #expect(initialSnapshot?.messages[message.id] == message)
     }
 
+    @Test func `interaction updates are published for the affected message`() throws {
+        let store = TelegramMessageStore()
+        let chatId: Int64 = 60
+        let messageId: Int64 = 12
+
+        let snapshot = try waitForSnapshot(store: store, chatId: chatId, matching: {
+            if case .messageInteractionInfo(let update) = $0.change {
+                return update.messageId == messageId
+            }
+            return false
+        }) {
+            store.reduce(.updateMessageInteractionInfo(.init(
+                chatId: chatId,
+                interactionInfo: nil,
+                messageId: messageId,
+            )))
+        }
+
+        guard case .messageInteractionInfo(let update) = snapshot.change else {
+            Issue.record("Expected a message-interaction change")
+            return
+        }
+        #expect(update.chatId == chatId)
+        #expect(update.messageId == messageId)
+    }
+
     // MARK: Private
 
     private func waitForSnapshot(

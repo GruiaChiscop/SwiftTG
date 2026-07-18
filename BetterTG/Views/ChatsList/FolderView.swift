@@ -49,7 +49,7 @@ struct FolderView: View {
             } else {
                 ForEach(chats) { customChat in
                     Button {
-                        navigationStorage.push(.customChat(customChat, messageId: nil))
+                        rootVM.navigate(to: .customChat(customChat, messageId: nil))
                     } label: {
                         ChatsListItemView(customChat: customChat)
                             .matchedGeometryEffect(id: customChat.chat.id, in: namespace)
@@ -58,6 +58,7 @@ struct FolderView: View {
                     .accessibilityLabel(customChat.accessibilityDescription)
                     .accessibilityHint("Opens chat")
                     .accessibilityActions {
+                        let policy = customChat.actionPolicy
                         Button(customChat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread") {
                             rootVM.toggleRead(for: customChat)
                         }
@@ -70,10 +71,17 @@ struct FolderView: View {
                         Button(folder.type == .archive ? "Unarchive" : "Archive") {
                             toggleArchived(customChat)
                         }
-                        if customChat.chat.canBeDeletedOnlyForSelf
-                            || customChat.chat.canBeDeletedForAllUsers
-                        {
-                            Button("Delete") {
+                        if policy.canClearHistory {
+                            Button("Clear History") {
+                                requestClearHistory(customChat)
+                            }
+                        }
+                        if let leaveTitle = policy.leaveActionTitle {
+                            Button(leaveTitle) {
+                                requestLeave(customChat)
+                            }
+                        } else if policy.canDeleteChat {
+                            Button(policy.deleteActionTitle) {
                                 requestDelete(customChat)
                             }
                         }
@@ -82,7 +90,7 @@ struct FolderView: View {
                         contextMenu(for: customChat)
                     } preview: {
                         LazyView {
-                            NavigationControllerWrapper {
+                            NavigationStack {
                                 ChatView(customChat: customChat)
                                     .environment(\.isPreview, true)
                             }
@@ -117,15 +125,15 @@ struct FolderView: View {
                 },
             ),
         ) {
-            Button("Mute for 1 hour") { muteSelectedChat(for: 60 * 60) }
-            Button("Mute for 8 hours") { muteSelectedChat(for: 8 * 60 * 60) }
-            Button("Mute for 2 days") { muteSelectedChat(for: 2 * 24 * 60 * 60) }
-            Button("Mute forever") { muteSelectedChat(for: Int(Int32.max)) }
+            ForEach(TelegramMutePreset.allCases) { preset in
+                Button(preset.title) { muteSelectedChat(for: preset.duration) }
+            }
             Button("Cancel", role: .cancel) { chatToMute = nil }
         }
     }
 
     @ViewBuilder func contextMenu(for customChat: CustomChat) -> some View {
+        let policy = customChat.actionPolicy
         let isPinned = customChat.position.isPinned
         let hasUnreadMessages = customChat.hasUnreadMessages
         Button(
@@ -155,8 +163,22 @@ struct FolderView: View {
             toggleArchived(customChat)
         }
 
-        if customChat.chat.canBeDeletedOnlyForSelf || customChat.chat.canBeDeletedForAllUsers {
-            Button("Delete", systemImage: "trash", role: .destructive) {
+        if policy.canClearHistory {
+            Button("Clear History", systemImage: "eraser", role: .destructive) {
+                requestClearHistory(customChat)
+            }
+        }
+
+        if let leaveTitle = policy.leaveActionTitle {
+            Button(
+                leaveTitle,
+                systemImage: "rectangle.portrait.and.arrow.right",
+                role: .destructive,
+            ) {
+                requestLeave(customChat)
+            }
+        } else if policy.canDeleteChat {
+            Button(policy.deleteActionTitle, systemImage: "trash", role: .destructive) {
                 requestDelete(customChat)
             }
         }
@@ -164,14 +186,12 @@ struct FolderView: View {
 
     // MARK: Private
 
-    private let navigationStorage = NavigationStorage.shared
-
     @ViewBuilder private var searchResults: some View {
         if !rootVM.searchChatResults.isEmpty {
             Section {
                 ForEach(rootVM.searchChatResults) { customChat in
                     Button {
-                        navigationStorage.push(.customChat(customChat, messageId: nil))
+                        rootVM.navigate(to: .customChat(customChat, messageId: nil))
                     } label: {
                         ChatsListItemView(customChat: customChat)
                     }
@@ -191,7 +211,7 @@ struct FolderView: View {
                 ForEach(Array(rootVM.searchMessageResults.enumerated()), id: \.offset) { _, message in
                     if let customChat = rootVM.searchResultChatsById[message.chatId] {
                         Button {
-                            navigationStorage.push(.customChat(customChat, messageId: message.id))
+                            rootVM.navigate(to: .customChat(customChat, messageId: message.id))
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
@@ -239,6 +259,14 @@ struct FolderView: View {
     
     private func requestDelete(_ customChat: CustomChat) {
         rootVM.requestDelete(customChat)
+    }
+
+    private func requestClearHistory(_ customChat: CustomChat) {
+        rootVM.requestClearHistory(customChat)
+    }
+
+    private func requestLeave(_ customChat: CustomChat) {
+        rootVM.requestLeave(customChat)
     }
 
     private func toggleArchived(_ customChat: CustomChat) {

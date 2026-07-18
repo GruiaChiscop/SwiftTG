@@ -204,7 +204,7 @@ struct ChatBottomArea: View {
                 .ignoresSafeArea()
             }
             .fullScreenCover(isPresented: $chatVM.showCameraView) {
-                NavigationControllerWrapper {
+                NavigationStack {
                     CameraView { selectedImage in
                         withAnimation { chatVM.displayedImages = [selectedImage] }
                     }
@@ -345,10 +345,22 @@ struct ChatBottomArea: View {
                 CustomTextField("Message...", text: $chatVM.text)
                     .onReceive(nc.publisher(for: .localPasteImages)) { notification in
                         guard let images = notification.object as? [SelectedImage] else { return }
-                        withAnimation { chatVM.displayedImages = images }
+                        withAnimation {
+                            chatVM.displayedDocuments.removeAll()
+                            chatVM.displayedImages.append(contentsOf: images)
+                        }
+                    }
+                    .onReceive(nc.publisher(for: .localPasteFiles)) { notification in
+                        guard let urls = notification.object as? [URL] else { return }
+                        Task { await chatVM.stagePastedAttachments(urls) }
                     }
             } else {
-                CustomTextField("Edit...", text: $chatVM.editMessageText, focus: true)
+                CustomTextField(
+                    "Edit...",
+                    text: $chatVM.editMessageText,
+                    focus: true,
+                    allowsAttachmentPaste: false,
+                )
             }
         }
         .focused(focused)

@@ -9,7 +9,11 @@ struct MacRootView: View {
     @Bindable var model: MacSessionModel
 
     var body: some View {
-        if case .authorizationStateReady = model.authorizationState {
+        if model.sessionEnded {
+            MacSessionEndedView(canReauthenticate: model.canReauthenticate) {
+                model.reauthenticate()
+            }
+        } else if case .authorizationStateReady = model.authorizationState {
             MacChatWorkspace(model: model)
         } else {
             MacAuthorizationView(model: model)
@@ -37,10 +41,13 @@ private struct MacAuthorizationView: View {
             Group {
                 switch model.authorizationState {
                 case .authorizationStateWaitPhoneNumber:
-                    Text("Enter your phone number including the country code.")
-                    TextField("Phone number", text: $model.phoneNumber)
-                        .textContentType(.telephoneNumber)
-                        .onSubmit { confirmsPhoneNumber = !model.phoneNumber.isEmpty }
+                    Text("Select your country and enter your phone number.")
+                    countryButton
+                    phoneNumberFields
+                    Text(TelegramLoginGuidance.smsWarning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
                     Button("Continue") {
                         confirmsPhoneNumber = !model.phoneNumber.isEmpty
                     }
@@ -75,6 +82,20 @@ private struct MacAuthorizationView: View {
         }
         .frame(width: 360)
         .padding(40)
+        .sheet(isPresented: $showsCountryPicker) {
+            MacCountryPicker(
+                selectedCountry: model.selectedCountryNumber,
+                countries: model.countryNumbers,
+            ) { country in
+                model.selectCountry(country)
+                focusesPhoneNumberAfterCountrySelection = true
+            }
+        }
+        .onChange(of: showsCountryPicker) { _, isPresented in
+            guard !isPresented, focusesPhoneNumberAfterCountrySelection else { return }
+            focusesPhoneNumberAfterCountrySelection = false
+            focusedPhoneField = .phoneNumber
+        }
         .confirmationDialog(
             "Is this number correct?",
             isPresented: $confirmsPhoneNumber,
@@ -83,11 +104,64 @@ private struct MacAuthorizationView: View {
             Button("Yes, continue") { model.submitPhoneNumber() }
             Button("Edit Number", role: .cancel) {}
         } message: {
-            Text("Telegram will send the login code to \(model.phoneNumber).")
+            Text("Telegram will send the login code to \(model.formattedPhoneNumber).")
         }
     }
 
     // MARK: Private
 
+    private enum PhoneField: Hashable {
+        case callingCode
+        case phoneNumber
+    }
+
+    @FocusState private var focusedPhoneField: PhoneField?
     @State private var confirmsPhoneNumber = false
+    @State private var focusesPhoneNumberAfterCountrySelection = false
+    @State private var showsCountryPicker = false
+
+    private var countryAccessibilityLabel: String {
+        guard let country = model.selectedCountryNumber else { return "Select Country" }
+        return "Country: \(country.accessibilityLabel)"
+    }
+
+    private var countryButton: some View {
+        Button {
+            showsCountryPicker = true
+        } label: {
+            if let country = model.selectedCountryNumber {
+                Text("\(country.flagEmoji) \(country.name)")
+                    .lineLimit(1)
+            } else {
+                Text("Select Country")
+            }
+        }
+        .accessibilityLabel(countryAccessibilityLabel)
+        .accessibilityHint("Opens country picker")
+    }
+
+    private var phoneNumberFields: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("+")
+                .accessibilityHidden(true)
+
+            TextField("Code", text: $model.callingCode)
+                .frame(width: 54)
+                .textContentType(.telephoneNumber)
+                .focused($focusedPhoneField, equals: .callingCode)
+                .accessibilityLabel("Country calling code")
+                .onChange(of: model.callingCode) { _, value in
+                    let completedCode = model.updateCallingCode(value)
+                    if completedCode, !showsCountryPicker, focusedPhoneField == .callingCode {
+                        focusedPhoneField = .phoneNumber
+                    }
+                }
+                .onSubmit { focusedPhoneField = .phoneNumber }
+
+            TextField("Phone number", text: $model.phoneNumber)
+                .textContentType(.telephoneNumber)
+                .focused($focusedPhoneField, equals: .phoneNumber)
+                .onSubmit { confirmsPhoneNumber = !model.phoneNumber.isEmpty }
+        }
+    }
 }

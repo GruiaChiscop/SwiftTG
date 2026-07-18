@@ -15,3 +15,9 @@ func log(_ messages: Any...) {
     let output = messages.map { "\($0)" }.joined(separator: "\n")
     logger.log("[Log] [\(date, privacy: .public)] \(output, privacy: .public)")
 }
+
+func voicePlaybackTrace(_ message: String) {
+    #if DEBUG
+    print("[VoicePlayback] \(message)")
+    #endif
+}

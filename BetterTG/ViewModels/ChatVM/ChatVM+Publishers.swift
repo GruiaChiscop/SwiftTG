@@ -24,13 +24,7 @@ extension ChatVM {
         }
         appliedMessageSnapshotVersion = snapshot.version
         latestMessageSnapshot = snapshot
-        let completedRefreshes = refreshedMessagesAwaitingMerge.compactMap { messageId, message in
-            snapshot.messages[messageId] == message ? messageId : nil
-        }
-        for messageId in completedRefreshes {
-            refreshedMessagesAwaitingMerge[messageId] = nil
-            refreshVersions[messageId] = nil
-        }
+        renderStore.completeRefreshesIfMerged(messages: snapshot.messages)
 
         guard let change = snapshot.change else {
             reconcileMessages(with: snapshot)
@@ -48,6 +42,7 @@ extension ChatVM {
             if !value.message.isOutgoing {
                 ServiceSoundManager.shared.playIncomingMessageIfAppropriate(isMuted: customChat.isMuted)
             }
+            loadedMessageIds.insert(value.message.id)
             pendingScrollMessageIds.insert(value.message.id)
             reconcileMessages(with: snapshot)
         case .deleteMessages:
@@ -55,20 +50,26 @@ extension ChatVM {
         case .messageEdited(let value):
             invalidateMessageAndReplies(messageId: value.messageId, version: snapshot.version)
             refreshMessage(messageId: value.messageId, version: snapshot.version)
+        case .messageInteractionInfo(let value):
+            renderStore.invalidate(messageId: value.messageId, version: snapshot.version)
+            refreshMessage(messageId: value.messageId, version: snapshot.version)
         case .messagePinChanged(let value):
-            messageInvalidationVersions[value.messageId] = snapshot.version
+            renderStore.invalidate(messageId: value.messageId, version: snapshot.version)
             refreshMessage(messageId: value.messageId, version: snapshot.version)
         case .messageSendSucceeded(let value):
             if value.message.isOutgoing {
                 ServiceSoundManager.shared.playMessageDelivered()
             }
+            loadedMessageIds.insert(value.message.id)
             if let rendered = renderedMessages.removeValue(forKey: value.oldMessageId) {
                 rendered.message = value.message
                 renderedMessages[value.message.id] = rendered
-                renderedInvalidationVersions[value.message.id] =
-                    renderedInvalidationVersions.removeValue(forKey: value.oldMessageId) ?? 0
-                messageInvalidationVersions[value.message.id] = snapshot.version
             }
+            renderStore.migrateRenderedResult(
+                from: value.oldMessageId,
+                to: value.message,
+                invalidationVersion: snapshot.version,
+            )
             if pendingScrollMessageIds.remove(value.oldMessageId) != nil {
                 pendingScrollMessageIds.insert(value.message.id)
             }
@@ -83,29 +84,16 @@ extension ChatVM {
     }
 
     @MainActor private func reconcileMessages(with snapshot: TelegramMessageSnapshot) {
-        let currentIds = Set(snapshot.orderedMessageIds)
+        // The shared store retains a chat's entire history for the app's lifetime; only
+        // reconcile/render the bounded window this ChatVM has actually paged in or received live,
+        // otherwise reopening a chat scrolled deep into earlier would re-render its whole backlog.
+        let currentIds = Set(snapshot.orderedMessageIds).intersection(loadedMessageIds)
         renderedMessages = renderedMessages.filter { currentIds.contains($0.key) }
-        renderedInvalidationVersions = renderedInvalidationVersions.filter { currentIds.contains($0.key) }
-        renderingMessages = renderingMessages.filter { currentIds.contains($0.key) }
-        renderingInvalidationVersions = renderingInvalidationVersions.filter { currentIds.contains($0.key) }
-        renderGenerations = renderGenerations.filter { currentIds.contains($0.key) }
-        messageInvalidationVersions = messageInvalidationVersions.filter { currentIds.contains($0.key) }
+        let toRender = renderStore.reconcile(currentIds: currentIds, messages: snapshot.messages)
 
         rebuildDisplayedMessages(from: snapshot)
 
-        for messageId in snapshot.orderedMessageIds {
-            guard let message = snapshot.messages[messageId] else { continue }
-            let invalidationVersion = messageInvalidationVersions[messageId] ?? 0
-            let renderedInvalidationVersion = renderedInvalidationVersions[messageId] ?? 0
-            let needsRendering = renderedMessages[messageId]?.message != message
-                || renderedInvalidationVersion < invalidationVersion
-            guard needsRendering else { continue }
-            guard refreshVersions[messageId] == nil else { continue }
-            if renderingMessages[messageId] == message,
-               renderingInvalidationVersions[messageId] == invalidationVersion
-            {
-                continue
-            }
+        for (message, invalidationVersion) in toRender {
             renderMessage(message, invalidationVersion: invalidationVersion)
         }
 
@@ -113,44 +101,60 @@ extension ChatVM {
     }
 
     @MainActor private func renderMessage(_ message: Message, invalidationVersion: UInt64) {
-        nextRenderGeneration += 1
-        let generation = nextRenderGeneration
-        renderGenerations[message.id] = generation
-        renderingMessages[message.id] = message
-        renderingInvalidationVersions[message.id] = invalidationVersion
+        let generation = renderStore.beginRendering(message, invalidationVersion: invalidationVersion)
 
         Task.background {
+            await self.messageRenderLimiter.acquire()
             let customMessage = await self.getCustomMessage(from: message)
+            await self.messageRenderLimiter.release()
             await main {
-                guard self.renderGenerations[message.id] == generation,
-                      self.renderingInvalidationVersions[message.id] == invalidationVersion,
-                      self.latestMessageSnapshot?.messages[message.id] == message,
-                      (self.messageInvalidationVersions[message.id] ?? 0) == invalidationVersion
+                guard self.renderStore.isRenderStillCurrent(
+                    messageId: message.id,
+                    generation: generation,
+                    invalidationVersion: invalidationVersion,
+                    currentMessage: self.latestMessageSnapshot?.messages[message.id],
+                )
                 else { return }
 
-                self.renderingMessages[message.id] = nil
-                self.renderingInvalidationVersions[message.id] = nil
+                self.renderStore.commitRender(messageId: message.id, message: message, invalidationVersion: invalidationVersion)
                 self.renderedMessages[message.id] = customMessage
-                self.renderedInvalidationVersions[message.id] = invalidationVersion
                 if self.replyMessage?.message.id == message.id {
                     self.replyMessage = customMessage
                 }
-                guard let snapshot = self.latestMessageSnapshot else { return }
-                self.rebuildDisplayedMessages(from: snapshot)
-                self.updateInitialLoadingState(from: snapshot)
+                self.scheduleDisplayedMessagesRebuild()
             }
+        }
+    }
+
+    @MainActor private func scheduleDisplayedMessagesRebuild() {
+        guard displayedMessagesRebuildTask == nil else { return }
+        displayedMessagesRebuildTask = Task { @MainActor [weak self] in
+            try? await Task<Never, Never>.sleep(for: .milliseconds(40))
+            guard let self, !Task.isCancelled else { return }
+            displayedMessagesRebuildTask = nil
+            guard let snapshot = latestMessageSnapshot else { return }
+            rebuildDisplayedMessages(from: snapshot)
+            updateInitialLoadingState(from: snapshot)
         }
     }
 
     @MainActor private func rebuildDisplayedMessages(from snapshot: TelegramMessageSnapshot) {
         var displayedMessages = [CustomMessage]()
         var processedAlbums = Set<TdInt64>()
+        var albumMessageIds = [TdInt64: [Int64]]()
+
+        for messageId in snapshot.orderedMessageIds {
+            guard let albumId = snapshot.messages[messageId]?.mediaAlbumId, albumId != 0 else { continue }
+            albumMessageIds[albumId, default: []].append(messageId)
+        }
 
         for messageId in snapshot.orderedMessageIds {
             guard let rawMessage = snapshot.messages[messageId] else { continue }
             if rawMessage.mediaAlbumId == 0 {
                 if let rendered = renderedMessages[messageId] {
-                    rendered.album = []
+                    if !rendered.album.isEmpty {
+                        rendered.album = []
+                    }
                     displayedMessages.append(rendered)
                 }
                 continue
@@ -158,21 +162,28 @@ extension ChatVM {
 
             let albumId = rawMessage.mediaAlbumId
             guard processedAlbums.insert(albumId).inserted else { continue }
-            let albumMessageIds = snapshot.orderedMessageIds.filter {
-                snapshot.messages[$0]?.mediaAlbumId == albumId
-            }
-            guard albumMessageIds.allSatisfy({ renderedMessages[$0] != nil }),
-                  let representativeId = albumMessageIds.first,
+            guard let messageIds = albumMessageIds[albumId],
+                  messageIds.allSatisfy({ renderedMessages[$0] != nil }),
+                  let representativeId = messageIds.first,
                   let representative = renderedMessages[representativeId]
             else { continue }
-            representative.album = albumMessageIds.compactMap { snapshot.messages[$0] }
+            let album = messageIds.compactMap { snapshot.messages[$0] }
+            if representative.album.map(\.id) != album.map(\.id) {
+                representative.album = album
+            }
             displayedMessages.append(representative)
         }
 
         let currentIds = messages.map(\.id)
         let displayedIds = displayedMessages.map(\.id)
         if currentIds != displayedIds {
-            if initialMessagesLoaded {
+            let currentIdSet = Set(currentIds)
+            let displayedIdSet = Set(displayedIds)
+            let addedIds = displayedIdSet.subtracting(currentIdSet)
+            let removedCount = currentIdSet.subtracting(displayedIdSet).count
+            let isSmallChange = addedIds.count + removedCount <= 2
+            let additionsAreAtBottom = addedIds.isEmpty || addedIds.allSatisfy { $0 == displayedIds.last }
+            if initialMessagesLoaded, isSmallChange, additionsAreAtBottom {
                 withAnimation { messages = displayedMessages }
             } else {
                 messages = displayedMessages
@@ -187,9 +198,15 @@ extension ChatVM {
             }
         }
 
-        let readyToScroll = pendingScrollMessageIds.filter { messageId in
-            messages.contains { $0.id == messageId || $0.album.contains(where: { $0.id == messageId }) }
+        let updatedAudioPlaylist = displayedMessages.compactMap { $0.messageAudio?.audio }
+        if audioPlaylist.map(\.audio.id) != updatedAudioPlaylist.map(\.audio.id) {
+            audioPlaylist = updatedAudioPlaylist
         }
+
+        let displayedMessageIds = Set(messages.flatMap { message in
+            [message.id] + message.album.map(\.id)
+        })
+        let readyToScroll = pendingScrollMessageIds.intersection(displayedMessageIds)
         if !readyToScroll.isEmpty {
             pendingScrollMessageIds.subtract(readyToScroll)
             nc.post(name: .localScrollToLastOnFocus)
@@ -205,34 +222,33 @@ extension ChatVM {
 
     @MainActor private func updateInitialLoadingState(from snapshot: TelegramMessageSnapshot) {
         guard !initialMessagesLoaded, snapshot.hasMergedHistory else { return }
-        let allMessagesRendered = snapshot.orderedMessageIds.allSatisfy { renderedMessages[$0] != nil }
+        let relevantIds = Set(snapshot.orderedMessageIds).intersection(loadedMessageIds)
+        let allMessagesRendered = relevantIds.allSatisfy { renderedMessages[$0] != nil }
         guard allMessagesRendered else { return }
         withAnimation { initialMessagesLoaded = true }
     }
 
     @MainActor private func invalidateMessageAndReplies(messageId: Int64, version: UInt64) {
-        messageInvalidationVersions[messageId] = version
+        renderStore.invalidate(messageId: messageId, version: version)
         for (renderedId, renderedMessage) in renderedMessages
             where renderedMessage.replyToMessage?.id == messageId
         {
-            messageInvalidationVersions[renderedId] = version
+            renderStore.invalidate(messageId: renderedId, version: version)
         }
     }
 
     @MainActor private func refreshMessage(messageId: Int64, version: UInt64) {
-        refreshVersions[messageId] = version
-        refreshedMessagesAwaitingMerge[messageId] = nil
+        renderStore.beginRefresh(messageId: messageId, version: version)
         let chatId = customChat.chat.id
         Task.background {
             let refreshed = try? await self.service.getMessage(chatId: chatId, messageId: messageId)
             await main {
-                guard self.refreshVersions[messageId] == version else { return }
+                guard self.renderStore.isRefreshStillCurrent(messageId: messageId, version: version) else { return }
                 guard let refreshed else {
-                    self.refreshVersions[messageId] = nil
-                    self.messageInvalidationVersions[messageId] = nil
+                    self.renderStore.cancelRefresh(messageId: messageId)
                     return
                 }
-                self.refreshedMessagesAwaitingMerge[messageId] = refreshed
+                self.renderStore.stageRefreshedMessage(refreshed, for: messageId)
                 self.service.mergeMessages(chatId: chatId, messages: [refreshed])
             }
         }
@@ -261,5 +277,32 @@ extension ChatVM {
             case .chatActionCancel: ""
             }
         withAnimation { actionStatus = status }
+    }
+}
+
+actor MessageRenderLimiter {
+    private var availablePermits: Int
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
+    init(limit: Int) {
+        availablePermits = max(1, limit)
+    }
+
+    func acquire() async {
+        if availablePermits > 0 {
+            availablePermits -= 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            availablePermits += 1
+        } else {
+            waiters.removeFirst().resume()
+        }
     }
 }

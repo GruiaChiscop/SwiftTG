@@ -14,7 +14,7 @@ struct MacChatRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "bubble.left.fill")
+            Image(systemName: chat.kind.systemImage)
                 .foregroundStyle(isOpen ? Color.accentColor : .secondary)
                 .frame(width: 28)
                 .accessibilityHidden(true)
@@ -55,39 +55,77 @@ struct MacChatRow: View {
         .accessibilityActions { chatActions }
         .contextMenu { chatActions }
         .confirmationDialog("Mute \(chat.title)", isPresented: $showMuteOptions) {
-            Button("Mute for 1 hour") { model.setMuteDuration(60 * 60, for: chat) }
-            Button("Mute for 8 hours") { model.setMuteDuration(8 * 60 * 60, for: chat) }
-            Button("Mute for 2 days") { model.setMuteDuration(2 * 24 * 60 * 60, for: chat) }
-            Button("Mute forever") { model.setMuteDuration(Int(Int32.max), for: chat) }
+            ForEach(TelegramMutePreset.allCases) { preset in
+                Button(preset.title) { model.setMuteDuration(preset.duration, for: chat) }
+            }
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Delete \(chat.title)?", isPresented: $showDeleteOptions) {
-            if chat.canBeDeletedOnlyForSelf {
+            if chat.actionPolicy.canDeleteCommunity {
+                Button("Delete for everyone", role: .destructive) {
+                    Task { _ = await model.deleteCommunityFromInfo(chat) }
+                }
+            } else if chat.canBeDeletedOnlyForSelf {
                 Button("Delete only for me", role: .destructive) {
                     model.deleteChat(chat, forEveryone: false)
                 }
             }
-            if chat.canBeDeletedForAllUsers {
+            if chat.actionPolicy.membership != .creator, chat.canBeDeletedForAllUsers {
                 Button("Delete for everyone", role: .destructive) {
                     model.deleteChat(chat, forEveryone: true)
                 }
             }
             Button("Cancel", role: .cancel) {}
         }
+        .confirmationDialog("Clear history in \(chat.title)?", isPresented: $showClearHistoryOptions) {
+            if chat.canBeDeletedOnlyForSelf {
+                Button("Clear only for me", role: .destructive) {
+                    model.clearChatHistory(chat, forEveryone: false)
+                }
+            }
+            if chat.canBeDeletedForAllUsers {
+                Button("Clear for everyone", role: .destructive) {
+                    model.clearChatHistory(chat, forEveryone: true)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All messages will be removed, but the chat will remain in your chat list.")
+        }
+        .confirmationDialog("Leave \(chat.title)?", isPresented: $showLeaveConfirmation) {
+            Button(chat.kind == .channel ? "Leave Channel" : "Leave Group", role: .destructive) {
+                model.leaveChat(chat)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You will leave this chat and it will be removed from your chat list.")
+        }
     }
 
     // MARK: Private
 
+    @State private var showClearHistoryOptions = false
     @State private var showDeleteOptions = false
+    @State private var showLeaveConfirmation = false
     @State private var showMuteOptions = false
 
     private var accessibilityLabel: String {
-        var parts = [chat.title, chat.lastMessage.map(macMessageText) ?? "No messages"]
+        var parts = [String]()
+        if let kind = chat.kind.accessibilityTitle {
+            parts.append(kind)
+        }
+        parts.append(chat.title)
         if chat.unreadCount > 0 {
             parts.append("\(chat.unreadCount) unread")
         }
         if chat.isMarkedAsUnread {
             parts.append("Marked as unread")
+        }
+        if let lastMessage = chat.lastMessage {
+            parts.append(macMessageText(lastMessage))
+            parts.append(telegramMessageDateDescription(lastMessage.date))
+        } else {
+            parts.append("No messages")
         }
         if isMuted {
             parts.append("Muted")
@@ -117,6 +155,7 @@ struct MacChatRow: View {
     }
 
     @ViewBuilder private var chatActions: some View {
+        let policy = chat.actionPolicy
         Button(
             chat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread",
             systemImage: chat.hasUnreadMessages ? "envelope.open" : "envelope.badge",
@@ -140,9 +179,24 @@ struct MacChatRow: View {
             model.toggleArchived(chat)
         }
 
-        if chat.canBeDeletedOnlyForSelf || chat.canBeDeletedForAllUsers {
+        if policy.canClearHistory || policy.canLeave || policy.canDeleteChat {
             Divider()
-            Button("Delete", systemImage: "trash", role: .destructive) {
+        }
+        if policy.canClearHistory {
+            Button("Clear History", systemImage: "eraser", role: .destructive) {
+                showClearHistoryOptions = true
+            }
+        }
+        if let leaveTitle = policy.leaveActionTitle {
+            Button(
+                leaveTitle,
+                systemImage: "rectangle.portrait.and.arrow.right",
+                role: .destructive,
+            ) {
+                showLeaveConfirmation = true
+            }
+        } else if policy.canDeleteChat {
+            Button(policy.deleteActionTitle, systemImage: "trash", role: .destructive) {
                 showDeleteOptions = true
             }
         }

@@ -13,13 +13,22 @@ extension RootVM {
                 case .authorizationStateReady:
                     withAnimation { self.loggedIn = true }
                     bootstrapChatListsIfReady()
+                    Task { @MainActor [weak self] in
+                        await self?.resumePendingNotificationOpen()
+                    }
                 case .authorizationStateClosed,
                      .authorizationStateClosing,
                      .authorizationStateLoggingOut,
                      .authorizationStateWaitCode,
                      .authorizationStateWaitPassword,
                      .authorizationStateWaitPhoneNumber:
-                    withAnimation { self.loggedIn = false }
+                    withAnimation {
+                        self.loggedIn = false
+                        self.path.removeAll()
+                    }
+                    Task { @MainActor [weak self] in
+                        self?.discardPendingNotificationOpen()
+                    }
                 default:
                     break
                 }

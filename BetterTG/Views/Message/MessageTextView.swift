@@ -45,7 +45,7 @@ struct MessageTextView: View {
 struct TextView: UIViewRepresentable {
     // MARK: Internal
 
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate, UITextViewDelegate {
         // MARK: Lifecycle
 
         init(textView: UITextView, formattedText: FormattedText) {
@@ -80,6 +80,13 @@ struct TextView: UIViewRepresentable {
         
         func textViewDidChangeSelection(_ textView: UITextView) {
             textView.selectedTextRange = nil
+        }
+
+        func gestureRecognizer(
+            _: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer,
+        ) -> Bool {
+            true
         }
         
         @objc func handleTap(_ tapGesture: UITapGestureRecognizer) {
@@ -130,6 +137,7 @@ struct TextView: UIViewRepresentable {
         textView.backgroundColor = .clear
         textView.isScrollEnabled = false
         textView.isEditable = false
+        textView.isSelectable = true
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.textContainer.lineFragmentPadding = 0
         textView.textContainerInset = .zero
@@ -138,6 +146,8 @@ struct TextView: UIViewRepresentable {
             target: context.coordinator,
             action: #selector(context.coordinator.handleTap),
         )
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = context.coordinator
         textView.addGestureRecognizer(tapGesture)
         return textView
     }

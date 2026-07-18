@@ -29,7 +29,7 @@ import TDLibKit
     var waitPremiumErrorShown = false
 
     var formattedPhoneNumber: String {
-        "+\(selectedCountryNum.phoneNumberPrefix) \(phoneNumber)"
+        TelegramPhoneNumber.display(callingCode: selectedCountryNum.phoneNumberPrefix, number: phoneNumber)
     }
 
     func start() async {
@@ -64,7 +64,10 @@ import TDLibKit
     }
 
     func submitPhoneNumber() {
-        let number = "\(selectedCountryNum.phoneNumberPrefix)\(phoneNumber)"
+        guard let number = TelegramPhoneNumber.normalized(
+            callingCode: selectedCountryNum.phoneNumberPrefix,
+            number: phoneNumber,
+        ) else { return }
         Task {
             _ = try? await service.setAuthenticationPhoneNumber(phoneNumber: number, settings: nil)
         }
@@ -75,15 +78,6 @@ import TDLibKit
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private let service: any TelegramService
     @ObservationIgnored private var started = false
-
-    private static func phoneNumberInfo(_ country: CountryInfo) -> PhoneNumberInfo? {
-        guard let callingCode = country.callingCodes.first else { return nil }
-        return PhoneNumberInfo(
-            country: country.countryCode,
-            phoneNumberPrefix: callingCode,
-            name: country.englishName,
-        )
-    }
 
     private func observeAuthorizationState() {
         service.authorizationStatePublisher
@@ -114,10 +108,8 @@ import TDLibKit
     }
 
     private func apply(countries: [CountryInfo], currentCountryCode: String) {
-        countryNums = countries.compactMap(Self.phoneNumberInfo).sorted { $0.name < $1.name }
-        if let country = countries.first(where: { $0.countryCode == currentCountryCode }),
-           let info = Self.phoneNumberInfo(country)
-        {
+        countryNums = TelegramPhoneNumber.countries(from: countries)
+        if let info = TelegramPhoneNumber.country(for: currentCountryCode, in: countryNums) {
             selectedCountryNum = info
         }
     }

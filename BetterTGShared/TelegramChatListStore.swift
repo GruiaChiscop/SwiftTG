@@ -3,11 +3,128 @@
 import Combine
 @preconcurrency import TDLibKit
 
+// MARK: - ChatListItemKind
+
+enum ChatListItemKind: Sendable, Equatable {
+    case privateChat
+    case group
+    case channel
+    case secretChat
+
+    // MARK: Lifecycle
+
+    init(_ type: ChatType) {
+        self =
+            switch type {
+            case .chatTypeBasicGroup:
+                .group
+            case .chatTypeSupergroup(let supergroup):
+                supergroup.isChannel ? .channel : .group
+            case .chatTypeSecret:
+                .secretChat
+            case .chatTypePrivate:
+                .privateChat
+            }
+    }
+
+    // MARK: Internal
+
+    var accessibilityTitle: String? {
+        switch self {
+        case .group: "Group"
+        case .channel: "Channel"
+        case .secretChat: "Secret chat"
+        case .privateChat: nil
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .group: "person.2.fill"
+        case .channel: "megaphone.fill"
+        case .secretChat: "lock.fill"
+        case .privateChat: "bubble.left.fill"
+        }
+    }
+}
+
+// MARK: - ChatListCommunity
+
+enum ChatListCommunity: Sendable, Equatable, Hashable {
+    case basicGroup(Int64)
+    case supergroup(Int64)
+
+    // MARK: Lifecycle
+
+    init?(_ type: ChatType) {
+        switch type {
+        case .chatTypeBasicGroup(let value):
+            self = .basicGroup(value.basicGroupId)
+        case .chatTypeSupergroup(let value):
+            self = .supergroup(value.supergroupId)
+        case .chatTypePrivate, .chatTypeSecret:
+            return nil
+        }
+    }
+}
+
+// MARK: - ChatListMembership
+
+enum ChatListMembership: Sendable, Equatable {
+    case member
+    case creator
+    case notMember
+
+    // MARK: Lifecycle
+
+    init(_ status: ChatMemberStatus) {
+        self =
+            switch status {
+            case .chatMemberStatusCreator:
+                .creator
+            case .chatMemberStatusAdministrator, .chatMemberStatusMember:
+                .member
+            case .chatMemberStatusRestricted(let value):
+                value.isMember ? .member : .notMember
+            case .chatMemberStatusBanned, .chatMemberStatusLeft:
+                .notMember
+            }
+    }
+}
+
+func telegramCanPostMessages(in supergroup: Supergroup) -> Bool {
+    telegramCanPostMessages(isChannel: supergroup.isChannel, status: supergroup.status)
+}
+
+func telegramCanPostMessages(isChannel: Bool, status: ChatMemberStatus) -> Bool {
+    guard isChannel else {
+        switch status {
+        case .chatMemberStatusBanned, .chatMemberStatusLeft:
+            return false
+        case .chatMemberStatusRestricted(let value):
+            return value.isMember
+        case .chatMemberStatusAdministrator, .chatMemberStatusCreator, .chatMemberStatusMember:
+            return true
+        }
+    }
+
+    switch status {
+    case .chatMemberStatusCreator:
+        return true
+    case .chatMemberStatusAdministrator(let value):
+        return value.rights.canPostMessages
+    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember,
+         .chatMemberStatusRestricted:
+        return false
+    }
+}
+
 // MARK: - ChatListItemState
 
 struct ChatListItemState: Sendable, Equatable {
     let chatId: Int64
     var title: String
+    var kind: ChatListItemKind
     var positions: [ChatPosition]
     var unreadCount: Int
     var lastMessage: Message?
@@ -18,13 +135,69 @@ struct ChatListItemState: Sendable, Equatable {
     var isMarkedAsUnread: Bool
     var canBeDeletedOnlyForSelf: Bool
     var canBeDeletedForAllUsers: Bool
+    var community: ChatListCommunity?
+    var membership: ChatListMembership?
+    var canPostMessages: Bool?
 
     var hasUnreadMessages: Bool {
         unreadCount > 0 || isMarkedAsUnread
     }
 
+    var actionPolicy: TelegramChatActionPolicy {
+        TelegramChatActionPolicy(
+            kind: kind,
+            membership: membership,
+            canBeDeletedOnlyForSelf: canBeDeletedOnlyForSelf,
+            canBeDeletedForAllUsers: canBeDeletedForAllUsers,
+        )
+    }
+
     func position(in list: ChatList) -> ChatPosition? {
         positions.first { $0.list == list }
+    }
+}
+
+extension ChatListItemState {
+    /// Builds an item for a `Chat` that isn't in the store's snapshot yet (e.g. resolved via a deep
+    /// link or search). `membership` should come from `TelegramService.resolveMembership(for:)`
+    /// rather than being left `nil`, or Leave/Delete actions gated on membership won't show up.
+    init(_ chat: Chat, membership: ChatListMembership?, canPostMessages: Bool? = nil) {
+        self.init(
+            chatId: chat.id,
+            title: chat.title,
+            kind: ChatListItemKind(chat.type),
+            positions: chat.positions,
+            unreadCount: chat.unreadCount,
+            lastMessage: chat.lastMessage,
+            draftMessage: chat.draftMessage,
+            notificationSettings: chat.notificationSettings,
+            lastReadInboxMessageId: chat.lastReadInboxMessageId,
+            lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
+            isMarkedAsUnread: chat.isMarkedAsUnread,
+            canBeDeletedOnlyForSelf: chat.canBeDeletedOnlyForSelf,
+            canBeDeletedForAllUsers: chat.canBeDeletedForAllUsers,
+            community: ChatListCommunity(chat.type),
+            membership: membership,
+            canPostMessages: canPostMessages,
+        )
+    }
+}
+
+extension TelegramService {
+    /// Fetches the current user's membership in `chat`'s group/supergroup directly from TDLib,
+    /// for chats not yet known to `TelegramChatListStore` (its `memberships` cache is only ever
+    /// populated by `updateBasicGroup`/`updateSupergroup` push updates).
+    func resolveMembership(for chat: Chat) async -> ChatListMembership? {
+        switch ChatListCommunity(chat.type) {
+        case .basicGroup(let id):
+            guard let group = try? await getBasicGroup(basicGroupId: id) else { return nil }
+            return ChatListMembership(group.status)
+        case .supergroup(let id):
+            guard let supergroup = try? await getSupergroup(supergroupId: id) else { return nil }
+            return ChatListMembership(supergroup.status)
+        case nil:
+            return nil
+        }
     }
 }
 
@@ -80,20 +253,21 @@ final class TelegramChatListStore: @unchecked Sendable {
             item.isMarkedAsUnread = value.isMarkedAsUnread
             state.items[value.chatId] = item
         case .updateNewChat(let value):
+            let community = ChatListCommunity(value.chat.type)
             state.items[value.chat.id] = ChatListItemState(
-                chatId: value.chat.id,
-                title: value.chat.title,
-                positions: value.chat.positions,
-                unreadCount: value.chat.unreadCount,
-                lastMessage: value.chat.lastMessage,
-                draftMessage: value.chat.draftMessage,
-                notificationSettings: value.chat.notificationSettings,
-                lastReadInboxMessageId: value.chat.lastReadInboxMessageId,
-                lastReadOutboxMessageId: value.chat.lastReadOutboxMessageId,
-                isMarkedAsUnread: value.chat.isMarkedAsUnread,
-                canBeDeletedOnlyForSelf: value.chat.canBeDeletedOnlyForSelf,
-                canBeDeletedForAllUsers: value.chat.canBeDeletedForAllUsers,
+                value.chat,
+                membership: community.flatMap { memberships[$0] },
+                canPostMessages: community.flatMap { postingPermissions[$0] },
             )
+        case .updateBasicGroup(let value):
+            let community = ChatListCommunity.basicGroup(value.basicGroup.id)
+            memberships[community] = ChatListMembership(value.basicGroup.status)
+            guard updateCommunityAccess(in: &state, for: community) else { return }
+        case .updateSupergroup(let value):
+            let community = ChatListCommunity.supergroup(value.supergroup.id)
+            memberships[community] = ChatListMembership(value.supergroup.status)
+            postingPermissions[community] = telegramCanPostMessages(in: value.supergroup)
+            guard updateCommunityAccess(in: &state, for: community) else { return }
         case .updateChatPosition(let value):
             guard var item = state.items[value.chatId] else { return }
             item.positions.removeAll { $0.list == value.position.list }
@@ -138,19 +312,11 @@ final class TelegramChatListStore: @unchecked Sendable {
                 state.items[chat.id] = existing
                 changed = true
             } else {
+                let community = ChatListCommunity(chat.type)
                 state.items[chat.id] = ChatListItemState(
-                    chatId: chat.id,
-                    title: chat.title,
-                    positions: chat.positions,
-                    unreadCount: chat.unreadCount,
-                    lastMessage: chat.lastMessage,
-                    draftMessage: chat.draftMessage,
-                    notificationSettings: chat.notificationSettings,
-                    lastReadInboxMessageId: chat.lastReadInboxMessageId,
-                    lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
-                    isMarkedAsUnread: chat.isMarkedAsUnread,
-                    canBeDeletedOnlyForSelf: chat.canBeDeletedOnlyForSelf,
-                    canBeDeletedForAllUsers: chat.canBeDeletedForAllUsers,
+                    chat,
+                    membership: community.flatMap { memberships[$0] },
+                    canPostMessages: community.flatMap { postingPermissions[$0] },
                 )
                 changed = true
             }
@@ -162,5 +328,27 @@ final class TelegramChatListStore: @unchecked Sendable {
 
     // MARK: Private
 
+    private var memberships = [ChatListCommunity: ChatListMembership]()
+    private var postingPermissions = [ChatListCommunity: Bool]()
     private let subject = CurrentValueSubject<ChatListSnapshot, Never>(.empty)
+
+    private func updateCommunityAccess(in state: inout ChatListSnapshot, for community: ChatListCommunity) -> Bool {
+        guard let membership = memberships[community] else { return false }
+        let canPostMessages = postingPermissions[community]
+        let chatIds = state.items.compactMap { chatId, item in
+            item.community == community
+                && (item.membership != membership || item.canPostMessages != canPostMessages)
+                ? chatId
+                : nil
+        }
+        var changed = false
+        for chatId in chatIds {
+            guard var item = state.items[chatId] else { continue }
+            item.membership = membership
+            item.canPostMessages = canPostMessages
+            state.items[chatId] = item
+            changed = true
+        }
+        return changed
+    }
 }

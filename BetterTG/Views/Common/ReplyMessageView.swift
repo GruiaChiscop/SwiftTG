@@ -124,6 +124,8 @@ struct ReplyMessageView: View {
                     Text(getAttributedString(from: messageVoiceNote.caption))
                 }
             }
+        case .messageAudio(let messageAudio):
+            Text(telegramAudioDescription(messageAudio))
         case .messageDocument(let messageDocument):
             if messageDocument.caption.text.isEmpty {
                 Text("File: \(messageDocument.document.fileName)")
@@ -147,6 +149,8 @@ struct ReplyMessageView: View {
             messageVideo.caption.text.isEmpty ? "Video" : "Video: \(messageVideo.caption.text)"
         case .messageVoiceNote(let messageVoiceNote):
             messageVoiceNote.caption.text.isEmpty ? "Voice message" : "Voice message: \(messageVoiceNote.caption.text)"
+        case .messageAudio(let messageAudio):
+            telegramAudioDescription(messageAudio)
         case .messageDocument(let messageDocument):
             messageDocument.caption.text.isEmpty
                 ? "File: \(messageDocument.document.fileName)"

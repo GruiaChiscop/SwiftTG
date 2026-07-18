@@ -20,22 +20,29 @@ struct LoginView: View {
                 switch model.loginState {
                 case .phoneNumber:
                     loginStateView {
-                        GroupBox {
-                            HStack {
-                                Text("+\(model.selectedCountryNum.phoneNumberPrefix)")
-                                    
-                                TextField("Phone Number", text: $model.phoneNumber)
-                                    .focused($focused, equals: .phoneNumber)
-                                    .keyboardType(.numberPad)
+                        VStack(spacing: 12) {
+                            GroupBox {
+                                HStack {
+                                    Text("+\(model.selectedCountryNum.phoneNumberPrefix)")
+
+                                    TextField("Phone Number", text: $model.phoneNumber)
+                                        .focused($focused, equals: .phoneNumber)
+                                        .keyboardType(.numberPad)
+                                }
+                            } label: {
+                                Button("\(model.selectedCountryNum.flagEmoji) \(model.selectedCountryNum.name)") {
+                                    showSelectCountryView.toggle()
+                                }
+                                .accessibilityLabel(
+                                    "Country: \(model.selectedCountryNum.name), +\(model.selectedCountryNum.phoneNumberPrefix)",
+                                )
+                                .accessibilityHint("Opens country picker")
                             }
-                        } label: {
-                            Button(model.selectedCountryNum.name) {
-                                showSelectCountryView.toggle()
-                            }
-                            .accessibilityLabel(
-                                "Country: \(model.selectedCountryNum.name), +\(model.selectedCountryNum.phoneNumberPrefix)",
-                            )
-                            .accessibilityHint("Opens country picker")
+
+                            Text(TelegramLoginGuidance.smsWarning)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
                         }
                     }
                     .sheet(isPresented: $showSelectCountryView) {

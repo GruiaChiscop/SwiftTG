@@ -64,6 +64,37 @@ enum TelegramChatActions {
         )
     }
 
+    static func clearChatHistory(
+        service: any TelegramService,
+        chatId: Int64,
+        forEveryone: Bool,
+    ) async {
+        _ = try? await service.deleteChatHistory(
+            chatId: chatId,
+            removeFromChatList: false,
+            revoke: forEveryone,
+        )
+    }
+
+    static func leaveChat(
+        service: any TelegramService,
+        chatId: Int64,
+    ) async {
+        guard await (try? service.leaveChat(chatId: chatId)) != nil else { return }
+        _ = try? await service.deleteChatHistory(
+            chatId: chatId,
+            removeFromChatList: true,
+            revoke: false,
+        )
+    }
+
+    static func deleteCommunity(
+        service: any TelegramService,
+        chatId: Int64,
+    ) async {
+        _ = try? await service.deleteChat(chatId: chatId)
+    }
+
     static func setMuteDuration(
         service: any TelegramService,
         chatId: Int64,

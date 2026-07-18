@@ -11,6 +11,7 @@ enum TelegramMessageEditing {
         case .messagePhoto(let content): content.caption
         case .messageVideo(let content): content.caption
         case .messageVoiceNote(let content): content.caption
+        case .messageAudio(let content): content.caption
         case .messageDocument(let content): content.caption
         default: nil
         }
@@ -25,6 +26,7 @@ enum TelegramMessageEditing {
         messageContent: MessageContent,
         newText: FormattedText,
     ) async -> Bool {
+        let newText = await TelegramTextFormatting.addingAutomaticEntities(service: service, to: newText)
         switch messageContent {
         case .messageText:
             _ = try? await service.editMessageText(
@@ -38,7 +40,7 @@ enum TelegramMessageEditing {
                 replyMarkup: nil,
             )
             return true
-        case .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
+        case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
             _ = try? await service.editMessageCaption(
                 caption: newText,
                 chatId: chatId,

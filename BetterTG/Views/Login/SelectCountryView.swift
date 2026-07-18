@@ -1,4 +1,4 @@
-// SelectCountryView.swift
+    // SelectCountryView.swift
 
 import SwiftUI
 
@@ -11,29 +11,26 @@ struct SelectCountryView: View {
     
     var filteredCountries: [PhoneNumberInfo] {
         countryNums
-            .filter { country in
-                query.isEmpty
-                    || country.name.lowercased().contains(query.lowercased())
-                    || country.phoneNumberPrefix.lowercased().contains(query.lowercased())
-                    || country.country.lowercased().contains(query.lowercased())
-            }
+            .filter { $0.matches(query) }
     }
     
     var body: some View {
         NavigationStack {
-            List(filteredCountries, id: \.self) { info in
+            List(filteredCountries) { info in
                 Button {
                     selectedCountryNum = info
                     showSelectCountryView.toggle()
                 } label: {
                     HStack {
+                        Text(info.flagEmoji)
+                            .accessibilityHidden(true)
                         Text(info.name)
                         Spacer()
                         Text("+\(info.phoneNumberPrefix)")
                     }
                     .foregroundStyle(.white)
                 }
-                .accessibilityLabel("\(info.name), calling code plus \(info.phoneNumberPrefix)")
+                .accessibilityLabel(info.accessibilityLabel)
                 .accessibilityHint("Selects country")
             }
             .background(.black)

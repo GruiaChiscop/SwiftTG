@@ -17,9 +17,10 @@ import TDLibKit
         album: [Message] = [Message](),
         sendFailed: Bool = false,
         forwardedFrom: String? = nil,
+        serviceMessageText: String? = nil,
         formattedText: FormattedText? = nil,
         properties: MessageProperties,
-        canReact: Bool = false,
+        availableReactions: [AvailableReaction] = [],
     ) {
         self.message = message
         self.senderUser = senderUser
@@ -29,14 +30,17 @@ import TDLibKit
         self.album = album
         self.sendFailed = sendFailed
         self.forwardedFrom = forwardedFrom
+        self.serviceMessageText = serviceMessageText
         self.formattedText = formattedText
         self.properties = properties
-        self.canReact = canReact
+        self.availableReactions = availableReactions
     }
     
     // MARK: Internal
 
-    var message: Message
+    /// Replaced as a whole when TDLib publishes a newer snapshot. Tracking every field read of
+    /// this large value creates a dense Observation graph across all message rows.
+    @ObservationIgnored var message: Message
     var senderUser: User?
     var replyUser: User?
     var replySenderName: String?
@@ -44,15 +48,23 @@ import TDLibKit
     var album = [Message]()
     var sendFailed = false
     var forwardedFrom: String?
+    var serviceMessageText: String?
     var formattedText: FormattedText?
     var properties: MessageProperties
-    var canReact: Bool
+    var availableReactions: [AvailableReaction]
     
     var date: Foundation.Date { Date(timeIntervalSince1970: TimeInterval(message.date)) }
     
     var messageVoiceNote: MessageVoiceNote? {
         if case .messageVoiceNote(let messageVoiceNote) = message.content {
             return messageVoiceNote
+        }
+        return nil
+    }
+
+    var messageAudio: MessageAudio? {
+        if case .messageAudio(let messageAudio) = message.content {
+            return messageAudio
         }
         return nil
     }
@@ -83,16 +95,7 @@ import TDLibKit
 
 extension CustomMessage: Hashable {
     func hash(into hasher: inout Hasher) {
-        hasher.combine(message)
-        hasher.combine(senderUser)
-        hasher.combine(replyUser)
-        hasher.combine(replySenderName)
-        hasher.combine(replyToMessage)
-        hasher.combine(album)
-        hasher.combine(sendFailed)
-        hasher.combine(forwardedFrom)
-        hasher.combine(formattedText)
-        hasher.combine(properties)
+        hasher.combine(id)
     }
 }
 
@@ -106,6 +109,6 @@ extension CustomMessage: Identifiable {
 
 extension CustomMessage: Equatable {
     static func == (lhs: CustomMessage, rhs: CustomMessage) -> Bool {
-        lhs.hashValue == rhs.hashValue
+        lhs.id == rhs.id
     }
 }

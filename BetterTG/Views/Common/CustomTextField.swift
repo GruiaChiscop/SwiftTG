@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 // MARK: - CustomUITextView
 
 private final class CustomUITextView: UITextView {
+    var allowsAttachmentPaste = true
     var isPastingText = false
     
     override func editMenu(for textRange: UITextRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
@@ -74,12 +75,69 @@ private final class CustomUITextView: UITextView {
     }
     
     override func paste(_ sender: Any?) {
-        if UIPasteboard.general.hasImages, let images = UIPasteboard.general.images {
-            nc.post(name: .localPasteImages, object: images.compactMap { writeImage($0) })
-        } else {
-            isPastingText = true
+        if allowsAttachmentPaste {
+            let urls = pastedFileURLs(from: UIPasteboard.general)
+            if !urls.isEmpty {
+                nc.post(name: .localPasteFiles, object: urls)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: urls.count == 1
+                        ? "Attached \(urls[0].lastPathComponent)"
+                        : "Attached \(urls.count) files",
+                )
+                return
+            }
+            if UIPasteboard.general.hasImages,
+               let images = UIPasteboard.general.images
+            {
+                nc.post(name: .localPasteImages, object: images.compactMap { writeImage($0) })
+                return
+            }
         }
+        isPastingText = true
         super.paste(sender)
+    }
+
+    private func pastedFileURLs(from pasteboard: UIPasteboard) -> [URL] {
+        let fileURLs = (pasteboard.urls ?? []).filter(\.isExistingFile)
+        if !fileURLs.isEmpty {
+            return fileURLs
+        }
+
+        guard let string = pasteboard.string else { return [] }
+        let candidates = string
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !candidates.isEmpty else { return [] }
+        let urls = candidates.compactMap(fileURL(fromPathText:))
+        return urls.count == candidates.count ? urls : []
+    }
+
+    private func fileURL(fromPathText text: String) -> URL? {
+        var path = text
+        if path.count >= 2,
+           (path.first == "\"" && path.last == "\"" || path.first == "'" && path.last == "'")
+        {
+            path.removeFirst()
+            path.removeLast()
+        }
+        path = path.replacingOccurrences(of: "\\ ", with: " ")
+        let url: URL
+        if let parsed = URL(string: path), parsed.isFileURL {
+            url = parsed
+        } else {
+            url = URL(filePath: (path as NSString).expandingTildeInPath)
+        }
+        return url.isExistingFile ? url : nil
+    }
+}
+
+private extension URL {
+    var isExistingFile: Bool {
+        guard isFileURL else { return false }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
     }
 }
 
@@ -127,12 +185,14 @@ private struct UITextViewWrapper: UIViewRepresentable {
     @Binding var text: AttributedString
     @Binding var calculatedHeight: CGFloat
     
+    var allowsAttachmentPaste: Bool
     var becomeFirstResponer: Bool
     
     let textView = CustomUITextView()
     
     func makeUIView(context: Context) -> CustomUITextView {
         textView.delegate = context.coordinator
+        textView.allowsAttachmentPaste = allowsAttachmentPaste
         textView.attributedText = NSMutableAttributedString(string: text.string, attributes: defaultAttributes())
         textView.font = .body
         textView.adjustsFontForContentSizeCategory = true
@@ -153,6 +213,7 @@ private struct UITextViewWrapper: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: CustomUITextView, context _: Context) {
+        uiView.allowsAttachmentPaste = allowsAttachmentPaste
         if AttributedString(uiView.attributedText) != text {
             uiView.attributedText = NSAttributedString(text)
         }
@@ -180,7 +241,13 @@ private struct UITextViewWrapper: UIViewRepresentable {
 struct CustomTextField: View {
     // MARK: Lifecycle
 
-    init(_ placeholder: String = "", text: Binding<AttributedString>, focus: Bool = false) {
+    init(
+        _ placeholder: String = "",
+        text: Binding<AttributedString>,
+        focus: Bool = false,
+        allowsAttachmentPaste: Bool = true,
+    ) {
+        self.allowsAttachmentPaste = allowsAttachmentPaste
         self.focus = focus
         self.placeholder = placeholder
         self._text = text
@@ -190,7 +257,12 @@ struct CustomTextField: View {
     // MARK: Internal
 
     var body: some View {
-        UITextViewWrapper(text: $text, calculatedHeight: $dynamicHeight, becomeFirstResponer: focus)
+        UITextViewWrapper(
+            text: $text,
+            calculatedHeight: $dynamicHeight,
+            allowsAttachmentPaste: allowsAttachmentPaste,
+            becomeFirstResponer: focus,
+        )
             .frame(height: dynamicHeight)
             .accessibilityLabel(placeholder)
             .accessibilityHint("Enter a message")
@@ -216,4 +288,5 @@ struct CustomTextField: View {
     
     private var placeholder: String
     private var focus: Bool
+    private var allowsAttachmentPaste: Bool
 }

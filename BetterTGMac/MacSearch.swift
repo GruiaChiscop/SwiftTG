@@ -80,8 +80,9 @@ extension MacSessionModel {
                             : searchedChatList,
                     ))
                 } else if let chat = try? await service.getChat(chatId: chatId) {
+                    let membership = await service.resolveMembership(for: chat)
                     chatResults.append(.init(
-                        chat: ChatListItemState(chat),
+                        chat: ChatListItemState(chat, membership: membership),
                         chatList: chat.positions.first?.list ?? searchedChatList,
                     ))
                 }
@@ -122,24 +123,5 @@ extension MacSessionModel {
         case .message(let chatId, let messageId):
             activateChat(chatId, messageId: messageId)
         }
-    }
-}
-
-private extension ChatListItemState {
-    init(_ chat: Chat) {
-        self.init(
-            chatId: chat.id,
-            title: chat.title,
-            positions: chat.positions,
-            unreadCount: chat.unreadCount,
-            lastMessage: chat.lastMessage,
-            draftMessage: chat.draftMessage,
-            notificationSettings: chat.notificationSettings,
-            lastReadInboxMessageId: chat.lastReadInboxMessageId,
-            lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
-            isMarkedAsUnread: chat.isMarkedAsUnread,
-            canBeDeletedOnlyForSelf: chat.canBeDeletedOnlyForSelf,
-            canBeDeletedForAllUsers: chat.canBeDeletedForAllUsers,
-        )
     }
 }

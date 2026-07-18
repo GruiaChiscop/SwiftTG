@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 
 struct MacMessageCapabilities {
     let properties: MessageProperties
-    let canReactWithHeart: Bool
+    let availableReactions: [AvailableReaction]
 }
 
 // MARK: - MacMessageReplyContext
@@ -37,8 +37,13 @@ private enum MacMessageSenderKey: Hashable {
     // MARK: Lifecycle
 
     init() {
-        self.session = TelegramSession()
+        let session = TelegramSession()
+        self.session = session
         self.service = session
+        self.pushNotifications = TelegramApplePushRegistration(
+            service: session,
+            isAppSandbox: Self.isAppSandbox,
+        )
         observeSession()
     }
 
@@ -46,6 +51,8 @@ private enum MacMessageSenderKey: Hashable {
 
     var authorizationState: AuthorizationState?
     var authorizationStatus = "Starting Telegram…"
+    var sessionEnded = false
+    var canReauthenticate = false
     var chatList = ChatListSnapshot.empty
     var selectedChatFolderId = MacChatFolderID.main
     var focusedChatId: Int64?
@@ -59,9 +66,13 @@ private enum MacMessageSenderKey: Hashable {
     var messageReplyContexts = [Int64: MacMessageReplyContext]()
     var messageForwardedFrom = [Int64: String]()
     var messageSenderNames = [Int64: String]()
+    var messageServiceDescriptions = [Int64: String]()
     var messageActionError: String?
     var selectedDocumentURLs = [URL]()
     var selectedPhotoURLs = [URL]()
+    var countryNumbers = [PhoneNumberInfo]()
+    var selectedCountryNumber: PhoneNumberInfo?
+    var callingCode = ""
     var phoneNumber = ""
     var loginCode = ""
     var password = ""
@@ -82,16 +93,25 @@ private enum MacMessageSenderKey: Hashable {
     var latestHistoryTargetMessageId: Int64?
     var openedUnreadCount = 0
     var openedLastReadInboxMessageId: Int64 = 0
+    var conversationHeaderBaseStatus: String?
+    var conversationHeaderActivities = [MessageSender: ChatAction]()
 
     @ObservationIgnored var bootstrapTask: Task<Void, Never>?
     @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
     @ObservationIgnored var searchTask: Task<Void, Never>?
     @ObservationIgnored var searchGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
-    @ObservationIgnored let service: any TelegramService
+    @ObservationIgnored var service: any TelegramService
+
+    @ObservationIgnored var conversationHeaderTask: Task<Void, Never>?
+    @ObservationIgnored var openedChatType: ChatType?
 
     var chatItems: [ChatListItemState] {
         chatList.chatIds(in: selectedChatList).compactMap { chatList.items[$0] }
+    }
+
+    var formattedPhoneNumber: String {
+        TelegramPhoneNumber.display(callingCode: callingCode, number: phoneNumber)
     }
 
     var openedChat: ChatListItemState? {
@@ -102,10 +122,14 @@ private enum MacMessageSenderKey: Hashable {
     func start() {
         guard !started else { return }
         started = true
+        pushNotifications.start()
         guard let directory = try? FileManager.default
             .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appending(path: "BetterTG/td")
+            .appending(path: "BetterTG/\(Self.databaseDirectoryName)")
         else { return }
+        if UserDefaults.standard.object(forKey: Self.authorizationHistoryDefaultsKey) == nil {
+            databaseExistedBeforeStart = FileManager.default.fileExists(atPath: directory.path())
+        }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         session.start(configuration: .init(
             apiHash: Secret.apiHash,
@@ -119,20 +143,74 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     func stop() {
+        isStopping = true
+        pushNotifications.stop()
         cancelVoiceRecording()
         historyRequestGeneration &+= 1
+        conversationHeaderTask?.cancel()
         selectedPhotoURLs = []
         selectedDocumentURLs = []
+        countryLoadTask?.cancel()
         openTask?.cancel()
         bootstrapTask?.cancel()
         session.close()
     }
 
+    func reauthenticate() {
+        guard sessionEnded, canReauthenticate else { return }
+        UserDefaults.standard.set(false, forKey: Self.wasAuthorizedDefaultsKey)
+
+        if canReuseSessionForReauthentication {
+            canReuseSessionForReauthentication = false
+            sessionEnded = false
+            canReauthenticate = false
+            authorizationStatus = "Phone number required"
+            loadCountriesIfNeeded()
+            return
+        }
+
+        cancelWorkForSessionReplacement()
+        let previousSession = session
+        let replacementSession = TelegramSession()
+        session = replacementSession
+        service = replacementSession
+        pushNotifications.replaceService(replacementSession)
+        observeSession()
+
+        authorizationState = nil
+        authorizationStatus = "Preparing reauthentication…"
+        sessionEnded = false
+        canReauthenticate = false
+        isStopping = false
+        started = false
+
+        previousSession.close()
+        start()
+    }
+
     func submitPhoneNumber() {
-        let normalized = phoneNumber.filter { $0.isNumber || $0 == "+" }
-        guard !normalized.isEmpty else { return }
+        guard let normalized = TelegramPhoneNumber.normalized(
+            callingCode: callingCode,
+            number: phoneNumber,
+        ) else { return }
         runLoginRequest {
             try await self.service.setAuthenticationPhoneNumber(phoneNumber: normalized, settings: nil)
+        }
+    }
+
+    func didRegisterForRemoteNotifications(deviceToken: Data) {
+        pushNotifications.didRegister(deviceToken: deviceToken)
+    }
+
+    func didFailToRegisterForRemoteNotifications(error: any Swift.Error) {
+        print("APNs registration failed: \(error.localizedDescription)")
+    }
+
+    func processRemoteNotification(userInfo: [AnyHashable: Any]) async {
+        do {
+            try await pushNotifications.process(userInfo: userInfo)
+        } catch {
+            print("TDLib push processing failed: \(error.localizedDescription)")
         }
     }
 
@@ -148,6 +226,23 @@ private enum MacMessageSenderKey: Hashable {
         runLoginRequest {
             try await self.service.checkAuthenticationPassword(password: self.password)
         }
+    }
+
+    func selectCountry(_ country: PhoneNumberInfo) {
+        selectedCountryNumber = country
+        callingCode = country.phoneNumberPrefix
+        preferredCountryId = country.country
+    }
+
+    @discardableResult func updateCallingCode(_ value: String) -> Bool {
+        let resolution = TelegramPhoneNumber.resolveCallingCode(
+            value,
+            countries: countryNumbers,
+            preferredCountryId: preferredCountryId,
+        )
+        callingCode = resolution.callingCode
+        selectedCountryNumber = resolution.country
+        return resolution.shouldAdvanceToNumber
     }
 
     func activateFocusedChat() {
@@ -186,6 +281,7 @@ private enum MacMessageSenderKey: Hashable {
 
         let previousChatId = openedChatId
         openedChatId = chatId
+        prepareConversationHeader(for: chatId, fallbackKind: openingChat?.kind)
         messages = .empty(chatId: chatId)
         editingMessage = nil
         replyingToMessage = nil
@@ -194,6 +290,7 @@ private enum MacMessageSenderKey: Hashable {
         messageReplyContexts = [:]
         messageForwardedFrom = [:]
         messageSenderNames = [:]
+        messageServiceDescriptions = [:]
         isLoadingMessages = true
         isLoadingOlderMessages = false
         isLoadingLatestMessages = false
@@ -269,6 +366,36 @@ private enum MacMessageSenderKey: Hashable {
         selectedDocumentURLs = panel.urls
     }
 
+    @discardableResult
+    func attachPastedFiles(_ urls: [URL]) -> Bool {
+        guard !isRecordingVoice, editingMessage == nil else { return false }
+        let pastedFiles = urls.filter { url in
+            guard url.isFileURL else { return false }
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                && !isDirectory.boolValue
+        }
+        guard !pastedFiles.isEmpty else { return false }
+
+        var seenURLs = Set<URL>()
+        let combined = (selectedPhotoURLs + selectedDocumentURLs + pastedFiles).filter {
+            seenURLs.insert($0).inserted
+        }
+        let containsOnlyImages = combined.allSatisfy { url in
+            let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
+            guard let type = type ?? UTType(filenameExtension: url.pathExtension) else { return false }
+            return type.conforms(to: .image)
+        }
+        if containsOnlyImages {
+            selectedDocumentURLs = []
+            selectedPhotoURLs = combined
+        } else {
+            selectedPhotoURLs = []
+            selectedDocumentURLs = combined
+        }
+        return true
+    }
+
     func removeSelectedDocument(_ url: URL) {
         selectedDocumentURLs.removeAll { $0 == url }
     }
@@ -287,7 +414,7 @@ private enum MacMessageSenderKey: Hashable {
         }
 
         MacVoicePlayer.shared.stop()
-        let url = URL(filePath: NSTemporaryDirectory()).appending(path: "\(UUID().uuidString).ogg")
+        let url = TelegramVoiceNoteSending.temporaryFileURL()
         let recorder = VoiceNoteRecorder()
         do {
             try recorder.start()
@@ -326,7 +453,7 @@ private enum MacMessageSenderKey: Hashable {
         voiceRecorder?.cancel()
         resetVoiceRecordingState()
         if let url {
-            try? FileManager.default.removeItem(at: url)
+            TelegramVoiceNoteStaging.shared.discard(fileURL: url)
         }
         if let chatId {
             Task {
@@ -359,44 +486,20 @@ private enum MacMessageSenderKey: Hashable {
             return
         }
 
-        let replyTo = replyingToMessage.map {
-            InputMessageReplyTo.inputMessageReplyToMessage(.init(
-                checklistTaskId: 0,
-                messageId: $0.id,
-                pollOptionId: "",
-                quote: nil,
-            ))
-        }
+        let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         replyingToMessage = nil
         resetVoiceRecordingState()
 
         Task {
             do {
-                _ = try? await service.sendChatAction(
-                    action: .chatActionUploadingVoiceNote(.init(progress: 0)),
-                    businessConnectionId: nil,
+                try await TelegramVoiceNoteSending.send(
+                    service: service,
                     chatId: chatId,
-                    topicId: nil,
-                )
-                _ = try await service.sendMessage(
-                    chatId: chatId,
-                    inputMessageContent: .inputMessageVoiceNote(.init(
-                        caption: FormattedText(entities: [], text: ""),
-                        duration: duration,
-                        selfDestructType: nil,
-                        voiceNote: .inputFileLocal(.init(path: url.path())),
-                        waveform: Data(),
-                    )),
-                    options: nil,
-                    replyMarkup: nil,
+                    url: url,
+                    caption: FormattedText(entities: [], text: ""),
+                    duration: duration,
+                    waveform: Data(),
                     replyTo: replyTo,
-                    topicId: nil,
-                )
-                _ = try? await service.sendChatAction(
-                    action: .chatActionCancel,
-                    businessConnectionId: nil,
-                    chatId: chatId,
-                    topicId: nil,
                 )
             } catch {
                 messageActionError = error.localizedDescription
@@ -490,17 +593,26 @@ private enum MacMessageSenderKey: Hashable {
             messageId: message.id,
             rowSize: 8,
         )
-        let heart = ReactionType.reactionTypeEmoji(.init(emoji: "❤"))
-        let canReactWithHeart = availableReactions?.unavailabilityReason == nil
-            && ((availableReactions?.topReactions ?? [])
-                + (availableReactions?.recentReactions ?? [])
-                + (availableReactions?.popularReactions ?? []))
-            .contains { $0.type == heart }
         guard openedChatId == message.chatId else { return }
         messageCapabilities[message.id] = MacMessageCapabilities(
             properties: properties,
-            canReactWithHeart: canReactWithHeart,
+            availableReactions: availableReactions.map(telegramAvailableReactions) ?? [],
         )
+    }
+
+    func loadServiceDescription(for message: Message) async {
+        guard TelegramServiceMessage.isServiceMessage(message.content),
+              messageServiceDescriptions[message.id] == nil,
+              !loadingServiceMessageIds.contains(message.id),
+              openedChatId == message.chatId
+        else { return }
+        loadingServiceMessageIds.insert(message.id)
+        defer { loadingServiceMessageIds.remove(message.id) }
+
+        guard let description = await TelegramServiceMessage.description(service: service, message: message),
+              openedChatId == message.chatId
+        else { return }
+        messageServiceDescriptions[message.id] = description
     }
 
     func loadReplyContext(for message: Message) async {
@@ -563,7 +675,7 @@ private enum MacMessageSenderKey: Hashable {
                 messageActionError = "This chat is private or unavailable."
                 return
             }
-            activateResolvedChat(chat, messageId: messageId)
+            await activateResolvedChat(chat, messageId: messageId)
         }
     }
 
@@ -598,7 +710,7 @@ private enum MacMessageSenderKey: Hashable {
                 messageActionError = "This user or chat is private or unavailable."
                 return
             }
-            activateResolvedChat(destination.chat, messageId: destination.messageId)
+            await activateResolvedChat(destination.chat, messageId: destination.messageId)
         }
     }
 
@@ -634,22 +746,34 @@ private enum MacMessageSenderKey: Hashable {
             return
         }
         let request: Task<String?, Never>
+        let ownsRequest: Bool
         if let pendingRequest = senderNameRequests[resolvedSenderKey] {
             request = pendingRequest
+            ownsRequest = false
         } else {
             let senderId = message.senderId
             request = Task { [service] in
                 await TelegramSenderName.displayName(service: service, senderId: senderId)
             }
             senderNameRequests[resolvedSenderKey] = request
+            ownsRequest = true
         }
         let name = await request.value
-        senderNameRequests[resolvedSenderKey] = nil
         guard let name, !name.isEmpty else { return }
+        if !ownsRequest {
+            guard openedChatId == message.chatId,
+                  messageSenderNames[message.id] != name
+            else { return }
+            messageSenderNames[message.id] = name
+            return
+        }
+
+        senderNameRequests[resolvedSenderKey] = nil
         senderNamesByKey[resolvedSenderKey] = name
         guard openedChatId == message.chatId else { return }
-        messageSenderNames[message.id] = name
-        for visibleMessage in messages.messages.values where senderKey(for: visibleMessage) == resolvedSenderKey {
+        for visibleMessage in messages.messages.values where
+            senderKey(for: visibleMessage) == resolvedSenderKey && messageSenderNames[visibleMessage.id] != name
+        {
             messageSenderNames[visibleMessage.id] = name
         }
     }
@@ -715,40 +839,45 @@ private enum MacMessageSenderKey: Hashable {
         }
     }
 
-    func reactWithHeart(to message: Message) {
+    func clearChatHistory(_ chat: ChatListItemState, forEveryone: Bool) {
         performMessageAction {
-            _ = try await self.service.addMessageReaction(
-                chatId: message.chatId,
-                isBig: false,
-                messageId: message.id,
-                reactionType: .reactionTypeEmoji(.init(emoji: "❤")),
-                updateRecentReactions: true,
+            await TelegramChatActions.clearChatHistory(
+                service: self.service,
+                chatId: chat.chatId,
+                forEveryone: forEveryone,
+            )
+        }
+    }
+
+    func leaveChat(_ chat: ChatListItemState) {
+        performMessageAction {
+            await TelegramChatActions.leaveChat(service: self.service, chatId: chat.chatId)
+        }
+    }
+
+    func toggleReaction(_ reaction: ReactionType, on message: Message) {
+        performMessageAction {
+            try await TelegramMessageActions.toggleReaction(
+                service: self.service,
+                message: message,
+                reaction: reaction,
             )
         }
     }
 
     func togglePin(for message: Message) {
         performMessageAction {
-            _ =
-                if message.isPinned {
-                    try await self.service.unpinChatMessage(chatId: message.chatId, messageId: message.id)
-                } else {
-                    try await self.service.pinChatMessage(
-                        chatId: message.chatId,
-                        disableNotification: false,
-                        messageId: message.id,
-                        onlyForSelf: false,
-                    )
-                }
+            try await TelegramMessageActions.togglePinned(service: self.service, message: message)
         }
     }
 
     func delete(_ message: Message, forEveryone: Bool) {
         performMessageAction {
-            _ = try await self.service.deleteMessages(
+            try await TelegramMessageActions.delete(
+                service: self.service,
                 chatId: message.chatId,
                 messageIds: [message.id],
-                revoke: forEveryone,
+                forEveryone: forEveryone,
             )
         }
     }
@@ -769,22 +898,74 @@ private enum MacMessageSenderKey: Hashable {
         return file.local.path
     }
 
+    func activateResolvedChat(_ chat: Chat, messageId: Int64?) async {
+        service.mergeChatListChats([chat])
+        if chatList.items[chat.id] == nil {
+            let membership = await service.resolveMembership(for: chat)
+            chatList.items[chat.id] = ChatListItemState(chat, membership: membership)
+        }
+        activateChat(chat.id, messageId: messageId)
+    }
+
+    func performMessageAction(_ action: @escaping @MainActor () async throws -> Void) {
+        messageActionError = nil
+        Task {
+            do {
+                try await action()
+            } catch {
+                messageActionError = error.localizedDescription
+            }
+        }
+    }
+
     // MARK: Private
 
+    private static var databaseDirectoryName: String {
+        #if DEBUG
+        if CommandLine.arguments.contains("-BetterTGLoginTestSession") {
+            return "td-login-test"
+        }
+        #endif
+        return "td"
+    }
+
+    private static var wasAuthorizedDefaultsKey: String {
+        "BetterTGMac.wasAuthorized.\(databaseDirectoryName)"
+    }
+
+    private static var authorizationHistoryDefaultsKey: String {
+        "BetterTGMac.authorizationHistoryInitialized.\(databaseDirectoryName)"
+    }
+
+    private static var isAppSandbox: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored private var canReuseSessionForReauthentication = false
+    @ObservationIgnored private var countryLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var databaseExistedBeforeStart = false
     @ObservationIgnored private var messageSubscription: AnyCancellable?
     @ObservationIgnored private var loadingCapabilityMessageIds = Set<Int64>()
     @ObservationIgnored private var loadingReplyContextMessageIds = Set<Int64>()
+    @ObservationIgnored private var loadingServiceMessageIds = Set<Int64>()
     @ObservationIgnored private var loadingForwardedMessageIds = Set<Int64>()
     @ObservationIgnored private var senderNameRequests = [MacMessageSenderKey: Task<String?, Never>]()
     @ObservationIgnored private var senderNamesByKey = [MacMessageSenderKey: String]()
     @ObservationIgnored private var openTask: Task<Void, Never>?
     @ObservationIgnored private var documentPaths = [Int: String]()
     @ObservationIgnored private var photoPaths = [Int: String]()
+    @ObservationIgnored private var preferredCountryId: String?
     @ObservationIgnored private var videoPaths = [Int: String]()
     @ObservationIgnored private var recordingTimer: Task<Void, Never>?
     @ObservationIgnored private let notifications = MacLocalNotifications()
-    @ObservationIgnored private let session: TelegramSession
+    @ObservationIgnored private var pushNotifications: TelegramApplePushRegistration
+    @ObservationIgnored private var session: TelegramSession
+    @ObservationIgnored private var isStopping = false
     @ObservationIgnored private var started = false
     @ObservationIgnored private var voiceNotePaths = [Int: String]()
     @ObservationIgnored private var voiceRecorder: VoiceNoteRecorder?
@@ -813,53 +994,23 @@ private enum MacMessageSenderKey: Hashable {
         }
     }
 
-    private func activateResolvedChat(_ chat: Chat, messageId: Int64?) {
-        service.mergeChatListChats([chat])
-        if chatList.items[chat.id] == nil {
-            chatList.items[chat.id] = ChatListItemState(
-                chatId: chat.id,
-                title: chat.title,
-                positions: chat.positions,
-                unreadCount: chat.unreadCount,
-                lastMessage: chat.lastMessage,
-                draftMessage: chat.draftMessage,
-                notificationSettings: chat.notificationSettings,
-                lastReadInboxMessageId: chat.lastReadInboxMessageId,
-                lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
-                isMarkedAsUnread: chat.isMarkedAsUnread,
-                canBeDeletedOnlyForSelf: chat.canBeDeletedOnlyForSelf,
-                canBeDeletedForAllUsers: chat.canBeDeletedForAllUsers,
-            )
-        }
-        activateChat(chat.id, messageId: messageId)
-    }
-
     private func sendTextMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let openedChatId, !text.isEmpty else { return }
-        let replyTo = replyingToMessage.map {
-            InputMessageReplyTo.inputMessageReplyToMessage(.init(
-                checklistTaskId: 0,
-                messageId: $0.id,
-                pollOptionId: "",
-                quote: nil,
-            ))
-        }
+        let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         messageText = ""
         replyingToMessage = nil
         Task {
             do {
-                _ = try await service.sendMessage(
+                let formattedText = await TelegramTextFormatting.addingAutomaticEntities(
+                    service: service,
+                    to: FormattedText(entities: [], text: text),
+                )
+                try await TelegramMessageSending.send(
+                    service: service,
                     chatId: openedChatId,
-                    inputMessageContent: .inputMessageText(.init(
-                        clearDraft: true,
-                        linkPreviewOptions: nil,
-                        text: FormattedText(entities: [], text: text),
-                    )),
-                    options: nil,
-                    replyMarkup: nil,
+                    contents: [TelegramMessageSending.textContent(formattedText)],
                     replyTo: replyTo,
-                    topicId: nil,
                 )
             } catch {
                 messageActionError = error.localizedDescription
@@ -871,16 +1022,12 @@ private enum MacMessageSenderKey: Hashable {
         guard let chatId = openedChatId, !selectedPhotoURLs.isEmpty else { return }
         let urls = selectedPhotoURLs
         let caption = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let replyTo = replyingToMessage.map {
-            InputMessageReplyTo.inputMessageReplyToMessage(.init(
-                checklistTaskId: 0,
-                messageId: $0.id,
-                pollOptionId: "",
-                quote: nil,
-            ))
+        let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        let photos = urls.compactMap { url -> (URL, NSSize)? in
+            guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else { return nil }
+            return (url, image.size)
         }
-        let contents = urls.compactMap { inputPhotoContent(url: $0, caption: caption) }
-        guard !contents.isEmpty else {
+        guard !photos.isEmpty else {
             messageActionError = "The selected files could not be read as photos."
             return
         }
@@ -890,36 +1037,24 @@ private enum MacMessageSenderKey: Hashable {
         replyingToMessage = nil
         Task {
             do {
-                _ = try? await service.sendChatAction(
-                    action: .chatActionUploadingPhoto(.init(progress: 0)),
-                    businessConnectionId: nil,
-                    chatId: chatId,
-                    topicId: nil,
+                let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
+                    service: service,
+                    to: FormattedText(entities: [], text: caption),
                 )
-                // swiftformat:disable:next conditionalAssignment
-                if contents.count == 1, let content = contents.first {
-                    _ = try await service.sendMessage(
-                        chatId: chatId,
-                        inputMessageContent: content,
-                        options: nil,
-                        replyMarkup: nil,
-                        replyTo: replyTo,
-                        topicId: nil,
-                    )
-                } else {
-                    _ = try await service.sendMessageAlbum(
-                        chatId: chatId,
-                        inputMessageContents: contents,
-                        options: nil,
-                        replyTo: replyTo,
-                        topicId: nil,
+                let contents = photos.map { url, size in
+                    TelegramMessageSending.photoContent(
+                        url: url,
+                        caption: formattedCaption,
+                        width: Int(size.width),
+                        height: Int(size.height),
                     )
                 }
-                _ = try? await service.sendChatAction(
-                    action: .chatActionCancel,
-                    businessConnectionId: nil,
+                try await TelegramMessageSending.send(
+                    service: service,
                     chatId: chatId,
-                    topicId: nil,
+                    contents: contents,
+                    replyTo: replyTo,
+                    uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
                 )
             } catch {
                 messageActionError = error.localizedDescription
@@ -930,83 +1065,32 @@ private enum MacMessageSenderKey: Hashable {
     private func sendSelectedDocuments() {
         guard let chatId = openedChatId, !selectedDocumentURLs.isEmpty else { return }
         let caption = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let replyTo = replyingToMessage.map {
-            InputMessageReplyTo.inputMessageReplyToMessage(.init(
-                checklistTaskId: 0,
-                messageId: $0.id,
-                pollOptionId: "",
-                quote: nil,
-            ))
-        }
-        let contents = selectedDocumentURLs.map { url in
-            InputMessageContent.inputMessageDocument(.init(
-                caption: FormattedText(entities: [], text: caption),
-                document: InputDocument(
-                    disableContentTypeDetection: true,
-                    document: .inputFileLocal(.init(path: url.path())),
-                    thumbnail: nil,
-                ),
-            ))
-        }
+        let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        let urls = selectedDocumentURLs
 
         selectedDocumentURLs = []
         messageText = ""
         replyingToMessage = nil
         Task {
             do {
-                _ = try? await service.sendChatAction(
-                    action: .chatActionUploadingDocument(.init(progress: 0)),
-                    businessConnectionId: nil,
-                    chatId: chatId,
-                    topicId: nil,
+                let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
+                    service: service,
+                    to: FormattedText(entities: [], text: caption),
                 )
-                // swiftformat:disable:next conditionalAssignment
-                if contents.count == 1, let content = contents.first {
-                    _ = try await service.sendMessage(
-                        chatId: chatId,
-                        inputMessageContent: content,
-                        options: nil,
-                        replyMarkup: nil,
-                        replyTo: replyTo,
-                        topicId: nil,
-                    )
-                } else {
-                    _ = try await service.sendMessageAlbum(
-                        chatId: chatId,
-                        inputMessageContents: contents,
-                        options: nil,
-                        replyTo: replyTo,
-                        topicId: nil,
-                    )
+                let contents = urls.map { url in
+                    TelegramMessageSending.documentContent(url: url, caption: formattedCaption)
                 }
-                _ = try? await service.sendChatAction(
-                    action: .chatActionCancel,
-                    businessConnectionId: nil,
+                try await TelegramMessageSending.send(
+                    service: service,
                     chatId: chatId,
-                    topicId: nil,
+                    contents: contents,
+                    replyTo: replyTo,
+                    uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
                 )
             } catch {
                 messageActionError = error.localizedDescription
             }
         }
-    }
-
-    private func inputPhotoContent(url: URL, caption: String) -> InputMessageContent? {
-        guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else { return nil }
-        return .inputMessagePhoto(.init(
-            caption: FormattedText(entities: [], text: caption),
-            hasSpoiler: false,
-            photo: InputPhoto(
-                addedStickerFileIds: [],
-                height: Int(image.size.height),
-                photo: .inputFileLocal(.init(path: url.path())),
-                thumbnail: nil,
-                video: nil,
-                width: Int(image.size.width),
-            ),
-            selfDestructType: nil,
-            showCaptionAboveMedia: false,
-        ))
     }
 
     private func resetVoiceRecordingState() {
@@ -1040,22 +1124,23 @@ private enum MacMessageSenderKey: Hashable {
         }
     }
 
-    private func performMessageAction(_ action: @escaping @MainActor () async throws -> Void) {
-        messageActionError = nil
-        Task {
-            do {
-                try await action()
-            } catch {
-                messageActionError = error.localizedDescription
-            }
-        }
-    }
-
     private func handleMessageSnapshot(_ snapshot: TelegramMessageSnapshot) {
         messages = snapshot
+        switch snapshot.change {
+        case .newMessage(let update) where !update.message.isOutgoing:
+            let isMuted = (chatList.items[snapshot.chatId]?.notificationSettings?.muteFor ?? 0) > 0
+            MacServiceSoundManager.shared.playIncomingMessageIfAppropriate(isMuted: isMuted)
+        case .messageSendSucceeded(let update) where update.message.isOutgoing:
+            MacServiceSoundManager.shared.playMessageDelivered()
+        default:
+            break
+        }
+
         let messageId: Int64? =
             switch snapshot.change {
             case .messageEdited(let update):
+                update.messageId
+            case .messageInteractionInfo(let update):
                 update.messageId
             case .messagePinChanged(let update):
                 update.messageId
@@ -1093,6 +1178,7 @@ private enum MacMessageSenderKey: Hashable {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] update in
                 self?.handleNotificationUpdate(update)
+                self?.handleConversationHeaderUpdate(update)
             }
             .store(in: &cancellables)
     }
@@ -1100,22 +1186,162 @@ private enum MacMessageSenderKey: Hashable {
     private func applyAuthorizationState(_ state: AuthorizationState) {
         authorizationState = state
         authorizationStatus = Self.title(for: state)
-        if case .authorizationStateReady = state {
+        switch state {
+        case .authorizationStateWaitPhoneNumber:
+            loadCountriesIfNeeded()
+            let defaults = UserDefaults.standard
+            let hasAuthorizationHistory = defaults.object(forKey: Self.authorizationHistoryDefaultsKey) != nil
+            let isExistingDatabaseMigration = Self.databaseDirectoryName == "td"
+                && !hasAuthorizationHistory
+                && databaseExistedBeforeStart
+            defaults.set(true, forKey: Self.authorizationHistoryDefaultsKey)
+            if !isStopping,
+               defaults.bool(forKey: Self.wasAuthorizedDefaultsKey) || isExistingDatabaseMigration
+            {
+                canReuseSessionForReauthentication = true
+                sessionEnded = true
+                canReauthenticate = true
+            }
+        case .authorizationStateReady:
+            UserDefaults.standard.set(true, forKey: Self.authorizationHistoryDefaultsKey)
+            UserDefaults.standard.set(true, forKey: Self.wasAuthorizedDefaultsKey)
+            canReuseSessionForReauthentication = false
+            sessionEnded = false
+            canReauthenticate = false
             bootstrapChats()
-            Task { await notifications.requestAuthorization() }
+            Task {
+                guard await notifications.requestAuthorization() else { return }
+                NSApplication.shared.registerForRemoteNotifications()
+            }
+        case .authorizationStateClosing, .authorizationStateLoggingOut:
+            guard !isStopping else { return }
+            canReuseSessionForReauthentication = false
+            sessionEnded = true
+            canReauthenticate = false
+        case .authorizationStateClosed:
+            guard !isStopping else { return }
+            canReuseSessionForReauthentication = false
+            sessionEnded = true
+            canReauthenticate = true
+        default:
+            break
+        }
+    }
+
+    private func cancelWorkForSessionReplacement() {
+        cancelVoiceRecording()
+        historyRequestGeneration &+= 1
+        openTask?.cancel()
+        openTask = nil
+        bootstrapTask?.cancel()
+        bootstrapTask = nil
+        searchTask?.cancel()
+        searchTask = nil
+        countryLoadTask?.cancel()
+        countryLoadTask = nil
+        conversationHeaderTask?.cancel()
+        conversationHeaderTask = nil
+        messageSubscription?.cancel()
+        messageSubscription = nil
+        for request in senderNameRequests.values {
+            request.cancel()
+        }
+        senderNameRequests = [:]
+        cancellables.removeAll()
+
+        chatList = .empty
+        selectedChatFolderId = .main
+        focusedChatId = nil
+        openedChatId = nil
+        openedChatType = nil
+        conversationHeaderBaseStatus = nil
+        conversationHeaderActivities = [:]
+        messages = .empty(chatId: 0)
+        loadedChatFolderIds = []
+        messageText = ""
+        editMessageText = ""
+        editingMessage = nil
+        replyingToMessage = nil
+        messageCapabilities = [:]
+        messageReplyContexts = [:]
+        messageForwardedFrom = [:]
+        messageSenderNames = [:]
+        messageServiceDescriptions = [:]
+        selectedDocumentURLs = []
+        selectedPhotoURLs = []
+        phoneNumber = ""
+        loginCode = ""
+        password = ""
+        loginError = nil
+        isLoadingChats = false
+        isLoadingMessages = false
+        isLoadingOlderMessages = false
+        isLoadingLatestMessages = false
+    }
+
+    private func loadCountriesIfNeeded() {
+        guard countryNumbers.isEmpty, countryLoadTask == nil else { return }
+        countryLoadTask = Task { [weak self] in
+            guard let self else { return }
+            defer { countryLoadTask = nil }
+            async let countriesResult = try? service.getCountries()
+            async let countryCodeResult = try? service.getCountryCode()
+            let countries = await countriesResult?.countries ?? []
+            let currentCountryCode = await countryCodeResult?.text
+            guard !Task.isCancelled else { return }
+
+            let numbers = TelegramPhoneNumber.countries(from: countries)
+            countryNumbers = numbers
+            if callingCode.isEmpty,
+               let current = TelegramPhoneNumber.country(for: currentCountryCode, in: numbers)
+            {
+                selectCountry(current)
+            } else if callingCode.isEmpty {
+                selectedCountryNumber = nil
+            } else {
+                updateCallingCode(callingCode)
+            }
         }
     }
 
     private func handleNotificationUpdate(_ update: Update) {
-        guard case .updateNewMessage(let value) = update,
-              !value.message.isOutgoing,
-              openedChatId != value.message.chatId || !NSApplication.shared.isActive
-        else { return }
+        guard case .updateNotificationGroup(let group) = update else { return }
 
-        let title = chatList.items[value.message.chatId]?.title ?? "BetterTG"
-        let body = macMessageText(value.message)
-        Task {
-            await notifications.deliver(chatId: value.message.chatId, title: title, body: body)
+        notifications.remove(
+            notificationGroupId: group.notificationGroupId,
+            notificationIds: group.removedNotificationIds,
+        )
+
+        guard openedChatId != group.chatId || !NSApplication.shared.isActive else { return }
+        let title = chatList.items[group.chatId]?.title ?? "BetterTG"
+        for notification in group.addedNotifications {
+            guard Date().timeIntervalSince1970 - TimeInterval(notification.date) < 3600,
+                  let body = notificationBody(notification)
+            else { continue }
+            let playsSound = group.notificationSoundId != 0 && !notification.isSilent
+            Task {
+                await notifications.deliver(
+                    chatId: group.chatId,
+                    title: title,
+                    body: body,
+                    notificationGroupId: group.notificationGroupId,
+                    notificationId: notification.id,
+                    playsSound: playsSound,
+                )
+            }
+        }
+    }
+
+    private func notificationBody(_ notification: TDLibKit.Notification) -> String? {
+        switch notification.type {
+        case .notificationTypeNewMessage(let value):
+            guard !value.message.isOutgoing else { return nil }
+            return value.showPreview ? macMessageText(value.message) : "You have a new message."
+        case .notificationTypeNewPushMessage(let value):
+            guard !value.isOutgoing else { return nil }
+            return value.senderName.isEmpty ? "You have a new message." : "New message from \(value.senderName)."
+        case .notificationTypeNewCall, .notificationTypeNewSecretChat:
+            return nil
         }
     }
 

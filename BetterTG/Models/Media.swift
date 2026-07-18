@@ -27,6 +27,7 @@ import SwiftOGG
         savedMediaPath = ""
         stopProgressTimer()
         playerNode.stop()
+        playbackEngine.stop()
         audioBuffer = nil
         nowPlayingCenter.nowPlayingInfo = nil
     }
@@ -50,6 +51,7 @@ import SwiftOGG
     }
 
     func toggle(with path: String, duration: Int) {
+        voicePlaybackTrace("Media.toggle newPath=\(savedMediaPath != path) duration=\(duration)")
         self.duration = duration
         if savedMediaPath != path {
             stop()
@@ -118,15 +120,21 @@ import SwiftOGG
             commonFormat: .pcmFormatFloat32,
             sampleRate: sampleRate,
             channels: channels,
-            interleaved: true,
+            interleaved: false,
         ) else { throw PlaybackError.invalidPCM }
         let frameCount = data.count / (MemoryLayout<Float>.size * Int(channels))
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))
         else { throw PlaybackError.invalidPCM }
         buffer.frameLength = AVAudioFrameCount(frameCount)
-        let audioBuffer = buffer.mutableAudioBufferList.pointee.mBuffers
-        guard let destination = audioBuffer.mData else { throw PlaybackError.invalidPCM }
-        data.copyBytes(to: destination.assumingMemoryBound(to: UInt8.self), count: data.count)
+        guard let destinationChannels = buffer.floatChannelData else { throw PlaybackError.invalidPCM }
+        data.withUnsafeBytes { rawBuffer in
+            let source = rawBuffer.bindMemory(to: Float.self)
+            for frame in 0..<frameCount {
+                for channel in 0..<Int(channels) {
+                    destinationChannels[channel][frame] = source[frame * Int(channels) + channel]
+                }
+            }
+        }
         return buffer
     }
 
@@ -220,26 +228,46 @@ import SwiftOGG
         stopProgressTimer()
     }
 
-    private func setAudioSessionPlayback() {
+    private func setAudioSessionPlayback() -> Bool {
         do {
             try audioSession.setCategory(.playback, mode: .spokenAudio, policy: .default, options: [
                 .mixWithOthers,
                 .interruptSpokenAudioAndMixWithOthers,
             ])
             try audioSession.setActive(true, options: [])
+            let outputs = audioSession.currentRoute.outputs
+                .map { "\($0.portType.rawValue):\($0.portName)" }
+                .joined(separator: ",")
+            voicePlaybackTrace("session active outputs=[\(outputs)] volume=\(audioSession.outputVolume)")
+            return true
         } catch {
+            voicePlaybackTrace("session failed: \(error.localizedDescription)")
             log("Error setting audioSessionPlayback: \(error)")
+            return false
         }
     }
 
     private func play() {
-        guard audioBuffer != nil else { return }
-        setAudioSessionPlayback()
-        if !playbackEngine.isRunning {
-            try? playbackEngine.start()
+        guard audioBuffer != nil else {
+            voicePlaybackTrace("play aborted: no PCM buffer")
+            return
+        }
+        guard setAudioSessionPlayback() else { return }
+        do {
+            if !playbackEngine.isRunning {
+                try playbackEngine.start()
+            }
+        } catch {
+            voicePlaybackTrace("engine start failed: \(error.localizedDescription)")
+            log("Failed to start voice playback engine:", error)
+            isPlaying = false
+            return
         }
         playerNode.play()
         isPlaying = true
+        voicePlaybackTrace(
+            "player started engineRunning=\(playbackEngine.isRunning) nodePlaying=\(playerNode.isPlaying)",
+        )
         startProgressTimer()
         setNowPlaying()
     }
@@ -271,8 +299,24 @@ import SwiftOGG
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { () -> AVAudioPCMBuffer in
                 let data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+                voicePlaybackTrace("read encoded bytes=\(data.count)")
                 let streamFormat = Self.opusStreamFormat(from: data)
                 let decoder = try OGGDecoder(audioData: data)
+                let sampleStats = decoder.pcmData.withUnsafeBytes { rawBuffer -> (peak: Float, finite: Int) in
+                    let samples = rawBuffer.bindMemory(to: Float.self)
+                    var peak: Float = 0
+                    var finite = 0
+                    for sample in samples where sample.isFinite {
+                        peak = max(peak, abs(sample))
+                        finite += 1
+                    }
+                    return (peak, finite)
+                }
+                voicePlaybackTrace(
+                    "decoded PCM bytes=\(decoder.pcmData.count) rate=\(streamFormat.sampleRate) "
+                        + "channels=\(streamFormat.channels) peak=\(sampleStats.peak) "
+                        + "finiteSamples=\(sampleStats.finite)",
+                )
                 return try Self.makePCMBuffer(
                     from: decoder.pcmData,
                     sampleRate: streamFormat.sampleRate,
@@ -282,7 +326,7 @@ import SwiftOGG
             DispatchQueue.main.async {
                 guard let self, self.savedMediaPath == sourcePath else { return }
                 switch result {
-                case .success(let buffer):
+                case .success(let buffer) where buffer.frameLength > 0:
                     self.decodedBufferCache.setObject(
                         buffer,
                         forKey: cacheKey,
@@ -290,7 +334,15 @@ import SwiftOGG
                     )
                     self.configurePlayer(with: buffer)
                     self.play()
+                case .success:
+                    // configurePlayer/schedule silently no-op on an empty buffer, which
+                    // previously left play() reporting isPlaying = true with nothing
+                    // actually scheduled — audible as complete silence with no error.
+                    voicePlaybackTrace("decode produced empty buffer, refusing to play")
+                    log("Voice message decode produced an empty PCM buffer")
+                    self.stop()
                 case .failure(let error):
+                    voicePlaybackTrace("decode failed: \(error.localizedDescription)")
                     log("Failed to prepare voice message:", error)
                     self.stop()
                 }
@@ -299,6 +351,9 @@ import SwiftOGG
     }
 
     private func configurePlayer(with buffer: AVAudioPCMBuffer) {
+        voicePlaybackTrace(
+            "configure frames=\(buffer.frameLength) format=\(buffer.format)",
+        )
         playerNode.stop()
         if playerNode.engine == nil {
             playbackEngine.attach(playerNode)
@@ -309,7 +364,6 @@ import SwiftOGG
         playbackSampleRate = buffer.format.sampleRate
         schedule(buffer: buffer, from: 0)
         playbackEngine.prepare()
-        try? playbackEngine.start()
     }
 
     private func schedule(buffer: AVAudioPCMBuffer, from startFrame: AVAudioFramePosition) {
@@ -318,17 +372,20 @@ import SwiftOGG
         playerNode.stop()
         let availableFrames = max(0, AVAudioFramePosition(buffer.frameLength) - startFrame)
         guard availableFrames > 0,
-              let slice = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(availableFrames))
+              let slice = AVAudioPCMBuffer(
+                  pcmFormat: buffer.format,
+                  frameCapacity: AVAudioFrameCount(availableFrames),
+              )
         else { return }
         slice.frameLength = AVAudioFrameCount(availableFrames)
-        let bytesPerFrame = Int(buffer.format.streamDescription.pointee.mBytesPerFrame)
-        let source = buffer.audioBufferList.pointee.mBuffers
-        let destination = slice.mutableAudioBufferList.pointee.mBuffers
-        if let sourceBytes = source.mData, let destinationBytes = destination.mData {
+        guard let sourceChannels = buffer.floatChannelData,
+              let destinationChannels = slice.floatChannelData
+        else { return }
+        for channel in 0..<Int(buffer.format.channelCount) {
             memcpy(
-                destinationBytes,
-                sourceBytes.advanced(by: Int(startFrame) * bytesPerFrame),
-                Int(availableFrames) * bytesPerFrame,
+                destinationChannels[channel],
+                sourceChannels[channel].advanced(by: Int(startFrame)),
+                Int(availableFrames) * MemoryLayout<Float>.size,
             )
         }
         scheduledBuffer = slice
