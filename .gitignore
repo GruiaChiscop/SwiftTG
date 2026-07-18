@@ -17,3 +17,5 @@ BetterTG.ipa
 api_key.json
 report.xml
 build
+.xcodebuildmcp
+.claude
