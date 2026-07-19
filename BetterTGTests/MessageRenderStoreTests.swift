@@ -123,30 +123,17 @@ struct MessageRenderStoreTests {
         #expect(toRender.map(\.message.id) == [message.id])
     }
 
-    @Test func `migrating a render carries the cached result to the new id`() {
+    @Test func `a confirmed message is rendered independently from its temporary id`() {
         var store = MessageRenderStore()
         let temporary = TDLibFixtures.message(id: -1, chatId: 1, date: 100)
         let confirmed = TDLibFixtures.message(id: 10, chatId: 1, date: 100)
 
         store.commitRender(messageId: temporary.id, message: temporary, invalidationVersion: 0)
-        store.migrateRenderedResult(from: temporary.id, to: confirmed, invalidationVersion: 5)
+        store.invalidate(messageId: confirmed.id, version: 5)
 
-        let toRender = store.reconcile(currentIds: [confirmed.id], messages: [confirmed.id: confirmed])
-        #expect(toRender.isEmpty)
-        #expect(store.states[confirmed.id]?.invalidationVersion == 5)
-    }
-
-    @Test func `migrating with no completed render leaves the new id untouched`() {
-        var store = MessageRenderStore()
-        let temporary = TDLibFixtures.message(id: -1, chatId: 1, date: 100)
-        let confirmed = TDLibFixtures.message(id: 10, chatId: 1, date: 100)
-
-        store.beginRendering(temporary, invalidationVersion: 0)
-        store.migrateRenderedResult(from: temporary.id, to: confirmed, invalidationVersion: 5)
-
-        #expect(store.states[confirmed.id] == nil)
         let toRender = store.reconcile(currentIds: [confirmed.id], messages: [confirmed.id: confirmed])
         #expect(toRender.map(\.message.id) == [confirmed.id])
+        #expect(toRender.first?.invalidationVersion == 5)
     }
 
     @Test func `a merged refresh clears its own tracking without touching other messages`() {

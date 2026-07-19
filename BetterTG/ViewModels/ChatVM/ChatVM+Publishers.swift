@@ -61,15 +61,12 @@ extension ChatVM {
                 ServiceSoundManager.shared.playMessageDelivered()
             }
             loadedMessageIds.insert(value.message.id)
-            if let rendered = renderedMessages.removeValue(forKey: value.oldMessageId) {
-                rendered.message = value.message
-                renderedMessages[value.message.id] = rendered
-            }
-            renderStore.migrateRenderedResult(
-                from: value.oldMessageId,
-                to: value.message,
-                invalidationVersion: snapshot.version,
-            )
+            // A successful send replaces TDLib's temporary message id with a permanent one.
+            // Never mutate the id of the CustomMessage already mounted in SwiftUI's ForEach:
+            // its id is the row identity, and changing it behind Observation's back leaves the
+            // accessibility element attached to the temporary row. Render a new model instead.
+            renderedMessages.removeValue(forKey: value.oldMessageId)
+            renderStore.invalidate(messageId: value.message.id, version: snapshot.version)
             if pendingScrollMessageIds.remove(value.oldMessageId) != nil {
                 pendingScrollMessageIds.insert(value.message.id)
             }
@@ -116,7 +113,11 @@ extension ChatVM {
                 )
                 else { return }
 
-                self.renderStore.commitRender(messageId: message.id, message: message, invalidationVersion: invalidationVersion)
+                self.renderStore.commitRender(
+                    messageId: message.id,
+                    message: message,
+                    invalidationVersion: invalidationVersion,
+                )
                 self.renderedMessages[message.id] = customMessage
                 if self.replyMessage?.message.id == message.id {
                     self.replyMessage = customMessage

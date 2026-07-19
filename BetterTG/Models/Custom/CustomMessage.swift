@@ -38,9 +38,9 @@ import TDLibKit
     
     // MARK: Internal
 
-    /// Replaced as a whole when TDLib publishes a newer snapshot. Tracking every field read of
-    /// this large value creates a dense Observation graph across all message rows.
-    @ObservationIgnored var message: Message
+    /// A row's TDLib snapshot is immutable because `message.id` is also its SwiftUI identity.
+    /// A newer snapshot must produce a new CustomMessage instead of changing a mounted row's id.
+    let message: Message
     var senderUser: User?
     var replyUser: User?
     var replySenderName: String?

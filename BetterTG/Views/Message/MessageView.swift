@@ -138,12 +138,30 @@ struct MessageView: View {
                 .padding(5)
                 .opacity(0.5)
             }
-            .customContextMenu(cornerRadius: 20, contextMenuActions)
+            .contextMenu {
+                contextMenuActions.contextMenuContent()
+            }
             // Keep the message and its adjacent Reactions button as separate
             // accessibility elements.
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("message-\(customMessage.id)")
             .accessibilityLabel(accessibilityDescription)
+            .modify {
+                if let messageVoiceNote = customMessage.messageVoiceNote {
+                    $0
+                        .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .modify {
+                if let messageAudio = customMessage.messageAudio {
+                    $0
+                        .onTapGesture { toggleAudioMessage(messageAudio) }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
             .modify {
                 if hasNavigableReply {
                     $0.accessibilityAction(named: "Go to Replied Message") {
@@ -169,32 +187,7 @@ struct MessageView: View {
                 }
             }
             .accessibilityActions {
-                ForEach(Array(accessibilityContextMenuActions.flattened().enumerated()), id: \.offset) { _, item in
-                    Button(item.title, action: item.action)
-                }
-            }
-            .modify {
-                if let messageVoiceNote = customMessage.messageVoiceNote {
-                    $0
-                        .accessibilityAction {
-                            toggleVoiceMessage(messageVoiceNote)
-                        }
-                        .accessibilityHint("Double tap to play or pause")
-                        .accessibilityAddTraits(.startsMediaSession)
-                }
-            }
-            .modify {
-                if let messageAudio = customMessage.messageAudio {
-                    $0
-                        .onTapGesture {
-                            toggleAudioMessage(messageAudio)
-                        }
-                        .accessibilityAction {
-                            toggleAudioMessage(messageAudio)
-                        }
-                        .accessibilityHint("Double tap to play or pause")
-                        .accessibilityAddTraits(.startsMediaSession)
-                }
+                messageAccessibilityActions
             }
             .accessibilityHidden(!textLinks.isEmpty)
 
@@ -342,6 +335,22 @@ struct MessageView: View {
             .accessibilityIdentifier("message-\(customMessage.id)")
             .accessibilityLabel(accessibilityDescription)
             .modify {
+                if let messageVoiceNote = customMessage.messageVoiceNote {
+                    $0
+                        .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .modify {
+                if let messageAudio = customMessage.messageAudio {
+                    $0
+                        .onTapGesture { toggleAudioMessage(messageAudio) }
+                        .accessibilityHint("Double tap to play or pause")
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .modify {
                 if hasNavigableReply {
                     $0.accessibilityAction(named: "Go to Replied Message") {
                         chatVM.navigateToRepliedMessage(from: customMessage.message)
@@ -366,25 +375,7 @@ struct MessageView: View {
                 }
             }
             .accessibilityActions {
-                ForEach(Array(accessibilityContextMenuActions.flattened().enumerated()), id: \.offset) { _, item in
-                    Button(item.title, action: item.action)
-                }
-            }
-            .modify {
-                if let messageVoiceNote = customMessage.messageVoiceNote {
-                    $0
-                        .accessibilityAction { toggleVoiceMessage(messageVoiceNote) }
-                        .accessibilityHint("Double tap to play or pause")
-                        .accessibilityAddTraits(.startsMediaSession)
-                }
-            }
-            .modify {
-                if let messageAudio = customMessage.messageAudio {
-                    $0
-                        .accessibilityAction { toggleAudioMessage(messageAudio) }
-                        .accessibilityHint("Double tap to play or pause")
-                        .accessibilityAddTraits(.startsMediaSession)
-                }
+                messageAccessibilityActions
             }
     }
 

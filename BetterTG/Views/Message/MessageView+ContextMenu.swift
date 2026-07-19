@@ -4,14 +4,29 @@ import SwiftUI
 import TDLibKit
 
 extension MessageView {
-    var accessibilityContextMenuActions: [ContextMenuAction] {
-        contextMenuActions.map { action in
-            if case .menu(let title, _, _) = action, title == "React" {
-                return .button(title: "React", systemImage: "face.smiling") {
-                    showReactionOptions = true
-                }
-            }
-            return action
+    /// SwiftUI announces actions in reverse declaration order, so declare them from last to first.
+    @ViewBuilder var messageAccessibilityActions: some View {
+        if customMessage.properties.canBeDeletedOnlyForSelf
+            || customMessage.properties.canBeDeletedForAllUsers
+        {
+            Button("Delete") { showDeleteOptions = true }
+        }
+        if customMessage.properties.canBePinned {
+            Button(customMessage.message.isPinned ? "Unpin" : "Pin", action: togglePinnedMessage)
+        }
+        if customMessage.properties.canBeEdited {
+            Button("Edit", action: edit)
+        }
+        if customMessage.properties.canBeCopied,
+           getFormattedText(from: customMessage.message.content) != nil
+        {
+            Button("Copy", action: copyMessageText)
+        }
+        if !reactionChoices.isEmpty {
+            Button("React") { showReactionOptions = true }
+        }
+        if customMessage.properties.canBeReplied {
+            Button("Reply", action: reply)
         }
     }
 
@@ -35,11 +50,13 @@ extension MessageView {
             ))
         }
         if customMessage.properties.canBeCopied,
-           let formattedText = getFormattedText(from: customMessage.message.content)
+           getFormattedText(from: customMessage.message.content) != nil
         {
-            actions.append(.button(title: "Copy", systemImage: "rectangle.portrait.on.rectangle.portrait") {
-                UIPasteboard.setFormattedText(formattedText)
-            })
+            actions.append(.button(
+                title: "Copy",
+                systemImage: "rectangle.portrait.on.rectangle.portrait",
+                action: copyMessageText,
+            ))
         }
         if customMessage.properties.canBeEdited {
             actions.append(.button(title: "Edit", systemImage: "square.and.pencil", action: edit))
@@ -110,6 +127,11 @@ extension MessageView {
         Task.background {
             try await TelegramMessageActions.togglePinned(service: service, message: message)
         }
+    }
+
+    func copyMessageText() {
+        guard let formattedText = getFormattedText(from: customMessage.message.content) else { return }
+        UIPasteboard.setFormattedText(formattedText)
     }
 
     func getFormattedText(from content: MessageContent) -> FormattedText? {

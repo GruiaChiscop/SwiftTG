@@ -105,19 +105,6 @@ struct MessageRenderStore {
         states[messageId, default: MessageRenderState()].invalidationVersion = version
     }
 
-    /// Mirrors a successful send's id change: if a render was already completed for
-    /// `oldMessageId`, carries the cached result over to the new id (pointing it at the
-    /// confirmed message) and marks it current as of `invalidationVersion`. A render still in
-    /// flight for the old id is left behind — it becomes unreachable once the old id drops out
-    /// of the snapshot, and the next reconcile starts a fresh one under the new id.
-    mutating func migrateRenderedResult(from oldMessageId: Int64, to newMessage: Message, invalidationVersion: UInt64) {
-        guard let oldState = states[oldMessageId], oldState.renderedVersion != nil else { return }
-        var newState = states[newMessage.id] ?? MessageRenderState()
-        newState.renderedVersion = invalidationVersion
-        newState.invalidationVersion = invalidationVersion
-        states[newMessage.id] = newState
-    }
-
     /// Starts tracking a refetch for `messageId` at `version`. While tracked, reconcile skips
     /// starting a fresh render for this id.
     mutating func beginRefresh(messageId: Int64, version: UInt64) {
