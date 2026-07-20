@@ -14,28 +14,37 @@ struct MediaAlbum: Layout {
     // MARK: Internal
 
     typealias AlbumLayout = ([(CGRect, ItemPosition)], CGSize)
-    
+
+    struct Cache {
+        var proposal: ProposedViewSize?
+        var subviewCount: Int?
+        var layout: AlbumLayout?
+    }
+
+    func makeCache(subviews _: Subviews) -> Cache {
+        Cache()
+    }
+
     func sizeThatFits(
         proposal: ProposedViewSize,
         subviews: Subviews,
-        cache _: inout Void,
+        cache: inout Cache,
     ) -> CGSize {
-        let size = generateLayout(proposal: proposal, subviews: subviews).1
+        let size = cachedLayout(proposal: proposal, subviews: subviews, cache: &cache).1
         return CGSize(
             width: finiteDimension(size.width, fallback: 1),
             height: finiteDimension(size.height, fallback: 1),
         )
-//        return CGSize(width: CGFloat.infinity, height: CGFloat.infinity)
     }
-    
+
     func placeSubviews(
         in bounds: CGRect,
         proposal: ProposedViewSize,
         subviews: Subviews,
-        cache _: inout Void,
+        cache: inout Cache,
     ) {
-        let layout = generateLayout(proposal: proposal, subviews: subviews).0
-        
+        let layout = cachedLayout(proposal: proposal, subviews: subviews, cache: &cache).0
+
         for (index, item) in layout.prefix(subviews.count).enumerated() {
             let subview = subviews[index]
             let frame = item.0
@@ -63,6 +72,17 @@ struct MediaAlbum: Layout {
     
     // MARK: Private
 
+    private func cachedLayout(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> AlbumLayout {
+        if let cached = cache.layout, cache.proposal == proposal, cache.subviewCount == subviews.count {
+            return cached
+        }
+        let layout = generateLayout(proposal: proposal, subviews: subviews)
+        cache.layout = layout
+        cache.proposal = proposal
+        cache.subviewCount = subviews.count
+        return layout
+    }
+
     /// Please don't kill me for this code, I just got it from TG iOS, it's
     /// not documented at all
     private func generateLayout(proposal: ProposedViewSize, subviews: Subviews) -> AlbumLayout {
@@ -82,8 +102,7 @@ struct MediaAlbum: Layout {
             )
         }
         let spacing: CGFloat = 1
-//        let fillWidth = false
-        
+
         var proportions = ""
         var averageAspectRatio: CGFloat = 1.0
         var forceCalc = false
@@ -191,16 +210,10 @@ struct MediaAlbum: Layout {
                             round(min(thirdHeight * itemInfos[2].aspectRatio, secondHeight * itemInfos[1].aspectRatio)),
                         ),
                     )
-//                    if fillWidth {
-//                        rightWidth = floorToScreenPixels(maxSize.width / 2.0)
-//                    }
                     let leftWidth = round(min(
                         firstHeight * itemInfos[0].aspectRatio,
                         maxSize.width - spacing - rightWidth,
                     ))
-//                    if fillWidth {
-//                        leftWidth = maxSize.width - spacing - rightWidth
-//                    }
                     itemInfos[0].layoutFrame = CGRect(x: 0.0, y: 0.0, width: leftWidth, height: firstHeight)
                     itemInfos[0].position = [.top, .left, .bottom]
                     

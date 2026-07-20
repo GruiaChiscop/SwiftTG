@@ -101,6 +101,8 @@ private enum MacMessageSenderKey: Hashable {
     @ObservationIgnored var searchTask: Task<Void, Never>?
     @ObservationIgnored var searchGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
+    @ObservationIgnored var displayedMessageLimit = 30
+    @ObservationIgnored var displayedMessageAnchorId: Int64?
     @ObservationIgnored var service: any TelegramService
 
     @ObservationIgnored var conversationHeaderTask: Task<Void, Never>?
@@ -256,6 +258,8 @@ private enum MacMessageSenderKey: Hashable {
         navigationTargetMessageId = messageId
         if openedChatId == chatId {
             guard let messageId, messages.messages[messageId] == nil else { return }
+            displayedMessageLimit = max(displayedMessageLimit, 51)
+            displayedMessageAnchorId = messageId
             historyRequestGeneration &+= 1
             let generation = historyRequestGeneration
             openTask?.cancel()
@@ -281,6 +285,8 @@ private enum MacMessageSenderKey: Hashable {
 
         let previousChatId = openedChatId
         openedChatId = chatId
+        displayedMessageLimit = messageId == nil ? 30 : 51
+        displayedMessageAnchorId = messageId
         prepareConversationHeader(for: chatId, fallbackKind: openingChat?.kind)
         messages = .empty(chatId: chatId)
         editingMessage = nil
@@ -308,11 +314,24 @@ private enum MacMessageSenderKey: Hashable {
         openTask = Task { [weak self] in
             guard let self else { return }
             if let previousChatId {
-                _ = try? await service.closeChat(chatId: previousChatId)
+                // Closing the old chat is independent from opening the new one. Waiting for its
+                // TDLib round trip delayed the new chat's local-history request for no UI benefit.
+                Task { _ = try? await service.closeChat(chatId: previousChatId) }
             }
             guard !Task.isCancelled, openedChatId == chatId else { return }
             _ = try? await service.openChat(chatId: chatId)
-            let historyMessages = await loadInitialHistory(chatId: chatId, around: messageId)
+            let historyMessages: [Message]
+            if messageId == nil,
+               messages.hasMergedHistory,
+               !messages.orderedMessageIds.isEmpty
+            {
+                // The subscription already delivered this chat's retained history. Fetching and
+                // merging the same page again only increments the snapshot version and forces a
+                // second table refresh immediately after the cached rows became visible.
+                historyMessages = messages.orderedMessageIds.compactMap { messages.messages[$0] }
+            } else {
+                historyMessages = await loadInitialHistory(chatId: chatId, around: messageId)
+            }
             guard !Task.isCancelled, openedChatId == chatId else { return }
             if let newestMessageId = historyMessages.max(by: { $0.id < $1.id })?.id {
                 _ = try? await service.viewMessages(
@@ -381,12 +400,7 @@ private enum MacMessageSenderKey: Hashable {
         let combined = (selectedPhotoURLs + selectedDocumentURLs + pastedFiles).filter {
             seenURLs.insert($0).inserted
         }
-        let containsOnlyImages = combined.allSatisfy { url in
-            let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
-            guard let type = type ?? UTType(filenameExtension: url.pathExtension) else { return false }
-            return type.conforms(to: .image)
-        }
-        if containsOnlyImages {
+        if combined.allSatisfy(isImageAttachment) {
             selectedDocumentURLs = []
             selectedPhotoURLs = combined
         } else {
@@ -1023,9 +1037,9 @@ private enum MacMessageSenderKey: Hashable {
         let urls = selectedPhotoURLs
         let caption = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
-        let photos = urls.compactMap { url -> (URL, NSSize)? in
-            guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else { return nil }
-            return (url, image.size)
+        let photos = urls.compactMap { url -> (URL, CGSize)? in
+            guard let size = imagePixelSize(at: url), size.width > 0, size.height > 0 else { return nil }
+            return (url, size)
         }
         guard !photos.isEmpty else {
             messageActionError = "The selected files could not be read as photos."
@@ -1125,7 +1139,7 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     private func handleMessageSnapshot(_ snapshot: TelegramMessageSnapshot) {
-        messages = snapshot
+        messages = displayedMessageSnapshot(snapshot)
         switch snapshot.change {
         case .newMessage(let update) where !update.message.isOutgoing:
             let isMuted = (chatList.items[snapshot.chatId]?.notificationSettings?.muteFor ?? 0) > 0
@@ -1136,8 +1150,16 @@ private enum MacMessageSenderKey: Hashable {
             break
         }
 
+        // The four cases below all now carry enough state in their own update payload for
+        // `TelegramMessageStore.reduce(_:)` to patch its cached `Message` directly (see
+        // `Message.applying`), so `messages` above already reflects the change - no need to
+        // round-trip a `getMessage` RPC here just to pick it up. Only the message's cached
+        // capabilities (edit/pin/reaction permissions) still need invalidating, since those
+        // aren't part of `Message` itself.
         let messageId: Int64? =
             switch snapshot.change {
+            case .messageContentChanged(let update):
+                update.messageId
             case .messageEdited(let update):
                 update.messageId
             case .messageInteractionInfo(let update):
@@ -1149,14 +1171,41 @@ private enum MacMessageSenderKey: Hashable {
             }
         guard let messageId else { return }
         messageCapabilities[messageId] = nil
-        Task {
-            guard let refreshed = try? await service.getMessage(
-                chatId: snapshot.chatId,
-                messageId: messageId,
-            ), openedChatId == snapshot.chatId
-            else { return }
-            service.mergeMessages(chatId: snapshot.chatId, messages: [refreshed])
+    }
+
+    /// The shared store intentionally retains a larger scrollback cache, but handing all of it to
+    /// AppKit on every reopen makes NSTableView synchronously rebuild and measure hundreds of
+    /// hosted SwiftUI rows. macOS presents only a small window and expands it when the user reaches
+    /// the top; the store remains unchanged, so older messages are still immediately available.
+    private func displayedMessageSnapshot(_ snapshot: TelegramMessageSnapshot) -> TelegramMessageSnapshot {
+        guard snapshot.orderedMessageIds.count > displayedMessageLimit else { return snapshot }
+
+        let visibleRange: Range<Int>
+        if let anchorId = displayedMessageAnchorId,
+           let anchorIndex = snapshot.orderedMessageIds.firstIndex(of: anchorId)
+        {
+            let tentativeLowerBound = max(0, anchorIndex - displayedMessageLimit / 2)
+            let upperBound = min(snapshot.orderedMessageIds.count, tentativeLowerBound + displayedMessageLimit)
+            let lowerBound = max(0, upperBound - displayedMessageLimit)
+            visibleRange = lowerBound..<upperBound
+        } else {
+            let lowerBound = snapshot.orderedMessageIds.count - displayedMessageLimit
+            visibleRange = lowerBound..<snapshot.orderedMessageIds.count
         }
+
+        let visibleIds = Array(snapshot.orderedMessageIds[visibleRange])
+        let visibleMessages = Dictionary(uniqueKeysWithValues: visibleIds.compactMap { messageId in
+            snapshot.messages[messageId].map { (messageId, $0) }
+        })
+        return TelegramMessageSnapshot(
+            chatId: snapshot.chatId,
+            version: snapshot.version,
+            messages: visibleMessages,
+            orderedMessageIds: visibleIds,
+            unreadCount: snapshot.unreadCount,
+            hasMergedHistory: snapshot.hasMergedHistory,
+            change: snapshot.change,
+        )
     }
 
     private func observeSession() {

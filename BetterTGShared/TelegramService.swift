@@ -23,6 +23,11 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func replaceMessageHistory(chatId: Int64, messages: [Message])
     func mergeMessages(chatId: Int64, messages: [Message])
     func mergeChatListChats(_ chats: [Chat])
+    /// Feeds a synthetic `updateMessageContent` through the same pipeline a real TDLib push update
+    /// would use. TDLib doesn't push `updateMessageEdited`/`updateMessageContent` back to the
+    /// client that made the edit (only to other sessions), so the editing client has to notify
+    /// itself using the `Message` its own edit call already returned.
+    func notifyMessageContentChanged(chatId: Int64, messageId: Int64, newContent: MessageContent)
 
     func addMessageReaction(
         chatId: Int64?,
@@ -396,6 +401,11 @@ extension TelegramSession: TelegramService {
         try await client.getChatFolder(chatFolderId: chatFolderId)
     }
 
+    /// Deliberately bypasses TDLibKit's typed `client.getChatHistory(...)`, which decodes the
+    /// whole `Messages` response in one shot: if a single message in the batch has a content
+    /// type the locally-vendored model doesn't recognize, the entire page fails to decode. This
+    /// decodes each message individually and skips ones that fail, so one unrecognized message
+    /// doesn't drop the whole page.
     func getChatHistory(
         chatId: Int64?,
         fromMessageId: Int64?,

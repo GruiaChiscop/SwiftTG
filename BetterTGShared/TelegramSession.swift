@@ -61,6 +61,14 @@ final class TelegramSession: @unchecked Sendable {
         updateStore.mergeMessages(chatId: chatId, messages: messages)
     }
 
+    func notifyMessageContentChanged(chatId: Int64, messageId: Int64, newContent: MessageContent) {
+        updateStore.publish(.updateMessageContent(UpdateMessageContent(
+            chatId: chatId,
+            messageId: messageId,
+            newContent: newContent,
+        )))
+    }
+
     func mergeChatListChats(_ chats: [Chat]) {
         updateStore.mergeChatListChats(chats)
     }

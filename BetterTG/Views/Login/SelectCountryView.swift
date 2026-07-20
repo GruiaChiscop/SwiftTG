@@ -4,7 +4,7 @@ import SwiftUI
 
 struct SelectCountryView: View {
     @Binding var showSelectCountryView: Bool
-    @Binding var selectedCountryNum: PhoneNumberInfo
+    @Binding var selectedCountryNum: PhoneNumberInfo?
     let countryNums: [PhoneNumberInfo]
 
     @State var query = ""
@@ -23,7 +23,6 @@ struct SelectCountryView: View {
                 } label: {
                     HStack {
                         Text(info.flagEmoji)
-                            .accessibilityHidden(true)
                         Text(info.name)
                         Spacer()
                         Text("+\(info.phoneNumberPrefix)")

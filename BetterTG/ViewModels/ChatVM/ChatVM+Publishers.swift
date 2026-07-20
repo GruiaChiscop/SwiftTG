@@ -47,6 +47,9 @@ extension ChatVM {
             reconcileMessages(with: snapshot)
         case .deleteMessages:
             reconcileMessages(with: snapshot)
+        case .messageContentChanged(let value):
+            invalidateMessageAndReplies(messageId: value.messageId, version: snapshot.version)
+            refreshMessage(messageId: value.messageId, version: snapshot.version)
         case .messageEdited(let value):
             invalidateMessageAndReplies(messageId: value.messageId, version: snapshot.version)
             refreshMessage(messageId: value.messageId, version: snapshot.version)

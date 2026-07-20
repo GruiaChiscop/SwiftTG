@@ -41,7 +41,6 @@ struct MacCountryPicker: View {
                         HStack(spacing: 10) {
                             Text(country.flagEmoji)
                                 .font(.title2)
-                                .accessibilityHidden(true)
                             Text(country.name)
                             Spacer()
                             Text("+\(country.phoneNumberPrefix)")

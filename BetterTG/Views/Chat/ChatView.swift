@@ -191,12 +191,16 @@ struct ChatView: View {
         .buttonStyle(.plain)
         .transition(.move(edge: .bottom).combined(with: .scale).combined(with: .opacity))
         .padding(.trailing)
+        // Without this, the chevron/badge overlays can surface as separate accessibility
+        // elements instead of one cleanly labeled button.
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Scroll to bottom")
         .accessibilityValue(
             chatVM.customChat.unreadCount == 0
                 ? "No unread messages"
                 : "\(chatVM.customChat.unreadCount) unread messages",
         )
+        .accessibilityAddTraits(.isButton)
     }
     
     // MARK: Private

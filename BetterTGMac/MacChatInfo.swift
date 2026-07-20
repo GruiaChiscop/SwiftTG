@@ -824,56 +824,6 @@ private func macNotificationScope(for type: ChatType) -> NotificationSettingsSco
     }
 }
 
-private func macCanLeaveChat(_ status: ChatMemberStatus) -> Bool {
-    switch status {
-    case .chatMemberStatusMember:
-        true
-    case .chatMemberStatusRestricted(let value):
-        value.isMember
-    case .chatMemberStatusAdministrator, .chatMemberStatusBanned, .chatMemberStatusCreator, .chatMemberStatusLeft:
-        false
-    }
-}
-
-private func macCanManageMembers(_ status: ChatMemberStatus) -> Bool {
-    switch status {
-    case .chatMemberStatusAdministrator, .chatMemberStatusCreator:
-        true
-    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember,
-         .chatMemberStatusRestricted:
-        false
-    }
-}
-
-private func macIsAdministrator(_ status: ChatMemberStatus) -> Bool {
-    switch status {
-    case .chatMemberStatusAdministrator, .chatMemberStatusCreator:
-        true
-    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember,
-         .chatMemberStatusRestricted:
-        false
-    }
-}
-
-private func macCanRestrictMembers(_ status: ChatMemberStatus) -> Bool {
-    switch status {
-    case .chatMemberStatusCreator:
-        true
-    case .chatMemberStatusAdministrator(let value):
-        value.rights.canRestrictMembers
-    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember,
-         .chatMemberStatusRestricted:
-        false
-    }
-}
-
-private func macIsCreator(_ status: ChatMemberStatus) -> Bool {
-    if case .chatMemberStatusCreator = status {
-        return true
-    }
-    return false
-}
-
 private func macMemberRole(_ status: ChatMemberStatus, customTitle: String = "") -> String? {
     if !customTitle.isEmpty {
         return customTitle

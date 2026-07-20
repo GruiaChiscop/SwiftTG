@@ -66,7 +66,7 @@ func telegramReactionDescription(_ reactions: [MessageReaction]) -> String? {
     let counts = reactions.map { "\(telegramReactionSymbol($0.type)) \($0.totalCount)" }.joined(separator: ", ")
     let chosen = reactions.filter(\.isChosen).map { telegramReactionSymbol($0.type) }
     if chosen.isEmpty {
-        return "Reactions: \(counts)"
+        return "Reactions: \(counts) in total"
     }
-    return "Reactions: \(counts). You reacted with \(chosen.joined(separator: ", "))"
+    return "Reactions: \(counts) in total. You also reacted"
 }

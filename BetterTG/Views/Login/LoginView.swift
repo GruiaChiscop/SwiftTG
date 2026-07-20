@@ -23,19 +23,25 @@ struct LoginView: View {
                         VStack(spacing: 12) {
                             GroupBox {
                                 HStack {
-                                    Text("+\(model.selectedCountryNum.phoneNumberPrefix)")
+                                    if let country = model.selectedCountryNum {
+                                        Text("+\(country.phoneNumberPrefix)")
+                                    }
 
                                     TextField("Phone Number", text: $model.phoneNumber)
                                         .focused($focused, equals: .phoneNumber)
                                         .keyboardType(.numberPad)
                                 }
                             } label: {
-                                Button("\(model.selectedCountryNum.flagEmoji) \(model.selectedCountryNum.name)") {
+                                Button {
                                     showSelectCountryView.toggle()
+                                } label: {
+                                    if let country = model.selectedCountryNum {
+                                        Text("\(country.flagEmoji) \(country.name)")
+                                    } else {
+                                        Text("Select Country")
+                                    }
                                 }
-                                .accessibilityLabel(
-                                    "Country: \(model.selectedCountryNum.name), +\(model.selectedCountryNum.phoneNumberPrefix)",
-                                )
+                                .accessibilityLabel(countryAccessibilityLabel)
                                 .accessibilityHint("Opens country picker")
                             }
 
@@ -140,4 +146,9 @@ struct LoginView: View {
     // MARK: Private
 
     @State private var model: LoginViewModel
+
+    private var countryAccessibilityLabel: String {
+        guard let country = model.selectedCountryNum else { return "Select Country" }
+        return "Country: \(country.accessibilityLabel)"
+    }
 }

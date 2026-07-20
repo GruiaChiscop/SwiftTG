@@ -6,87 +6,16 @@ import TDLibKit
 
 // MARK: - MacFormattedTextView
 
-struct MacFormattedTextView: NSViewRepresentable {
-    // MARK: Internal
-
+/// Native SwiftUI text keeps selection and attributed links without putting an NSTextView inside
+/// every message row. In particular, this avoids synchronous `ensureLayout` calls whenever the
+/// surrounding list asks for a row's size while scrolling.
+struct MacFormattedTextView: View {
     let formattedText: FormattedText
 
-    func makeNSView(context _: Context) -> NSTextView {
-        let textView = MessageTextView(frame: .zero)
-        textView.drawsBackground = false
-        textView.isEditable = false
-        textView.isHorizontallyResizable = false
-        textView.isRichText = true
-        textView.isSelectable = true
-        textView.isVerticallyResizable = true
-        textView.textContainerInset = .zero
-        textView.textContainer?.heightTracksTextView = false
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.lineBreakMode = .byWordWrapping
-        textView.textContainer?.widthTracksTextView = true
-        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textView.linkTextAttributes = [
-            .foregroundColor: NSColor.linkColor,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-        ]
-        update(textView)
-        return textView
-    }
-
-    func updateNSView(_ textView: NSTextView, context _: Context) {
-        update(textView)
-    }
-
-    func sizeThatFits(
-        _ proposal: ProposedViewSize,
-        nsView textView: NSTextView,
-        context _: Context,
-    ) -> CGSize? {
-        let width = max(1, proposal.width ?? 480)
-        guard let textContainer = textView.textContainer else { return nil }
-        textContainer.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
-        textView.layoutManager?.ensureLayout(for: textContainer)
-        guard let usedRect = textView.layoutManager?.usedRect(for: textContainer) else { return nil }
-        return CGSize(width: min(width, ceil(usedRect.width)), height: max(1, ceil(usedRect.height)))
-    }
-
-    // MARK: Private
-
-    private func update(_ textView: NSTextView) {
-        let value = macNSAttributedString(formattedText)
-        if textView.attributedString() != value {
-            textView.textStorage?.setAttributedString(value)
-        }
-    }
-}
-
-/// Links remain clickable and text remains selectable, while vertical arrows
-/// are handed back to the enclosing native message table.
-private final class MessageTextView: NSTextView {
-    override func keyDown(with event: NSEvent) {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .function])
-        if modifiers.isEmpty,
-           event.keyCode == 125 || event.keyCode == 126
-        {
-            if let tableView = enclosingMessageTable {
-                window?.makeFirstResponder(tableView)
-                tableView.keyDown(with: event)
-            } else {
-                super.keyDown(with: event)
-            }
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    private var enclosingMessageTable: MessageNSTableView? {
-        var candidate = superview
-        while let view = candidate {
-            if let tableView = view as? MessageNSTableView { return tableView }
-            candidate = view.superview
-        }
-        return nil
+    var body: some View {
+        Text(macAttributedString(formattedText))
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

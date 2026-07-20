@@ -58,9 +58,23 @@ struct FolderView: View {
                     .accessibilityLabel(customChat.accessibilityDescription)
                     .accessibilityHint("Opens chat")
                     .accessibilityActions {
+                        // SwiftUI presents .accessibilityActions in reverse declaration order, so
+                        // these are declared back-to-front to have VoiceOver announce them
+                        // Mark as Read -> Archive -> Pin -> Mute -> Clear History -> Leave/Delete.
                         let policy = customChat.actionPolicy
-                        Button(customChat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread") {
-                            rootVM.toggleRead(for: customChat)
+                        if let leaveTitle = policy.leaveActionTitle {
+                            Button(leaveTitle) {
+                                requestLeave(customChat)
+                            }
+                        } else if policy.canDeleteChat {
+                            Button(policy.deleteActionTitle) {
+                                requestDelete(customChat)
+                            }
+                        }
+                        if policy.canClearHistory {
+                            Button("Clear History") {
+                                requestClearHistory(customChat)
+                            }
                         }
                         Button(customChat.isMuted ? "Unmute" : "Mute") {
                             toggleMuted(customChat)
@@ -71,19 +85,8 @@ struct FolderView: View {
                         Button(folder.type == .archive ? "Unarchive" : "Archive") {
                             toggleArchived(customChat)
                         }
-                        if policy.canClearHistory {
-                            Button("Clear History") {
-                                requestClearHistory(customChat)
-                            }
-                        }
-                        if let leaveTitle = policy.leaveActionTitle {
-                            Button(leaveTitle) {
-                                requestLeave(customChat)
-                            }
-                        } else if policy.canDeleteChat {
-                            Button(policy.deleteActionTitle) {
-                                requestDelete(customChat)
-                            }
+                        Button(customChat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread") {
+                            rootVM.toggleRead(for: customChat)
                         }
                     }
                     .contextMenu {
@@ -146,10 +149,10 @@ struct FolderView: View {
         }
 
         Button(
-            customChat.isMuted ? "Unmute" : "Mute",
-            systemImage: customChat.isMuted ? "speaker.wave.2" : "speaker.slash",
+            folder.type == .archive ? "Unarchive" : "Archive",
+            systemImage: folder.type == .archive ? "tray.and.arrow.up" : "archivebox",
         ) {
-            toggleMuted(customChat)
+            toggleArchived(customChat)
         }
 
         Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash.fill" : "pin.fill") {
@@ -157,10 +160,10 @@ struct FolderView: View {
         }
 
         Button(
-            folder.type == .archive ? "Unarchive" : "Archive",
-            systemImage: folder.type == .archive ? "tray.and.arrow.up" : "archivebox",
+            customChat.isMuted ? "Unmute" : "Mute",
+            systemImage: customChat.isMuted ? "speaker.wave.2" : "speaker.slash",
         ) {
-            toggleArchived(customChat)
+            toggleMuted(customChat)
         }
 
         if policy.canClearHistory {

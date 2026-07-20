@@ -20,14 +20,14 @@ import UniformTypeIdentifiers
         self.initialUnreadCount = customChat.unreadCount
         self.initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
         self.service = service
+        self.composer = MessageComposer(
+            chatId: customChat.chat.id,
+            service: service,
+            draftMessage: customChat.draftMessage,
+        )
+        self.voiceRecorder = VoiceRecordingController(chatId: customChat.chat.id, service: service)
         if let user = customChat.user {
             self.onlineStatus = getOnlineStatus(from: user.status)
-        }
-
-        if let draftMessage = customChat.draftMessage,
-           case .draftMessageContentText(let draftMessageContentText) = draftMessage.content
-        {
-            self.text = getAttributedString(from: draftMessageContentText.text)
         }
     }
 
@@ -57,7 +57,7 @@ import UniformTypeIdentifiers
         Task.background {
             guard let draftMessage = self.customChat.draftMessage else { return }
             let replyMessage = await self.getInputReplyToMessage(draftMessage.replyTo)
-            withAnimation { self.replyMessage = replyMessage }
+            withAnimation { self.composer.replyMessage = replyMessage }
         }
     }
 
@@ -66,11 +66,12 @@ import UniformTypeIdentifiers
     let initialUnreadCount: Int
     let initialLastReadInboxMessageId: Int64
 
+    let composer: MessageComposer
+    let voiceRecorder: VoiceRecordingController
+
     var bottomAreaHeight = CGFloat.zero
     var actionStatus = ""
     var onlineStatus = ""
-    var editCustomMessage: CustomMessage?
-    var replyMessage: CustomMessage?
     var highlightedMessageId: Int64?
     var accessibilityFocusRequestMessageId: Int64?
     var navigationError: String?
@@ -79,6 +80,11 @@ import UniformTypeIdentifiers
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
+        return dateFormatter
+    }()
+    @ObservationIgnored private var lastSeenDateFormatter: DateFormatter = {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "dd.MM.yy"
         return dateFormatter
     }()
 
@@ -105,56 +111,125 @@ import UniformTypeIdentifiers
     var showScrollToBottomButton = false
     @ObservationIgnored var scrollViewProxy: ScrollViewProxy?
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
-    var displayedImages = [SelectedImage]()
-    var displayedDocuments = [URL]()
-    var timerCount = 0.0
-    @ObservationIgnored var timer: Timer?
-    @ObservationIgnored var wave = [Float]()
-    @ObservationIgnored var sendMessageTask: Task<Void, Never>?
-    @ObservationIgnored var setDisplayedImagesTask: Task<Void, Never>?
-    var showDetail = false
-    var showSendButton = false
-    var text: AttributedString = ""
-    var editMessageText: AttributedString = ""
-    var recordingVoiceNote = false
-    var recordingLocked = false
-    var recordingDragTranslation = CGSize.zero
-    var errorShown = false
-    var showCameraView = false
-    var showDocumentPicker = false
-    var showPhotoPickerView = false
-    @ObservationIgnored var savedVoiceNoteUrl = URL(filePath: "")
-    @ObservationIgnored var audioRecorder: VoiceNoteRecorder?
-    
-    var canEditMessage: Bool {
-        guard let editCustomMessage else { return false }
-        switch editCustomMessage.message.content {
-        case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
-            return true
-        case .messageText:
-            return !editMessageText.characters.isEmpty
-        default:
-            return false
+    @ObservationIgnored private var preparingVoiceNoteFileIds = Set<Int>()
+
+    // MARK: Composer/Recorder facade
+
+    var text: AttributedString {
+        get { composer.text }
+        set { composer.text = newValue }
+    }
+
+    var editMessageText: AttributedString {
+        get { composer.editMessageText }
+        set { composer.editMessageText = newValue }
+    }
+
+    var editCustomMessage: CustomMessage? {
+        get { composer.editCustomMessage }
+        set { composer.editCustomMessage = newValue }
+    }
+
+    var replyMessage: CustomMessage? {
+        get { composer.replyMessage }
+        set { composer.replyMessage = newValue }
+    }
+
+    var showSendButton: Bool {
+        get { composer.showSendButton }
+        set { composer.showSendButton = newValue }
+    }
+
+    var showDetail: Bool {
+        get { composer.showDetail }
+        set { composer.showDetail = newValue }
+    }
+
+    var displayedImages: [SelectedImage] {
+        get { composer.displayedImages }
+        set { composer.displayedImages = newValue }
+    }
+
+    var displayedDocuments: [URL] {
+        get { composer.displayedDocuments }
+        set { composer.displayedDocuments = newValue }
+    }
+
+    var showCameraView: Bool {
+        get { composer.showCameraView }
+        set { composer.showCameraView = newValue }
+    }
+
+    var showDocumentPicker: Bool {
+        get { composer.showDocumentPicker }
+        set { composer.showDocumentPicker = newValue }
+    }
+
+    var showPhotoPickerView: Bool {
+        get { composer.showPhotoPickerView }
+        set { composer.showPhotoPickerView = newValue }
+    }
+
+    var sendMessageTask: Task<Void, Never>? {
+        get { composer.sendMessageTask }
+        set { composer.sendMessageTask = newValue }
+    }
+
+    var errorShown: Bool {
+        get { voiceRecorder.errorShown }
+        set { voiceRecorder.errorShown = newValue }
+    }
+
+    var recordingVoiceNote: Bool {
+        get { voiceRecorder.recordingVoiceNote }
+        set { voiceRecorder.recordingVoiceNote = newValue }
+    }
+
+    var recordingLocked: Bool {
+        get { voiceRecorder.recordingLocked }
+        set { voiceRecorder.recordingLocked = newValue }
+    }
+
+    var recordingDragTranslation: CGSize {
+        get { voiceRecorder.recordingDragTranslation }
+        set { voiceRecorder.recordingDragTranslation = newValue }
+    }
+
+    var timerCount: Double {
+        get { voiceRecorder.timerCount }
+        set { voiceRecorder.timerCount = newValue }
+    }
+
+    var formattedTimerCount: String { voiceRecorder.formattedTimerCount }
+
+    var wave: [Float] {
+        get { voiceRecorder.wave }
+        set { voiceRecorder.wave = newValue }
+    }
+
+    func sendMessage() async { await composer.sendMessage() }
+    func stageDocuments(_ urls: [URL]) async { await composer.stageDocuments(urls) }
+    func stagePastedAttachments(_ urls: [URL]) async { await composer.stagePastedAttachments(urls) }
+    func setShowSendButton() { composer.setShowSendButton() }
+    func setEditMessageText(from message: Message?) { composer.setEditMessageText(from: message) }
+    func updateDraft() async { await composer.updateDraft() }
+    func startTimer() { voiceRecorder.startTimer() }
+    func stopTimer() { voiceRecorder.stopTimer() }
+    func mediaStartRecordingVoice() async { await voiceRecorder.mediaStartRecordingVoice() }
+    func cancelRecordingVoice() { voiceRecorder.cancelRecordingVoice() }
+    func mediaStopRecordingVoice(duration: Int, wave: [Float]) {
+        guard let artifact = voiceRecorder.mediaStopRecordingVoice(duration: duration, wave: wave) else { return }
+        Task.background {
+            await self.composer.sendMessageVoiceNote(
+                url: artifact.url,
+                duration: artifact.duration,
+                waveform: artifact.waveform,
+            )
         }
     }
-    
-    var formattedTimerCount: String {
-        let time = String(format: "%.2f", timerCount).split(separator: ".", maxSplits: 2)
-        let seconds = Int(time[0]) ?? 0
-        var resultString = ""
-        if seconds >= 60 {
-            resultString += "\(seconds / 60):" // seconds / 60 == minutes
-            var estimatedSeconds = String(seconds % 60)
-            if estimatedSeconds.count == 1 {
-                estimatedSeconds = "0\(estimatedSeconds)"
-            }
-            resultString += "\(estimatedSeconds)"
-        } else {
-            resultString += "\(seconds).\(time[1])" // time[1] == millisecongs
-        }
-        return resultString
-    }
-    
+
+    // MARK: End facade
+
     /// Starts fetching the next batch once the user is getting close to the start of what's loaded,
     /// not only once they've hit it exactly - a VoiceOver swipe (or a fast scroll) that lands right on
     /// the edge would otherwise stall waiting on the network round trip before it has anything further
@@ -175,8 +250,7 @@ import UniformTypeIdentifiers
     
     func getLastSeenTime(_ time: Int) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(time))
-        let dateFormatter = DateFormatter()
-        
+
         let difference = Date().timeIntervalSince1970 - TimeInterval(time)
         if difference < 60 {
             return "now"
@@ -185,17 +259,18 @@ import UniformTypeIdentifiers
         } else if difference < 60 * 60 * 24 {
             return "\(Int(difference / 60 / 60)) hours ago"
         } else if difference < 60 * 60 * 24 * 2 {
-            dateFormatter.dateFormat = "HH:mm"
             return "yesterday at \(dateFormatter.string(from: date))"
         } else {
-            dateFormatter.dateFormat = "dd.MM.yy"
-            return dateFormatter.string(from: date)
+            return lastSeenDateFormatter.string(from: date)
         }
     }
     
     func scrollToLast() {
         guard let lastId = messages.last?.id, let scrollViewProxy else { return }
         withAnimation { scrollViewProxy.scrollTo(lastId, anchor: .bottom) }
+        // Scrolling only moves the viewport - VoiceOver's cursor stays wherever it was, so without
+        // this a VoiceOver user tapping "Scroll to bottom" would see/hear nothing move for them.
+        accessibilityFocusRequestMessageId = lastId
     }
     
     func scrollTo(id: Int64?, anchor: UnitPoint = .center) {
@@ -329,7 +404,91 @@ import UniformTypeIdentifiers
             )
         }
     }
-    
+
+    func reply(to message: CustomMessage?) {
+        if replyMessage != nil {
+            withAnimation { replyMessage = nil }
+            Task.main(delay: 0.4) {
+                withAnimation { self.replyMessage = message }
+            }
+        } else {
+            withAnimation { replyMessage = message }
+        }
+    }
+
+    func edit(_ message: CustomMessage?) {
+        if editCustomMessage != nil {
+            withAnimation { editCustomMessage = nil }
+            Task.main(delay: 0.4) {
+                withAnimation { self.editCustomMessage = message }
+            }
+        } else {
+            withAnimation { editCustomMessage = message }
+        }
+    }
+
+    func togglePinnedMessage(_ message: Message) {
+        Task.background {
+            try await TelegramMessageActions.togglePinned(service: self.service, message: message)
+        }
+    }
+
+    func toggleReaction(_ reaction: ReactionType, on message: Message) {
+        Task.background {
+            try? await TelegramMessageActions.toggleReaction(
+                service: self.service,
+                message: message,
+                reaction: reaction,
+            )
+        }
+    }
+
+    /// Plays a voice note, downloading it first if `knownLocalPath` isn't already resolved.
+    /// Returns the local path once playback starts, so the caller can cache it - or `nil` if a
+    /// download for this file is already in flight or the download failed.
+    @MainActor
+    func toggleVoiceMessage(_ messageVoiceNote: MessageVoiceNote, knownLocalPath: String?) async -> String? {
+        let fileId = messageVoiceNote.voiceNote.voice.id
+        voicePlaybackTrace(
+            "activation fileId=\(fileId) hasPath=\(knownLocalPath != nil) "
+                + "preparing=\(preparingVoiceNoteFileIds.contains(fileId))",
+        )
+        if let knownLocalPath {
+            startVoicePlayback(path: knownLocalPath, duration: messageVoiceNote.voiceNote.duration)
+            return knownLocalPath
+        }
+        guard !preparingVoiceNoteFileIds.contains(fileId) else { return nil }
+        preparingVoiceNoteFileIds.insert(fileId)
+        defer { preparingVoiceNoteFileIds.remove(fileId) }
+        TelegramAudioPlayer.shared.stop()
+        do {
+            let file = try await service.downloadFile(
+                fileId: fileId,
+                limit: 0,
+                offset: 0,
+                priority: 32,
+                synchronous: true,
+            )
+            guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else { return nil }
+            voicePlaybackTrace("download completed fileId=\(file.id) size=\(file.local.downloadedSize)")
+            startVoicePlayback(path: file.local.path, duration: messageVoiceNote.voiceNote.duration)
+            return file.local.path
+        } catch {
+            voicePlaybackTrace("download failed: \(error.localizedDescription)")
+            log("Failed to download voice message:", error)
+            return nil
+        }
+    }
+
+    @MainActor
+    private func startVoicePlayback(path: String, duration: Int) {
+        voicePlaybackTrace(
+            "start requested exists=\(FileManager.default.fileExists(atPath: path)) duration=\(duration)",
+        )
+        TelegramAudioPlayer.shared.stop()
+        Media.shared.toggle(with: path, duration: duration)
+    }
+
     @MainActor
     func viewMessage(id: Int64) {
         pendingViewedMessageIds.insert(id)
@@ -384,6 +543,9 @@ import UniformTypeIdentifiers
             properties: (try? propertiesTask) ?? .default,
         )
         customMessage.senderUser = await senderUserTask
+        if case .messageSenderChat = message.senderId {
+            customMessage.senderChatTitle = await TelegramSenderName.displayName(service: service, senderId: message.senderId)
+        }
         customMessage.serviceMessageText = await serviceMessageTextTask
         if let reactions = try? await reactionsTask {
             customMessage.availableReactions = telegramAvailableReactions(reactions)
@@ -406,26 +568,8 @@ import UniformTypeIdentifiers
             switch message.content {
             case .messageText(let messageText):
                 customMessage.formattedText = messageText.text
-            case .messagePhoto(let messagePhoto):
-                if !messagePhoto.caption.text.isEmpty {
-                    customMessage.formattedText = messagePhoto.caption
-                }
-            case .messageVideo(let messageVideo):
-                if !messageVideo.caption.text.isEmpty {
-                    customMessage.formattedText = messageVideo.caption
-                }
-            case .messageDocument(let messageDocument):
-                if !messageDocument.caption.text.isEmpty {
-                    customMessage.formattedText = messageDocument.caption
-                }
-            case .messageVoiceNote(let messageVoiceNote):
-                if !messageVoiceNote.caption.text.isEmpty {
-                    customMessage.formattedText = messageVoiceNote.caption
-                }
-            case .messageAudio(let messageAudio):
-                if !messageAudio.caption.text.isEmpty {
-                    customMessage.formattedText = messageAudio.caption
-                }
+            case .messagePhoto, .messageVideo, .messageDocument, .messageVoiceNote, .messageAudio:
+                customMessage.formattedText = telegramMessageFormattedText(message)
             case .messageUnsupported:
                 customMessage.formattedText = FormattedText(entities: [], text: "TDLib not supported")
             default:
@@ -465,305 +609,6 @@ import UniformTypeIdentifiers
         return nil
     }
     
-    func sendMessageVoiceNote(duration: Int, waveform: Data) async {
-        try? await TelegramVoiceNoteSending.send(
-            service: service,
-            chatId: customChat.chat.id,
-            url: savedVoiceNoteUrl,
-            caption: FormattedText(
-                entities: getEntities(from: text),
-                text: text.string,
-            ),
-            duration: duration,
-            waveform: waveform,
-            replyTo: getMessageReplyTo(from: replyMessage),
-        )
-        text = ""
-    }
-    
-    func sendMessage() async {
-        if !displayedDocuments.isEmpty {
-            await sendMessageDocuments()
-        } else if !displayedImages.isEmpty {
-            await sendMessagePhotos()
-        } else if canEditMessage {
-            await editMessage()
-        } else if !text.characters.isEmpty {
-            await sendMessageText()
-        } else {
-            return
-        }
-        
-        await main {
-            withAnimation {
-                self.displayedImages.removeAll()
-                self.displayedDocuments.removeAll()
-                self.editMessageText = ""
-                self.text = ""
-                self.replyMessage = nil
-                self.editCustomMessage = nil
-            }
-        }
-    }
-
-    func stageDocuments(_ urls: [URL]) async {
-        let stagedURLs = await stageAttachmentURLs(urls)
-        displayedImages.removeAll()
-        displayedDocuments = stagedURLs
-        setShowSendButton()
-    }
-
-    func stagePastedAttachments(_ urls: [URL]) async {
-        let stagedURLs = await stageAttachmentURLs(urls)
-        guard !stagedURLs.isEmpty else { return }
-        var seenURLs = Set<URL>()
-        let combined = (displayedImages.map(\.url) + displayedDocuments + stagedURLs).filter {
-            seenURLs.insert($0).inserted
-        }
-        let containsOnlyImages = combined.allSatisfy { url in
-            let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
-            guard let type = type ?? UTType(filenameExtension: url.pathExtension) else { return false }
-            return type.conforms(to: .image)
-        }
-        if containsOnlyImages {
-            displayedDocuments.removeAll()
-            displayedImages = combined.compactMap { url in
-                guard let preview = downsampledImage(at: url, maxPixelSize: 320) else { return nil }
-                return SelectedImage(image: Image(uiImage: preview), url: url)
-            }
-        } else {
-            displayedImages.removeAll()
-            displayedDocuments = combined
-        }
-        setShowSendButton()
-    }
-
-    private func stageAttachmentURLs(_ urls: [URL]) async -> [URL] {
-        await Task.detached(priority: .userInitiated) {
-            urls.compactMap { source -> URL? in
-                let accessed = source.startAccessingSecurityScopedResource()
-                defer {
-                    if accessed {
-                        source.stopAccessingSecurityScopedResource()
-                    }
-                }
-                let destination = URL(filePath: NSTemporaryDirectory())
-                    .appending(path: "\(UUID().uuidString)-\(source.lastPathComponent)")
-                do {
-                    try FileManager.default.copyItem(at: source, to: destination)
-                    return destination
-                } catch {
-                    return nil
-                }
-            }
-        }.value
-    }
-
-    func sendMessageDocuments() async {
-        let caption = await TelegramTextFormatting.addingAutomaticEntities(
-            service: service,
-            to: FormattedText(entities: getEntities(from: text), text: text.string),
-        )
-        let contents = displayedDocuments.map { url in
-            TelegramMessageSending.documentContent(url: url, caption: caption)
-        }
-        _ = try? await TelegramMessageSending.send(
-            service: service,
-            chatId: customChat.chat.id,
-            contents: contents,
-            replyTo: getMessageReplyTo(from: replyMessage),
-            uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
-        )
-    }
-    
-    func sendMessagePhotos() async {
-        let caption = await TelegramTextFormatting.addingAutomaticEntities(
-            service: service,
-            to: FormattedText(entities: getEntities(from: text), text: text.string),
-        )
-        let contents = displayedImages.map { makeInputMessageContent(for: $0.url, caption: caption) }
-        _ = try? await TelegramMessageSending.send(
-            service: service,
-            chatId: customChat.chat.id,
-            contents: contents,
-            replyTo: getMessageReplyTo(from: replyMessage),
-            uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
-        )
-    }
-    
-    func makeInputMessageContent(for url: URL, caption: FormattedText) -> InputMessageContent {
-        let pixelSize = imagePixelSize(at: url) ?? .zero
-        return TelegramMessageSending.photoContent(
-            url: url,
-            caption: caption,
-            width: Int(pixelSize.width),
-            height: Int(pixelSize.height),
-        )
-    }
-    
-    func sendMessageText() async {
-        let formattedText = await TelegramTextFormatting.addingAutomaticEntities(
-            service: service,
-            to: FormattedText(entities: getEntities(from: text), text: text.string),
-        )
-        let content = TelegramMessageSending.textContent(formattedText)
-        _ = try? await TelegramMessageSending.send(
-            service: service,
-            chatId: customChat.chat.id,
-            contents: [content],
-            replyTo: getMessageReplyTo(from: replyMessage),
-        )
-    }
-    
-    func editMessage() async {
-        guard let message = editCustomMessage?.message else { return }
-        let newText = FormattedText(entities: getEntities(from: editMessageText), text: editMessageText.string)
-        let supported = await TelegramMessageEditing.editMessage(
-            service: service,
-            chatId: customChat.chat.id,
-            messageId: message.id,
-            messageContent: message.content,
-            newText: newText,
-        )
-        if !supported {
-            log("Unsupported edit message type")
-        }
-    }
-    
-    func updateDraft() async {
-        let draftMessage = DraftMessage(
-            content: .draftMessageContentText(
-                DraftMessageContentText(
-                    linkPreviewOptions: nil,
-                    text: FormattedText(
-                        entities: getEntities(from: text),
-                        text: text.string,
-                    ),
-                ),
-            ),
-            date: Int(Date.now.timeIntervalSince1970),
-            effectId: 0,
-            replyTo: getMessageReplyTo(from: replyMessage),
-            suggestedPostInfo: nil,
-        )
-        _ = try? await service.setChatDraftMessage(
-            chatId: customChat.chat.id,
-            draftMessage: draftMessage,
-            topicId: nil,
-        )
-    }
-    
-    func setShowSendButton() {
-        guard editCustomMessage == nil else { return withAnimation { showSendButton = true } }
-        let value = !displayedDocuments.isEmpty || !displayedImages.isEmpty
-            || !editMessageText.characters.isEmpty || !text.characters.isEmpty
-        withAnimation { showSendButton = value }
-    }
-    
-    func setEditMessageText(from message: Message?) {
-        withAnimation {
-            guard let message, let formattedText = TelegramMessageEditing.editableFormattedText(from: message)
-            else { return }
-            editMessageText = getAttributedString(from: formattedText)
-        }
-    }
-    
-    func getMessageReplyTo(from customMessage: CustomMessage?) -> InputMessageReplyTo? {
-        TelegramMessageSending.replyTo(messageId: customMessage?.message.id)
-    }
-    
-    func startTimer() {
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] timer in
-            guard let self, let audioRecorder else { return }
-            wave.append(audioRecorder.peakPower)
-            timerCount += timer.timeInterval
-        }
-        self.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-    
-    func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-        timerCount = 0
-    }
-    
-    func tdSendChatAction(_ chatAction: ChatAction) async throws {
-        _ = try await service.sendChatAction(
-            action: chatAction,
-            businessConnectionId: nil,
-            chatId: customChat.chat.id,
-            topicId: nil,
-        )
-    }
-    
-    @MainActor func mediaStartRecordingVoice() async {
-        Media.shared.setAudioSessionRecord()
-        Media.shared.stop()
-        
-        let granted = await AVAudioApplication.requestRecordPermission()
-        if granted {
-            log("Access to Microphone for Voice messages is granted")
-        } else {
-            log("Access to Microphone for Voice messages is not granted")
-            errorShown = true
-            return
-        }
-        
-        let url = TelegramVoiceNoteSending.temporaryFileURL()
-        savedVoiceNoteUrl = url
-
-        do {
-            let recorder = VoiceNoteRecorder()
-            try recorder.start()
-            audioRecorder = recorder
-            withAnimation {
-                recordingVoiceNote = true
-                recordingLocked = false
-                recordingDragTranslation = .zero
-            }
-            try? await tdSendChatAction(.chatActionRecordingVoiceNote)
-        } catch {
-            log("Error creating AudioRecorder: \(error)")
-        }
-    }
-
-    func cancelRecordingVoice() {
-        audioRecorder?.cancel()
-        audioRecorder = nil
-        TelegramVoiceNoteStaging.shared.discard(fileURL: savedVoiceNoteUrl)
-        withAnimation {
-            recordingVoiceNote = false
-            recordingLocked = false
-            recordingDragTranslation = .zero
-        }
-        Task.background { try? await self.tdSendChatAction(.chatActionCancel) }
-    }
-
-    func mediaStopRecordingVoice(duration: Int, wave: [Float]) {
-        guard let audioRecorder else { return }
-        let encodedDuration: Int
-        do {
-            encodedDuration = try Int(ceil(audioRecorder.stopAndWrite(to: savedVoiceNoteUrl)))
-        } catch {
-            log("Error finalizing voice note:", error)
-            cancelRecordingVoice()
-            return
-        }
-        self.audioRecorder = nil
-        withAnimation {
-            recordingVoiceNote = false
-            recordingLocked = false
-            recordingDragTranslation = .zero
-        }
-        Task.background { try? await self.tdSendChatAction(.chatActionCancel) }
-
-        let waveform = TelegramVoiceNoteSending.waveform(from: wave)
-        Task.background {
-            await self.sendMessageVoiceNote(duration: max(encodedDuration, duration), waveform: waveform)
-        }
-    }
-
     // MARK: Private
 
     private func openChat(chatId: Int64, messageId: Int64?) {

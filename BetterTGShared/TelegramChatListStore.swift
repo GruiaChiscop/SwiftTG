@@ -1,6 +1,7 @@
 // TelegramChatListStore.swift
 
 import Combine
+import Foundation
 @preconcurrency import TDLibKit
 
 // MARK: - ChatListItemKind
@@ -234,6 +235,31 @@ final class TelegramChatListStore: @unchecked Sendable {
     }
 
     func reduce(_ update: Update) {
+        queue.async {
+            self.reduceOnQueue(update)
+        }
+    }
+
+    func mergeChats(_ chats: [Chat]) {
+        queue.async {
+            self.mergeChatsOnQueue(chats)
+        }
+    }
+
+    /// Blocks until all previously-enqueued mutations have applied. For deterministic tests only.
+    func waitForPendingWork() {
+        queue.sync {}
+    }
+
+    // MARK: Private
+
+    private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.telegram-chatlist")
+    private var memberships = [ChatListCommunity: ChatListMembership]()
+    private var postingPermissions = [ChatListCommunity: Bool]()
+    private let subject = CurrentValueSubject<ChatListSnapshot, Never>(.empty)
+
+    private func reduceOnQueue(_ update: Update) {
+        dispatchPrecondition(condition: .onQueue(queue))
         var state = subject.value
         switch update {
         case .updateChatFolders(let value):
@@ -300,7 +326,8 @@ final class TelegramChatListStore: @unchecked Sendable {
         subject.send(state)
     }
 
-    func mergeChats(_ chats: [Chat]) {
+    private func mergeChatsOnQueue(_ chats: [Chat]) {
+        dispatchPrecondition(condition: .onQueue(queue))
         var state = subject.value
         var changed = false
         for chat in chats {
@@ -325,12 +352,6 @@ final class TelegramChatListStore: @unchecked Sendable {
         state.version += 1
         subject.send(state)
     }
-
-    // MARK: Private
-
-    private var memberships = [ChatListCommunity: ChatListMembership]()
-    private var postingPermissions = [ChatListCommunity: Bool]()
-    private let subject = CurrentValueSubject<ChatListSnapshot, Never>(.empty)
 
     private func updateCommunityAccess(in state: inout ChatListSnapshot, for community: ChatListCommunity) -> Bool {
         guard let membership = memberships[community] else { return false }

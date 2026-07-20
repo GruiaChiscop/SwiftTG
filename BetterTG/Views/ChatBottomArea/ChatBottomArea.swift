@@ -16,29 +16,39 @@ struct ChatBottomArea: View {
 
     /// Thresholds mirror Telegram's own recording button: drag left to cancel,
     /// drag up to lock into hands-free recording.
+    ///
+    /// Recording only starts once the press has been held past `minimumDuration` - a plain tap
+    /// (release before that) does nothing, rather than starting and instantly stopping a
+    /// near-zero-length recording. There's no video-message mode to switch to on a quick tap
+    /// (round-video recording isn't implemented), so a tap is simply a no-op for now.
     var voiceRecordingGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
+        LongPressGesture(minimumDuration: 0.2)
+            .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
-                guard !chatVM.recordingLocked else { return }
+                guard case .second(true, let drag) = value, !chatVM.recordingLocked else { return }
                 if !chatVM.recordingVoiceNote, !hasBegunRecording {
                     hasBegunRecording = true
                     Task.main { await chatVM.mediaStartRecordingVoice() }
                 }
-                guard chatVM.recordingVoiceNote else { return }
-                chatVM.recordingDragTranslation = value.translation
-                if value.translation.height < -110 {
+                guard chatVM.recordingVoiceNote, let drag else { return }
+                chatVM.recordingDragTranslation = drag.translation
+                if drag.translation.height < -110 {
                     withAnimation { chatVM.recordingLocked = true }
-                } else if value.translation.width < -150 {
+                } else if drag.translation.width < -150 {
                     chatVM.cancelRecordingVoice()
                     hasBegunRecording = false
                 }
             }
             .onEnded { value in
                 defer { hasBegunRecording = false }
-                guard chatVM.recordingVoiceNote, !chatVM.recordingLocked else { return }
-                if value.translation.width < -100 || value.predictedEndTranslation.width < -400 {
+                guard case .second(true, let drag) = value,
+                      chatVM.recordingVoiceNote, !chatVM.recordingLocked
+                else { return }
+                let translation = drag?.translation ?? .zero
+                let predictedTranslation = drag?.predictedEndTranslation ?? .zero
+                if translation.width < -100 || predictedTranslation.width < -400 {
                     chatVM.cancelRecordingVoice()
-                } else if value.translation.height < -60 || value.predictedEndTranslation.height < -400 {
+                } else if translation.height < -60 || predictedTranslation.height < -400 {
                     withAnimation { chatVM.recordingLocked = true }
                 } else {
                     chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
@@ -46,19 +56,22 @@ struct ChatBottomArea: View {
             }
     }
     
+    /// Gated on the picker/camera/file-importer sheets also being closed - each of those stages
+    /// attachments asynchronously (image loading, security-scoped copy) while still technically
+    /// presented, so presenting this sheet purely off "attachments non-empty" could momentarily
+    /// race with one of them still being on screen.
+    var showAttachmentPreview: Bool {
+        (!chatVM.displayedImages.isEmpty || !chatVM.displayedDocuments.isEmpty)
+            && !chatVM.showPhotoPickerView
+            && !chatVM.showCameraView
+            && !chatVM.showDocumentPicker
+    }
+
     var body: some View {
         @Bindable var chatVM = chatVM
         VStack(spacing: 5) {
             topSide
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            
-            if !chatVM.displayedImages.isEmpty {
-                photosScroll
-            }
-
-            if !chatVM.displayedDocuments.isEmpty {
-                documentsList
-            }
 
             HStack(alignment: .bottom, spacing: 10) {
                 if chatVM.recordingVoiceNote {
@@ -90,6 +103,18 @@ struct ChatBottomArea: View {
             guard case .success(let urls) = result else { return }
             Task { await chatVM.stageDocuments(urls) }
         }
+        .sheet(isPresented: Binding(
+            get: { showAttachmentPreview },
+            set: { isPresented in
+                guard !isPresented else { return }
+                withAnimation {
+                    chatVM.displayedImages.removeAll()
+                    chatVM.displayedDocuments.removeAll()
+                }
+            },
+        )) {
+            AttachmentPreviewView()
+        }
         .padding(.vertical, 5)
         .padding(.horizontal, 10)
         .background(.bar)
@@ -110,7 +135,7 @@ struct ChatBottomArea: View {
                 .offset(x: 20, y: 20)
                 .onTapGesture { chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave) }
                 .accessibilityElement()
-                .accessibilityLabel("Stop Recording")
+                .accessibilityLabel("Send Voice Message")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { chatVM.mediaStopRecordingVoice(
                     duration: Int(chatVM.timerCount),
@@ -181,6 +206,7 @@ struct ChatBottomArea: View {
                 Image(systemName: "plus")
                     .foregroundStyle(.white)
                     .font(.system(size: 25))
+                    .accessibilityLabel(Text("Attach"))
             }
             .menuOrder(.fixed)
             .frame(height: 36)
@@ -281,6 +307,10 @@ struct ChatBottomArea: View {
                 : chatVM.showSendButton ? "Send Message" : "Record Voice Message",
         )
         .accessibilityAddTraits(.isButton)
+        // While recording but not yet locked, this still visually shows the mic glyph as a
+        // placeholder, but offering "Record Voice Message" here would be redundant/confusing
+        // alongside the recording indicator's Cancel action and the lock circle's Send action.
+        .accessibilityHidden(chatVM.recordingVoiceNote && !chatVM.recordingLocked)
         .accessibilityAction {
             if chatVM.recordingLocked {
                 chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
@@ -291,9 +321,6 @@ struct ChatBottomArea: View {
                 Task.main { await chatVM.mediaStartRecordingVoice() }
             }
         }
-        .accessibilityAction(named: "Record Voice Message") {
-            Task.main { await chatVM.mediaStartRecordingVoice() }
-        }
     }
 
     @ViewBuilder var topSide: some View {
@@ -302,40 +329,6 @@ struct ChatBottomArea: View {
         } else if let replyMessage = chatVM.replyMessage {
             replyMessageView(replyMessage, type: .reply)
         }
-    }
-    
-    var photosScroll: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .center, spacing: 5) {
-                ForEach(Array(chatVM.displayedImages.enumerated()), id: \.element.id) { index, photo in
-                    photo.image
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(.rect(cornerRadius: 10))
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel("Photo \(index + 1) of \(chatVM.displayedImages.count)")
-                        .overlay(alignment: .topTrailing) {
-                            Button {
-                                withAnimation {
-                                    chatVM.displayedImages.removeAll(where: { photo.id == $0.id })
-                                }
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.white, .blue)
-                                    .padding(5)
-                            }
-                            .accessibilityLabel("Remove Photo \(index + 1)")
-                        }
-                }
-            }
-        }
-        .frame(height: 120)
-        .clipShape(.rect(cornerRadius: 15))
-        .padding(5)
-        .background(Color.gray6)
-        .clipShape(.rect(cornerRadius: 15))
-        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
     
     @ViewBuilder var textField: some View {
@@ -454,28 +447,4 @@ struct ChatBottomArea: View {
     // MARK: Private
 
     @State private var hasBegunRecording = false
-
-    private var documentsList: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(chatVM.displayedDocuments, id: \.self) { url in
-                HStack {
-                    Image(systemName: "doc.fill")
-                        .accessibilityHidden(true)
-                    Text(url.lastPathComponent)
-                        .lineLimit(1)
-                    Spacer()
-                    Button("Remove \(url.lastPathComponent)", systemImage: "xmark.circle.fill") {
-                        chatVM.displayedDocuments.removeAll { $0 == url }
-                        chatVM.setShowSendButton()
-                    }
-                    .labelStyle(.iconOnly)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Attached file \(url.lastPathComponent)")
-            }
-        }
-        .padding(8)
-        .background(Color.gray6)
-        .clipShape(.rect(cornerRadius: 10))
-    }
 }

@@ -18,7 +18,7 @@ extension MessageView {
             Button("Edit", action: edit)
         }
         if customMessage.properties.canBeCopied,
-           getFormattedText(from: customMessage.message.content) != nil
+           telegramMessageFormattedText(customMessage.message) != nil
         {
             Button("Copy", action: copyMessageText)
         }
@@ -50,7 +50,7 @@ extension MessageView {
             ))
         }
         if customMessage.properties.canBeCopied,
-           getFormattedText(from: customMessage.message.content) != nil
+           telegramMessageFormattedText(customMessage.message) != nil
         {
             actions.append(.button(
                 title: "Copy",
@@ -88,74 +88,23 @@ extension MessageView {
     }
 
     func toggleReaction(_ reaction: ReactionType) {
-        let service = chatVM.service
-        let message = customMessage.message
-        Task.background {
-            try? await TelegramMessageActions.toggleReaction(
-                service: service,
-                message: message,
-                reaction: reaction,
-            )
-        }
+        chatVM.toggleReaction(reaction, on: customMessage.message)
     }
 
     func reply() {
-        if chatVM.replyMessage != nil {
-            withAnimation { chatVM.replyMessage = nil }
-            Task.main(delay: 0.4) {
-                withAnimation { chatVM.replyMessage = customMessage }
-            }
-        } else {
-            withAnimation { chatVM.replyMessage = customMessage }
-        }
+        chatVM.reply(to: customMessage)
     }
 
     func edit() {
-        if chatVM.editCustomMessage != nil {
-            withAnimation { chatVM.editCustomMessage = nil }
-            Task.main(delay: 0.4) {
-                withAnimation { chatVM.editCustomMessage = customMessage }
-            }
-        } else {
-            withAnimation { chatVM.editCustomMessage = customMessage }
-        }
+        chatVM.edit(customMessage)
     }
 
     func togglePinnedMessage() {
-        let message = customMessage.message
-        let service = chatVM.service
-        Task.background {
-            try await TelegramMessageActions.togglePinned(service: service, message: message)
-        }
+        chatVM.togglePinnedMessage(customMessage.message)
     }
 
     func copyMessageText() {
-        guard let formattedText = getFormattedText(from: customMessage.message.content) else { return }
+        guard let formattedText = telegramMessageFormattedText(customMessage.message) else { return }
         UIPasteboard.setFormattedText(formattedText)
-    }
-
-    func getFormattedText(from content: MessageContent) -> FormattedText? {
-        switch content {
-        case .messageText(let messageText):
-            guard !messageText.text.text.isEmpty else { return nil }
-            return messageText.text
-        case .messagePhoto(let messagePhoto):
-            guard !messagePhoto.caption.text.isEmpty else { return nil }
-            return messagePhoto.caption
-        case .messageVideo(let messageVideo):
-            guard !messageVideo.caption.text.isEmpty else { return nil }
-            return messageVideo.caption
-        case .messageVoiceNote(let messageVoiceNote):
-            guard !messageVoiceNote.caption.text.isEmpty else { return nil }
-            return messageVoiceNote.caption
-        case .messageAudio(let messageAudio):
-            guard !messageAudio.caption.text.isEmpty else { return nil }
-            return messageAudio.caption
-        case .messageDocument(let messageDocument):
-            guard !messageDocument.caption.text.isEmpty else { return nil }
-            return messageDocument.caption
-        default:
-            return nil
-        }
     }
 }

@@ -36,11 +36,20 @@ struct MacConversationView: View {
         .sheet(isPresented: $showsChatInfo) {
             MacChatInfoView(model: model, chat: chat)
         }
+        .sheet(isPresented: Binding(
+            get: { !model.selectedPhotoURLs.isEmpty || !model.selectedDocumentURLs.isEmpty },
+            set: { isPresented in
+                guard !isPresented else { return }
+                model.selectedPhotoURLs.removeAll()
+                model.selectedDocumentURLs.removeAll()
+            },
+        )) {
+            MacAttachmentPreview(model: model)
+        }
     }
 
     // MARK: Private
 
-    @State private var selectedMessageId: Int64?
     @State private var isAtBottom = false
     @State private var showsChatInfo = false
 
@@ -74,12 +83,9 @@ struct MacConversationView: View {
                 chat: chat,
                 unreadBoundaryMessageId: unreadBoundaryMessageId,
                 shouldFollowLatestMessage: shouldFollowLatestMessage,
-                selectedMessageId: $selectedMessageId,
                 isAtBottom: $isAtBottom,
-                onLoadOlder: loadOlderMessages,
             )
             .onChange(of: chat.chatId) {
-                selectedMessageId = nil
                 isAtBottom = false
                 model.latestHistoryTargetMessageId = nil
             }
@@ -142,50 +148,6 @@ struct MacConversationView: View {
                         model.cancelReplyOrEdit()
                     }
                     .labelStyle(.iconOnly)
-                }
-            }
-
-            if !model.selectedPhotoURLs.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(model.selectedPhotoURLs, id: \.self) { url in
-                            ZStack(alignment: .topTrailing) {
-                                if let image = NSImage(contentsOf: url) {
-                                    Image(nsImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 72, height: 72)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        .accessibilityLabel("Selected photo \(url.lastPathComponent)")
-                                }
-                                Button("Remove \(url.lastPathComponent)", systemImage: "xmark.circle.fill") {
-                                    model.removeSelectedPhoto(url)
-                                }
-                                .labelStyle(.iconOnly)
-                            }
-                        }
-                    }
-                }
-                .accessibilityLabel("\(model.selectedPhotoURLs.count) photos selected")
-            }
-
-            if !model.selectedDocumentURLs.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(model.selectedDocumentURLs, id: \.self) { url in
-                        HStack {
-                            Image(systemName: "doc.fill")
-                                .accessibilityHidden(true)
-                            Text(url.lastPathComponent)
-                                .lineLimit(1)
-                            Spacer()
-                            Button("Remove \(url.lastPathComponent)", systemImage: "xmark.circle.fill") {
-                                model.removeSelectedDocument(url)
-                            }
-                            .labelStyle(.iconOnly)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Attached file \(url.lastPathComponent)")
-                    }
                 }
             }
 
@@ -262,8 +224,4 @@ struct MacConversationView: View {
         .padding(12)
     }
 
-    private func loadOlderMessages() {
-        guard !model.isLoadingOlderMessages else { return }
-        Task { _ = await model.loadOlderMessages() }
-    }
 }

@@ -25,7 +25,7 @@ struct PhoneNumberInfo: Hashable, Identifiable {
     }
 
     var accessibilityLabel: String {
-        "\(name), calling code plus \(phoneNumberPrefix)"
+        "\(flagEmoji) \(name), calling code plus \(phoneNumberPrefix)"
     }
 
     func matches(_ query: String) -> Bool {

@@ -19,17 +19,13 @@ import TDLibKit
     var hint = ""
     var loginState = LoginState.phoneNumber
     var phoneNumber = ""
-    var selectedCountryNum = PhoneNumberInfo(
-        country: "RU",
-        phoneNumberPrefix: "7",
-        name: "Russian Federation",
-    )
+    var selectedCountryNum: PhoneNumberInfo?
     var showPhoneConfirmation = false
     var twoFactor = ""
     var waitPremiumErrorShown = false
 
     var formattedPhoneNumber: String {
-        TelegramPhoneNumber.display(callingCode: selectedCountryNum.phoneNumberPrefix, number: phoneNumber)
+        TelegramPhoneNumber.display(callingCode: selectedCountryNum?.phoneNumberPrefix ?? "", number: phoneNumber)
     }
 
     func start() async {
@@ -54,7 +50,7 @@ import TDLibKit
     func continueLogin() {
         switch loginState {
         case .phoneNumber:
-            guard !phoneNumber.isEmpty else { return }
+            guard !phoneNumber.isEmpty, selectedCountryNum != nil else { return }
             showPhoneConfirmation = true
         case .code:
             Task { _ = try? await service.checkAuthenticationCode(code: code) }
@@ -64,10 +60,12 @@ import TDLibKit
     }
 
     func submitPhoneNumber() {
-        guard let number = TelegramPhoneNumber.normalized(
-            callingCode: selectedCountryNum.phoneNumberPrefix,
-            number: phoneNumber,
-        ) else { return }
+        guard let selectedCountryNum,
+              let number = TelegramPhoneNumber.normalized(
+                  callingCode: selectedCountryNum.phoneNumberPrefix,
+                  number: phoneNumber,
+              )
+        else { return }
         Task {
             _ = try? await service.setAuthenticationPhoneNumber(phoneNumber: number, settings: nil)
         }

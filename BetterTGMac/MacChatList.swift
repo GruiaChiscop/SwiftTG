@@ -52,7 +52,7 @@ struct MacChatRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Press Return or Space to open this chat")
-        .accessibilityActions { chatActions }
+        .accessibilityActions { chatAccessibilityActions }
         .contextMenu { chatActions }
         .confirmationDialog("Mute \(chat.title)", isPresented: $showMuteOptions) {
             ForEach(TelegramMutePreset.allCases) { preset in
@@ -154,51 +154,83 @@ struct MacChatRow: View {
         chat.position(in: .chatListArchive) != nil
     }
 
-    @ViewBuilder private var chatActions: some View {
+    /// Actions common to the context menu and VoiceOver's accessibility actions; kept as one list
+    /// so the two presentations (menu buttons with icons vs. plain accessibility actions) can't
+    /// drift, mirroring the pattern in `MacMessageRow`'s `rowActions`.
+    private enum MacChatRowAction {
+        case button(title: String, systemImage: String, role: ButtonRole? = nil, action: () -> Void)
+        case divider
+    }
+
+    private var rowActions: [MacChatRowAction] {
         let policy = chat.actionPolicy
-        Button(
-            chat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread",
-            systemImage: chat.hasUnreadMessages ? "envelope.open" : "envelope.badge",
-        ) {
-            model.toggleRead(for: chat)
-        }
-
-        Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "speaker.wave.2" : "speaker.slash") {
-            if isMuted {
-                model.setMuteDuration(0, for: chat)
-            } else {
-                showMuteOptions = true
-            }
-        }
-
-        Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash.fill" : "pin.fill") {
-            model.togglePinned(for: chat, in: chatList)
-        }
-
-        Button(isArchived ? "Unarchive" : "Archive", systemImage: isArchived ? "tray.and.arrow.up" : "archivebox") {
-            model.toggleArchived(chat)
-        }
-
+        var items: [MacChatRowAction] = [
+            .button(
+                title: chat.hasUnreadMessages ? "Mark as Read" : "Mark as Unread",
+                systemImage: chat.hasUnreadMessages ? "envelope.open" : "envelope.badge",
+            ) { model.toggleRead(for: chat) },
+            .button(
+                title: isArchived ? "Unarchive" : "Archive",
+                systemImage: isArchived ? "tray.and.arrow.up" : "archivebox",
+            ) { model.toggleArchived(chat) },
+            .button(
+                title: isPinned ? "Unpin" : "Pin",
+                systemImage: isPinned ? "pin.slash.fill" : "pin.fill",
+            ) { model.togglePinned(for: chat, in: chatList) },
+            .button(
+                title: isMuted ? "Unmute" : "Mute",
+                systemImage: isMuted ? "speaker.wave.2" : "speaker.slash",
+            ) {
+                if isMuted {
+                    model.setMuteDuration(0, for: chat)
+                } else {
+                    showMuteOptions = true
+                }
+            },
+        ]
         if policy.canClearHistory || policy.canLeave || policy.canDeleteChat {
-            Divider()
+            items.append(.divider)
         }
         if policy.canClearHistory {
-            Button("Clear History", systemImage: "eraser", role: .destructive) {
+            items.append(.button(title: "Clear History", systemImage: "eraser", role: .destructive) {
                 showClearHistoryOptions = true
-            }
+            })
         }
         if let leaveTitle = policy.leaveActionTitle {
-            Button(
-                leaveTitle,
+            items.append(.button(
+                title: leaveTitle,
                 systemImage: "rectangle.portrait.and.arrow.right",
                 role: .destructive,
-            ) {
-                showLeaveConfirmation = true
-            }
+            ) { showLeaveConfirmation = true })
         } else if policy.canDeleteChat {
-            Button(policy.deleteActionTitle, systemImage: "trash", role: .destructive) {
+            items.append(.button(title: policy.deleteActionTitle, systemImage: "trash", role: .destructive) {
                 showDeleteOptions = true
+            })
+        }
+        return items
+    }
+
+    @ViewBuilder private var chatActions: some View {
+        ForEach(Array(rowActions.enumerated()), id: \.offset) { _, item in
+            switch item {
+            case .button(let title, let systemImage, let role, let action):
+                Button(title, systemImage: systemImage, role: role, action: action)
+            case .divider:
+                Divider()
             }
+        }
+    }
+
+    /// SwiftUI presents .accessibilityActions in reverse declaration order, so `rowActions` is
+    /// reversed here (dividers dropped) to have VoiceOver announce them in the intended order:
+    /// Mark as Read -> Archive -> Pin -> Mute -> Clear History -> Leave/Delete.
+    @ViewBuilder private var chatAccessibilityActions: some View {
+        let buttonItems = rowActions.reversed().compactMap { item -> (title: String, action: () -> Void)? in
+            guard case .button(let title, _, _, let action) = item else { return nil }
+            return (title, action)
+        }
+        ForEach(Array(buttonItems.enumerated()), id: \.offset) { _, item in
+            Button(item.title, action: item.action)
         }
     }
 }

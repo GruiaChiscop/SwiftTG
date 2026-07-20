@@ -9,34 +9,9 @@ struct MacChatWorkspace: View {
 
     var body: some View {
         NavigationSplitView {
-            VStack(spacing: 0) {
-                MacChatFolderPicker(model: model)
-                Divider()
-                if model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    chatList
-                } else {
-                    searchResults
-                }
-            }
-            .searchable(
-                text: Binding(
-                    get: { model.searchQuery },
-                    set: { model.setSearchQuery($0) },
-                ),
-                prompt: "Search chats and messages",
-            )
-            .navigationSplitViewColumnWidth(min: 250, ideal: 310, max: 420)
+            MacChatSidebar(model: model)
         } detail: {
-            if let chat = model.openedChat {
-                MacConversationView(model: model, chat: chat)
-                    .id(chat.chatId)
-            } else {
-                ContentUnavailableView(
-                    "Select a Chat",
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Select a chat"),
-                )
-            }
+            MacChatDetail(model: model)
         }
         .navigationTitle("BetterTG")
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -57,6 +32,35 @@ struct MacChatWorkspace: View {
         } message: {
             Text(model.messageActionError ?? "Unknown error")
         }
+    }
+}
+
+// MARK: - Isolated navigation columns
+
+/// Keeping the sidebar and detail in separate observation scopes prevents an `openedChatId`
+/// change from rebuilding the entire chat list, and a `focusedChatId` change from reconstructing
+/// the conversation hierarchy.
+private struct MacChatSidebar: View {
+    @Bindable var model: MacSessionModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            MacChatFolderPicker(model: model)
+            Divider()
+            if model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                chatList
+            } else {
+                searchResults
+            }
+        }
+        .searchable(
+            text: Binding(
+                get: { model.searchQuery },
+                set: { model.setSearchQuery($0) },
+            ),
+            prompt: "Search chats and messages",
+        )
+        .navigationSplitViewColumnWidth(min: 250, ideal: 310, max: 420)
     }
 
     // MARK: Private
@@ -183,6 +187,25 @@ struct MacChatWorkspace: View {
             {
                 ContentUnavailableView.search(text: model.searchQuery)
             }
+        }
+    }
+}
+
+/// Deliberately has no `.id(chat.chatId)`: `MacMessageTable.Coordinator` already handles chat
+/// changes and can cheaply reuse its AppKit table. Re-keying this subtree destroyed and rebuilt
+/// every hosted row on each click.
+private struct MacChatDetail: View {
+    @Bindable var model: MacSessionModel
+
+    var body: some View {
+        if let chat = model.openedChat {
+            MacConversationView(model: model, chat: chat)
+        } else {
+            ContentUnavailableView(
+                "Select a Chat",
+                systemImage: "bubble.left.and.bubble.right",
+                description: Text("Select a chat"),
+            )
         }
     }
 }

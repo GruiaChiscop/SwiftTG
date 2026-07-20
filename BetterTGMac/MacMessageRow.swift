@@ -166,15 +166,30 @@ struct MacMessageRow: View {
         }
         .contentShape(Rectangle())
         .contextMenu { messageActions }
-        .onScrollVisibilityChange(threshold: 0.01) { isVisible in
-            self.isVisible = isVisible
+        .onScrollVisibilityChange(threshold: 0.01) { newValue in
+            // Debounced here, before `isVisible` (and therefore `presentationTaskID`) changes,
+            // rather than inside each `.task(id:)` body: table reloads/row inserts during the
+            // initial history reveal make AppKit report a row's visibility flipping rapidly for
+            // reasons that have nothing to do with the user actually scrolling it into view. Since
+            // `.task(id:)` cancels and restarts on every id change, letting that flicker reach
+            // `presentationTaskID` directly meant every visible row's seven load tasks (capabilities,
+            // reply context, sender name, thumbnails, ...) got cancelled and restarted on each
+            // flip - the burst of redundant model calls across dozens of rows is what produced the
+            // "onChange tried to update multiple times per frame" warnings and the multi-second
+            // freeze right after a cold chat's history loaded.
+            visibilityDebounceTask?.cancel()
+            visibilityDebounceTask = Task {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled else { return }
+                isVisible = newValue
+            }
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility(), let voiceFileId else { return }
+            guard isVisible, let voiceFileId else { return }
             voicePath = await model.localVoiceNotePath(fileId: voiceFileId)
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility(),
+            guard isVisible,
                   let photoFileId,
                   let path = await model.localPhotoPath(fileId: photoFileId)
             else {
@@ -183,36 +198,36 @@ struct MacMessageRow: View {
                 return
             }
             photoPath = path
-            photoImage = NSImage(contentsOfFile: path)
+            photoImage = await Self.decodedImage(atPath: path)
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility(),
+            guard isVisible,
                   let videoThumbnailFileId,
                   let path = await model.localPhotoPath(fileId: videoThumbnailFileId)
             else {
                 videoThumbnailImage = nil
                 return
             }
-            videoThumbnailImage = NSImage(contentsOfFile: path)
+            videoThumbnailImage = await Self.decodedImage(atPath: path)
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility() else { return }
+            guard isVisible else { return }
             await model.loadCapabilities(for: message)
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility() else { return }
+            guard isVisible else { return }
             await model.loadReplyContext(for: message)
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility() else { return }
+            guard isVisible else { return }
             await model.loadForwardedFrom(for: message)
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility() else { return }
+            guard isVisible else { return }
             await model.loadSenderName(for: message)
         }
         .task(id: presentationTaskID) {
-            guard await waitForStableVisibility() else { return }
+            guard isVisible else { return }
             await model.loadServiceDescription(for: message)
         }
         .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
@@ -284,6 +299,7 @@ struct MacMessageRow: View {
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
     @State private var isVisible = false
+    @State private var visibilityDebounceTask: Task<Void, Never>?
 
     private var capabilities: MacMessageCapabilities? {
         model.messageCapabilities[message.id]
@@ -489,16 +505,19 @@ struct MacMessageRow: View {
     }
 
     @ViewBuilder private var messageAccessibilityActions: some View {
-        ForEach(Array(rowActions.enumerated()), id: \.offset) { _, item in
+        // SwiftUI presents .accessibilityActions in reverse declaration order, so the combined
+        // list (row actions, then Delete) is reversed as a whole here to have VoiceOver announce
+        // them in the intended order, ending with Delete.
+        let items = rowActions + (canDelete
+            ? [.button(title: "Delete", systemImage: "trash") { showDeleteOptions = true }]
+            : [])
+        ForEach(Array(items.reversed().enumerated()), id: \.offset) { _, item in
             switch item {
             case .button(let title, _, let action):
                 Button(title, action: action)
             case .reactions:
                 Button("React") { showReactionOptions = true }
             }
-        }
-        if canDelete {
-            Button("Delete") { showDeleteOptions = true }
         }
     }
 
@@ -533,13 +552,15 @@ struct MacMessageRow: View {
         }
     }
 
-    private func waitForStableVisibility() async -> Bool {
-        do {
-            try await Task.sleep(for: .milliseconds(100))
-        } catch {
-            return false
-        }
-        return isVisible && !Task.isCancelled
+    /// Cold-opening a chat reveals dozens of rows at once, whose photo/thumbnail loads (already
+    /// cached, so they resolve almost together) previously each called `NSImage(contentsOfFile:)`
+    /// synchronously on the MainActor with no yield point in between - decoding ~30 images
+    /// back-to-back that way is enough by itself to freeze the UI for several seconds. Decoding
+    /// off the main actor and only handing back the finished `NSImage` avoids that pile-up.
+    private static func decodedImage(atPath path: String) async -> NSImage? {
+        await Task.detached(priority: .userInitiated) {
+            NSImage(contentsOfFile: path)
+        }.value
     }
 
     private func activateMessage() {
@@ -567,8 +588,7 @@ struct MacMessageRow: View {
     }
 }
 
-@MainActor
-func macMessageAccessibilityDescription(
+@MainActor func macMessageAccessibilityDescription(
     model: MacSessionModel,
     message: Message,
     lastReadOutboxMessageId: Int64,

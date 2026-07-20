@@ -10,6 +10,7 @@ enum TelegramMessageChange: Sendable {
     case chatAction(UpdateChatAction)
     case deleteMessages(UpdateDeleteMessages)
     case historyMerged
+    case messageContentChanged(UpdateMessageContent)
     case messageEdited(UpdateMessageEdited)
     case messageInteractionInfo(UpdateMessageInteractionInfo)
     case messagePinChanged(UpdateMessageIsPinned)
@@ -18,6 +19,13 @@ enum TelegramMessageChange: Sendable {
     case readInbox(UpdateChatReadInbox)
     case readOutbox(UpdateChatReadOutbox)
     case userStatus(UpdateUserStatus)
+}
+
+extension Optional where Wrapped == TelegramMessageChange {
+    var isHistoryMerge: Bool {
+        guard case .some(.historyMerged) = self else { return false }
+        return true
+    }
 }
 
 // MARK: - TelegramMessageSnapshot
@@ -56,11 +64,76 @@ struct TelegramMessageSnapshot: Sendable {
     }
 }
 
+// MARK: - Message patching
+
+extension Message {
+    /// TDLibKit's `Message` is all `let` - this is the only way to produce an updated copy.
+    /// Only the fields `TelegramMessageStore.reduce(_:)` actually patches from push updates are
+    /// exposed here; everything else passes through unchanged.
+    fileprivate func applying(
+        content: MessageContent? = nil,
+        editDate: Int? = nil,
+        replyMarkup: ReplyMarkup?? = nil,
+        interactionInfo: MessageInteractionInfo?? = nil,
+        isPinned: Bool? = nil,
+    ) -> Message {
+        Message(
+            authorSignature: authorSignature,
+            autoDeleteIn: autoDeleteIn,
+            canBeSaved: canBeSaved,
+            chatId: chatId,
+            containsUnreadMention: containsUnreadMention,
+            containsUnreadPollVotes: containsUnreadPollVotes,
+            content: content ?? self.content,
+            date: date,
+            editDate: editDate ?? self.editDate,
+            effectId: effectId,
+            factCheck: factCheck,
+            forwardInfo: forwardInfo,
+            guestBotCallerId: guestBotCallerId,
+            hasTimestampedMedia: hasTimestampedMedia,
+            id: id,
+            importInfo: importInfo,
+            interactionInfo: interactionInfo ?? self.interactionInfo,
+            isChannelPost: isChannelPost,
+            isFromOffline: isFromOffline,
+            isOutgoing: isOutgoing,
+            isPaidStarSuggestedPost: isPaidStarSuggestedPost,
+            isPaidTonSuggestedPost: isPaidTonSuggestedPost,
+            isPinned: isPinned ?? self.isPinned,
+            mediaAlbumId: mediaAlbumId,
+            paidMessageStarCount: paidMessageStarCount,
+            replyMarkup: replyMarkup ?? self.replyMarkup,
+            replyTo: replyTo,
+            restrictionInfo: restrictionInfo,
+            schedulingState: schedulingState,
+            selfDestructIn: selfDestructIn,
+            selfDestructType: selfDestructType,
+            senderBoostCount: senderBoostCount,
+            senderBusinessBotUserId: senderBusinessBotUserId,
+            senderId: senderId,
+            senderTag: senderTag,
+            sendingState: sendingState,
+            suggestedPostInfo: suggestedPostInfo,
+            summaryLanguageCode: summaryLanguageCode,
+            topicId: topicId,
+            unreadReactions: unreadReactions,
+            viaBotUserId: viaBotUserId,
+        )
+    }
+}
+
 // MARK: - TelegramMessageStore
 
 final class TelegramMessageStore: @unchecked Sendable {
     // MARK: Internal
 
+    /// Uses `stateLock` rather than `queue.sync` deliberately: `queue` also carries potentially
+    /// expensive multi-page history merges (see `merge`/`replaceHistory`), and this is called
+    /// synchronously on the caller's thread (typically the main actor, from a chat-open path) -
+    /// blocking on the *whole* queue's backlog there previously froze the UI while a chat with no
+    /// local history paged in its first several batches. `stateLock` only ever guards this
+    /// dictionary lookup, never a merge, so it can't stall behind one.
     func publisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
         stateLock.withLock {
             let initialSnapshot = (snapshots[chatId] ?? .empty(chatId: chatId)).withoutChange()
@@ -175,8 +248,31 @@ final class TelegramMessageStore: @unchecked Sendable {
                 }
             case .readInbox(let value):
                 unreadCount = value.unreadCount
-            case .chatAction, .historyMerged, .messageEdited, .messageInteractionInfo, .messagePinChanged, .readOutbox,
-                 .userStatus:
+            // These four all carry enough of the new state in the update itself to patch the
+            // cached `Message` directly - no need for callers to round-trip a `getMessage` RPC
+            // just to pick up a reaction count, a pin flag, or an edit, as both `ChatVM` and
+            // `MacSessionModel` previously did on every one of these (frequent, on a busy chat)
+            // events.
+            case .messageContentChanged(let value):
+                if let existing = messages[value.messageId] {
+                    messages[value.messageId] = existing.applying(content: value.newContent)
+                }
+            case .messageEdited(let value):
+                if let existing = messages[value.messageId] {
+                    messages[value.messageId] = existing.applying(
+                        editDate: value.editDate,
+                        replyMarkup: value.replyMarkup,
+                    )
+                }
+            case .messageInteractionInfo(let value):
+                if let existing = messages[value.messageId] {
+                    messages[value.messageId] = existing.applying(interactionInfo: value.interactionInfo)
+                }
+            case .messagePinChanged(let value):
+                if let existing = messages[value.messageId] {
+                    messages[value.messageId] = existing.applying(isPinned: value.isPinned)
+                }
+            case .chatAction, .historyMerged, .readOutbox, .userStatus:
                 break
             }
 
@@ -296,6 +392,8 @@ final class TelegramMessageStore: @unchecked Sendable {
             (value.chatId, .readOutbox(value))
         case .updateDeleteMessages(let value):
             (value.chatId, .deleteMessages(value))
+        case .updateMessageContent(let value):
+            (value.chatId, .messageContentChanged(value))
         case .updateMessageEdited(let value):
             (value.chatId, .messageEdited(value))
         case .updateMessageInteractionInfo(let value):

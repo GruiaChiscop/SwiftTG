@@ -19,37 +19,7 @@ extension MacSessionModel {
             }
         }
 
-        let targetCount = 50
-        var messagesById = [Int64: Message]()
-        var fromMessageId: Int64 = 0
-        var reachedBeginning = false
-
-        for _ in 0..<10 {
-            guard !Task.isCancelled,
-                  openedChatId == chatId,
-                  historyRequestGeneration == generation,
-                  messagesById.count < targetCount
-            else { return }
-
-            let requestedCount = min(100, targetCount - messagesById.count + (fromMessageId == 0 ? 0 : 1))
-            guard let history = try? await service.getChatHistory(
-                chatId: chatId,
-                fromMessageId: fromMessageId,
-                limit: requestedCount,
-                offset: 0,
-                onlyLocal: false,
-            ) else { return }
-
-            let newMessages = (history.messages ?? []).filter { messagesById[$0.id] == nil }
-            guard !newMessages.isEmpty else {
-                reachedBeginning = true
-                break
-            }
-            for message in newMessages {
-                messagesById[message.id] = message
-            }
-            fromMessageId = messagesById.keys.min() ?? 0
-        }
+        let (messagesById, reachedBeginning) = await fetchMessagesBackward(chatId: chatId, generation: generation)
 
         guard !Task.isCancelled,
               openedChatId == chatId,
@@ -64,6 +34,8 @@ extension MacSessionModel {
 
         canLoadOlderMessages = !reachedBeginning
         latestHistoryTargetMessageId = newestMessage.id
+        displayedMessageAnchorId = nil
+        displayedMessageLimit = 30
         let latestMessages = Array(messagesById.values)
         service.replaceMessageHistory(chatId: chatId, messages: latestMessages)
     }
@@ -104,22 +76,18 @@ extension MacSessionModel {
             return false
         }
 
+        displayedMessageLimit += olderMessages.count
         service.mergeMessageHistory(chatId: chatId, messages: olderMessages)
         return true
     }
 
     func loadInitialHistory(chatId: Int64, around targetMessageId: Int64? = nil) async -> [Message] {
-        let targetCount = 50
-        let maxIterations = 10
         let generation = historyRequestGeneration
-        var messagesById = [Int64: Message]()
-        var fromMessageId: Int64 = targetMessageId ?? 0
-        var reachedBeginning = false
 
-        if targetMessageId != nil {
+        if let targetMessageId {
             guard let history = try? await service.getChatHistory(
                 chatId: chatId,
-                fromMessageId: fromMessageId,
+                fromMessageId: targetMessageId,
                 limit: 51,
                 offset: -25,
                 onlyLocal: false,
@@ -133,6 +101,65 @@ extension MacSessionModel {
             canLoadOlderMessages = !foundMessages.isEmpty
             return foundMessages
         }
+
+        // Ask TDLib's on-disk database first. A remote-capable history request may wait for the
+        // network even when enough local messages exist to paint the conversation immediately.
+        // Older pages remain available through `loadOlderMessages`, which is remote-capable.
+        if let localHistory = try? await service.getChatHistory(
+            chatId: chatId,
+            fromMessageId: 0,
+            limit: 30,
+            offset: 0,
+            onlyLocal: true,
+        ), !Task.isCancelled,
+        openedChatId == chatId,
+        historyRequestGeneration == generation,
+        let localMessages = localHistory.messages,
+        !localMessages.isEmpty
+        {
+            service.mergeMessageHistory(chatId: chatId, messages: localMessages)
+            canLoadOlderMessages = true
+            return localMessages
+        }
+
+        let (messagesById, reachedBeginning) = await fetchMessagesBackward(chatId: chatId, generation: generation)
+        guard !Task.isCancelled, openedChatId == chatId, historyRequestGeneration == generation else {
+            return Array(messagesById.values)
+        }
+
+        // Merge once the full initial batch is assembled rather than after each network page - a
+        // cold chat (nothing synced locally yet) can need several sequential round trips here, and
+        // publishing after every single one forces a full table reload each time, turning what
+        // should be one clean reveal into a visibly janky, multi-second churn.
+        if !messagesById.isEmpty {
+            service.mergeMessageHistory(chatId: chatId, messages: Array(messagesById.values))
+        }
+        canLoadOlderMessages = !reachedBeginning && !messagesById.isEmpty
+        return Array(messagesById.values)
+    }
+
+    // MARK: Private
+
+    /// Pages backward from the newest known message, accumulating up to `targetCount` messages
+    /// across at most `maxIterations` round trips. Shared by `loadLatestMessages` (bootstrap) and
+    /// `loadInitialHistory` (jump-to-message with no target) - the only difference between the two
+    /// call sites is what they do with the result once paging stops.
+    ///
+    /// `targetCount` matches iOS's initial page size deliberately, not just for parity: the
+    /// resulting batch lands in `MacMessageTable`, where automatic row-height measurement still
+    /// runs synchronously for each progressively inserted chunk. A cold chat with no local history
+    /// assembles its whole first reveal from this batch, so keep it as small as still gives a
+    /// reasonable first screenful.
+    private func fetchMessagesBackward(
+        chatId: Int64,
+        generation: UInt64,
+        targetCount: Int = 30,
+        maxIterations: Int = 10,
+        startingFromMessageId: Int64 = 0,
+    ) async -> (messages: [Int64: Message], reachedBeginning: Bool) {
+        var messagesById = [Int64: Message]()
+        var fromMessageId = startingFromMessageId
+        var reachedBeginning = false
 
         for _ in 0..<maxIterations {
             guard !Task.isCancelled,
@@ -149,32 +176,17 @@ extension MacSessionModel {
                 offset: 0,
                 onlyLocal: false,
             ) else { break }
-
             let newMessages = (history.messages ?? []).filter { messagesById[$0.id] == nil }
             guard !newMessages.isEmpty else {
                 reachedBeginning = true
                 break
             }
-
             for message in newMessages {
                 messagesById[message.id] = message
             }
             fromMessageId = messagesById.keys.min() ?? 0
         }
 
-        guard !Task.isCancelled, openedChatId == chatId, historyRequestGeneration == generation else {
-            return Array(messagesById.values)
-        }
-
-        // Merge once the full initial batch is assembled rather than after each network page - a
-        // cold chat (nothing synced locally yet) can need several sequential round trips here, and
-        // publishing after every single one forces a full table reload each time, turning what
-        // should be one clean reveal into a visibly janky, multi-second churn.
-        if !messagesById.isEmpty {
-            service.mergeMessageHistory(chatId: chatId, messages: Array(messagesById.values))
-        }
-        canLoadOlderMessages = !reachedBeginning && !messagesById.isEmpty
-        return Array(messagesById.values)
+        return (messagesById, reachedBeginning)
     }
-
 }

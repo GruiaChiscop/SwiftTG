@@ -13,7 +13,6 @@ struct MessageView: View {
     @State var media = Media.shared
     @State var audioPlayer = TelegramAudioPlayer.shared
     @State var voiceNoteLocalPath: String?
-    @State var isPreparingVoiceNote = false
     @State var showDeleteOptions = false
     @State var showReactionOptions = false
     @State var showReactionDetails = false
@@ -31,7 +30,7 @@ struct MessageView: View {
         if let serviceMessageText = customMessage.serviceMessageText {
             parts.append(serviceMessageText)
         } else {
-            let sender = customMessage.message.isOutgoing ? "You" : (customMessage.senderUser?.firstName ?? "Unknown")
+            let sender = customMessage.message.isOutgoing ? "You" : channelOrGroupAwareSenderName
             parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
         }
         if let editStatus = telegramMessageEditStatus(customMessage.message) {
@@ -254,6 +253,13 @@ struct MessageView: View {
 
     // MARK: Private
 
+    /// A channel post (or an anonymous "as the group" admin post) has no `User` sender at all, so
+    /// falling back straight to "Unknown" there was wrong for every such message - fall back to the
+    /// sender chat's own title instead, matching how macOS resolves the same case.
+    private var channelOrGroupAwareSenderName: String {
+        customMessage.senderUser?.firstName ?? customMessage.senderChatTitle ?? "Unknown"
+    }
+
     private var textLinks: [TelegramTextLink] {
         guard let formattedText = customMessage.formattedText else { return [] }
         return TelegramTextFormatting.links(in: formattedText)
@@ -389,51 +395,10 @@ struct MessageView: View {
     }
 
     private func toggleVoiceMessage(_ messageVoiceNote: MessageVoiceNote) {
-        voicePlaybackTrace(
-            "activation fileId=\(messageVoiceNote.voiceNote.voice.id) "
-                + "hasPath=\(voiceNoteLocalPath != nil) preparing=\(isPreparingVoiceNote)",
-        )
-        if let voiceNoteLocalPath {
-            startVoicePlayback(
-                path: voiceNoteLocalPath,
-                duration: messageVoiceNote.voiceNote.duration,
-            )
-            return
-        }
-        guard !isPreparingVoiceNote else { return }
-        isPreparingVoiceNote = true
-        TelegramAudioPlayer.shared.stop()
         Task { @MainActor in
-            defer { isPreparingVoiceNote = false }
-            do {
-                let file = try await chatVM.service.downloadFile(
-                    fileId: messageVoiceNote.voiceNote.voice.id,
-                    limit: 0,
-                    offset: 0,
-                    priority: 32,
-                    synchronous: true,
-                )
-                guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else { return }
-                voicePlaybackTrace(
-                    "download completed fileId=\(file.id) size=\(file.local.downloadedSize)",
-                )
-                voiceNoteLocalPath = file.local.path
-                startVoicePlayback(
-                    path: file.local.path,
-                    duration: messageVoiceNote.voiceNote.duration,
-                )
-            } catch {
-                voicePlaybackTrace("download failed: \(error.localizedDescription)")
-                log("Failed to download voice message:", error)
+            if let resolvedPath = await chatVM.toggleVoiceMessage(messageVoiceNote, knownLocalPath: voiceNoteLocalPath) {
+                voiceNoteLocalPath = resolvedPath
             }
         }
-    }
-
-    private func startVoicePlayback(path: String, duration: Int) {
-        voicePlaybackTrace(
-            "start requested exists=\(FileManager.default.fileExists(atPath: path)) duration=\(duration)",
-        )
-        TelegramAudioPlayer.shared.stop()
-        Media.shared.toggle(with: path, duration: duration)
     }
 }

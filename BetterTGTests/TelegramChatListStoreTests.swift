@@ -111,6 +111,7 @@ struct TelegramChatListStoreTests {
     // MARK: Private
 
     private func currentSnapshot(of store: TelegramChatListStore) throws -> ChatListSnapshot {
+        store.waitForPendingWork()
         var result: ChatListSnapshot?
         let cancellable = store.publisher.first().sink { result = $0 }
         withExtendedLifetime(cancellable) {}

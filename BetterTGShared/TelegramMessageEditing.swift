@@ -19,6 +19,11 @@ enum TelegramMessageEditing {
 
     /// Applies `newText` to `messageContent` via the matching TDLib edit call.
     /// Returns `false` without side effects if the content type isn't editable.
+    ///
+    /// TDLib doesn't push `updateMessageEdited`/`updateMessageContent` back to the client that
+    /// made the edit (only to other sessions), so the edit's own client has to notify itself using
+    /// the `Message` its own edit call already returned - otherwise the edited content stays stuck
+    /// showing the pre-edit text until something else happens to refetch it.
     @discardableResult static func editMessage(
         service: any TelegramService,
         chatId: Int64,
@@ -27,9 +32,10 @@ enum TelegramMessageEditing {
         newText: FormattedText,
     ) async -> Bool {
         let newText = await TelegramTextFormatting.addingAutomaticEntities(service: service, to: newText)
+        let edited: Message?
         switch messageContent {
         case .messageText:
-            _ = try? await service.editMessageText(
+            edited = try? await service.editMessageText(
                 chatId: chatId,
                 inputMessageContent: .inputMessageText(.init(
                     clearDraft: true,
@@ -39,18 +45,20 @@ enum TelegramMessageEditing {
                 messageId: messageId,
                 replyMarkup: nil,
             )
-            return true
         case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
-            _ = try? await service.editMessageCaption(
+            edited = try? await service.editMessageCaption(
                 caption: newText,
                 chatId: chatId,
                 messageId: messageId,
                 replyMarkup: nil,
                 showCaptionAboveMedia: false,
             )
-            return true
         default:
             return false
         }
+        if let edited {
+            service.notifyMessageContentChanged(chatId: chatId, messageId: messageId, newContent: edited.content)
+        }
+        return true
     }
 }

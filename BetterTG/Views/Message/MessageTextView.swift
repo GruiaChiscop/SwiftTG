@@ -3,7 +3,30 @@
 import SwiftUI
 import TDLibKit
 
-var cachedTextSizes = [FormattedText: CGSize]()
+/// Boxes a `FormattedText` for use as an `NSCache` key, since `NSCache` requires a class key.
+private final class FormattedTextBox: NSObject {
+    // MARK: Lifecycle
+
+    init(_ value: FormattedText) {
+        self.value = value
+    }
+
+    // MARK: Internal
+
+    let value: FormattedText
+
+    override var hash: Int { value.hashValue }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        (object as? FormattedTextBox)?.value == value
+    }
+}
+
+private let cachedTextSizes: NSCache<FormattedTextBox, NSValue> = {
+    let cache = NSCache<FormattedTextBox, NSValue>()
+    cache.countLimit = 500
+    return cache
+}()
 
 // MARK: - MessageTextView
 
@@ -11,17 +34,18 @@ struct MessageTextView: View {
     // MARK: Internal
 
     let formattedText: FormattedText
-    
+
     var body: some View {
         TextView(formattedText: formattedText)
             .frame(size: size(for: formattedText))
     }
-    
+
     // MARK: Private
 
     private func size(for formattedText: FormattedText) -> CGSize {
-        if let cached = cachedTextSizes[formattedText] {
-            return cached
+        let cacheKey = FormattedTextBox(formattedText)
+        if let cached = cachedTextSizes.object(forKey: cacheKey) {
+            return cached.cgSizeValue
         }
         let attributedString = NSMutableAttributedString(getAttributedString(from: formattedText, withDate: true))
         let textStorage = NSTextStorage(attributedString: attributedString)
@@ -35,7 +59,7 @@ struct MessageTextView: View {
         layoutManager.glyphRange(forBoundingRect: boundingRect, in: textContainer)
         let rect = layoutManager.usedRect(for: textContainer)
         let result = rect.integral.size
-        cachedTextSizes[formattedText] = result
+        cachedTextSizes.setObject(NSValue(cgSize: result), forKey: cacheKey)
         return result
     }
 }

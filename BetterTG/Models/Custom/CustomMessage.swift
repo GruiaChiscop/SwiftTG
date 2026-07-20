@@ -11,6 +11,7 @@ import TDLibKit
     init(
         message: Message,
         senderUser: User? = nil,
+        senderChatTitle: String? = nil,
         replyUser: User? = nil,
         replySenderName: String? = nil,
         replyToMessage: Message? = nil,
@@ -24,6 +25,7 @@ import TDLibKit
     ) {
         self.message = message
         self.senderUser = senderUser
+        self.senderChatTitle = senderChatTitle
         self.replyUser = replyUser
         self.replySenderName = replySenderName
         self.replyToMessage = replyToMessage
@@ -42,6 +44,9 @@ import TDLibKit
     /// A newer snapshot must produce a new CustomMessage instead of changing a mounted row's id.
     let message: Message
     var senderUser: User?
+    /// The sender's chat title, resolved when the message was posted as a chat rather than a user
+    /// (a channel post, or an anonymous admin post "as the group") - `senderUser` stays nil then.
+    var senderChatTitle: String?
     var replyUser: User?
     var replySenderName: String?
     var replyToMessage: Message?
@@ -108,7 +113,12 @@ extension CustomMessage: Identifiable {
 // MARK: Equatable
 
 extension CustomMessage: Equatable {
+    /// Reference identity, not id equality: `List`/`ForEach` use `Equatable` (when available) to
+    /// decide whether a row needs to re-render for a given id. Comparing by `id` alone would make
+    /// every re-render of an existing message (edits, reactions, pin changes - each producing a
+    /// new `CustomMessage` instance per the note on `message` above) look unchanged to SwiftUI,
+    /// leaving the row stuck showing whatever it rendered first.
     static func == (lhs: CustomMessage, rhs: CustomMessage) -> Bool {
-        lhs.id == rhs.id
+        lhs === rhs
     }
 }

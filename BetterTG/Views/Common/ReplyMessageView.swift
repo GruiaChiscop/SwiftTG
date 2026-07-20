@@ -11,14 +11,15 @@ struct ReplyMessageView: View {
     var accessibilityDescription: String {
         switch type {
         case .edit:
-            "Editing message: \(plainText(from: customMessage.message))"
+            "Editing message: \(telegramMessageContentDescription(customMessage.message))"
         case .reply:
-            "Replying to \(customMessage.senderUser?.firstName ?? "message"): \(plainText(from: customMessage.message))"
+            "Replying to \(customMessage.senderUser?.firstName ?? "message"): "
+                + telegramMessageContentDescription(customMessage.message)
         case .replied:
             if let replySenderName = customMessage.replySenderName,
                let replyToMessage = customMessage.replyToMessage
             {
-                "Reply to \(replySenderName): \(plainText(from: replyToMessage))"
+                "Reply to \(replySenderName): \(telegramMessageContentDescription(replyToMessage))"
             } else {
                 "Reply"
             }
@@ -136,29 +137,6 @@ struct ReplyMessageView: View {
             Text("TDLib not supported")
         default:
             Text("BTG not supported")
-        }
-    }
-
-    func plainText(from message: Message) -> String {
-        switch message.content {
-        case .messageText(let messageText):
-            messageText.text.text
-        case .messagePhoto(let messagePhoto):
-            messagePhoto.caption.text.isEmpty ? "Photo" : messagePhoto.caption.text
-        case .messageVideo(let messageVideo):
-            messageVideo.caption.text.isEmpty ? "Video" : "Video: \(messageVideo.caption.text)"
-        case .messageVoiceNote(let messageVoiceNote):
-            messageVoiceNote.caption.text.isEmpty ? "Voice message" : "Voice message: \(messageVoiceNote.caption.text)"
-        case .messageAudio(let messageAudio):
-            telegramAudioDescription(messageAudio)
-        case .messageDocument(let messageDocument):
-            messageDocument.caption.text.isEmpty
-                ? "File: \(messageDocument.document.fileName)"
-                : messageDocument.caption.text
-        case .messageUnsupported:
-            "Unsupported message"
-        default:
-            "Message"
         }
     }
 }

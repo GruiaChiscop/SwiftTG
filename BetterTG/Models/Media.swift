@@ -3,33 +3,35 @@
 import AVFoundation
 import MediaPlayer
 import Observation
-import SwiftOGG
 
+/// Thin iOS wrapper around the shared `VoiceMessagePlaybackEngine`, adding audio session setup
+/// and Now Playing/remote-command-center integration around it. macOS's `MacVoicePlayer` wraps
+/// the same engine without either, since neither applies there.
 @Observable final class Media {
     // MARK: Lifecycle
 
     init() {
+        engine = MainActor.assumeIsolated { VoiceMessagePlaybackEngine() }
         setCommandCenterControls()
+        MainActor.assumeIsolated {
+            engine.trace = { voicePlaybackTrace($0) }
+            engine.onWillPlay = { [weak self] in self?.setAudioSessionPlayback() ?? false }
+            engine.onPlayStarted = { [weak self] in self?.setNowPlaying() }
+            engine.onTick = { [weak self] in self?.changeCurrentTime() }
+            engine.onStopped = { [weak self] in self?.nowPlayingCenter.nowPlayingInfo = nil }
+        }
     }
 
     // MARK: Internal
 
     static let shared = Media()
 
-    var savedMediaPath = ""
-    var isPlaying = false
-    var currentTime: Int32 = 0
+    var savedMediaPath: String { MainActor.assumeIsolated { engine.currentPath } ?? "" }
+    var isPlaying: Bool { MainActor.assumeIsolated { engine.isPlaying } }
+    var currentTime: Int32 { Int32(MainActor.assumeIsolated { engine.currentTime }) }
 
     func stop() {
-        playbackGeneration &+= 1
-        isPlaying = false
-        currentTime = 0
-        savedMediaPath = ""
-        stopProgressTimer()
-        playerNode.stop()
-        playbackEngine.stop()
-        audioBuffer = nil
-        nowPlayingCenter.nowPlayingInfo = nil
+        MainActor.assumeIsolated { engine.stop() }
     }
 
     func onChatOpen(title: String) {
@@ -37,29 +39,19 @@ import SwiftOGG
     }
 
     func onChatDismiss() {
-        playerNode.pause()
-        isPlaying = false
-        stopProgressTimer()
+        MainActor.assumeIsolated { engine.pause() }
     }
 
     func seekForward() {
-        seekTo(playerTime + 5)
+        MainActor.assumeIsolated { engine.seekForward() }
     }
 
     func seekBackward() {
-        seekTo(max(0, playerTime - 5))
+        MainActor.assumeIsolated { engine.seekBackward() }
     }
 
     func toggle(with path: String, duration: Int) {
-        voicePlaybackTrace("Media.toggle newPath=\(savedMediaPath != path) duration=\(duration)")
-        self.duration = duration
-        if savedMediaPath != path {
-            stop()
-            savedMediaPath = path
-            preparePlayer(for: path)
-        } else {
-            toggle()
-        }
+        MainActor.assumeIsolated { engine.toggle(path: path, duration: duration) }
     }
 
     func setAudioSessionRecord() {
@@ -80,152 +72,14 @@ import SwiftOGG
 
     // MARK: Private
 
-    private enum PlaybackError: Error { case invalidPCM }
-
-    @ObservationIgnored private var duration = 0
     @ObservationIgnored private var title = ""
-
-    @ObservationIgnored private let playbackEngine = AVAudioEngine()
-    @ObservationIgnored private let playerNode = AVAudioPlayerNode()
-    @ObservationIgnored private var audioBuffer: AVAudioPCMBuffer?
-    @ObservationIgnored private var scheduledBuffer: AVAudioPCMBuffer?
-    @ObservationIgnored private var scheduledStartFrame: AVAudioFramePosition = 0
-    @ObservationIgnored private var playbackSampleRate: Double = 48000
-    @ObservationIgnored private var progressTimer: Timer?
-    @ObservationIgnored private var playbackGeneration: UInt = 0
-    @ObservationIgnored private let decodedBufferCache: NSCache<NSString, AVAudioPCMBuffer> = {
-        let cache = NSCache<NSString, AVAudioPCMBuffer>()
-        cache.totalCostLimit = 32 * 1024 * 1024
-        cache.countLimit = 12
-        return cache
-    }()
-
+    @ObservationIgnored private let engine: VoiceMessagePlaybackEngine
     private let audioSession = AVAudioSession.sharedInstance()
     private let nowPlayingCenter = MPNowPlayingInfoCenter.default()
     private let commandCenter = MPRemoteCommandCenter.shared()
 
-    private var playerTime: TimeInterval {
-        guard let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime)
-        else { return Double(scheduledStartFrame) / playbackSampleRate }
-        return Double(scheduledStartFrame + playerTime.sampleTime) / playerTime.sampleRate
-    }
-
-    private static func makePCMBuffer(
-        from data: Data,
-        sampleRate: Double,
-        channels: AVAudioChannelCount,
-    ) throws -> AVAudioPCMBuffer {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: channels,
-            interleaved: false,
-        ) else { throw PlaybackError.invalidPCM }
-        let frameCount = data.count / (MemoryLayout<Float>.size * Int(channels))
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount))
-        else { throw PlaybackError.invalidPCM }
-        buffer.frameLength = AVAudioFrameCount(frameCount)
-        guard let destinationChannels = buffer.floatChannelData else { throw PlaybackError.invalidPCM }
-        data.withUnsafeBytes { rawBuffer in
-            let source = rawBuffer.bindMemory(to: Float.self)
-            for frame in 0..<frameCount {
-                for channel in 0..<Int(channels) {
-                    destinationChannels[channel][frame] = source[frame * Int(channels) + channel]
-                }
-            }
-        }
-        return buffer
-    }
-
-    private static func opusStreamFormat(from data: Data) -> (sampleRate: Double, channels: AVAudioChannelCount) {
-        guard let headerRange = data.range(of: Data("OpusHead".utf8)),
-              data.count >= headerRange.lowerBound + 16
-        else { return (48000, 1) }
-        let offset = headerRange.lowerBound
-        let channels = max(1, AVAudioChannelCount(data[offset + 9]))
-        let rateBytes = data[(offset + 12)..<(offset + 16)]
-        let inputRate = rateBytes.enumerated().reduce(UInt32(0)) { result, item in
-            result | UInt32(item.element) << UInt32(item.offset * 8)
-        }
-        let validRates: [UInt32] = [8000, 12000, 16000, 24000, 48000]
-        let sampleRate = validRates.min { lhs, rhs in
-            abs(Int64(lhs) - Int64(inputRate)) < abs(Int64(rhs) - Int64(inputRate))
-        } ?? 48000
-        return (Double(sampleRate), channels)
-    }
-
-    private func setCommandCenterControls() {
-        commandCenter.skipBackwardCommand.preferredIntervals = [5.0]
-        commandCenter.skipForwardCommand.preferredIntervals = [5.0]
-
-        commandCenter.playCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            if !savedMediaPath.isEmpty, audioBuffer != nil, !isPlaying {
-                play()
-                return .success
-            }
-            return .commandFailed
-        }
-
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            if !savedMediaPath.isEmpty, audioBuffer != nil, isPlaying {
-                pause()
-                return .success
-            }
-            return .commandFailed
-        }
-
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            if !savedMediaPath.isEmpty, audioBuffer != nil {
-                toggle()
-                return .success
-            }
-            return .commandFailed
-        }
-
-        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let self else { return .commandFailed }
-            if let positionEvent = event as? MPChangePlaybackPositionCommandEvent {
-                seekTo(positionEvent.positionTime)
-                return .success
-            }
-            return .commandFailed
-        }
-
-        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            if !savedMediaPath.isEmpty, audioBuffer != nil {
-                seekForward()
-                return .success
-            }
-            return .commandFailed
-        }
-
-        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            if !savedMediaPath.isEmpty, audioBuffer != nil {
-                seekBackward()
-                return .success
-            }
-            return .commandFailed
-        }
-    }
-
-    private func toggle() {
-        if isPlaying {
-            pause()
-        } else {
-            play()
-        }
-    }
-
-    private func pause() {
-        playerNode.pause()
-        isPlaying = false
-        stopProgressTimer()
+    private func changeCurrentTime() {
+        nowPlayingCenter.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(currentTime)
     }
 
     private func setAudioSessionPlayback() -> Bool {
@@ -247,176 +101,69 @@ import SwiftOGG
         }
     }
 
-    private func play() {
-        guard audioBuffer != nil else {
-            voicePlaybackTrace("play aborted: no PCM buffer")
-            return
-        }
-        guard setAudioSessionPlayback() else { return }
-        do {
-            if !playbackEngine.isRunning {
-                try playbackEngine.start()
-            }
-        } catch {
-            voicePlaybackTrace("engine start failed: \(error.localizedDescription)")
-            log("Failed to start voice playback engine:", error)
-            isPlaying = false
-            return
-        }
-        playerNode.play()
-        isPlaying = true
-        voicePlaybackTrace(
-            "player started engineRunning=\(playbackEngine.isRunning) nodePlaying=\(playerNode.isPlaying)",
-        )
-        startProgressTimer()
-        setNowPlaying()
-    }
+    private func setCommandCenterControls() {
+        commandCenter.skipBackwardCommand.preferredIntervals = [5.0]
+        commandCenter.skipForwardCommand.preferredIntervals = [5.0]
 
-    private func changeCurrentTime() {
-        nowPlayingCenter.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(currentTime)
-    }
-
-    private func seekTo(_ timeInterval: TimeInterval) {
-        guard let audioBuffer else { return }
-        let wasPlaying = isPlaying
-        let targetFrame = AVAudioFramePosition(max(0, min(timeInterval, Double(duration))) * playbackSampleRate)
-        schedule(buffer: audioBuffer, from: targetFrame)
-        currentTime = Int32(Double(targetFrame) / playbackSampleRate)
-        if wasPlaying {
-            playerNode.play()
-        }
-    }
-
-    private func preparePlayer(for sourcePath: String) {
-        let cacheKey = sourcePath as NSString
-        if let cachedBuffer = decodedBufferCache.object(forKey: cacheKey) {
-            configurePlayer(with: cachedBuffer)
-            play()
-            return
-        }
-        let sourceURL = URL(filePath: sourcePath)
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result { () -> AVAudioPCMBuffer in
-                let data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
-                voicePlaybackTrace("read encoded bytes=\(data.count)")
-                let streamFormat = Self.opusStreamFormat(from: data)
-                let decoder = try OGGDecoder(audioData: data)
-                let sampleStats = decoder.pcmData.withUnsafeBytes { rawBuffer -> (peak: Float, finite: Int) in
-                    let samples = rawBuffer.bindMemory(to: Float.self)
-                    var peak: Float = 0
-                    var finite = 0
-                    for sample in samples where sample.isFinite {
-                        peak = max(peak, abs(sample))
-                        finite += 1
-                    }
-                    return (peak, finite)
-                }
-                voicePlaybackTrace(
-                    "decoded PCM bytes=\(decoder.pcmData.count) rate=\(streamFormat.sampleRate) "
-                        + "channels=\(streamFormat.channels) peak=\(sampleStats.peak) "
-                        + "finiteSamples=\(sampleStats.finite)",
-                )
-                return try Self.makePCMBuffer(
-                    from: decoder.pcmData,
-                    sampleRate: streamFormat.sampleRate,
-                    channels: streamFormat.channels,
-                )
-            }
-            DispatchQueue.main.async {
-                guard let self, self.savedMediaPath == sourcePath else { return }
-                switch result {
-                case .success(let buffer) where buffer.frameLength > 0:
-                    self.decodedBufferCache.setObject(
-                        buffer,
-                        forKey: cacheKey,
-                        cost: Int(buffer.frameLength) * Int(buffer.format.streamDescription.pointee.mBytesPerFrame),
-                    )
-                    self.configurePlayer(with: buffer)
-                    self.play()
-                case .success:
-                    // configurePlayer/schedule silently no-op on an empty buffer, which
-                    // previously left play() reporting isPlaying = true with nothing
-                    // actually scheduled — audible as complete silence with no error.
-                    voicePlaybackTrace("decode produced empty buffer, refusing to play")
-                    log("Voice message decode produced an empty PCM buffer")
-                    self.stop()
-                case .failure(let error):
-                    voicePlaybackTrace("decode failed: \(error.localizedDescription)")
-                    log("Failed to prepare voice message:", error)
-                    self.stop()
-                }
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            return MainActor.assumeIsolated {
+                guard !self.savedMediaPath.isEmpty, self.engine.isReady, !self.isPlaying else { return .commandFailed }
+                self.engine.play()
+                return .success
             }
         }
-    }
 
-    private func configurePlayer(with buffer: AVAudioPCMBuffer) {
-        voicePlaybackTrace(
-            "configure frames=\(buffer.frameLength) format=\(buffer.format)",
-        )
-        playerNode.stop()
-        if playerNode.engine == nil {
-            playbackEngine.attach(playerNode)
-        }
-        playbackEngine.disconnectNodeOutput(playerNode)
-        playbackEngine.connect(playerNode, to: playbackEngine.mainMixerNode, format: buffer.format)
-        audioBuffer = buffer
-        playbackSampleRate = buffer.format.sampleRate
-        schedule(buffer: buffer, from: 0)
-        playbackEngine.prepare()
-    }
-
-    private func schedule(buffer: AVAudioPCMBuffer, from startFrame: AVAudioFramePosition) {
-        playbackGeneration &+= 1
-        let generation = playbackGeneration
-        playerNode.stop()
-        let availableFrames = max(0, AVAudioFramePosition(buffer.frameLength) - startFrame)
-        guard availableFrames > 0,
-              let slice = AVAudioPCMBuffer(
-                  pcmFormat: buffer.format,
-                  frameCapacity: AVAudioFrameCount(availableFrames),
-              )
-        else { return }
-        slice.frameLength = AVAudioFrameCount(availableFrames)
-        guard let sourceChannels = buffer.floatChannelData,
-              let destinationChannels = slice.floatChannelData
-        else { return }
-        for channel in 0..<Int(buffer.format.channelCount) {
-            memcpy(
-                destinationChannels[channel],
-                sourceChannels[channel].advanced(by: Int(startFrame)),
-                Int(availableFrames) * MemoryLayout<Float>.size,
-            )
-        }
-        scheduledBuffer = slice
-        scheduledStartFrame = startFrame
-        playerNode.scheduleBuffer(slice, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self, self.playbackGeneration == generation else { return }
-                self.stop()
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            return MainActor.assumeIsolated {
+                guard !self.savedMediaPath.isEmpty, self.engine.isReady, self.isPlaying else { return .commandFailed }
+                self.engine.pause()
+                return .success
             }
         }
-    }
 
-    private func startProgressTimer() {
-        guard progressTimer == nil else { return }
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, isPlaying else { return }
-            currentTime = Int32(playerTime)
-            changeCurrentTime()
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            return MainActor.assumeIsolated {
+                guard !self.savedMediaPath.isEmpty, self.engine.isReady else { return .commandFailed }
+                if self.isPlaying { self.engine.pause() } else { self.engine.play() }
+                return .success
+            }
         }
-    }
 
-    private func stopProgressTimer() {
-        progressTimer?.invalidate()
-        progressTimer = nil
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self, let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            MainActor.assumeIsolated { self.engine.seek(to: positionEvent.positionTime) }
+            return .success
+        }
+
+        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            return MainActor.assumeIsolated {
+                guard !self.savedMediaPath.isEmpty, self.engine.isReady else { return .commandFailed }
+                self.engine.seekForward()
+                return .success
+            }
+        }
+
+        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            return MainActor.assumeIsolated {
+                guard !self.savedMediaPath.isEmpty, self.engine.isReady else { return .commandFailed }
+                self.engine.seekBackward()
+                return .success
+            }
+        }
     }
 
     private func setNowPlaying() {
         var info = [String: Any]()
         info[MPMediaItemPropertyTitle] = title
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(currentTime)
-        info[MPMediaItemPropertyPlaybackDuration] = Double(duration)
+        info[MPMediaItemPropertyPlaybackDuration] = Double(MainActor.assumeIsolated { engine.duration })
         nowPlayingCenter.nowPlayingInfo = info
     }
 }

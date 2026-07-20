@@ -40,13 +40,3 @@ func downsampledImage(at url: URL, maxPixelSize: Int) -> UIImage? {
 
     return UIImage(cgImage: cgImage)
 }
-
-func imagePixelSize(at url: URL) -> CGSize? {
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-          let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
-          let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue
-    else { return nil }
-
-    return CGSize(width: width, height: height)
-}
