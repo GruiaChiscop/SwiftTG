@@ -34,8 +34,6 @@ extension MacSessionModel {
 
         canLoadOlderMessages = !reachedBeginning
         latestHistoryTargetMessageId = newestMessage.id
-        displayedMessageAnchorId = nil
-        displayedMessageLimit = 30
         let latestMessages = Array(messagesById.values)
         service.replaceMessageHistory(chatId: chatId, messages: latestMessages)
     }
@@ -76,7 +74,6 @@ extension MacSessionModel {
             return false
         }
 
-        displayedMessageLimit += olderMessages.count
         service.mergeMessageHistory(chatId: chatId, messages: olderMessages)
         return true
     }

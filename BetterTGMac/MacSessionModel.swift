@@ -101,8 +101,6 @@ private enum MacMessageSenderKey: Hashable {
     @ObservationIgnored var searchTask: Task<Void, Never>?
     @ObservationIgnored var searchGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
-    @ObservationIgnored var displayedMessageLimit = 30
-    @ObservationIgnored var displayedMessageAnchorId: Int64?
     @ObservationIgnored var service: any TelegramService
 
     @ObservationIgnored var conversationHeaderTask: Task<Void, Never>?
@@ -258,8 +256,6 @@ private enum MacMessageSenderKey: Hashable {
         navigationTargetMessageId = messageId
         if openedChatId == chatId {
             guard let messageId, messages.messages[messageId] == nil else { return }
-            displayedMessageLimit = max(displayedMessageLimit, 51)
-            displayedMessageAnchorId = messageId
             historyRequestGeneration &+= 1
             let generation = historyRequestGeneration
             openTask?.cancel()
@@ -285,8 +281,6 @@ private enum MacMessageSenderKey: Hashable {
 
         let previousChatId = openedChatId
         openedChatId = chatId
-        displayedMessageLimit = messageId == nil ? 30 : 51
-        displayedMessageAnchorId = messageId
         prepareConversationHeader(for: chatId, fallbackKind: openingChat?.kind)
         messages = .empty(chatId: chatId)
         editingMessage = nil
@@ -1139,7 +1133,7 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     private func handleMessageSnapshot(_ snapshot: TelegramMessageSnapshot) {
-        messages = displayedMessageSnapshot(snapshot)
+        messages = snapshot
         switch snapshot.change {
         case .newMessage(let update) where !update.message.isOutgoing:
             let isMuted = (chatList.items[snapshot.chatId]?.notificationSettings?.muteFor ?? 0) > 0
@@ -1171,41 +1165,6 @@ private enum MacMessageSenderKey: Hashable {
             }
         guard let messageId else { return }
         messageCapabilities[messageId] = nil
-    }
-
-    /// The shared store intentionally retains a larger scrollback cache, but handing all of it to
-    /// AppKit on every reopen makes NSTableView synchronously rebuild and measure hundreds of
-    /// hosted SwiftUI rows. macOS presents only a small window and expands it when the user reaches
-    /// the top; the store remains unchanged, so older messages are still immediately available.
-    private func displayedMessageSnapshot(_ snapshot: TelegramMessageSnapshot) -> TelegramMessageSnapshot {
-        guard snapshot.orderedMessageIds.count > displayedMessageLimit else { return snapshot }
-
-        let visibleRange: Range<Int>
-        if let anchorId = displayedMessageAnchorId,
-           let anchorIndex = snapshot.orderedMessageIds.firstIndex(of: anchorId)
-        {
-            let tentativeLowerBound = max(0, anchorIndex - displayedMessageLimit / 2)
-            let upperBound = min(snapshot.orderedMessageIds.count, tentativeLowerBound + displayedMessageLimit)
-            let lowerBound = max(0, upperBound - displayedMessageLimit)
-            visibleRange = lowerBound..<upperBound
-        } else {
-            let lowerBound = snapshot.orderedMessageIds.count - displayedMessageLimit
-            visibleRange = lowerBound..<snapshot.orderedMessageIds.count
-        }
-
-        let visibleIds = Array(snapshot.orderedMessageIds[visibleRange])
-        let visibleMessages = Dictionary(uniqueKeysWithValues: visibleIds.compactMap { messageId in
-            snapshot.messages[messageId].map { (messageId, $0) }
-        })
-        return TelegramMessageSnapshot(
-            chatId: snapshot.chatId,
-            version: snapshot.version,
-            messages: visibleMessages,
-            orderedMessageIds: visibleIds,
-            unreadCount: snapshot.unreadCount,
-            hasMergedHistory: snapshot.hasMergedHistory,
-            change: snapshot.change,
-        )
     }
 
     private func observeSession() {
