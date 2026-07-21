@@ -193,3 +193,27 @@ extension CustomChat: Equatable {
         lhs.hashValue == rhs.hashValue
     }
 }
+
+func conversationCommunityStatus(for chat: CustomChat) -> String {
+    switch chat.type {
+    case .bot, .user:
+        ""
+    case .group(let group):
+        conversationGroupStatus(memberCount: group.memberCount)
+    case .supergroup(let group):
+        conversationSupergroupStatus(isChannel: group.isChannel, memberCount: group.memberCount)
+    }
+}
+
+func conversationGroupStatus(memberCount: Int) -> String {
+    guard memberCount > 0 else { return "Group" }
+    return memberCount == 1 ? "1 member" : "\(memberCount.formatted()) members"
+}
+
+func conversationSupergroupStatus(isChannel: Bool, memberCount: Int) -> String {
+    guard memberCount > 0 else { return isChannel ? "Channel" : "Group" }
+    if isChannel {
+        return memberCount == 1 ? "1 subscriber" : "\(memberCount.formatted()) subscribers"
+    }
+    return conversationGroupStatus(memberCount: memberCount)
+}

@@ -74,7 +74,6 @@ struct MacChatMembersView: View {
             List {
                 TextField("Search \(displayTitle.lowercased())", text: $query)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Search \(displayTitle.lowercased())")
 
                 if members.isEmpty, isLoading {
                     ProgressView("Loading \(displayTitle.lowercased())…")

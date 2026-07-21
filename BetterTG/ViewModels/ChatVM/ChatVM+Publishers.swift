@@ -16,6 +16,40 @@ extension ChatVM {
                 Task { @MainActor in self?.handle(snapshot) }
             }
             .store(in: &cancellables)
+        let chatType = customChat.type
+        service.updatePublisher
+            .filter { isConversationStatusUpdate($0, for: chatType) }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] update in
+                Task { @MainActor in self?.updateConversationStatus(update) }
+            }
+            .store(in: &cancellables)
+    }
+
+    @MainActor private func updateConversationStatus(_ update: Update) {
+        let status: String? =
+            switch (customChat.type, update) {
+            case (.group(let group), .updateBasicGroup(let value)) where group.id == value.basicGroup.id:
+                conversationGroupStatus(memberCount: value.basicGroup.memberCount)
+            case (.group(let group), .updateBasicGroupFullInfo(let value)) where group.id == value.basicGroupId:
+                conversationGroupStatus(memberCount: value.basicGroupFullInfo.members.count)
+            case (.supergroup(let group), .updateSupergroup(let value)) where group.id == value.supergroup.id:
+                conversationSupergroupStatus(
+                    isChannel: value.supergroup.isChannel,
+                    memberCount: value.supergroup.memberCount,
+                )
+            case (.supergroup(let group), .updateSupergroupFullInfo(let value))
+                where group.id == value.supergroupId:
+                conversationSupergroupStatus(
+                    isChannel: group.isChannel,
+                    memberCount: value.supergroupFullInfo.memberCount,
+                )
+            default:
+                nil
+            }
+
+        guard let status else { return }
+        withAnimation { onlineStatus = status }
     }
 
     @MainActor private func handle(_ snapshot: TelegramMessageSnapshot) {
@@ -281,6 +315,21 @@ extension ChatVM {
             case .chatActionCancel: ""
             }
         withAnimation { actionStatus = status }
+    }
+}
+
+private func isConversationStatusUpdate(_ update: Update, for chatType: CustomChat.CustomChatType) -> Bool {
+    switch (chatType, update) {
+    case (.group(let group), .updateBasicGroup(let value)):
+        group.id == value.basicGroup.id
+    case (.group(let group), .updateBasicGroupFullInfo(let value)):
+        group.id == value.basicGroupId
+    case (.supergroup(let group), .updateSupergroup(let value)):
+        group.id == value.supergroup.id
+    case (.supergroup(let group), .updateSupergroupFullInfo(let value)):
+        group.id == value.supergroupId
+    default:
+        false
     }
 }
 

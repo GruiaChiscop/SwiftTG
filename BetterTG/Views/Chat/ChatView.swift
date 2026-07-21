@@ -58,9 +58,18 @@ struct ChatView: View {
                 }
             }
 
-            if !isPreview, chatVM.customChat.canPostMessages {
-                ChatBottomArea(focused: $focused)
-                    .readSize { chatVM.bottomAreaHeight = $0.height }
+            if !isPreview {
+                if chatVM.customChat.canPostMessages {
+                    ChatBottomArea(focused: $focused)
+                        .readSize { chatVM.bottomAreaHeight = $0.height }
+                } else if chatVM.customChat.kind == .channel {
+                    Text("Only channel administrators can post.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(.bar)
+                }
             }
         }
         .background(.black)

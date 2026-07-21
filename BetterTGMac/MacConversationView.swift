@@ -30,7 +30,6 @@ struct MacConversationView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .accessibilityLabel("Only channel administrators can post")
             }
         }
         .sheet(isPresented: $showsChatInfo) {

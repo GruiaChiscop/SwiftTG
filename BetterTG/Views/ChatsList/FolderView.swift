@@ -205,7 +205,6 @@ struct FolderView: View {
             } header: {
                 Text("Chats (\(rootVM.searchChatResults.count))")
                     .font(.headline)
-                    .accessibilityLabel("Chats, \(rootVM.searchChatResults.count) found")
                     .accessibilityAddTraits(.isHeader)
             }
         }
@@ -242,7 +241,6 @@ struct FolderView: View {
             } header: {
                 Text("Messages (\(rootVM.searchMessageResults.count))")
                     .font(.headline)
-                    .accessibilityLabel("Messages, \(rootVM.searchMessageResults.count) found")
                     .accessibilityAddTraits(.isHeader)
             }
         }

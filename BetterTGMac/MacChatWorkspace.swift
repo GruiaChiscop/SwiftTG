@@ -120,7 +120,6 @@ private struct MacChatSidebar: View {
                 } header: {
                     Text("Chats (\(model.chatSearchResults.count))")
                         .font(.headline)
-                        .accessibilityLabel("Chats, \(model.chatSearchResults.count) found")
                         .accessibilityAddTraits(.isHeader)
                 }
             }
@@ -160,7 +159,6 @@ private struct MacChatSidebar: View {
                 } header: {
                     Text("Messages (\(model.messageSearchResults.count))")
                         .font(.headline)
-                        .accessibilityLabel("Messages, \(model.messageSearchResults.count) found")
                         .accessibilityAddTraits(.isHeader)
                 }
             }

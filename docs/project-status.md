@@ -112,6 +112,9 @@ clients evolve.
   membership actions from history deletion: members can leave, creators can
   delete the community when TDLib permits it, and Archive and Clear History stay
   separate actions.
+- TODO: Bring iOS Chat Info to feature parity with macOS, including complete
+  identity/details, member and moderation information, notification controls,
+  member browsing, common groups, and the corresponding chat-management actions.
 - Telegram-style shared-media browsing now uses a shared, paginated
   `searchChatMessages` source rather than synthesizing results from the currently
   loaded message window. Media, Files, Links, Music, and Voice keep independent

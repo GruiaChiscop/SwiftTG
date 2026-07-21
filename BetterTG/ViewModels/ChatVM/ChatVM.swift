@@ -28,10 +28,13 @@ import UniformTypeIdentifiers
         self.voiceRecorder = VoiceRecordingController(chatId: customChat.chat.id, service: service)
         if let user = customChat.user {
             self.onlineStatus = getOnlineStatus(from: user.status)
+        } else {
+            self.onlineStatus = conversationCommunityStatus(for: customChat)
         }
     }
 
     deinit {
+        conversationStatusTask?.cancel()
         guard hasStarted else { return }
         let chatId = customChat.chat.id
         let service = service
@@ -51,6 +54,7 @@ import UniformTypeIdentifiers
         let chatId = customChat.chat.id
         Task { _ = try? await service.openChat(chatId: chatId) }
         setPublishers()
+        refreshConversationStatus()
         loadMessages()
         Media.shared.onChatOpen(title: customChat.chat.title)
 
@@ -106,12 +110,57 @@ import UniformTypeIdentifiers
     @ObservationIgnored var pendingNavigationMessageId: Int64?
     @ObservationIgnored var pendingViewedMessageIds = Set<Int64>()
     @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
+    @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
     // Scroll
     @ObservationIgnored var scrollOnFocus = true
     var showScrollToBottomButton = false
     @ObservationIgnored var scrollViewProxy: ScrollViewProxy?
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private var preparingVoiceNoteFileIds = Set<Int>()
+
+    func refreshConversationStatus() {
+        conversationStatusTask?.cancel()
+        let type = customChat.type
+        conversationStatusTask = Task { [weak self] in
+            guard let self else { return }
+
+            let status: String? =
+                switch type {
+                case .group(let currentGroup):
+                    if let group = try? await service.getBasicGroup(basicGroupId: currentGroup.id) {
+                        if group.memberCount > 0 {
+                            conversationGroupStatus(memberCount: group.memberCount)
+                        } else if let fullInfo = try? await service.getBasicGroupFullInfo(basicGroupId: group.id) {
+                            conversationGroupStatus(memberCount: fullInfo.members.count)
+                        } else {
+                            "Group"
+                        }
+                    } else {
+                        nil
+                    }
+                case .supergroup(let currentGroup):
+                    if let group = try? await service.getSupergroup(supergroupId: currentGroup.id) {
+                        if group.memberCount > 0 {
+                            conversationSupergroupStatus(isChannel: group.isChannel, memberCount: group.memberCount)
+                        } else if let fullInfo = try? await service.getSupergroupFullInfo(supergroupId: group.id) {
+                            conversationSupergroupStatus(
+                                isChannel: group.isChannel,
+                                memberCount: fullInfo.memberCount,
+                            )
+                        } else {
+                            group.isChannel ? "Channel" : "Group"
+                        }
+                    } else {
+                        nil
+                    }
+                case .bot, .user:
+                    nil
+                }
+
+            guard !Task.isCancelled, let status else { return }
+            withAnimation { self.onlineStatus = status }
+        }
+    }
 
     // MARK: Composer/Recorder facade
 
