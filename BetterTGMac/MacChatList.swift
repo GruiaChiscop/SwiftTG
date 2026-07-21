@@ -10,45 +10,61 @@ struct MacChatRow: View {
 
     let chat: ChatListItemState
     let chatList: ChatList
-    let isOpen: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: chat.kind.systemImage)
-                .foregroundStyle(isOpen ? Color.accentColor : .secondary)
-                .frame(width: 28)
-                .accessibilityHidden(true)
+        HStack(spacing: 11) {
+            chatAvatar
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
                     Text(chat.title)
-                        .fontWeight(chat.unreadCount > 0 ? .semibold : .regular)
+                        .font(.body)
+                        .fontWeight(chat.hasUnreadMessages ? .semibold : .regular)
                         .lineLimit(1)
                     Spacer()
                     if let message = chat.lastMessage {
-                        Text(Date(timeIntervalSince1970: TimeInterval(message.date)), format: .dateTime.hour().minute())
+                        Text(
+                            Date(timeIntervalSince1970: TimeInterval(message.date)),
+                            format: .dateTime.hour().minute(),
+                        )
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(chat.hasUnreadMessages ? Color.accentColor : .secondary)
                     }
                 }
 
-                HStack {
+                HStack(spacing: 7) {
                     Text(chat.lastMessage.map(macMessageText) ?? "No messages")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer()
+                    if isMuted {
+                        Image(systemName: "speaker.slash.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    if isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                     if chat.unreadCount > 0 {
                         Text("\(chat.unreadCount)")
-                            .font(.caption.bold())
+                            .font(.caption2.bold())
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
+                            .frame(minWidth: 24, minHeight: 20)
                             .background(Color.accentColor, in: Capsule())
+                    } else if chat.isMarkedAsUnread {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 9, height: 9)
                     }
                 }
             }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Press Return or Space to open this chat")
@@ -109,6 +125,35 @@ struct MacChatRow: View {
     @State private var showLeaveConfirmation = false
     @State private var showMuteOptions = false
 
+    private var chatAvatar: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Circle()
+                .fill(avatarColor)
+                .overlay {
+                    Text(String(chat.title.prefix(1)).uppercased())
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+
+            if chat.kind != .privateChat {
+                Image(systemName: chat.kind.systemImage)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(4)
+                    .background(Color.accentColor, in: Circle())
+                    .overlay(Circle().stroke(.background, lineWidth: 1.5))
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: 40, height: 40)
+        .accessibilityHidden(true)
+    }
+
+    private var avatarColor: Color {
+        let palette: [Color] = [.blue, .indigo, .purple, .pink, .orange, .teal]
+        return palette[Int(chat.chatId.magnitude % UInt64(palette.count))]
+    }
+
     private var accessibilityLabel: String {
         var parts = [String]()
         if let kind = chat.kind.accessibilityTitle {
@@ -135,9 +180,6 @@ struct MacChatRow: View {
         }
         if isArchived {
             parts.append("Archived")
-        }
-        if isOpen {
-            parts.append("Open")
         }
         return parts.joined(separator: ", ")
     }

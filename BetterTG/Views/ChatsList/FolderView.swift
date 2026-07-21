@@ -116,6 +116,7 @@ struct FolderView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .listRowSpacing(8)
+        .background(Color(uiColor: .systemGroupedBackground))
         .scrollIndicators(.visible)
         .confirmationDialog(
             "Mute \(chatToMute?.chat.title ?? "chat")",

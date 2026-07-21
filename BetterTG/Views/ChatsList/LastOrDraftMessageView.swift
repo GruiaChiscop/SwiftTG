@@ -23,13 +23,14 @@ struct LastOrDraftMessageView: View {
 
                     if lastMessage.forwardInfo != nil {
                         Image(systemName: "arrowshape.turn.up.right.fill")
+                            .accessibilityHidden(true)
                     }
                     
                     LastMesssageView(lastMessage: lastMessage)
                 }
             }
         }
-        .foregroundStyle(.gray)
+        .foregroundStyle(.secondary)
         .lineLimit(1)
         .allowsHitTesting(false)
     }
@@ -47,7 +48,7 @@ private struct DraftMessageView: View {
             
             if draftMessage.replyTo != nil {
                 Text("reply ")
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
             
             if case .draftMessageContentText(let draftMessageContentText) = draftMessage.content {
@@ -89,11 +90,11 @@ private struct LastMesssageView: View {
         case .messageVoiceNote(let messageVoiceNote):
             HStack(alignment: .bottom, spacing: 0) {
                 Text("Voice")
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     
                 if !messageVoiceNote.caption.text.isEmpty {
                     Text(": ")
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         
                     Text(getAttributedString(from: messageVoiceNote.caption, .gray))
                 }

@@ -81,7 +81,6 @@ private struct MacChatSidebar: View {
                     model: model,
                     chat: chat,
                     chatList: model.selectedChatList,
-                    isOpen: model.openedChatId == chat.chatId,
                 )
                 .tag(chat.chatId)
                 .contentShape(Rectangle())
@@ -113,7 +112,6 @@ private struct MacChatSidebar: View {
                             model: model,
                             chat: model.chatList.items[result.chatId] ?? result.chat,
                             chatList: result.chatList,
-                            isOpen: model.openedChatId == result.chatId,
                         )
                         .tag(result.id)
                         .contentShape(Rectangle())

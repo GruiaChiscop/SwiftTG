@@ -432,7 +432,7 @@ extension TelegramSession: TelegramService {
         }
         return try decodeHistoryResponse(data)
     }
-
+    
     private func decodeHistoryResponse(_ data: Data) throws -> Messages {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw TelegramHistoryLoadingError.invalidResponse
