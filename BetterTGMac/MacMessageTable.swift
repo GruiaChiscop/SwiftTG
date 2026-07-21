@@ -80,6 +80,7 @@ struct MacMessageTable: View {
             .onChange(of: chat.chatId) {
                 selectedRowId = nil
                 historyAnchorMessageId = nil
+                pendingInitialPositionMessageId = nil
                 hasPositionedInitialMessages = false
                 isAtBottom = false
                 model.latestHistoryTargetMessageId = nil
@@ -88,17 +89,26 @@ struct MacMessageTable: View {
     }
 
     @State private var historyAnchorMessageId: Int64?
+    @State private var pendingInitialPositionMessageId: Int64?
     @State private var hasPositionedInitialMessages = false
     @State private var selectedRowId: MacMessageListRow.ID?
 
     private var messageRows: [MacMessageListRow] {
         var rows: [MacMessageListRow] = []
         rows.reserveCapacity(model.messages.orderedMessageIds.count + 2)
+        let calendar = Calendar.autoupdatingCurrent
+        var previousMessage: Message?
 
-        for (index, messageId) in model.messages.orderedMessageIds.enumerated() {
+        for messageId in model.messages.orderedMessageIds {
             guard let message = model.messages.messages[messageId] else { continue }
 
-            if startsNewDay(at: index) {
+            let startsNewDay = previousMessage.map {
+                !calendar.isDate(
+                    Date(timeIntervalSince1970: TimeInterval(message.date)),
+                    inSameDayAs: Date(timeIntervalSince1970: TimeInterval($0.date)),
+                )
+            } ?? true
+            if startsNewDay {
                 rows.append(
                     MacMessageListRow(
                         id: .day(messageId),
@@ -117,19 +127,10 @@ struct MacMessageTable: View {
             }
 
             rows.append(MacMessageListRow(id: .message(messageId), kind: .message(messageId)))
+            previousMessage = message
         }
 
         return rows
-    }
-
-    private func startsNewDay(at index: Int) -> Bool {
-        let ids = model.messages.orderedMessageIds
-        guard ids.indices.contains(index), let message = model.messages.messages[ids[index]] else { return false }
-        guard index > ids.startIndex, let previous = model.messages.messages[ids[index - 1]] else { return true }
-        return !Calendar.autoupdatingCurrent.isDate(
-            Date(timeIntervalSince1970: TimeInterval(message.date)),
-            inSameDayAs: Date(timeIntervalSince1970: TimeInterval(previous.date)),
-        )
     }
 
     private func handleMessageChange(using proxy: ScrollViewProxy) {
@@ -146,7 +147,8 @@ struct MacMessageTable: View {
                 proxy.scrollTo(anchorMessageId, anchor: .top)
                 historyAnchorMessageId = nil
             }
-        } else if !hasPositionedInitialMessages,
+        } else if !model.isLoadingMessages,
+                  !hasPositionedInitialMessages,
                   let lastMessageId = model.messages.orderedMessageIds.last
         {
             positionAtBottom(lastMessageId, using: proxy)
@@ -158,6 +160,7 @@ struct MacMessageTable: View {
     }
 
     private func positionSearchResult(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        pendingInitialPositionMessageId = nil
         selectedRowId = .message(messageId)
         proxy.scrollTo(messageId, anchor: .center)
         model.navigationTargetMessageId = nil
@@ -165,20 +168,32 @@ struct MacMessageTable: View {
     }
 
     private func positionAtBottom(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        guard pendingInitialPositionMessageId != messageId else { return }
+        let chatId = chat.chatId
+        pendingInitialPositionMessageId = messageId
         Task { @MainActor in
             await Task.yield()
             await Task.yield()
+            guard pendingInitialPositionMessageId == messageId else { return }
+            guard model.openedChatId == chatId,
+                  model.messages.messages[messageId] != nil
+            else {
+                pendingInitialPositionMessageId = nil
+                return
+            }
             var transaction = Transaction()
             transaction.animation = nil
             withTransaction(transaction) {
                 proxy.scrollTo(messageId, anchor: .bottom)
             }
+            pendingInitialPositionMessageId = nil
             hasPositionedInitialMessages = true
             isAtBottom = true
         }
     }
 
     private func positionAtLatestHistory(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        pendingInitialPositionMessageId = nil
         selectedRowId = .message(messageId)
         proxy.scrollTo(messageId, anchor: .bottom)
         isAtBottom = true
@@ -191,8 +206,13 @@ struct MacMessageTable: View {
               let anchorMessageId = model.messages.orderedMessageIds.first
         else { return }
         historyAnchorMessageId = anchorMessageId
+        let chatId = chat.chatId
         Task {
-            if await !model.loadOlderMessages() {
+            let loadedMessages = await model.loadOlderMessages()
+            guard model.openedChatId == chatId,
+                  historyAnchorMessageId == anchorMessageId
+            else { return }
+            if !loadedMessages {
                 historyAnchorMessageId = nil
             }
         }

@@ -164,13 +164,14 @@ final class TelegramMessageStore: @unchecked Sendable {
             let deletedIds = self.deletedMessageIds[chatId] ?? []
             let replacement = messages.filter { !deletedIds.contains($0.id) }
             guard let newestReplacement = replacement.max(by: Self.isOrderedBefore) else { return }
+            let replacementIds = Set(replacement.map(\.id))
 
             // An update may have arrived while TDLib was fetching the latest page.
             // Keep that live tail, as well as pending outgoing messages, while
             // discarding the disconnected history slice that was previously shown.
             let liveTail = snapshot.messages.values.filter { message in
                 guard !deletedIds.contains(message.id),
-                      !replacement.contains(where: { $0.id == message.id })
+                      !replacementIds.contains(message.id)
                 else { return false }
                 return message.id < 0 || Self.isOrderedBefore(newestReplacement, message)
             }
@@ -224,6 +225,7 @@ final class TelegramMessageStore: @unchecked Sendable {
                 }
             case .deleteMessages(let value):
                 guard !value.fromCache, value.isPermanent else { return }
+                let deletedIds = Set(value.messageIds)
                 TelegramVoiceNoteStaging.shared.messagesDeleted(
                     chatId: chatId,
                     messageIds: value.messageIds,
@@ -232,7 +234,7 @@ final class TelegramMessageStore: @unchecked Sendable {
                     messages[messageId] = nil
                     self.deletedMessageIds[chatId, default: []].insert(messageId)
                 }
-                orderedIds.removeAll { value.messageIds.contains($0) }
+                orderedIds.removeAll { deletedIds.contains($0) }
             case .messageSendSucceeded(let value):
                 TelegramVoiceNoteStaging.shared.messageSendSucceeded(
                     chatId: chatId,
@@ -309,12 +311,13 @@ final class TelegramMessageStore: @unchecked Sendable {
             var snapshot = self.snapshots[chatId] ?? .empty(chatId: chatId)
             var storedMessages = snapshot.messages
             var orderedIds = snapshot.orderedMessageIds
+            var knownMessageIds = Set(orderedIds)
             let deletedIds = self.deletedMessageIds[chatId] ?? []
 
             for message in messages {
                 guard !deletedIds.contains(message.id) else { continue }
                 storedMessages[message.id] = message
-                if !orderedIds.contains(message.id) {
+                if knownMessageIds.insert(message.id).inserted {
                     orderedIds.append(message.id)
                 }
             }

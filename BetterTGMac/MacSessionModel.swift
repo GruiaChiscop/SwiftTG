@@ -767,6 +767,9 @@ private enum MacMessageSenderKey: Hashable {
             ownsRequest = true
         }
         let name = await request.value
+        if ownsRequest {
+            senderNameRequests[resolvedSenderKey] = nil
+        }
         guard let name, !name.isEmpty else { return }
         if !ownsRequest {
             guard openedChatId == message.chatId,
@@ -776,7 +779,6 @@ private enum MacMessageSenderKey: Hashable {
             return
         }
 
-        senderNameRequests[resolvedSenderKey] = nil
         senderNamesByKey[resolvedSenderKey] = name
         guard openedChatId == message.chatId else { return }
         for visibleMessage in messages.messages.values where
