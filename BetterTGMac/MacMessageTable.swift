@@ -16,26 +16,29 @@ struct MacMessageTable: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(selection: $selectedMessageId) {
-                ForEach(Array(model.messages.orderedMessageIds.enumerated()), id: \.element) { index, messageId in
+            List(messageRows, selection: $selectedRowId) { row in
+                switch row.kind {
+                case let .day(title):
+                    MacMessageDayHeader(title: title)
+                        .tag(row.id)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+
+                case let .unread(count):
+                    MacUnreadMessagesHeader(count: count)
+                        .tag(row.id)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+
+                case let .message(messageId):
                     if let message = model.messages.messages[messageId] {
-                        if startsNewDay(at: index) {
-                            MacMessageDayHeader(title: telegramMessageDayHeading(message.date))
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                        }
-                        if unreadBoundaryMessageId == messageId {
-                            MacUnreadMessagesHeader(count: model.openedUnreadCount)
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                        }
                         MacMessageRow(
                             model: model,
                             message: message,
                             lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
                         )
                         .id(messageId)
-                        .tag(messageId)
+                        .tag(row.id)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .listRowSeparator(.hidden)
@@ -73,7 +76,7 @@ struct MacMessageTable: View {
                 positionSearchResult(messageId, using: proxy)
             }
             .onChange(of: chat.chatId) {
-                selectedMessageId = nil
+                selectedRowId = nil
                 historyAnchorMessageId = nil
                 hasPositionedInitialMessages = false
                 isAtBottom = false
@@ -84,7 +87,38 @@ struct MacMessageTable: View {
 
     @State private var historyAnchorMessageId: Int64?
     @State private var hasPositionedInitialMessages = false
-    @State private var selectedMessageId: Int64?
+    @State private var selectedRowId: MacMessageListRow.ID?
+
+    private var messageRows: [MacMessageListRow] {
+        var rows: [MacMessageListRow] = []
+        rows.reserveCapacity(model.messages.orderedMessageIds.count + 2)
+
+        for (index, messageId) in model.messages.orderedMessageIds.enumerated() {
+            guard let message = model.messages.messages[messageId] else { continue }
+
+            if startsNewDay(at: index) {
+                rows.append(
+                    MacMessageListRow(
+                        id: .day(messageId),
+                        kind: .day(telegramMessageDayHeading(message.date)),
+                    ),
+                )
+            }
+
+            if unreadBoundaryMessageId == messageId {
+                rows.append(
+                    MacMessageListRow(
+                        id: .unread(messageId),
+                        kind: .unread(model.openedUnreadCount),
+                    ),
+                )
+            }
+
+            rows.append(MacMessageListRow(id: .message(messageId), kind: .message(messageId)))
+        }
+
+        return rows
+    }
 
     private func startsNewDay(at index: Int) -> Bool {
         let ids = model.messages.orderedMessageIds
@@ -122,7 +156,7 @@ struct MacMessageTable: View {
     }
 
     private func positionSearchResult(_ messageId: Int64, using proxy: ScrollViewProxy) {
-        selectedMessageId = messageId
+        selectedRowId = .message(messageId)
         proxy.scrollTo(messageId, anchor: .center)
         model.navigationTargetMessageId = nil
         hasPositionedInitialMessages = true
@@ -143,7 +177,7 @@ struct MacMessageTable: View {
     }
 
     private func positionAtLatestHistory(_ messageId: Int64, using proxy: ScrollViewProxy) {
-        selectedMessageId = messageId
+        selectedRowId = .message(messageId)
         proxy.scrollTo(messageId, anchor: .bottom)
         isAtBottom = true
         hasPositionedInitialMessages = true
@@ -161,6 +195,25 @@ struct MacMessageTable: View {
             }
         }
     }
+}
+
+// MARK: - MacMessageListRow
+
+private struct MacMessageListRow: Identifiable {
+    enum ID: Hashable {
+        case day(Int64)
+        case unread(Int64)
+        case message(Int64)
+    }
+
+    enum Kind {
+        case day(String)
+        case unread(Int)
+        case message(Int64)
+    }
+
+    let id: ID
+    let kind: Kind
 }
 
 // MARK: - MacMessageDayHeader
