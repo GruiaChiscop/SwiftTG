@@ -99,27 +99,16 @@ extension MacSessionModel {
             return foundMessages
         }
 
-        // Ask TDLib's on-disk database first. A remote-capable history request may wait for the
-        // network even when enough local messages exist to paint the conversation immediately.
-        // Older pages remain available through `loadOlderMessages`, which is remote-capable.
-        if let localHistory = try? await service.getChatHistory(
+        // A normal chat open is remote-capable from the first request. In particular, channels can
+        // have only their latest post in TDLib's local cache; treating any nonempty local response
+        // as a complete initial page leaves the conversation permanently stuck on that one post.
+        // `fetchMessagesBackward` immediately continues from a one-message response until it fills
+        // the initial page or TDLib reports that the beginning was reached, matching Unigram's
+        // one-item fallback without publishing a succession of partial snapshots.
+        let (messagesById, reachedBeginning) = await fetchMessagesBackward(
             chatId: chatId,
-            fromMessageId: 0,
-            limit: 30,
-            offset: 0,
-            onlyLocal: true,
-        ), !Task.isCancelled,
-        openedChatId == chatId,
-        historyRequestGeneration == generation,
-        let localMessages = localHistory.messages,
-        !localMessages.isEmpty
-        {
-            service.mergeMessageHistory(chatId: chatId, messages: localMessages)
-            canLoadOlderMessages = true
-            return localMessages
-        }
-
-        let (messagesById, reachedBeginning) = await fetchMessagesBackward(chatId: chatId, generation: generation)
+            generation: generation,
+        )
         guard !Task.isCancelled, openedChatId == chatId, historyRequestGeneration == generation else {
             return Array(messagesById.values)
         }

@@ -16,7 +16,7 @@ struct MacMessageTable: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            List {
+            List(selection: $selectedMessageId) {
                 ForEach(Array(model.messages.orderedMessageIds.enumerated()), id: \.element) { index, messageId in
                     if let message = model.messages.messages[messageId] {
                         if startsNewDay(at: index) {
@@ -35,6 +35,7 @@ struct MacMessageTable: View {
                             lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
                         )
                         .id(messageId)
+                        .tag(messageId)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .listRowSeparator(.hidden)
@@ -56,6 +57,7 @@ struct MacMessageTable: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .accessibilityLabel("Messages")
             .onChange(of: model.messages.version) {
                 handleMessageChange(using: proxy)
             }
@@ -71,6 +73,7 @@ struct MacMessageTable: View {
                 positionSearchResult(messageId, using: proxy)
             }
             .onChange(of: chat.chatId) {
+                selectedMessageId = nil
                 historyAnchorMessageId = nil
                 hasPositionedInitialMessages = false
                 isAtBottom = false
@@ -81,6 +84,7 @@ struct MacMessageTable: View {
 
     @State private var historyAnchorMessageId: Int64?
     @State private var hasPositionedInitialMessages = false
+    @State private var selectedMessageId: Int64?
 
     private func startsNewDay(at index: Int) -> Bool {
         let ids = model.messages.orderedMessageIds
@@ -118,6 +122,7 @@ struct MacMessageTable: View {
     }
 
     private func positionSearchResult(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        selectedMessageId = messageId
         proxy.scrollTo(messageId, anchor: .center)
         model.navigationTargetMessageId = nil
         hasPositionedInitialMessages = true
@@ -138,6 +143,7 @@ struct MacMessageTable: View {
     }
 
     private func positionAtLatestHistory(_ messageId: Int64, using proxy: ScrollViewProxy) {
+        selectedMessageId = messageId
         proxy.scrollTo(messageId, anchor: .bottom)
         isAtBottom = true
         hasPositionedInitialMessages = true
