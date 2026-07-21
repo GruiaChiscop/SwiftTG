@@ -13,14 +13,64 @@ struct MacFormattedTextView: View {
     let formattedText: FormattedText
 
     var body: some View {
-        Text(macAttributedString(formattedText))
+        Text(MacFormattedTextCache.shared.attributedString(for: formattedText))
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 func macAttributedString(_ formattedText: FormattedText) -> AttributedString {
-    AttributedString(macNSAttributedString(formattedText))
+    MacFormattedTextCache.shared.attributedString(for: formattedText)
+}
+
+// MARK: - MacFormattedTextCache
+
+/// SwiftUI can reevaluate a message row whenever asynchronously loaded metadata changes. Keep the
+/// comparatively expensive link detection and attributed-string construction out of those redraws.
+private final class MacFormattedTextCache {
+    static let shared = MacFormattedTextCache()
+
+    func attributedString(for formattedText: FormattedText) -> AttributedString {
+        let key = Key(formattedText)
+        if let cached = values.object(forKey: key) {
+            return cached.value
+        }
+
+        let value = AttributedString(macNSAttributedString(formattedText))
+        values.setObject(Value(value), forKey: key)
+        return value
+    }
+
+    private let values: NSCache<Key, Value> = {
+        let cache = NSCache<Key, Value>()
+        cache.countLimit = 512
+        return cache
+    }()
+
+    private final class Key: NSObject {
+        init(_ formattedText: FormattedText) {
+            self.formattedText = formattedText
+        }
+
+        override var hash: Int {
+            formattedText.hashValue
+        }
+
+        override func isEqual(_ object: Any?) -> Bool {
+            guard let other = object as? Key else { return false }
+            return formattedText == other.formattedText
+        }
+
+        private let formattedText: FormattedText
+    }
+
+    private final class Value {
+        init(_ value: AttributedString) {
+            self.value = value
+        }
+
+        let value: AttributedString
+    }
 }
 
 func macNSAttributedString(_ formattedText: FormattedText) -> NSAttributedString {
@@ -32,7 +82,7 @@ func macNSAttributedString(_ formattedText: FormattedText) -> NSAttributedString
         ],
     )
     let fullRange = NSRange(location: 0, length: attributed.length)
-    if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+    if let detector = macLinkDetector {
         detector.enumerateMatches(in: formattedText.text, range: fullRange) { match, _, _ in
             guard let match, let url = match.url else { return }
             attributed.addAttribute(.link, value: url, range: match.range)
@@ -78,3 +128,5 @@ func macNSAttributedString(_ formattedText: FormattedText) -> NSAttributedString
     }
     return attributed
 }
+
+private let macLinkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
