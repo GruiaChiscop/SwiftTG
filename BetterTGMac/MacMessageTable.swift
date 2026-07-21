@@ -44,16 +44,13 @@ struct MacMessageTable: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .onAppear {
-                            guard messageId == model.messages.orderedMessageIds.first,
-                                  hasPositionedInitialMessages,
-                                  !model.isLoadingMessages,
-                                  !model.isLoadingOlderMessages
-                            else { return }
-                            beginLoadingOlderMessages()
-                        }
-                        .onScrollVisibilityChange(threshold: 0.2) { isVisible in
-                            guard messageId == model.messages.orderedMessageIds.last else { return }
-                            isAtBottom = isVisible
+                            if messageId == model.messages.orderedMessageIds.first,
+                               hasPositionedInitialMessages,
+                               !model.isLoadingMessages,
+                               !model.isLoadingOlderMessages
+                            {
+                                beginLoadingOlderMessages()
+                            }
                         }
                     }
                 }
@@ -61,6 +58,11 @@ struct MacMessageTable: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .accessibilityLabel("Messages")
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.visibleRect.maxY >= geometry.contentSize.height - 20
+            } action: { _, newIsAtBottom in
+                isAtBottom = newIsAtBottom
+            }
             .onChange(of: model.messages.version) {
                 handleMessageChange(using: proxy)
             }

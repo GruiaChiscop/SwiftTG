@@ -166,31 +166,12 @@ struct MacMessageRow: View {
         }
         .contentShape(Rectangle())
         .contextMenu { messageActions }
-        .onScrollVisibilityChange(threshold: 0.01) { newValue in
-            // Debounced here, before `isVisible` (and therefore `presentationTaskID`) changes,
-            // rather than inside each `.task(id:)` body: table reloads/row inserts during the
-            // initial history reveal make AppKit report a row's visibility flipping rapidly for
-            // reasons that have nothing to do with the user actually scrolling it into view. Since
-            // `.task(id:)` cancels and restarts on every id change, letting that flicker reach
-            // `presentationTaskID` directly meant every visible row's seven load tasks (capabilities,
-            // reply context, sender name, thumbnails, ...) got cancelled and restarted on each
-            // flip - the burst of redundant model calls across dozens of rows is what produced the
-            // "onChange tried to update multiple times per frame" warnings and the multi-second
-            // freeze right after a cold chat's history loaded.
-            visibilityDebounceTask?.cancel()
-            visibilityDebounceTask = Task {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { return }
-                isVisible = newValue
-            }
-        }
         .task(id: presentationTaskID) {
-            guard isVisible, let voiceFileId else { return }
+            guard let voiceFileId else { return }
             voicePath = await model.localVoiceNotePath(fileId: voiceFileId)
         }
         .task(id: presentationTaskID) {
-            guard isVisible,
-                  let photoFileId,
+            guard let photoFileId,
                   let path = await model.localPhotoPath(fileId: photoFileId)
             else {
                 photoPath = nil
@@ -201,8 +182,7 @@ struct MacMessageRow: View {
             photoImage = await Self.decodedImage(atPath: path)
         }
         .task(id: presentationTaskID) {
-            guard isVisible,
-                  let videoThumbnailFileId,
+            guard let videoThumbnailFileId,
                   let path = await model.localPhotoPath(fileId: videoThumbnailFileId)
             else {
                 videoThumbnailImage = nil
@@ -211,23 +191,18 @@ struct MacMessageRow: View {
             videoThumbnailImage = await Self.decodedImage(atPath: path)
         }
         .task(id: presentationTaskID) {
-            guard isVisible else { return }
             await model.loadCapabilities(for: message)
         }
         .task(id: presentationTaskID) {
-            guard isVisible else { return }
             await model.loadReplyContext(for: message)
         }
         .task(id: presentationTaskID) {
-            guard isVisible else { return }
             await model.loadForwardedFrom(for: message)
         }
         .task(id: presentationTaskID) {
-            guard isVisible else { return }
             await model.loadSenderName(for: message)
         }
         .task(id: presentationTaskID) {
-            guard isVisible else { return }
             await model.loadServiceDescription(for: message)
         }
         .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
@@ -298,8 +273,6 @@ struct MacMessageRow: View {
     @State private var showReactionDetails = false
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
-    @State private var isVisible = false
-    @State private var visibilityDebounceTask: Task<Void, Never>?
 
     private var capabilities: MacMessageCapabilities? {
         model.messageCapabilities[message.id]
@@ -315,7 +288,7 @@ struct MacMessageRow: View {
     }
 
     private var presentationTaskID: String {
-        "\(isVisible):\(message.id):\(message.editDate)"
+        "\(message.id):\(message.editDate)"
     }
 
     private var canNavigateToForwardOrigin: Bool {
