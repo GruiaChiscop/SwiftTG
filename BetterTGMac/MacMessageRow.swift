@@ -387,7 +387,7 @@ struct MacMessageRow: View {
     private var reactionChoices: [ReactionType] {
         telegramReactionChoices(
             existing: messageReactions,
-            available: capabilities?.availableReactions ?? [],
+            available: model.messageAvailableReactions[message.id] ?? [],
         )
     }
 

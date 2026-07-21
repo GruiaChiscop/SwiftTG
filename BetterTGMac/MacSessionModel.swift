@@ -12,7 +12,6 @@ import UniformTypeIdentifiers
 
 struct MacMessageCapabilities {
     let properties: MessageProperties
-    let availableReactions: [AvailableReaction]
 }
 
 // MARK: - MacMessageReplyContext
@@ -63,6 +62,7 @@ private enum MacMessageSenderKey: Hashable {
     var editingMessage: Message?
     var replyingToMessage: Message?
     var messageCapabilities = [Int64: MacMessageCapabilities]()
+    var messageAvailableReactions = [Int64: [AvailableReaction]]()
     var messageReplyContexts = [Int64: MacMessageReplyContext]()
     var messageForwardedFrom = [Int64: String]()
     var messageSenderNames = [Int64: String]()
@@ -287,6 +287,7 @@ private enum MacMessageSenderKey: Hashable {
         replyingToMessage = nil
         editMessageText = ""
         messageCapabilities = [:]
+        messageAvailableReactions = [:]
         messageReplyContexts = [:]
         messageForwardedFrom = [:]
         messageSenderNames = [:]
@@ -595,17 +596,30 @@ private enum MacMessageSenderKey: Hashable {
         guard let properties = try? await service.getMessageProperties(
             chatId: message.chatId,
             messageId: message.id,
-        ) else { return }
-        let availableReactions = try? await service.getMessageAvailableReactions(
+        ), openedChatId == message.chatId
+        else { return }
+
+        messageCapabilities[message.id] = MacMessageCapabilities(
+            properties: properties,
+        )
+    }
+
+    func loadAvailableReactions(for message: Message) async {
+        guard messageAvailableReactions[message.id] == nil,
+              !loadingReactionMessageIds.contains(message.id),
+              openedChatId == message.chatId
+        else { return }
+        loadingReactionMessageIds.insert(message.id)
+        defer { loadingReactionMessageIds.remove(message.id) }
+
+        guard let availableReactions = try? await service.getMessageAvailableReactions(
             chatId: message.chatId,
             messageId: message.id,
             rowSize: 8,
-        )
-        guard openedChatId == message.chatId else { return }
-        messageCapabilities[message.id] = MacMessageCapabilities(
-            properties: properties,
-            availableReactions: availableReactions.map(telegramAvailableReactions) ?? [],
-        )
+        ),
+              openedChatId == message.chatId
+        else { return }
+        messageAvailableReactions[message.id] = telegramAvailableReactions(availableReactions)
     }
 
     func loadServiceDescription(for message: Message) async {
@@ -961,6 +975,7 @@ private enum MacMessageSenderKey: Hashable {
     @ObservationIgnored private var databaseExistedBeforeStart = false
     @ObservationIgnored private var messageSubscription: AnyCancellable?
     @ObservationIgnored private var loadingCapabilityMessageIds = Set<Int64>()
+    @ObservationIgnored private var loadingReactionMessageIds = Set<Int64>()
     @ObservationIgnored private var loadingReplyContextMessageIds = Set<Int64>()
     @ObservationIgnored private var loadingServiceMessageIds = Set<Int64>()
     @ObservationIgnored private var loadingForwardedMessageIds = Set<Int64>()
@@ -1273,6 +1288,7 @@ private enum MacMessageSenderKey: Hashable {
         editingMessage = nil
         replyingToMessage = nil
         messageCapabilities = [:]
+        messageAvailableReactions = [:]
         messageReplyContexts = [:]
         messageForwardedFrom = [:]
         messageSenderNames = [:]
