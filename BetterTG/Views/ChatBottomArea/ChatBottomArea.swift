@@ -86,7 +86,6 @@ struct ChatBottomArea: View {
             }
         }
         .onDisappear { Task.background { [chatVM] in await chatVM.updateDraft() } }
-        .task(id: chatVM.replyMessage) { await chatVM.updateDraft() }
         .task(id: chatVM.editCustomMessage) { chatVM.setEditMessageText(from: chatVM.editCustomMessage?.message) }
         .alert("Error", isPresented: $chatVM.errorShown) {
             Text("""

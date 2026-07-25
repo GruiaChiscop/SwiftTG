@@ -5,12 +5,24 @@ import TDLibKit
 
 enum TelegramDrafts {
     static func make(text: String, replyMessageId: Int64?, date: Foundation.Date = .now) -> DraftMessage? {
-        guard !text.isEmpty || replyMessageId != nil else { return nil }
+        make(
+            formattedText: FormattedText(entities: [], text: text),
+            replyMessageId: replyMessageId,
+            date: date,
+        )
+    }
+
+    static func make(
+        formattedText: FormattedText,
+        replyMessageId: Int64?,
+        date: Foundation.Date = .now,
+    ) -> DraftMessage? {
+        guard !formattedText.text.isEmpty || replyMessageId != nil else { return nil }
         return DraftMessage(
             content: .draftMessageContentText(
                 DraftMessageContentText(
                     linkPreviewOptions: nil,
-                    text: FormattedText(entities: [], text: text),
+                    text: formattedText,
                 ),
             ),
             date: Int(date.timeIntervalSince1970),

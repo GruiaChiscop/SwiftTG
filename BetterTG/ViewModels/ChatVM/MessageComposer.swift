@@ -166,20 +166,12 @@ import TDLibKit
     }
 
     func updateDraft() async {
-        let draftMessage = DraftMessage(
-            content: .draftMessageContentText(
-                DraftMessageContentText(
-                    linkPreviewOptions: nil,
-                    text: FormattedText(
-                        entities: getEntities(from: text),
-                        text: text.string,
-                    ),
-                ),
+        let draftMessage = TelegramDrafts.make(
+            formattedText: FormattedText(
+                entities: getEntities(from: text),
+                text: text.string,
             ),
-            date: Int(Date.now.timeIntervalSince1970),
-            effectId: 0,
-            replyTo: getMessageReplyTo(from: replyMessage),
-            suggestedPostInfo: nil,
+            replyMessageId: replyMessage?.id,
         )
         _ = try? await service.setChatDraftMessage(
             chatId: chatId,
