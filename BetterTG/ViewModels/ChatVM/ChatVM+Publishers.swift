@@ -6,8 +6,8 @@ import TDLibKit
 
 extension ChatVM {
     func setPublishers() {
-        nc.publisher(&cancellables, for: .localScrollToLastOnFocus) { [weak self] _ in
-            guard let self, scrollOnFocus else { return }
+        nc.publisher(&cancellables, for: .localScrollToLastIfNeeded) { [weak self] _ in
+            guard let self, isAtBottom else { return }
             Task.main { self.scrollToLast() }
         }
         service.messagePublisher(chatId: customChat.chat.id)
@@ -247,7 +247,7 @@ extension ChatVM {
         let readyToScroll = pendingScrollMessageIds.intersection(displayedMessageIds)
         if !readyToScroll.isEmpty {
             pendingScrollMessageIds.subtract(readyToScroll)
-            nc.post(name: .localScrollToLastOnFocus)
+            nc.post(name: .localScrollToLastIfNeeded)
         }
 
         if let targetMessageId = pendingNavigationMessageId,

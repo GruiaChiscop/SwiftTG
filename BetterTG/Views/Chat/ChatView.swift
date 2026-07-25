@@ -33,43 +33,51 @@ struct ChatView: View {
     @State var chatVM: ChatVM
     
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { scrollViewProxy in
-                bodyView
-                    .task { chatVM.start() }
-                    .onAppear {
-                        chatVM.scrollViewProxy = scrollViewProxy
-                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                ScrollViewReader { scrollViewProxy in
+                    bodyView
+                        .task { chatVM.start() }
+                        .onAppear {
+                            chatVM.scrollViewProxy = scrollViewProxy
+                            positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                        }
+                        .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
+                            guard loaded else { return }
+                            positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                        }
+                        .onChange(of: chatVM.accessibilityFocusRequestMessageId) { _, messageId in
+                            guard let messageId else { return }
+                            focusMessage(messageId, using: scrollViewProxy)
+                        }
+                }
+                .overlay {
+                    if chatVM.customChat.lastMessage == nil {
+                        Text("No messages")
+                            .frame(maxHeight: .infinity)
+                            .background(.black)
                     }
-                    .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
-                        guard loaded else { return }
-                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                }
+
+                if !isPreview {
+                    if chatVM.customChat.canPostMessages {
+                        ChatBottomArea(focused: $focused)
+                            .readSize { bottomAreaHeight = $0.height }
+                    } else if chatVM.customChat.kind == .channel {
+                        Text("Only channel administrators can post.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(.bar)
+                            .readSize { bottomAreaHeight = $0.height }
                     }
-                    .onChange(of: chatVM.accessibilityFocusRequestMessageId) { _, messageId in
-                        guard let messageId else { return }
-                        focusMessage(messageId, using: scrollViewProxy)
-                    }
-            }
-            .overlay {
-                if chatVM.customChat.lastMessage == nil {
-                    Text("No messages")
-                        .frame(maxHeight: .infinity)
-                        .background(.black)
                 }
             }
 
-            if !isPreview {
-                if chatVM.customChat.canPostMessages {
-                    ChatBottomArea(focused: $focused)
-                        .readSize { chatVM.bottomAreaHeight = $0.height }
-                } else if chatVM.customChat.kind == .channel {
-                    Text("Only channel administrators can post.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(.bar)
-                }
+            if chatVM.showScrollToBottomButton {
+                scrollToBottomButton
+                    .padding(.bottom, bottomAreaHeight + 8)
             }
         }
         .background(.black)
@@ -131,7 +139,6 @@ struct ChatView: View {
                     customMessage: customMessage,
                     previousMessage: chatVM.messages[safe: index - 1],
                     nextMessage: chatVM.messages[safe: index + 1],
-                    isLastMessage: index == chatVM.messages.count - 1,
                     distanceFromStart: index,
                     shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
                     isPreview: isPreview,
@@ -149,11 +156,11 @@ struct ChatView: View {
         .scrollIndicators(.hidden)
         .scrollEdgeEffectHidden(true, for: .all)
         .onTapGesture { focused = false }
-        .overlay(alignment: .bottomTrailing) {
-            if chatVM.showScrollToBottomButton {
-                scrollToBottomButton
-                    .padding(.bottom, 8)
-            }
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.visibleRect.maxY >= geometry.contentSize.height - 20
+        } action: { _, isAtBottom in
+            guard !isPreview else { return }
+            chatVM.updateBottomVisibility(isLastMessageVisible: isAtBottom)
         }
         .overlay(alignment: .top) {
             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
@@ -200,21 +207,18 @@ struct ChatView: View {
         .buttonStyle(.plain)
         .transition(.move(edge: .bottom).combined(with: .scale).combined(with: .opacity))
         .padding(.trailing)
-        // Without this, the chevron/badge overlays can surface as separate accessibility
-        // elements instead of one cleanly labeled button.
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Scroll to bottom")
         .accessibilityValue(
-            chatVM.customChat.unreadCount == 0
-                ? "No unread messages"
-                : "\(chatVM.customChat.unreadCount) unread messages",
+            Text("\(chatVM.customChat.unreadCount) unread messages"),
+            isEnabled: chatVM.customChat.unreadCount != 0,
         )
-        .accessibilityAddTraits(.isButton)
+        .accessibilitySortPriority(-1)
     }
     
     // MARK: Private
 
     @State private var navigationBarHeight = CGFloat.zero
+    @State private var bottomAreaHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var showsSharedMedia = false
     @State private var showsChatInfo = false
@@ -321,7 +325,6 @@ private struct ChatMessageListRows: View {
     let customMessage: CustomMessage
     let previousMessage: CustomMessage?
     let nextMessage: CustomMessage?
-    let isLastMessage: Bool
     let distanceFromStart: Int
     let shouldShowProfileImage: Bool
     let isPreview: Bool
@@ -393,10 +396,6 @@ private struct ChatMessageListRows: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .onAppear { chatVM.loadMoreIfNeeded(distanceFromStart: distanceFromStart) }
-        .onScrollVisibilityChange { visible in
-            guard isLastMessage else { return }
-            chatVM.updateBottomVisibility(isLastMessageVisible: visible)
-        }
     }
 
     private var startsNewDay: Bool {

@@ -73,7 +73,6 @@ import UniformTypeIdentifiers
     let composer: MessageComposer
     let voiceRecorder: VoiceRecordingController
 
-    var bottomAreaHeight = CGFloat.zero
     var actionStatus = ""
     var onlineStatus = ""
     var highlightedMessageId: Int64?
@@ -112,7 +111,7 @@ import UniformTypeIdentifiers
     @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
     @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
     // Scroll
-    @ObservationIgnored var scrollOnFocus = true
+    @ObservationIgnored var isAtBottom = true
     var showScrollToBottomButton = false
     @ObservationIgnored var scrollViewProxy: ScrollViewProxy?
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
@@ -291,7 +290,7 @@ import UniformTypeIdentifiers
     }
 
     func updateBottomVisibility(isLastMessageVisible: Bool) {
-        scrollOnFocus = isLastMessageVisible
+        isAtBottom = isLastMessageVisible
         let shouldShowButton = !isLastMessageVisible
         guard showScrollToBottomButton != shouldShowButton else { return }
         withAnimation { showScrollToBottomButton = shouldShowButton }
@@ -317,9 +316,6 @@ import UniformTypeIdentifiers
     func scrollToLast() {
         guard let lastId = messages.last?.id, let scrollViewProxy else { return }
         withAnimation { scrollViewProxy.scrollTo(lastId, anchor: .bottom) }
-        // Scrolling only moves the viewport - VoiceOver's cursor stays wherever it was, so without
-        // this a VoiceOver user tapping "Scroll to bottom" would see/hear nothing move for them.
-        accessibilityFocusRequestMessageId = lastId
     }
     
     func scrollTo(id: Int64?, anchor: UnitPoint = .center) {

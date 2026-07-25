@@ -17,7 +17,7 @@ extension Foundation.Notification.Name {
     static let authorizationStateClosed = Self("authorizationStateClosed")
     static let authorizationStateWaitPremiumPurchase = Self("authorizationStateWaitPremiumPurchase")
 
-    static let localScrollToLastOnFocus = Self("localScrollToLastOnFocus")
+    static let localScrollToLastIfNeeded = Self("localScrollToLastIfNeeded")
     static let localPasteImages = Self("localPasteImages")
     static let localPasteFiles = Self("localPasteFiles")
     static let localOnSelectedImagesDrop = Self("localOnSelectedImagesDrop")

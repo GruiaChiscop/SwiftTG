@@ -167,7 +167,7 @@ struct ChatBottomArea: View {
                 chatVM.stopTimer()
             }
         }
-        .onChange(of: chatVM.displayedImages) { nc.post(name: .localScrollToLastOnFocus) }
+        .onChange(of: chatVM.displayedImages) { nc.post(name: .localScrollToLastIfNeeded) }
         .onReceive(nc.publisher(for: .localOnSelectedImagesDrop)) { notification in
             guard let selectedImages = notification.object as? [SelectedImage] else { return }
             withAnimation {
@@ -245,20 +245,19 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.editMessageText) { withAnimation { chatVM.showDetail = false } }
         .onChange(of: chatVM.replyMessage) {
             if chatVM.replyMessage == nil {
-                nc.post(name: .localScrollToLastOnFocus)
+                nc.post(name: .localScrollToLastIfNeeded)
             } else {
                 focused.wrappedValue = true
             }
         }
         .onChange(of: chatVM.editCustomMessage) {
             if chatVM.editCustomMessage == nil {
-                nc.post(name: .localScrollToLastOnFocus)
+                nc.post(name: .localScrollToLastIfNeeded)
             } else {
                 focused.wrappedValue = true
             }
         }
         .onChange(of: focused.wrappedValue) {
-            nc.post(name: .localScrollToLastOnFocus)
             guard focused.wrappedValue else { return }
             withAnimation { chatVM.showDetail = false }
         }
