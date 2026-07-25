@@ -21,7 +21,17 @@ func getAttributedString(
     )
 
     for entity in formattedText.entities {
-        setEntity(entity, base: formattedText.text, for: attributedString)
+        setEntity(entity, for: attributedString)
+    }
+
+    for link in TelegramTextFormatting.links(in: formattedText) {
+        let range = NSRange(location: link.offset, length: link.length)
+        guard NSMaxRange(range) <= attributedString.length else { continue }
+        attributedString.addAttributes([
+            .foregroundColor: UIColor.link,
+            .link: link.url,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+        ], range: range)
     }
 
     if withDate {
@@ -31,10 +41,8 @@ func getAttributedString(
     return AttributedString(attributedString)
 }
 
-func setEntity(_ entity: TextEntity, base text: String, for attributedString: NSMutableAttributedString) {
+func setEntity(_ entity: TextEntity, for attributedString: NSMutableAttributedString) {
     let range = NSRange(location: entity.offset, length: entity.length)
-    let stringRange = stringRange(for: text, start: entity.offset, length: entity.length)
-    let raw = String(text[stringRange])
 
     switch entity.type {
     case .textEntityTypeBold:
@@ -47,14 +55,6 @@ func setEntity(_ entity: TextEntity, base text: String, for attributedString: NS
         attributedString.addAttribute(.underlineStyle, value: 1, range: range)
     case .textEntityTypeStrikethrough:
         attributedString.addAttribute(.strikethroughStyle, value: 1, range: range)
-    case .textEntityTypePhoneNumber:
-        attributedString.addAttribute(.link, value: URL(string: "tel://\(raw)") as Any, range: range)
-    case .textEntityTypeEmailAddress:
-        attributedString.addAttribute(.link, value: URL(string: "mailto://\(raw)") as Any, range: range)
-    case .textEntityTypeUrl:
-        attributedString.addAttribute(.link, value: getUrl(from: raw) as Any, range: range)
-    case .textEntityTypeTextUrl(let textUrl):
-        attributedString.addAttribute(.link, value: getUrl(from: textUrl.url) as Any, range: range)
     case .textEntityTypeSpoiler:
         attributedString.addAttribute(.backgroundColor, value: UIColor.gray, range: range)
 //        case .textEntityTypeCustomEmoji: // (let textEntityTypeCustomEmoji)
@@ -68,47 +68,53 @@ func setEntity(_ entity: TextEntity, base text: String, for attributedString: NS
 func getEntities(from text: AttributedString) -> [TextEntity] {
     var entities = [TextEntity]()
     let attributedText = NSAttributedString(text)
-    let textRange = NSRange(location: 0, length: text.string.count)
+    let textRange = NSRange(location: 0, length: attributedText.length)
     attributedText.enumerateAttributes(in: textRange) { attributes, range, _ in
-        for attribute in attributes {
-            guard let entity = getEntity(from: attribute, using: range) else { continue }
-            entities.append(entity)
+        entities.append(contentsOf: getEntities(from: attributes, using: range))
+    }
+    return entities.sorted {
+        ($0.offset, $0.length) < ($1.offset, $1.length)
+    }
+}
+
+private func getEntities(
+    from attributes: [NSAttributedString.Key: Any],
+    using range: NSRange,
+) -> [TextEntity] {
+    var entities = [TextEntity]()
+
+    if let font = attributes[.font] as? UIFont {
+        let traits = font.fontDescriptor.symbolicTraits
+        if traits.contains(.traitBold) {
+            entities.append(.init(.textEntityTypeBold, range: range))
+        }
+        if traits.contains(.traitItalic) {
+            entities.append(.init(.textEntityTypeItalic, range: range))
+        }
+        if traits.contains(.traitMonoSpace) {
+            entities.append(.init(.textEntityTypeCode, range: range))
         }
     }
+
+    if let url = attributes[.link] as? URL {
+        entities.append(.init(.textEntityTypeTextUrl(.init(url: url.absoluteString)), range: range))
+    } else if let urlString = attributes[.link] as? String,
+              let url = URL(string: urlString)
+    {
+        entities.append(.init(.textEntityTypeTextUrl(.init(url: url.absoluteString)), range: range))
+    }
+
+    if let style = attributes[.strikethroughStyle] as? NSNumber, style.intValue != 0 {
+        entities.append(.init(.textEntityTypeStrikethrough, range: range))
+    }
+    if let style = attributes[.underlineStyle] as? NSNumber, style.intValue != 0 {
+        entities.append(.init(.textEntityTypeUnderline, range: range))
+    }
+    if attributes[.backgroundColor] != nil {
+        entities.append(.init(.textEntityTypeSpoiler, range: range))
+    }
+
     return entities
-}
-
-func getEntity(from attribute: (key: NSAttributedString.Key, value: Any), using range: NSRange) -> TextEntity? {
-    switch attribute.key {
-    case .font:
-        guard let uiFont = attribute.value as? UIFont else { return nil }
-        switch uiFont {
-        case UIFont.bold:
-            return .init(.textEntityTypeBold, range: range)
-        case UIFont.italic:
-            return .init(.textEntityTypeItalic, range: range)
-        case UIFont.monospaced:
-            return .init(.textEntityTypeCode, range: range)
-        default:
-            break
-        }
-    case .link:
-        guard let url = attribute.value as? URL else { return nil }
-        return .init(.textEntityTypeTextUrl(.init(url: url.absoluteString)), range: range)
-    case .strikethroughStyle:
-        return .init(.textEntityTypeStrikethrough, range: range)
-    case .underlineStyle:
-        return .init(.textEntityTypeUnderline, range: range)
-    case .backgroundColor:
-        return .init(.textEntityTypeSpoiler, range: range)
-    default:
-        return nil
-    }
-    return nil
-}
-
-func getUrl(from string: String) -> URL? {
-    URL(string: string.contains("://") ? string : "https://\(string)")
 }
 
 func stringRange(

@@ -20,12 +20,14 @@ struct ProfileImageView: View {
                         .resizable()
                         .scaledToFit()
                         .contentShape(.contextMenuPreview, Circle())
-                        .customContextMenu([
-                            .button(title: "Save", systemImage: "square.and.arrow.down") {
+                        .contextMenu {
+                            Button {
                                 guard let uiImage = UIImage(contentsOfFile: photo.local.path) else { return }
                                 UIImageWriteToSavedPhotosAlbum(uiImage, nil, nil, nil)
-                            },
-                        ]) {
+                            } label: {
+                                Label("Save", systemImage: "square.and.arrow.down")
+                            }
+                        } preview: {
                             image
                                 .resizable()
                                 .scaledToFit()

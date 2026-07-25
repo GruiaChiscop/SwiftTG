@@ -257,7 +257,6 @@ import UniformTypeIdentifiers
 
     func sendMessage() async { await composer.sendMessage() }
     func stageDocuments(_ urls: [URL]) async { await composer.stageDocuments(urls) }
-    func stagePastedAttachments(_ urls: [URL]) async { await composer.stagePastedAttachments(urls) }
     func setShowSendButton() { composer.setShowSendButton() }
     func setEditMessageText(from message: Message?) { composer.setEditMessageText(from: message) }
     func updateDraft() async { await composer.updateDraft() }

@@ -334,24 +334,16 @@ struct ChatBottomArea: View {
         @Bindable var chatVM = chatVM
         Group {
             if chatVM.editCustomMessage == nil {
-                CustomTextField("Message...", text: $chatVM.text)
-                    .onReceive(nc.publisher(for: .localPasteImages)) { notification in
-                        guard let images = notification.object as? [SelectedImage] else { return }
-                        withAnimation {
-                            chatVM.displayedDocuments.removeAll()
-                            chatVM.displayedImages.append(contentsOf: images)
-                        }
+                MessageTextEditor("Type a message", text: $chatVM.text) { images in
+                    withAnimation {
+                        chatVM.displayedDocuments.removeAll()
+                        chatVM.displayedImages.append(contentsOf: images)
                     }
-                    .onReceive(nc.publisher(for: .localPasteFiles)) { notification in
-                        guard let urls = notification.object as? [URL] else { return }
-                        Task { await chatVM.stagePastedAttachments(urls) }
-                    }
+                }
             } else {
-                CustomTextField(
-                    "Edit...",
+                MessageTextEditor(
+                    "Edit a message",
                     text: $chatVM.editMessageText,
-                    focus: true,
-                    allowsAttachmentPaste: false,
                 )
             }
         }

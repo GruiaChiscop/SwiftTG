@@ -138,56 +138,9 @@ struct MessageView: View {
                 .opacity(0.5)
             }
             .contextMenu {
-                contextMenuActions.contextMenuContent()
+                messageContextMenu
             }
-            // Keep the message and its adjacent Reactions button as separate
-            // accessibility elements.
-            .accessibilityElement(children: .ignore)
-            .accessibilityIdentifier("message-\(customMessage.id)")
-            .accessibilityLabel(accessibilityDescription)
-            .modify {
-                if let messageVoiceNote = customMessage.messageVoiceNote {
-                    $0
-                        .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
-                        .accessibilityHint("Double tap to play or pause")
-                        .accessibilityAddTraits(.startsMediaSession)
-                }
-            }
-            .modify {
-                if let messageAudio = customMessage.messageAudio {
-                    $0
-                        .onTapGesture { toggleAudioMessage(messageAudio) }
-                        .accessibilityHint("Double tap to play or pause")
-                        .accessibilityAddTraits(.startsMediaSession)
-                }
-            }
-            .modify {
-                if hasNavigableReply {
-                    $0.accessibilityAction(named: "Go to Replied Message") {
-                        chatVM.navigateToRepliedMessage(from: customMessage.message)
-                    }
-                }
-            }
-            .modify {
-                if let forwardedFrom = customMessage.forwardedFrom, canNavigateToForwardOrigin {
-                    $0.accessibilityAction(named: "Go to \(forwardedFrom)") {
-                        chatVM.navigateToForwardOrigin(from: customMessage.message)
-                    }
-                }
-            }
-            .modify {
-                if customMessage.messagePhoto != nil
-                    || customMessage.messageVideo != nil
-                    || !customMessage.album.isEmpty
-                {
-                    $0.accessibilityAction(named: mediaAccessibilityActionName) {
-                        openAlbum(albumMessage: nil)
-                    }
-                }
-            }
-            .accessibilityActions {
-                messageAccessibilityActions
-            }
+            .modify { messageAccessibilityElement($0) }
             .accessibilityHidden(!textLinks.isEmpty)
 
             if !customMessage.message.isOutgoing, !messageReactions.isEmpty {
@@ -330,14 +283,30 @@ struct MessageView: View {
         content
             .accessibilityElement(children: .contain)
             .accessibilityChildren {
+                messageAccessibilityElement(Text(accessibilityDescription))
                 ForEach(textLinks) { link in
                     Link(link.displayedText, destination: link.url)
+                        .accessibilityRemoveTraits(.isButton)
+                        .accessibilityAddTraits(.isLink)
+                        .modify {
+                            if let destination = linkAccessibilityDestination(link) {
+                                $0.accessibilityValue(destination)
+                            } else {
+                                $0
+                            }
+                        }
                 }
                 if !messageReactions.isEmpty {
                     Button("Reactions") { showReactionDetails = true }
                         .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
                 }
             }
+    }
+
+    private func messageAccessibilityElement(_ content: some View) -> some View {
+        // Keep the message stable while playback controls and elapsed time update.
+        content
+            .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("message-\(customMessage.id)")
             .accessibilityLabel(accessibilityDescription)
             .modify {
@@ -385,6 +354,19 @@ struct MessageView: View {
             }
     }
 
+    private func linkAccessibilityDestination(_ link: TelegramTextLink) -> String? {
+        guard let scheme = link.url.scheme?.lowercased() else { return nil }
+        switch scheme {
+        case "http", "https":
+            guard let host = link.url.host,
+                  !link.displayedText.localizedCaseInsensitiveContains(host)
+            else { return nil }
+            return host
+        default:
+            return nil
+        }
+    }
+
     private func toggleAudioMessage(_ messageAudio: MessageAudio) {
         Media.shared.stop()
         audioPlayer.toggle(
@@ -396,7 +378,10 @@ struct MessageView: View {
 
     private func toggleVoiceMessage(_ messageVoiceNote: MessageVoiceNote) {
         Task { @MainActor in
-            if let resolvedPath = await chatVM.toggleVoiceMessage(messageVoiceNote, knownLocalPath: voiceNoteLocalPath) {
+            if let resolvedPath = await chatVM.toggleVoiceMessage(
+                messageVoiceNote,
+                knownLocalPath: voiceNoteLocalPath,
+            ) {
                 voiceNoteLocalPath = resolvedPath
             }
         }

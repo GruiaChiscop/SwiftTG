@@ -30,53 +30,58 @@ extension MessageView {
         }
     }
 
-    var contextMenuActions: [ContextMenuAction] {
-        var actions = [ContextMenuAction]()
-
+    @ViewBuilder var messageContextMenu: some View {
         if customMessage.properties.canBeReplied {
-            actions.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left", action: reply))
+            Button(action: reply) {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
         }
         if !reactionChoices.isEmpty {
-            actions.append(.menu(
-                title: "React",
-                systemImage: "face.smiling",
-                children: reactionChoices.map { reaction in
-                    .button(
-                        title: telegramReactionActionTitle(reaction, existing: messageReactions),
-                        systemImage: "face.smiling",
-                        action: { toggleReaction(reaction) },
-                    )
-                },
-            ))
+            Menu {
+                ForEach(reactionChoices, id: \.self) { reaction in
+                    Button {
+                        toggleReaction(reaction)
+                    } label: {
+                        Label(
+                            telegramReactionActionTitle(reaction, existing: messageReactions),
+                            systemImage: "face.smiling",
+                        )
+                    }
+                }
+            } label: {
+                Label("React", systemImage: "face.smiling")
+            }
         }
         if customMessage.properties.canBeCopied,
            telegramMessageFormattedText(customMessage.message) != nil
         {
-            actions.append(.button(
-                title: "Copy",
-                systemImage: "rectangle.portrait.on.rectangle.portrait",
-                action: copyMessageText,
-            ))
+            Button(action: copyMessageText) {
+                Label("Copy", systemImage: "rectangle.portrait.on.rectangle.portrait")
+            }
         }
         if customMessage.properties.canBeEdited {
-            actions.append(.button(title: "Edit", systemImage: "square.and.pencil", action: edit))
+            Button(action: edit) {
+                Label("Edit", systemImage: "square.and.pencil")
+            }
         }
         if customMessage.properties.canBePinned {
-            actions.append(.button(
-                title: customMessage.message.isPinned ? "Unpin" : "Pin",
-                systemImage: customMessage.message.isPinned ? "pin.slash" : "pin",
-                action: togglePinnedMessage,
-            ))
+            Button(action: togglePinnedMessage) {
+                Label(
+                    customMessage.message.isPinned ? "Unpin" : "Pin",
+                    systemImage: customMessage.message.isPinned ? "pin.slash" : "pin",
+                )
+            }
         }
         if customMessage.properties.canBeDeletedOnlyForSelf
             || customMessage.properties.canBeDeletedForAllUsers
         {
-            actions.append(.divider)
-            actions.append(.button(title: "Delete", systemImage: "trash", attributes: .destructive) {
+            Divider()
+            Button(role: .destructive) {
                 showDeleteOptions = true
-            })
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
-        return actions
     }
 
     var messageReactions: [MessageReaction] {

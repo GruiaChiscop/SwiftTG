@@ -76,7 +76,12 @@ struct AttachmentPreviewView: View {
     private var captionBar: some View {
         @Bindable var chatVM = chatVM
         return HStack(alignment: .bottom, spacing: 10) {
-            CustomTextField("Add a caption...", text: $chatVM.text)
+            MessageTextEditor("Add a caption...", text: $chatVM.text) { images in
+                withAnimation {
+                    chatVM.displayedDocuments.removeAll()
+                    chatVM.displayedImages.append(contentsOf: images)
+                }
+            }
                 .lineLimit(6)
                 .padding(.horizontal, 5)
                 .background(Color.gray6)

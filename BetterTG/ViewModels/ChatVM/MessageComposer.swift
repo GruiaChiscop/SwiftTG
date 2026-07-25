@@ -78,26 +78,6 @@ import TDLibKit
         setShowSendButton()
     }
 
-    func stagePastedAttachments(_ urls: [URL]) async {
-        let stagedURLs = await stageAttachmentURLs(urls)
-        guard !stagedURLs.isEmpty else { return }
-        var seenURLs = Set<URL>()
-        let combined = (displayedImages.map(\.url) + displayedDocuments + stagedURLs).filter {
-            seenURLs.insert($0).inserted
-        }
-        if combined.allSatisfy(isImageAttachment) {
-            displayedDocuments.removeAll()
-            displayedImages = combined.compactMap { url in
-                guard let preview = downsampledImage(at: url, maxPixelSize: 320) else { return nil }
-                return SelectedImage(image: Image(uiImage: preview), url: url)
-            }
-        } else {
-            displayedImages.removeAll()
-            displayedDocuments = combined
-        }
-        setShowSendButton()
-    }
-
     func sendMessageDocuments() async {
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
