@@ -6,6 +6,14 @@ import TDLibKit
 import Testing
 
 struct TelegramSharedPoliciesTests {
+    @Test func `authentication code length follows TDLib metadata`() {
+        let numericCode = AuthenticationCodeType.authenticationCodeTypeSms(.init(length: 6))
+        let wordCode = AuthenticationCodeType.authenticationCodeTypeSmsWord(.init(firstLetter: "c"))
+
+        #expect(numericCode.expectedLength == 6)
+        #expect(wordCode.expectedLength == nil)
+    }
+
     @Test func `phone numbers are normalized consistently`() {
         #expect(TelegramPhoneNumber.normalized(callingCode: "40", number: "721 234 567") == "+40721234567")
         #expect(TelegramPhoneNumber.normalized(callingCode: "", number: "+44 7700 900123") == "+447700900123")

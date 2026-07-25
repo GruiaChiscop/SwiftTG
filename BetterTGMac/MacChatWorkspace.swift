@@ -120,7 +120,6 @@ private struct MacChatSidebar: View {
                 } header: {
                     Text("Chats (\(model.chatSearchResults.count))")
                         .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
                 }
             }
 
@@ -149,17 +148,11 @@ private struct MacChatSidebar: View {
                             model.activateChat(result.message.chatId, messageId: result.message.id)
                         }
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel(
-                            "\(result.chatTitle), \(macMessageText(result.message)), sent "
-                                + Date(timeIntervalSince1970: TimeInterval(result.message.date))
-                                .formatted(date: .abbreviated, time: .shortened),
-                        )
                         .accessibilityHint("Press Return or Space to open this message")
                     }
                 } header: {
                     Text("Messages (\(model.messageSearchResults.count))")
                         .font(.headline)
-                        .accessibilityAddTraits(.isHeader)
                 }
             }
 
@@ -200,7 +193,7 @@ private struct MacChatDetail: View {
             ContentUnavailableView(
                 "Select a Chat",
                 systemImage: "bubble.left.and.bubble.right",
-                description: Text("Select a chat"),
+                description: Text("Select a chat to view its messages"),
             )
         }
     }

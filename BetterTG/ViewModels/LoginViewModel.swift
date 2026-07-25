@@ -7,13 +7,20 @@ import TDLibKit
 @MainActor @Observable final class LoginViewModel {
     // MARK: Lifecycle
 
-    init(service: any TelegramService) {
+    init(service: any TelegramService, mode: Mode = .live) {
         self.service = service
+        self.mode = mode
     }
 
     // MARK: Internal
 
+    enum Mode {
+        case live
+        case preview
+    }
+
     var code = ""
+    var expectedCodeLength: Int?
     var countryNums = [PhoneNumberInfo]()
     var errorShown = false
     var hint = ""
@@ -28,9 +35,17 @@ import TDLibKit
         TelegramPhoneNumber.display(callingCode: selectedCountryNum?.phoneNumberPrefix ?? "", number: phoneNumber)
     }
 
+    var isPreview: Bool {
+        mode == .preview
+    }
+
     func start() async {
         guard !started else { return }
         started = true
+        guard mode == .live else {
+            configurePreview()
+            return
+        }
         observeAuthorizationState()
 
         async let authorizationState = try? service.getAuthorizationState()
@@ -48,6 +63,11 @@ import TDLibKit
     }
 
     func continueLogin() {
+        if mode == .preview {
+            continuePreview()
+            return
+        }
+
         switch loginState {
         case .phoneNumber:
             guard !phoneNumber.isEmpty, selectedCountryNum != nil else { return }
@@ -60,6 +80,13 @@ import TDLibKit
     }
 
     func submitPhoneNumber() {
+        if mode == .preview {
+            showPhoneConfirmation = false
+            loginState = .code
+            expectedCodeLength = AuthenticationPreviewData.codeLength
+            return
+        }
+
         guard let selectedCountryNum,
               let number = TelegramPhoneNumber.normalized(
                   callingCode: selectedCountryNum.phoneNumberPrefix,
@@ -74,6 +101,7 @@ import TDLibKit
     // MARK: Private
 
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored private let mode: Mode
     @ObservationIgnored private let service: any TelegramService
     @ObservationIgnored private var started = false
 
@@ -91,8 +119,9 @@ import TDLibKit
         case .authorizationStateWaitPassword(let value):
             loginState = .twoFactor
             hint = value.passwordHint
-        case .authorizationStateWaitCode:
+        case .authorizationStateWaitCode(let details):
             loginState = .code
+            expectedCodeLength = details.codeInfo.type.expectedLength
         case .authorizationStateWaitPhoneNumber:
             loginState = .phoneNumber
         case .authorizationStateClosed, .authorizationStateClosing, .authorizationStateLoggingOut:
@@ -109,6 +138,26 @@ import TDLibKit
         countryNums = TelegramPhoneNumber.countries(from: countries)
         if let info = TelegramPhoneNumber.country(for: currentCountryCode, in: countryNums) {
             selectedCountryNum = info
+        }
+    }
+
+    private func configurePreview() {
+        countryNums = AuthenticationPreviewData.countries
+        selectedCountryNum = countryNums.first
+        phoneNumber = AuthenticationPreviewData.phoneNumber
+    }
+
+    private func continuePreview() {
+        switch loginState {
+        case .phoneNumber:
+            guard !phoneNumber.isEmpty, selectedCountryNum != nil else { return }
+            showPhoneConfirmation = true
+        case .code:
+            guard !code.isEmpty else { return }
+            hint = AuthenticationPreviewData.passwordHint
+            loginState = .twoFactor
+        case .twoFactor:
+            break
         }
     }
 }

@@ -48,13 +48,11 @@ struct MacCountryPicker: View {
                             if country == selectedCountry {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.tint)
-                                    .accessibilityHidden(true)
                             }
                         }
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(country.accessibilityLabel)
                     .accessibilityHint("Selects country")
                 }
             }

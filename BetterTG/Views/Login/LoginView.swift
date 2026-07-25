@@ -5,8 +5,11 @@ import SwiftUI
 struct LoginView: View {
     // MARK: Lifecycle
 
-    init(service: any TelegramService = TDLib.shared.service) {
-        _model = State(initialValue: LoginViewModel(service: service))
+    init(
+        service: any TelegramService = TDLib.shared.service,
+        isPreview: Bool = false,
+    ) {
+        _model = State(initialValue: LoginViewModel(service: service, mode: isPreview ? .preview : .live))
     }
 
     // MARK: Internal
@@ -41,8 +44,6 @@ struct LoginView: View {
                                         Text("Select Country")
                                     }
                                 }
-                                .accessibilityLabel(countryAccessibilityLabel)
-                                .accessibilityHint("Opens country picker")
                             }
 
                             Text(TelegramLoginGuidance.smsWarning)
@@ -63,6 +64,13 @@ struct LoginView: View {
                 case .code:
                     loginStateView {
                         TextField("Code", text: $model.code)
+                            .onChange(of: model.code) { _, code in
+                                if let expectedCodeLength = model.expectedCodeLength,
+                                   code.count == expectedCodeLength
+                                {
+                                    model.continueLogin()
+                                }
+                            }
                             .focused($focused, equals: .code)
                             .keyboardType(.numberPad)
                             .padding()
@@ -92,10 +100,12 @@ struct LoginView: View {
         .animation(.default, value: model.loginState)
         #if DEBUG
         .safeAreaInset(edge: .top) {
-            Button("Load Mock Data") {
-                MockData.install()
+            if !model.isPreview {
+                Button("Load Mock Data") {
+                    MockData.install()
+                }
+                .padding()
             }
-            .padding()
         }
         #endif
         .safeAreaInset(edge: .bottom) {
@@ -146,9 +156,4 @@ struct LoginView: View {
     // MARK: Private
 
     @State private var model: LoginViewModel
-
-    private var countryAccessibilityLabel: String {
-        guard let country = model.selectedCountryNum else { return "Select Country" }
-        return "Country: \(country.accessibilityLabel)"
-    }
 }

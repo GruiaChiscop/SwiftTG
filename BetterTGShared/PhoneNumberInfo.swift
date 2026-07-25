@@ -78,7 +78,7 @@ enum TelegramPhoneNumber {
         if entered.hasPrefix("+") {
             return entered
         }
-        return "+\(callingCode.filter(\.isNumber)) \(entered.filter(\.isNumber))"
+        return "+\(callingCode.filter(\.isNumber))\(entered.filter(\.isNumber))"
     }
 
     static func resolveCallingCode(

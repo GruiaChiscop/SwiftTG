@@ -114,12 +114,12 @@ struct MacConversationView: View {
             }
             .overlay(alignment: .top) {
                 if model.isLoadingOlderMessages {
-                    ProgressView()
+                    ProgressView("Loading...")
                         .controlSize(.small)
                         .padding(8)
                         .background(.regularMaterial, in: Capsule())
                         .accessibilityHidden(true)
-                    .allowsHitTesting(false)
+                        .allowsHitTesting(false)
                 }
             }
             if model.isLoadingMessages, model.messages.orderedMessageIds.isEmpty {
@@ -222,5 +222,4 @@ struct MacConversationView: View {
         }
         .padding(12)
     }
-
 }

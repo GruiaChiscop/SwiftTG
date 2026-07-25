@@ -129,7 +129,28 @@ private struct MainNavigationRootView: View {
                     .accessibilityLabel("Archive")
                 }
             }
+            #if DEBUG
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Preview Login", systemImage: "person.crop.circle.badge.questionmark") {
+                    showsLoginPreview = true
+                }
+            }
+            #endif
         }
+        #if DEBUG
+        .sheet(isPresented: $showsLoginPreview) {
+            NavigationStack {
+                LoginView(isPreview: true)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                showsLoginPreview = false
+                            }
+                        }
+                    }
+            }
+        }
+        #endif
         .onAppear {
             #if DEBUG
             if MockData.isEnabled, CommandLine.arguments.contains("-mockChat"),
@@ -180,4 +201,7 @@ private struct MainNavigationRootView: View {
     // MARK: Private
 
     @Bindable private var rootVM = RootVM.shared
+    #if DEBUG
+    @State private var showsLoginPreview = false
+    #endif
 }

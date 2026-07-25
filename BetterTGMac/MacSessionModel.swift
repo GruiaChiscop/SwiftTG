@@ -114,6 +114,11 @@ private enum MacMessageSenderKey: Hashable {
         TelegramPhoneNumber.display(callingCode: callingCode, number: phoneNumber)
     }
 
+    var expectedLoginCodeLength: Int? {
+        guard case .authorizationStateWaitCode(let details) = authorizationState else { return nil }
+        return details.codeInfo.type.expectedLength
+    }
+
     var openedChat: ChatListItemState? {
         guard let openedChatId else { return nil }
         return chatList.items[openedChatId]
