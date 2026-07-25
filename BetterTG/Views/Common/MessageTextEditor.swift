@@ -5,7 +5,18 @@ import SwiftUI
 // MARK: - MessageUITextView
 
 private final class MessageUITextView: UITextView {
+    var onSubmit: (() -> Void)?
     var onPasteImages: (([SelectedImage]) -> Void)?
+
+    override var keyCommands: [UIKeyCommand]? {
+        (super.keyCommands ?? []) + [
+            UIKeyCommand(
+                input: "\r",
+                modifierFlags: [],
+                action: #selector(submit(_:)),
+            ),
+        ]
+    }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         guard action == #selector(paste(_:)), UIPasteboard.general.hasImages else {
@@ -33,6 +44,10 @@ private final class MessageUITextView: UITextView {
             argument: images.count == 1 ? "Photo attached" : "\(images.count) photos attached",
         )
     }
+
+    @objc private func submit(_: UIKeyCommand) {
+        onSubmit?()
+    }
 }
 
 // MARK: - MessageUITextViewRepresentable
@@ -56,6 +71,7 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
 
     @Binding var text: AttributedString
 
+    let onSubmit: (() -> Void)?
     let onPasteImages: (([SelectedImage]) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -65,6 +81,7 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> MessageUITextView {
         let textView = MessageUITextView()
         textView.delegate = context.coordinator
+        textView.onSubmit = onSubmit
         textView.onPasteImages = onPasteImages
         textView.adjustsFontForContentSizeCategory = true
         textView.allowsEditingTextAttributes = true
@@ -84,6 +101,7 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ textView: MessageUITextView, context: Context) {
         context.coordinator.parent = self
+        textView.onSubmit = onSubmit
         textView.onPasteImages = onPasteImages
 
         let newValue = NSAttributedString(text)
@@ -109,10 +127,12 @@ struct MessageTextEditor: View {
     init(
         _ placeholder: String = "",
         text: Binding<AttributedString>,
+        onSubmit: (() -> Void)? = nil,
         onPasteImages: (([SelectedImage]) -> Void)? = nil,
     ) {
         self.placeholder = placeholder
         self._text = text
+        self.onSubmit = onSubmit
         self.onPasteImages = onPasteImages
     }
 
@@ -132,6 +152,7 @@ struct MessageTextEditor: View {
 
             MessageUITextViewRepresentable(
                 text: $text,
+                onSubmit: onSubmit,
                 onPasteImages: onPasteImages,
             )
             .accessibilityLabel(placeholder)
@@ -146,6 +167,7 @@ struct MessageTextEditor: View {
     @Binding private var text: AttributedString
 
     private let placeholder: String
+    private let onSubmit: (() -> Void)?
     private let onPasteImages: (([SelectedImage]) -> Void)?
 
     private var sizingText: some View {

@@ -334,7 +334,7 @@ struct ChatBottomArea: View {
         @Bindable var chatVM = chatVM
         Group {
             if chatVM.editCustomMessage == nil {
-                MessageTextEditor("Type a message", text: $chatVM.text) { images in
+                MessageTextEditor("Type a message", text: $chatVM.text, onSubmit: submitMessage) { images in
                     withAnimation {
                         chatVM.displayedDocuments.removeAll()
                         chatVM.displayedImages.append(contentsOf: images)
@@ -344,6 +344,7 @@ struct ChatBottomArea: View {
                 MessageTextEditor(
                     "Edit a message",
                     text: $chatVM.editMessageText,
+                    onSubmit: submitMessage,
                 )
             }
         }
@@ -438,4 +439,9 @@ struct ChatBottomArea: View {
     // MARK: Private
 
     @State private var hasBegunRecording = false
+
+    private func submitMessage() {
+        chatVM.sendMessageTask?.cancel()
+        chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
+    }
 }

@@ -76,7 +76,7 @@ struct AttachmentPreviewView: View {
     private var captionBar: some View {
         @Bindable var chatVM = chatVM
         return HStack(alignment: .bottom, spacing: 10) {
-            MessageTextEditor("Add a caption...", text: $chatVM.text) { images in
+            MessageTextEditor("Add a caption...", text: $chatVM.text, onSubmit: send) { images in
                 withAnimation {
                     chatVM.displayedDocuments.removeAll()
                     chatVM.displayedImages.append(contentsOf: images)
