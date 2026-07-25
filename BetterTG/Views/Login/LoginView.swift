@@ -14,7 +14,6 @@ struct LoginView: View {
 
     // MARK: Internal
 
-    @FocusState var focused: LoginState?
     @State var showSelectCountryView = false
 
     var body: some View {
@@ -26,13 +25,27 @@ struct LoginView: View {
                         VStack(spacing: 12) {
                             GroupBox {
                                 HStack {
-                                    if let country = model.selectedCountryNum {
-                                        Text("+\(country.phoneNumberPrefix)")
-                                    }
+                                    Text("+")
+
+                                    TextField("Country Code", text: $model.callingCode)
+                                        .frame(width: 54)
+                                        .focused($focused, equals: .callingCode)
+                                        .keyboardType(.numberPad)
+                                        .textContentType(.telephoneNumber)
+                                        .onChange(of: model.callingCode) { _, value in
+                                            let completedCode = model.updateCallingCode(value)
+                                            if completedCode,
+                                               !showSelectCountryView,
+                                               focused == .callingCode
+                                            {
+                                                focused = .phoneNumber
+                                            }
+                                        }
 
                                     TextField("Phone Number", text: $model.phoneNumber)
                                         .focused($focused, equals: .phoneNumber)
                                         .keyboardType(.numberPad)
+                                        .textContentType(.telephoneNumber)
                                 }
                             } label: {
                                 Button {
@@ -55,11 +68,18 @@ struct LoginView: View {
                     .sheet(isPresented: $showSelectCountryView) {
                         SelectCountryView(
                             showSelectCountryView: $showSelectCountryView,
-                            selectedCountryNum: $model.selectedCountryNum,
                             countryNums: model.countryNums,
-                        )
+                        ) { country in
+                            model.selectCountry(country)
+                            focusesPhoneNumberAfterCountrySelection = true
+                        }
                         .presentationDetents([.medium, .large])
                         .presentationDragIndicator(.hidden)
+                    }
+                    .onChange(of: showSelectCountryView) { _, isPresented in
+                        guard !isPresented, focusesPhoneNumberAfterCountrySelection else { return }
+                        focusesPhoneNumberAfterCountrySelection = false
+                        focused = .phoneNumber
                     }
                 case .code:
                     loginStateView {
@@ -155,5 +175,15 @@ struct LoginView: View {
 
     // MARK: Private
 
+    private enum FocusedField: Hashable {
+        case callingCode
+        case code
+        case phoneNumber
+        case twoFactor
+    }
+
+    @FocusState private var focused: FocusedField?
+
+    @State private var focusesPhoneNumberAfterCountrySelection = false
     @State private var model: LoginViewModel
 }

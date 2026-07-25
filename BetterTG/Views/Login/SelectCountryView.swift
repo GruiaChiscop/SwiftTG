@@ -1,11 +1,11 @@
-    // SelectCountryView.swift
+// SelectCountryView.swift
 
 import SwiftUI
 
 struct SelectCountryView: View {
     @Binding var showSelectCountryView: Bool
-    @Binding var selectedCountryNum: PhoneNumberInfo?
     let countryNums: [PhoneNumberInfo]
+    let selectCountry: (PhoneNumberInfo) -> Void
 
     @State var query = ""
     
@@ -18,7 +18,7 @@ struct SelectCountryView: View {
         NavigationStack {
             List(filteredCountries) { info in
                 Button {
-                    selectedCountryNum = info
+                    selectCountry(info)
                     showSelectCountryView.toggle()
                 } label: {
                     HStack {

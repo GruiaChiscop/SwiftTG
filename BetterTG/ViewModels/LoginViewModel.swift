@@ -19,6 +19,7 @@ import TDLibKit
         case preview
     }
 
+    var callingCode = ""
     var code = ""
     var expectedCodeLength: Int?
     var countryNums = [PhoneNumberInfo]()
@@ -32,7 +33,7 @@ import TDLibKit
     var waitPremiumErrorShown = false
 
     var formattedPhoneNumber: String {
-        TelegramPhoneNumber.display(callingCode: selectedCountryNum?.phoneNumberPrefix ?? "", number: phoneNumber)
+        TelegramPhoneNumber.display(callingCode: callingCode, number: phoneNumber)
     }
 
     var isPreview: Bool {
@@ -55,10 +56,10 @@ import TDLibKit
         if let state = await authorizationState {
             apply(state)
         }
-        if let countries = await countries?.countries,
-           let countryCode = await countryCode?.text
-        {
-            apply(countries: countries, currentCountryCode: countryCode)
+        let resolvedCountries = await countries?.countries
+        let resolvedCountryCode = await countryCode?.text
+        if let resolvedCountries {
+            apply(countries: resolvedCountries, currentCountryCode: resolvedCountryCode)
         }
     }
 
@@ -70,7 +71,7 @@ import TDLibKit
 
         switch loginState {
         case .phoneNumber:
-            guard !phoneNumber.isEmpty, selectedCountryNum != nil else { return }
+            guard TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) != nil else { return }
             showPhoneConfirmation = true
         case .code:
             Task { _ = try? await service.checkAuthenticationCode(code: code) }
@@ -87,21 +88,34 @@ import TDLibKit
             return
         }
 
-        guard let selectedCountryNum,
-              let number = TelegramPhoneNumber.normalized(
-                  callingCode: selectedCountryNum.phoneNumberPrefix,
-                  number: phoneNumber,
-              )
-        else { return }
+        guard let number = TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) else { return }
         Task {
             _ = try? await service.setAuthenticationPhoneNumber(phoneNumber: number, settings: nil)
         }
+    }
+
+    func selectCountry(_ country: PhoneNumberInfo) {
+        selectedCountryNum = country
+        callingCode = country.phoneNumberPrefix
+        preferredCountryId = country.country
+    }
+
+    @discardableResult func updateCallingCode(_ value: String) -> Bool {
+        let resolution = TelegramPhoneNumber.resolveCallingCode(
+            value,
+            countries: countryNums,
+            preferredCountryId: preferredCountryId,
+        )
+        callingCode = resolution.callingCode
+        selectedCountryNum = resolution.country
+        return resolution.shouldAdvanceToNumber
     }
 
     // MARK: Private
 
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private let mode: Mode
+    @ObservationIgnored private var preferredCountryId: String?
     @ObservationIgnored private let service: any TelegramService
     @ObservationIgnored private var started = false
 
@@ -134,23 +148,31 @@ import TDLibKit
         }
     }
 
-    private func apply(countries: [CountryInfo], currentCountryCode: String) {
+    private func apply(countries: [CountryInfo], currentCountryCode: String?) {
         countryNums = TelegramPhoneNumber.countries(from: countries)
-        if let info = TelegramPhoneNumber.country(for: currentCountryCode, in: countryNums) {
-            selectedCountryNum = info
+        if callingCode.isEmpty,
+           let info = TelegramPhoneNumber.country(for: currentCountryCode, in: countryNums)
+        {
+            selectCountry(info)
+        } else if callingCode.isEmpty {
+            selectedCountryNum = nil
+        } else {
+            updateCallingCode(callingCode)
         }
     }
 
     private func configurePreview() {
         countryNums = AuthenticationPreviewData.countries
-        selectedCountryNum = countryNums.first
+        if let country = countryNums.first {
+            selectCountry(country)
+        }
         phoneNumber = AuthenticationPreviewData.phoneNumber
     }
 
     private func continuePreview() {
         switch loginState {
         case .phoneNumber:
-            guard !phoneNumber.isEmpty, selectedCountryNum != nil else { return }
+            guard TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) != nil else { return }
             showPhoneConfirmation = true
         case .code:
             guard !code.isEmpty else { return }
