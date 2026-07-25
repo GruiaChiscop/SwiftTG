@@ -121,14 +121,7 @@ struct MacMessageRow: View {
                         : (message.isOutgoing ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12)),
                     in: RoundedRectangle(cornerRadius: 12),
                 )
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(accessibilityDescription)
-                .accessibilityHint(activationHint)
-                .modifier(OptionalAccessibilityActivation(
-                    isEnabled: hasDefaultActivation,
-                    action: activateMessage,
-                ))
-                .accessibilityActions { messageAccessibilityActions }
+                .macModified { messageAccessibilityElement($0) }
                 .accessibilityHidden(!messageReactions.isEmpty || !messageLinks.isEmpty)
                 .contextMenu { messageActions }
                 if !message.isOutgoing, !messageReactions.isEmpty {
@@ -137,25 +130,7 @@ struct MacMessageRow: View {
             }
             .macModified {
                 if !messageReactions.isEmpty || !messageLinks.isEmpty {
-                    $0
-                        .accessibilityElement(children: .contain)
-                        .accessibilityChildren {
-                            ForEach(messageLinks) { link in
-                                Link(link.displayedText, destination: link.url)
-                            }
-                            if !messageReactions.isEmpty {
-                                Button("Reactions") { showReactionDetails = true }
-                                    .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
-                            }
-                        }
-                        .accessibilityLabel(accessibilityDescription)
-                        .accessibilityHint(activationHint)
-                        .modifier(OptionalAccessibilityActivation(
-                            isEnabled: hasDefaultActivation,
-                            action: activateMessage,
-                        ))
-                        .accessibilityActions { messageAccessibilityActions }
-                        .contextMenu { messageActions }
+                    linkAccessibilityGroup($0)
                 } else {
                     $0
                 }
@@ -404,6 +379,51 @@ struct MacMessageRow: View {
         return TelegramTextFormatting.links(in: formattedText)
     }
 
+    private func linkAccessibilityGroup(_ content: some View) -> some View {
+        content
+            .accessibilityElement(children: .contain)
+            .accessibilityChildren {
+                ForEach(messageLinks) { link in
+                    Link(link.displayedText, destination: link.url)
+                        .accessibilityRemoveTraits(.isButton)
+                        .accessibilityAddTraits(.isLink)
+                        .macModified {
+                            if let destination = linkAccessibilityDestination(link) {
+                                $0.accessibilityValue(destination)
+                            } else {
+                                $0
+                            }
+                        }
+                }
+                if !messageReactions.isEmpty {
+                    Button("Reactions") { showReactionDetails = true }
+                        .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
+                }
+            }
+            .accessibilityIdentifier("message-\(message.id)")
+            .accessibilityLabel(accessibilityDescription)
+            .accessibilityRespondsToUserInteraction(true)
+            .modifier(OptionalAccessibilityActivation(
+                isEnabled: hasDefaultActivation,
+                action: activateMessage,
+            ))
+            .accessibilityActions { messageAccessibilityActions }
+            .contextMenu { messageActions }
+    }
+
+    private func messageAccessibilityElement(_ content: some View) -> some View {
+        content
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("message-\(message.id)")
+            .accessibilityLabel(accessibilityDescription)
+            .accessibilityHint(activationHint)
+            .modifier(OptionalAccessibilityActivation(
+                isEnabled: hasDefaultActivation,
+                action: activateMessage,
+            ))
+            .accessibilityActions { messageAccessibilityActions }
+    }
+
     /// Actions common to the context menu and VoiceOver's accessibility actions; kept as one list so
     /// the two presentations (menu buttons with icons vs. plain accessibility actions) can't drift.
     /// "React" and "Delete" are still special-cased below since each renders differently per surface
@@ -558,6 +578,19 @@ struct MacMessageRow: View {
         } else if case .messageVideo = message.content {
             showVideoPreview = true
         }
+    }
+}
+
+private func linkAccessibilityDestination(_ link: TelegramTextLink) -> String? {
+    guard let scheme = link.url.scheme?.lowercased() else { return nil }
+    switch scheme {
+    case "http", "https":
+        guard let host = link.url.host,
+              !link.displayedText.localizedCaseInsensitiveContains(host)
+        else { return nil }
+        return host
+    default:
+        return nil
     }
 }
 

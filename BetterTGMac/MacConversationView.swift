@@ -92,24 +92,13 @@ struct MacConversationView: View {
                 if !isAtBottom,
                    model.messages.orderedMessageIds.last != nil
                 {
-                    Button {
+                    Button("Scroll to Bottom", systemImage: "arrow.down") {
                         Task { await model.loadLatestMessages() }
-                    } label: {
-                        if model.isLoadingLatestMessages {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(width: 28, height: 28)
-                        } else {
-                            Image(systemName: "arrow.down")
-                                .frame(width: 28, height: 28)
-                        }
                     }
+                    .labelStyle(.iconOnly)
                     .buttonStyle(.borderedProminent)
-                    .clipShape(Circle())
+                    .controlSize(.large)
                     .padding(12)
-                    .accessibilityLabel("Scroll to Bottom")
-                    .accessibilityHint("Moves to the most recent message")
-                    .disabled(model.isLoadingLatestMessages)
                 }
             }
             .overlay(alignment: .top) {
