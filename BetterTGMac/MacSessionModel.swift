@@ -102,6 +102,7 @@ private enum MacMessageSenderKey: Hashable {
     @ObservationIgnored var searchGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
     @ObservationIgnored var service: any TelegramService
+    @ObservationIgnored var draftReplyLoadTask: Task<Void, Never>?
 
     @ObservationIgnored var conversationHeaderTask: Task<Void, Never>?
     @ObservationIgnored var openedChatType: ChatType?
@@ -276,6 +277,7 @@ private enum MacMessageSenderKey: Hashable {
             return
         }
 
+        saveCurrentDraft()
         let openingChat = chatList.items[chatId]
         openedUnreadCount = openingChat?.unreadCount ?? 0
         openedLastReadInboxMessageId = openingChat?.lastReadInboxMessageId ?? 0
@@ -286,6 +288,7 @@ private enum MacMessageSenderKey: Hashable {
 
         let previousChatId = openedChatId
         openedChatId = chatId
+        restoreDraft(openingChat?.draftMessage, chatId: chatId)
         prepareConversationHeader(for: chatId, fallbackKind: openingChat?.kind)
         messages = .empty(chatId: chatId)
         editingMessage = nil
@@ -501,6 +504,7 @@ private enum MacMessageSenderKey: Hashable {
         }
 
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        clearDraft(chatId: chatId)
         replyingToMessage = nil
         resetVoiceRecordingState()
 
@@ -570,12 +574,16 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     func beginReply(to message: Message) {
+        draftReplyLoadTask?.cancel()
+        draftReplyLoadTask = nil
         editingMessage = nil
         editMessageText = ""
         replyingToMessage = message
     }
 
     func cancelReplyOrEdit() {
+        draftReplyLoadTask?.cancel()
+        draftReplyLoadTask = nil
         editingMessage = nil
         replyingToMessage = nil
         editMessageText = ""
@@ -1024,10 +1032,55 @@ private enum MacMessageSenderKey: Hashable {
         }
     }
 
+    func saveCurrentDraft() {
+        guard editingMessage == nil, let chatId = openedChatId else { return }
+        let draft = TelegramDrafts.make(text: messageText, replyMessageId: replyingToMessage?.id)
+        let service = service
+        Task {
+            _ = try? await service.setChatDraftMessage(
+                chatId: chatId,
+                draftMessage: draft,
+                topicId: nil,
+            )
+        }
+    }
+
+    private func clearDraft(chatId: Int64) {
+        let service = service
+        Task {
+            _ = try? await service.setChatDraftMessage(
+                chatId: chatId,
+                draftMessage: nil,
+                topicId: nil,
+            )
+        }
+    }
+
+    private func restoreDraft(_ draft: DraftMessage?, chatId: Int64) {
+        draftReplyLoadTask?.cancel()
+        draftReplyLoadTask = nil
+        messageText = TelegramDrafts.text(from: draft)
+        replyingToMessage = nil
+
+        guard let replyMessageId = TelegramDrafts.replyMessageId(from: draft) else { return }
+        let service = service
+        draftReplyLoadTask = Task { [weak self] in
+            let message = try? await service.getMessage(chatId: chatId, messageId: replyMessageId)
+            guard !Task.isCancelled,
+                  let self,
+                  openedChatId == chatId,
+                  replyingToMessage == nil
+            else { return }
+            replyingToMessage = message
+            draftReplyLoadTask = nil
+        }
+    }
+
     private func sendTextMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let openedChatId, !text.isEmpty else { return }
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        clearDraft(chatId: openedChatId)
         messageText = ""
         replyingToMessage = nil
         Task {
@@ -1062,6 +1115,7 @@ private enum MacMessageSenderKey: Hashable {
             return
         }
 
+        clearDraft(chatId: chatId)
         selectedPhotoURLs = []
         messageText = ""
         replyingToMessage = nil
@@ -1098,6 +1152,7 @@ private enum MacMessageSenderKey: Hashable {
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let urls = selectedDocumentURLs
 
+        clearDraft(chatId: chatId)
         selectedDocumentURLs = []
         messageText = ""
         replyingToMessage = nil
@@ -1260,6 +1315,8 @@ private enum MacMessageSenderKey: Hashable {
 
     private func cancelWorkForSessionReplacement() {
         cancelVoiceRecording()
+        draftReplyLoadTask?.cancel()
+        draftReplyLoadTask = nil
         historyRequestGeneration &+= 1
         openTask?.cancel()
         openTask = nil

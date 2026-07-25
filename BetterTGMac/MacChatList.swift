@@ -22,9 +22,9 @@ struct MacChatRow: View {
                         .fontWeight(chat.hasUnreadMessages ? .semibold : .regular)
                         .lineLimit(1)
                     Spacer()
-                    if let message = chat.lastMessage {
+                    if let previewDate {
                         Text(
-                            Date(timeIntervalSince1970: TimeInterval(message.date)),
+                            Date(timeIntervalSince1970: TimeInterval(previewDate)),
                             format: .dateTime.hour().minute(),
                         )
                             .font(.caption)
@@ -33,9 +33,22 @@ struct MacChatRow: View {
                 }
 
                 HStack(spacing: 7) {
-                    Text(chat.lastMessage.map(macMessageText) ?? "No messages")
+                    if let draft = chat.draftMessage {
+                        HStack(spacing: 0) {
+                            Text("Draft: ")
+                                .foregroundStyle(.red)
+                            if TelegramDrafts.replyMessageId(from: draft) != nil {
+                                Text("reply ")
+                            }
+                            Text(TelegramDrafts.text(from: draft))
+                        }
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    } else {
+                        Text(chat.lastMessage.map(macMessageText) ?? "No messages")
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     Spacer()
                     if isMuted {
                         Image(systemName: "speaker.slash.fill")
@@ -166,7 +179,18 @@ struct MacChatRow: View {
         if chat.isMarkedAsUnread {
             parts.append("Marked as unread")
         }
-        if let lastMessage = chat.lastMessage {
+        if let draft = chat.draftMessage {
+            var description = "Draft"
+            if TelegramDrafts.replyMessageId(from: draft) != nil {
+                description += ", reply"
+            }
+            let text = TelegramDrafts.text(from: draft)
+            if !text.isEmpty {
+                description += ": \(text)"
+            }
+            parts.append(description)
+            parts.append(telegramMessageDateDescription(draft.date))
+        } else if let lastMessage = chat.lastMessage {
             parts.append(macMessageText(lastMessage))
             parts.append(telegramMessageDateDescription(lastMessage.date))
         } else {
@@ -186,6 +210,10 @@ struct MacChatRow: View {
 
     private var isMuted: Bool {
         (chat.notificationSettings?.muteFor ?? 0) > 0
+    }
+
+    private var previewDate: Int? {
+        chat.draftMessage?.date ?? chat.lastMessage?.date
     }
 
     private var isPinned: Bool {

@@ -53,6 +53,10 @@ UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
     }
 
+    func applicationDidResignActive(_: Notification) {
+        model?.saveCurrentDraft()
+    }
+
     func application(
         _: NSApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data,
