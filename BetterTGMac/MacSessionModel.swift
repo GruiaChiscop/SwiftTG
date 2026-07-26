@@ -1210,6 +1210,18 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     private func handleMessageSnapshot(_ snapshot: TelegramMessageSnapshot) {
+        switch snapshot.change {
+        case .chatAction, .readInbox, .readOutbox, .userStatus:
+            // None of these touch `messages`/`orderedMessageIds` (see `TelegramMessageStore.reduce`),
+            // and nothing on macOS reads `messages.unreadCount` or `messages.change` for them - only
+            // `MacMessageTable`'s `.onChange(of: model.messages.version)` does, which otherwise forces
+            // a full message-list re-diff on every typing indicator, read receipt, or online-status
+            // ping for the open chat. That diff is expensive enough (SwiftUI's List/OutlineListCoordinator
+            // reconciliation) that a burst of these arriving right as a chat opens visibly froze the UI.
+            return
+        default:
+            break
+        }
         messages = snapshot
         switch snapshot.change {
         case .newMessage(let update) where !update.message.isOutgoing:
