@@ -93,6 +93,10 @@ import UniformTypeIdentifiers
 
     @ObservationIgnored private var hasStarted = false
     @ObservationIgnored var loadingMessagesTask: Task<Void, Never>?
+    /// Bumped every time a new history-loading task starts, so a superseded task's completion
+    /// can tell it's stale and avoid clobbering `loadingMessagesTask`/`pendingNavigationMessageId`
+    /// out from under a newer one (cancellation doesn't stop a network call already in flight).
+    @ObservationIgnored private var loadingMessagesGeneration = 0
     @ObservationIgnored let service: any TelegramService
     @ObservationIgnored var appliedMessageSnapshotVersion: UInt64?
     @ObservationIgnored var latestMessageSnapshot: TelegramMessageSnapshot?
@@ -339,6 +343,8 @@ import UniformTypeIdentifiers
         }
 
         loadingMessagesTask?.cancel()
+        loadingMessagesGeneration += 1
+        let generation = loadingMessagesGeneration
         pendingNavigationMessageId = id
         loadingMessagesTask = Task.background {
             guard let history = try? await self.service.getChatHistory(
@@ -350,6 +356,7 @@ import UniformTypeIdentifiers
             ), !Task.isCancelled
             else {
                 await main {
+                    guard self.loadingMessagesGeneration == generation else { return }
                     self.pendingNavigationMessageId = nil
                     self.loadingMessagesTask = nil
                 }
@@ -362,6 +369,7 @@ import UniformTypeIdentifiers
                 messages: fetchedMessages,
             )
             await main {
+                guard self.loadingMessagesGeneration == generation else { return }
                 self.loadingMessagesTask = nil
             }
         }
@@ -413,12 +421,14 @@ import UniformTypeIdentifiers
     func loadMessages() {
         guard loadingMessagesTask == nil else { return }
         let fromMessageId = messages.first?.message.id ?? initialMessageId ?? 0
+        loadingMessagesGeneration += 1
+        let generation = loadingMessagesGeneration
         loadingMessagesTask = Task.background {
-            await self._loadMessages(fromMessageId: fromMessageId)
+            await self._loadMessages(fromMessageId: fromMessageId, generation: generation)
         }
     }
-    
-    func _loadMessages(fromMessageId: Int64) async {
+
+    func _loadMessages(fromMessageId: Int64, generation: Int) async {
         guard let chatHistory = try? await service.getChatHistory(
             chatId: customChat.chat.id,
             fromMessageId: fromMessageId,
@@ -427,13 +437,19 @@ import UniformTypeIdentifiers
             onlyLocal: false,
         )
         .messages else {
-            await main { self.loadingMessagesTask = nil }
+            await main {
+                guard self.loadingMessagesGeneration == generation else { return }
+                self.loadingMessagesTask = nil
+            }
             return
         }
 
         await main { self.loadedMessageIds.formUnion(chatHistory.map(\.id)) }
         service.mergeMessageHistory(chatId: customChat.chat.id, messages: chatHistory)
-        await main { self.loadingMessagesTask = nil }
+        await main {
+            guard self.loadingMessagesGeneration == generation else { return }
+            self.loadingMessagesTask = nil
+        }
     }
     
     func deleteMessage(id: Int64, deleteForBoth: Bool) {
@@ -461,6 +477,10 @@ import UniformTypeIdentifiers
     }
 
     func edit(_ message: CustomMessage?) {
+        if message != nil {
+            displayedImages.removeAll()
+            displayedDocuments.removeAll()
+        }
         if editCustomMessage != nil {
             withAnimation { editCustomMessage = nil }
             Task.main(delay: 0.4) {

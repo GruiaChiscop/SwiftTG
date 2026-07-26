@@ -293,9 +293,6 @@ extension ChatVM {
     }
 
     @MainActor private func updateChatAction(_ update: UpdateChatAction) {
-        guard case .messageSenderUser(let sender) = update.senderId,
-              sender.userId == customChat.chat.id
-        else { return }
         let status =
             switch update.action {
             case .chatActionTyping: "typing..."

@@ -7,7 +7,7 @@ extension CGFloat {
         guard !inputRange.isEmpty, !outputRange.isEmpty else { return 0 }
         let x = self
         let length = inputRange.count - 1
-        if x <= inputRange[0] {
+        if x <= inputRange[0] || length < 1 {
             return outputRange[0]
         }
 

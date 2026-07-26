@@ -13,6 +13,7 @@ struct ChatBottomArea: View {
 
     @Namespace var namespace
     @Environment(ChatVM.self) var chatVM
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Thresholds mirror Telegram's own recording button: drag left to cancel,
     /// drag up to lock into hands-free recording.
@@ -86,6 +87,10 @@ struct ChatBottomArea: View {
             }
         }
         .onDisappear { Task.background { [chatVM] in await chatVM.updateDraft() } }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase != .active else { return }
+            Task.background { [chatVM] in await chatVM.updateDraft() }
+        }
         .task(id: chatVM.editCustomMessage) { chatVM.setEditMessageText(from: chatVM.editCustomMessage?.message) }
         .alert("Error", isPresented: $chatVM.errorShown) {
             Text("""
@@ -208,6 +213,7 @@ struct ChatBottomArea: View {
                     .accessibilityLabel(Text("Attach"))
             }
             .menuOrder(.fixed)
+            .disabled(chatVM.editCustomMessage != nil)
             .frame(height: 36)
             .padding(.bottom, 2)
             .sheet(isPresented: $chatVM.showPhotoPickerView) {
