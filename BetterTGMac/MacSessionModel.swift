@@ -111,6 +111,13 @@ private enum MacMessageSenderKey: Hashable {
         chatList.chatIds(in: selectedChatList).compactMap { chatList.items[$0] }
     }
 
+    /// All chats across the main list and archive, regardless of which sidebar folder is currently
+    /// selected - used by the forward picker, which shouldn't be scoped to `selectedChatList`.
+    var allChatItems: [ChatListItemState] {
+        let ids = chatList.chatIds(in: .chatListMain) + chatList.chatIds(in: .chatListArchive)
+        return ids.compactMap { chatList.items[$0] }
+    }
+
     var formattedPhoneNumber: String {
         TelegramPhoneNumber.display(callingCode: callingCode, number: phoneNumber)
     }
@@ -596,6 +603,37 @@ private enum MacMessageSenderKey: Hashable {
         replyingToMessage = nil
         editingMessage = message
         editMessageText = text
+    }
+
+    @discardableResult func forward(_ message: Message, to chatId: Int64) async -> Bool {
+        do {
+            try await TelegramMessageActions.forward(
+                service: service,
+                messageIds: [message.id],
+                fromChatId: message.chatId,
+                toChatId: chatId,
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Forwards to every chat concurrently rather than one at a time, so picking several
+    /// destinations doesn't make the last one wait on all the earlier round trips.
+    @discardableResult func forward(_ message: Message, to chatIds: [Int64]) async -> Bool {
+        let succeededCount = await withTaskGroup(of: Bool.self) { group in
+            for chatId in chatIds {
+                group.addTask { await self.forward(message, to: chatId) }
+            }
+            return await group.reduce(into: 0) { count, succeeded in count += succeeded ? 1 : 0 }
+        }
+        if succeededCount < chatIds.count {
+            messageActionError = succeededCount == 0
+                ? "This message couldn't be forwarded."
+                : "The message couldn't be forwarded to all the selected chats."
+        }
+        return succeededCount == chatIds.count
     }
 
     func loadCapabilities(for message: Message) async {

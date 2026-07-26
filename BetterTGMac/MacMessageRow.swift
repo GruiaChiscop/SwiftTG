@@ -231,6 +231,9 @@ struct MacMessageRow: View {
                 messageId: message.id,
             )
         }
+        .sheet(isPresented: $showForwardPicker) {
+            MacForwardChatPicker(model: model, message: message)
+        }
     }
 
     // MARK: Private
@@ -248,6 +251,7 @@ struct MacMessageRow: View {
     @State private var showReactionDetails = false
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
+    @State private var showForwardPicker = false
 
     private var capabilities: MacMessageCapabilities? {
         model.messageCapabilities[message.id]
@@ -438,6 +442,11 @@ struct MacMessageRow: View {
         if capabilities?.properties.canBeReplied == true {
             items.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left") {
                 model.beginReply(to: message)
+            })
+        }
+        if capabilities?.properties.canBeForwarded == true {
+            items.append(.button(title: "Forward", systemImage: "arrowshape.turn.up.right") {
+                showForwardPicker = true
             })
         }
         if model.messageReplyContexts[message.id]?.messageId != nil {

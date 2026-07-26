@@ -25,6 +25,9 @@ extension MessageView {
         if !reactionChoices.isEmpty {
             Button("React") { showReactionOptions = true }
         }
+        if customMessage.properties.canBeForwarded {
+            Button("Forward", action: forward)
+        }
         if customMessage.properties.canBeReplied {
             Button("Reply", action: reply)
         }
@@ -34,6 +37,11 @@ extension MessageView {
         if customMessage.properties.canBeReplied {
             Button(action: reply) {
                 Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+        }
+        if customMessage.properties.canBeForwarded {
+            Button(action: forward) {
+                Label("Forward", systemImage: "arrowshape.turn.up.right")
             }
         }
         if !reactionChoices.isEmpty {
@@ -98,6 +106,10 @@ extension MessageView {
 
     func reply() {
         chatVM.reply(to: customMessage)
+    }
+
+    func forward() {
+        chatVM.forward(customMessage)
     }
 
     func edit() {

@@ -130,4 +130,21 @@ enum TelegramMessageActions {
             revoke: forEveryone,
         )
     }
+
+    @discardableResult static func forward(
+        service: any TelegramService,
+        messageIds: [Int64],
+        fromChatId: Int64,
+        toChatId: Int64,
+    ) async throws -> Messages {
+        try await service.forwardMessages(
+            chatId: toChatId,
+            fromChatId: fromChatId,
+            messageIds: messageIds.sorted(),
+            options: nil,
+            removeCaption: false,
+            sendCopy: false,
+            topicId: nil,
+        )
+    }
 }

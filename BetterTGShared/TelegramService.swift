@@ -63,6 +63,15 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         messageId: Int64?,
         replyMarkup: ReplyMarkup?,
     ) async throws -> Message
+    func forwardMessages(
+        chatId: Int64?,
+        fromChatId: Int64?,
+        messageIds: [Int64]?,
+        options: MessageSendOptions?,
+        removeCaption: Bool?,
+        sendCopy: Bool?,
+        topicId: MessageTopic?,
+    ) async throws -> Messages
     func getBasicGroup(basicGroupId: Int64?) async throws -> BasicGroup
     func getBasicGroupFullInfo(basicGroupId: Int64?) async throws -> BasicGroupFullInfo
     func getChat(chatId: Int64?) async throws -> Chat
@@ -368,6 +377,26 @@ extension TelegramSession: TelegramService {
             messageId: messageId,
             replyMarkup: replyMarkup,
             showCaptionAboveMedia: showCaptionAboveMedia,
+        )
+    }
+
+    func forwardMessages(
+        chatId: Int64?,
+        fromChatId: Int64?,
+        messageIds: [Int64]?,
+        options: MessageSendOptions?,
+        removeCaption: Bool?,
+        sendCopy: Bool?,
+        topicId: MessageTopic?,
+    ) async throws -> Messages {
+        try await client.forwardMessages(
+            chatId: chatId,
+            fromChatId: fromChatId,
+            messageIds: messageIds,
+            options: options,
+            removeCaption: removeCaption,
+            sendCopy: sendCopy,
+            topicId: topicId,
         )
     }
 

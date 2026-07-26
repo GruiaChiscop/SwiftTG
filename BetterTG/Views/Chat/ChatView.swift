@@ -33,6 +33,7 @@ struct ChatView: View {
     @State var chatVM: ChatVM
     
     var body: some View {
+        @Bindable var chatVM = chatVM
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
                 ScrollViewReader { scrollViewProxy in
@@ -128,6 +129,9 @@ struct ChatView: View {
                 }
             }
             .environment(chatVM)
+        }
+        .sheet(item: $chatVM.messagePendingForward) { message in
+            ForwardChatPickerView(message: message, chatVM: chatVM)
         }
         .environment(chatVM)
     }
