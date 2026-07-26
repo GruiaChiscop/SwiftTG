@@ -180,15 +180,13 @@ private struct MacChatSidebar: View {
     }
 }
 
-/// Deliberately has no `.id(chat.chatId)`: `MacMessageTable.Coordinator` already handles chat
-/// changes and can cheaply reuse its AppKit table. Re-keying this subtree destroyed and rebuilt
-/// every hosted row on each click.
 private struct MacChatDetail: View {
     @Bindable var model: MacSessionModel
 
     var body: some View {
         if let chat = model.openedChat {
             MacConversationView(model: model, chat: chat)
+                .id(chat.chatId)
         } else {
             ContentUnavailableView(
                 "Select a Chat",
