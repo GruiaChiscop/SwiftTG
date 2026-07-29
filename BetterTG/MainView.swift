@@ -12,8 +12,12 @@ struct MainView: View {
             MainNavigationRootView()
                 .navigationDestination(for: Route.self) { route in
                     switch route {
-                    case .customChat(let customChat, let messageId):
-                        ChatView(customChat: customChat, initialMessageId: messageId)
+                    case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
+                        ChatView(
+                            customChat: customChat,
+                            initialMessageId: messageId,
+                            movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
+                        )
                     case .archive(let customFolder):
                         FolderView(folder: customFolder)
                             .navigationTitle(customFolder.name)

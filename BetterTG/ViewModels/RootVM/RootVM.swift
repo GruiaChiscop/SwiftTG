@@ -7,15 +7,20 @@ import TDLibKit
 // MARK: - Route
 
 enum Route: Hashable {
-    case customChat(CustomChat, messageId: Int64? = nil)
+    case customChat(CustomChat, messageId: Int64? = nil, movesAccessibilityFocus: Bool = false)
     case archive(CustomFolder)
 
     // MARK: Internal
 
     static func == (lhs: Route, rhs: Route) -> Bool {
         switch (lhs, rhs) {
-        case (.customChat(let lhsChat, let lhsMessageId), .customChat(let rhsChat, let rhsMessageId)):
-            lhsChat.id == rhsChat.id && lhsMessageId == rhsMessageId
+        case (
+            .customChat(let lhsChat, let lhsMessageId, let lhsMovesFocus),
+            .customChat(let rhsChat, let rhsMessageId, let rhsMovesFocus)
+        ):
+            lhsChat.id == rhsChat.id
+                && lhsMessageId == rhsMessageId
+                && lhsMovesFocus == rhsMovesFocus
         case (.archive(let lhsFolder), .archive(let rhsFolder)):
             lhsFolder.id == rhsFolder.id
         default:
@@ -25,10 +30,11 @@ enum Route: Hashable {
 
     func hash(into hasher: inout Hasher) {
         switch self {
-        case .customChat(let customChat, let messageId):
+        case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
             hasher.combine("customChat")
             hasher.combine(customChat.id)
             hasher.combine(messageId)
+            hasher.combine(movesAccessibilityFocus)
         case .archive(let customFolder):
             hasher.combine("archive")
             hasher.combine(customFolder.id)

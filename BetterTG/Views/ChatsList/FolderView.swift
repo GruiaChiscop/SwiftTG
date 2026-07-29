@@ -7,7 +7,6 @@ struct FolderView: View {
 
     @State var folder: CustomFolder
 
-    @Namespace var namespace
     @State var rootVM = RootVM.shared
     @State var chatToMute: CustomChat?
 
@@ -48,11 +47,8 @@ struct FolderView: View {
                     .listRowSeparator(.hidden)
             } else {
                 ForEach(chats) { customChat in
-                    Button {
-                        rootVM.navigate(to: .customChat(customChat, messageId: nil))
-                    } label: {
+                    NavigationLink(value: Route.customChat(customChat, messageId: nil)) {
                         ChatsListItemView(customChat: customChat)
-                            .matchedGeometryEffect(id: customChat.chat.id, in: namespace)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens chat")
@@ -193,9 +189,7 @@ struct FolderView: View {
         if !rootVM.searchChatResults.isEmpty {
             Section {
                 ForEach(rootVM.searchChatResults) { customChat in
-                    Button {
-                        rootVM.navigate(to: .customChat(customChat, messageId: nil))
-                    } label: {
+                    NavigationLink(value: Route.customChat(customChat, messageId: nil)) {
                         ChatsListItemView(customChat: customChat)
                     }
                     .buttonStyle(.plain)
@@ -212,9 +206,7 @@ struct FolderView: View {
             Section {
                 ForEach(Array(rootVM.searchMessageResults.enumerated()), id: \.offset) { _, message in
                     if let customChat = rootVM.searchResultChatsById[message.chatId] {
-                        Button {
-                            rootVM.navigate(to: .customChat(customChat, messageId: message.id))
-                        } label: {
+                        NavigationLink(value: Route.customChat(customChat, messageId: message.id)) {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(rootVM.searchMessageChatTitles[message.chatId] ?? customChat.chat.title)
@@ -257,7 +249,7 @@ struct FolderView: View {
                 .listRowSeparator(.hidden)
         }
     }
-    
+
     private func requestDelete(_ customChat: CustomChat) {
         rootVM.requestDelete(customChat)
     }

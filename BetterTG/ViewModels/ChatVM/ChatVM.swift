@@ -13,10 +13,12 @@ import UniformTypeIdentifiers
     init(
         customChat: CustomChat,
         initialMessageId: Int64? = nil,
+        movesAccessibilityFocusToInitialMessage: Bool = false,
         service: any TelegramService = TDLib.shared.service,
     ) {
         self.customChat = customChat
         self.initialMessageId = initialMessageId
+        self.movesAccessibilityFocusToInitialMessage = movesAccessibilityFocusToInitialMessage
         self.initialUnreadCount = customChat.unreadCount
         self.initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
         self.service = service
@@ -67,6 +69,7 @@ import UniformTypeIdentifiers
 
     var customChat: CustomChat
     let initialMessageId: Int64?
+    let movesAccessibilityFocusToInitialMessage: Bool
     let initialUnreadCount: Int
     let initialLastReadInboxMessageId: Int64
 
@@ -76,6 +79,7 @@ import UniformTypeIdentifiers
     var actionStatus = ""
     var onlineStatus = ""
     var highlightedMessageId: Int64?
+    var scrollRequestMessageId: Int64?
     var accessibilityFocusRequestMessageId: Int64?
     var navigationError: String?
     var messagePendingForward: CustomMessage?
@@ -102,6 +106,7 @@ import UniformTypeIdentifiers
     @ObservationIgnored var appliedMessageSnapshotVersion: UInt64?
     @ObservationIgnored var latestMessageSnapshot: TelegramMessageSnapshot?
     @ObservationIgnored var renderedMessages = [Int64: CustomMessage]()
+    @ObservationIgnored var provisionalMessageIds = Set<Int64>()
     /// Ids explicitly paged in or received live by this ChatVM instance. The shared message store
     /// retains a chat's full history for the app's lifetime, so reconcile/render only ever
     /// consider this bounded set rather than everything the store has ever accumulated.
@@ -112,6 +117,7 @@ import UniformTypeIdentifiers
     @ObservationIgnored var displayedMessagesRebuildTask: Task<Void, Never>?
     @ObservationIgnored var pendingScrollMessageIds = Set<Int64>()
     @ObservationIgnored var pendingNavigationMessageId: Int64?
+    @ObservationIgnored var pendingNavigationMovesAccessibilityFocus = false
     @ObservationIgnored var pendingViewedMessageIds = Set<Int64>()
     @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
     @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
@@ -337,9 +343,13 @@ import UniformTypeIdentifiers
         }
     }
 
-    func navigateToMessage(id: Int64) {
+    func navigateToMessage(id: Int64, movesAccessibilityFocus: Bool = false) {
         if messages.contains(where: { $0.id == id }) {
-            accessibilityFocusRequestMessageId = id
+            if movesAccessibilityFocus {
+                accessibilityFocusRequestMessageId = id
+            } else {
+                scrollRequestMessageId = id
+            }
             return
         }
 
@@ -347,6 +357,7 @@ import UniformTypeIdentifiers
         loadingMessagesGeneration += 1
         let generation = loadingMessagesGeneration
         pendingNavigationMessageId = id
+        pendingNavigationMovesAccessibilityFocus = movesAccessibilityFocus
         loadingMessagesTask = Task.background {
             guard let history = try? await self.service.getChatHistory(
                 chatId: self.customChat.chat.id,
@@ -359,6 +370,7 @@ import UniformTypeIdentifiers
                 await main {
                     guard self.loadingMessagesGeneration == generation else { return }
                     self.pendingNavigationMessageId = nil
+                    self.pendingNavigationMovesAccessibilityFocus = false
                     self.loadingMessagesTask = nil
                 }
                 return
@@ -382,10 +394,10 @@ import UniformTypeIdentifiers
         else { return }
         let chatId = reply.chatId == 0 ? customChat.chat.id : reply.chatId
         guard chatId != customChat.chat.id else {
-            navigateToMessage(id: reply.messageId)
+            navigateToMessage(id: reply.messageId, movesAccessibilityFocus: true)
             return
         }
-        openChat(chatId: chatId, messageId: reply.messageId)
+        openChat(chatId: chatId, messageId: reply.messageId, movesAccessibilityFocus: true)
     }
 
     func navigateToForwardOrigin(from message: Message) {
@@ -714,13 +726,17 @@ import UniformTypeIdentifiers
     
     // MARK: Private
 
-    private func openChat(chatId: Int64, messageId: Int64?) {
+    private func openChat(chatId: Int64, messageId: Int64?, movesAccessibilityFocus: Bool = false) {
         Task { @MainActor [weak self] in
             guard let chat = await RootVM.shared.getCustomChat(from: chatId) else {
                 self?.navigationError = "This chat is private or unavailable."
                 return
             }
-            RootVM.shared.navigate(to: .customChat(chat, messageId: messageId))
+            RootVM.shared.navigate(to: .customChat(
+                chat,
+                messageId: messageId,
+                movesAccessibilityFocus: movesAccessibilityFocus,
+            ))
         }
     }
 }

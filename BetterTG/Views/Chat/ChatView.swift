@@ -10,8 +10,16 @@ import TDLibKit
 struct ChatView: View {
     // MARK: Lifecycle
 
-    init(customChat: CustomChat, initialMessageId: Int64? = nil) {
-        let chatVM = ChatVM(customChat: customChat, initialMessageId: initialMessageId)
+    init(
+        customChat: CustomChat,
+        initialMessageId: Int64? = nil,
+        movesAccessibilityFocusToInitialMessage: Bool = false,
+    ) {
+        let chatVM = ChatVM(
+            customChat: customChat,
+            initialMessageId: initialMessageId,
+            movesAccessibilityFocusToInitialMessage: movesAccessibilityFocusToInitialMessage,
+        )
         #if DEBUG
         if MockData.isEnabled, let user = customChat.user {
             let messages = MockData.makeMessages(chatId: customChat.chat.id, otherUser: user)
@@ -45,6 +53,10 @@ struct ChatView: View {
                     .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
                         guard loaded else { return }
                         positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                    }
+                    .onChange(of: chatVM.scrollRequestMessageId) { _, messageId in
+                        guard let messageId else { return }
+                        scrollToMessage(messageId, using: scrollViewProxy)
                     }
                     .onChange(of: chatVM.accessibilityFocusRequestMessageId) { _, messageId in
                         guard let messageId else { return }
@@ -88,6 +100,7 @@ struct ChatView: View {
         }
         .background(.black)
         .ignoresSafeArea(.container, edges: .top)
+        .navigationBarBackButtonHidden(true)
         .dropDestination(for: SelectedImage.self) { items, _ in
             nc.post(name: .localOnSelectedImagesDrop, object: Array(items.prefix(10)))
             return true
@@ -95,6 +108,24 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarHeight($navigationBarHeight)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: dismiss.callAsFunction) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.backward")
+                        Text(backButtonTitle)
+                        if previousChatTitle == nil, unreadChatCount > 0 {
+                            Text("\(unreadChatCount)")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(Color.accentColor, in: Capsule())
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+                .accessibilityLabel(backButtonAccessibilityLabel)
+            }
             ToolbarItem(placement: .principal) { principal }
         }
         .alert(
@@ -228,8 +259,31 @@ struct ChatView: View {
 
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
+    @State private var rootVM = RootVM.shared
     @State private var showsSharedMedia = false
     @State private var showsChatInfo = false
+
+    private var unreadChatCount: Int {
+        rootVM.allChats.lazy.filter(\.hasUnreadMessages).count
+    }
+
+    private var previousChatTitle: String? {
+        guard rootVM.path.count > 1,
+              case .customChat(let chat, _, _) = rootVM.path[rootVM.path.count - 2]
+        else { return nil }
+        return chat.chat.title
+    }
+
+    private var backButtonTitle: String {
+        previousChatTitle ?? "Chats"
+    }
+
+    private var backButtonAccessibilityLabel: String {
+        if let previousChatTitle {
+            return "Back to \(previousChatTitle)"
+        }
+        return "Back to chats, \(unreadChatCount) unread"
+    }
 
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
@@ -288,8 +342,26 @@ struct ChatView: View {
             }
             if chatVM.initialMessageId != nil {
                 chatVM.highlightedMessageId = targetId
-                accessibilityFocusedMessageId = targetId
+                if chatVM.movesAccessibilityFocusToInitialMessage {
+                    accessibilityFocusedMessageId = targetId
+                }
                 Task.main(delay: 0.8) { chatVM.highlightedMessageId = nil }
+            }
+        }
+    }
+
+    private func scrollToMessage(_ messageId: Int64, using scrollViewProxy: ScrollViewProxy) {
+        Task { @MainActor in
+            await Task.yield()
+            var transaction = Transaction()
+            transaction.animation = .default
+            withTransaction(transaction) {
+                scrollViewProxy.scrollTo(messageId, anchor: .center)
+                chatVM.highlightedMessageId = messageId
+            }
+            chatVM.scrollRequestMessageId = nil
+            Task.main(delay: 0.8) {
+                withAnimation { chatVM.highlightedMessageId = nil }
             }
         }
     }

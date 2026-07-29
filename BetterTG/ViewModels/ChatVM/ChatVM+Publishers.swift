@@ -58,6 +58,9 @@ extension ChatVM {
         }
         appliedMessageSnapshotVersion = snapshot.version
         latestMessageSnapshot = snapshot
+        if loadedMessageIds.isEmpty, initialMessageId == nil, snapshot.hasMergedHistory {
+            loadedMessageIds.formUnion(snapshot.orderedMessageIds.suffix(30))
+        }
         renderStore.completeRefreshesIfMerged(messages: snapshot.messages)
 
         guard let change = snapshot.change else {
@@ -123,19 +126,24 @@ extension ChatVM {
         // otherwise reopening a chat scrolled deep into earlier would re-render its whole backlog.
         let currentIds = Set(snapshot.orderedMessageIds).intersection(loadedMessageIds)
         renderedMessages = renderedMessages.filter { currentIds.contains($0.key) }
+        provisionalMessageIds.formIntersection(currentIds)
         let toRender = renderStore.reconcile(currentIds: currentIds, messages: snapshot.messages)
-
-        rebuildDisplayedMessages(from: snapshot)
 
         for (message, invalidationVersion) in toRender {
             renderMessage(message, invalidationVersion: invalidationVersion)
         }
 
+        rebuildDisplayedMessages(from: snapshot)
         updateInitialLoadingState(from: snapshot)
     }
 
     @MainActor private func renderMessage(_ message: Message, invalidationVersion: UInt64) {
         let generation = renderStore.beginRendering(message, invalidationVersion: invalidationVersion)
+
+        if renderedMessages[message.id] == nil {
+            renderedMessages[message.id] = initialCustomMessage(from: message)
+            provisionalMessageIds.insert(message.id)
+        }
 
         Task.background {
             await self.messageRenderLimiter.acquire()
@@ -156,12 +164,34 @@ extension ChatVM {
                     invalidationVersion: invalidationVersion,
                 )
                 self.renderedMessages[message.id] = customMessage
+                let replacedProvisionalMessage = self.provisionalMessageIds.remove(message.id) != nil
                 if self.replyMessage?.message.id == message.id {
                     self.replyMessage = customMessage
                 }
-                self.scheduleDisplayedMessagesRebuild()
+                if !replacedProvisionalMessage || self.provisionalMessageIds.isEmpty {
+                    self.scheduleDisplayedMessagesRebuild()
+                }
             }
         }
+    }
+
+    private func initialCustomMessage(from message: Message) -> CustomMessage {
+        let customMessage = CustomMessage(message: message, properties: .default)
+        if message.mediaAlbumId != 0 {
+            customMessage.album.append(message)
+        }
+        customMessage.formattedText =
+            switch message.content {
+            case .messageText(let messageText):
+                messageText.text
+            case .messagePhoto, .messageVideo, .messageDocument, .messageVoiceNote, .messageAudio:
+                telegramMessageFormattedText(message)
+            case .messageUnsupported:
+                FormattedText(entities: [], text: "TDLib not supported")
+            default:
+                nil
+            }
+        return customMessage
     }
 
     @MainActor private func scheduleDisplayedMessagesRebuild() {
@@ -254,7 +284,12 @@ extension ChatVM {
            messages.contains(where: { $0.id == targetMessageId })
         {
             pendingNavigationMessageId = nil
-            accessibilityFocusRequestMessageId = targetMessageId
+            if pendingNavigationMovesAccessibilityFocus {
+                accessibilityFocusRequestMessageId = targetMessageId
+            } else {
+                scrollRequestMessageId = targetMessageId
+            }
+            pendingNavigationMovesAccessibilityFocus = false
         }
     }
 

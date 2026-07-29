@@ -23,6 +23,7 @@ struct ChatsListItemView: View {
                 fontSize: 30,
             )
             .frame(width: 54, height: 54)
+            .accessibilityHidden(true)
             
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
