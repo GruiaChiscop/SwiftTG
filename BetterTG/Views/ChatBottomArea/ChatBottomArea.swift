@@ -36,7 +36,7 @@ struct ChatBottomArea: View {
                 if drag.translation.height < -110 {
                     withAnimation { chatVM.recordingLocked = true }
                 } else if drag.translation.width < -150 {
-                    chatVM.cancelRecordingVoice()
+                    discardRecordingFromGesture()
                     hasBegunRecording = false
                 }
             }
@@ -48,7 +48,7 @@ struct ChatBottomArea: View {
                 let translation = drag?.translation ?? .zero
                 let predictedTranslation = drag?.predictedEndTranslation ?? .zero
                 if translation.width < -100 || predictedTranslation.width < -400 {
-                    chatVM.cancelRecordingVoice()
+                    discardRecordingFromGesture()
                 } else if translation.height < -60 || predictedTranslation.height < -400 {
                     withAnimation { chatVM.recordingLocked = true }
                 } else {
@@ -138,14 +138,7 @@ struct ChatBottomArea: View {
                 .scaleEffect(chatVM.recordingLocked ? 1 : 0)
                 .offset(x: 20, y: 20)
                 .onTapGesture { chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave) }
-                .accessibilityElement()
-                .accessibilityLabel("Send Voice Message")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { chatVM.mediaStopRecordingVoice(
-                    duration: Int(chatVM.timerCount),
-                    wave: chatVM.wave,
-                ) }
-                .accessibilityHidden(!chatVM.recordingVoiceNote)
+                .accessibilityHidden(true)
         }
         .overlay(alignment: .topTrailing) {
             if chatVM.recordingVoiceNote, !chatVM.recordingLocked {
@@ -170,6 +163,10 @@ struct ChatBottomArea: View {
             } else {
                 chatVM.stopTimer()
             }
+        }
+        .onChange(of: chatVM.recordingLocked) { _, isLocked in
+            guard isLocked else { return }
+            UIAccessibility.post(notification: .announcement, argument: "Recording locked")
         }
         .onChange(of: chatVM.displayedImages) { nc.post(name: .localScrollToLastIfNeeded) }
         .onReceive(nc.publisher(for: .localOnSelectedImagesDrop)) { notification in
@@ -453,6 +450,11 @@ struct ChatBottomArea: View {
     // MARK: Private
 
     @State private var hasBegunRecording = false
+
+    private func discardRecordingFromGesture() {
+        chatVM.cancelRecordingVoice()
+        UIAccessibility.post(notification: .announcement, argument: "Recording discarded")
+    }
 
     private func submitMessage() {
         chatVM.sendMessageTask?.cancel()
