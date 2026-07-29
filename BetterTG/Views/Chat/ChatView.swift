@@ -143,28 +143,9 @@ struct ChatView: View {
         } message: {
             Text(chatVM.navigationError ?? "The destination is unavailable.")
         }
-        .sheet(isPresented: $showsSharedMedia) {
-            SharedMediaView(
-                chatId: chatVM.customChat.chat.id,
-                chatTitle: chatVM.customChat.chat.title,
-                service: chatVM.service,
-            ) { messageId in
-                showsSharedMedia = false
-                Task { @MainActor in
-                    await Task.yield()
-                    chatVM.navigateToMessage(id: messageId)
-                }
-            }
-        }
-        .sheet(isPresented: $showsChatInfo) {
-            ChatInfoView {
-                showsChatInfo = false
-                Task { @MainActor in
-                    await Task.yield()
-                    showsSharedMedia = true
-                }
-            }
-            .environment(chatVM)
+        .navigationDestination(isPresented: $showsChatInfo) {
+            ChatInfoView()
+                .environment(chatVM)
         }
         .sheet(item: $chatVM.messagePendingForward) { message in
             ForwardChatPickerView(message: message, chatVM: chatVM)
@@ -259,7 +240,6 @@ struct ChatView: View {
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
-    @State private var showsSharedMedia = false
     @State private var showsChatInfo = false
 
     private var unreadChatCount: Int {

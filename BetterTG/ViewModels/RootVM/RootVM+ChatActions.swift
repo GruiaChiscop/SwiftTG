@@ -84,6 +84,18 @@ extension RootVM {
         guard let chatId = confirmChatDelete.chat?.id else { return }
         let deletesCommunity = confirmChatDelete.deletesCommunity
         confirmChatDelete = ConfirmChatDelete(chat: nil, show: false)
+        deleteChat(chatId: chatId, deletesCommunity: deletesCommunity, forAll: forAll)
+    }
+
+    func deleteChat(_ chat: CustomChat, forAll: Bool) {
+        deleteChat(
+            chatId: chat.id,
+            deletesCommunity: chat.actionPolicy.canDeleteCommunity,
+            forAll: forAll,
+        )
+    }
+
+    private func deleteChat(chatId: Int64, deletesCommunity: Bool, forAll: Bool) {
         let service = service
         Task.background {
             if deletesCommunity {

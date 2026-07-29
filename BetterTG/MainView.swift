@@ -67,7 +67,7 @@ private struct MainNavigationRootView: View {
             placement: .navigationBarDrawer(displayMode: .always),
             prompt: "Search chats...",
         )
-        .confirmationDialog(
+        .alert(
             "Delete \(rootVM.confirmChatDelete.chat?.title ?? "chat")?",
             isPresented: $rootVM.confirmChatDelete.show,
         ) {

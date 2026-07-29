@@ -62,8 +62,8 @@ struct MacChatInfoView: View {
                     List {
                         identitySection(info)
                         detailsSections(info)
-                        sharedMediaSection
-                        notificationsSection
+                        sharedMediaSection(info)
+                        unofficialAppWarningSection(info)
                         membersSection(info)
                         actionsSection(info)
                     }
@@ -229,41 +229,52 @@ struct MacChatInfoView: View {
         "\(currentChat.actionPolicy.deleteActionTitle) \(chat.title)?"
     }
 
-    private var notificationsSection: some View {
-        Section("Notifications") {
-            LabeledContent("Status", value: isMuted ? "Muted" : "On")
-            Button(isMuted ? "Unmute" : "Mute…") {
-                if isMuted {
-                    model.setMuteDuration(0, for: currentChat)
-                } else {
-                    showMuteOptions = true
-                }
-            }
-        }
-    }
-
-    private var sharedMediaSection: some View {
-        Section("Shared Content") {
+    private func sharedMediaSection(_ info: MacChatInfoData) -> some View {
+        Section {
             Button("Shared Media", systemImage: "photo.on.rectangle") {
                 showsSharedMedia = true
             }
             .accessibilityHint("Shows media, files, links, music, and voice messages")
+
+            if let commonGroupCount = info.commonGroupCount, commonGroupCount > 0 {
+                Button {
+                    showsCommonGroups = true
+                } label: {
+                    LabeledContent("Groups in common", value: commonGroupCount.formatted())
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the groups in common")
+            }
         }
     }
 
     private func identitySection(_ info: MacChatInfoData) -> some View {
         Section {
             VStack(spacing: 10) {
-                avatar(info)
-                Text(info.title)
-                    .font(.title2.bold())
-                    .multilineTextAlignment(.center)
-                Text(model.conversationHeaderStatus ?? info.kind)
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 10) {
+                    avatar(info)
+                    Text(info.title)
+                        .font(.title2.bold())
+                        .multilineTextAlignment(.center)
+                    Text(model.conversationHeaderStatus ?? info.kind)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+
+                Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "bell.slash.fill" : "bell.fill") {
+                    if isMuted {
+                        model.setMuteDuration(0, for: currentChat)
+                    } else {
+                        showMuteOptions = true
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityLabel(isMuted ? "Unmute notifications" : "Mute notifications")
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-            .accessibilityElement(children: .combine)
         }
     }
 
@@ -285,15 +296,12 @@ struct MacChatInfoView: View {
     }
 
     @ViewBuilder private func detailsSections(_ info: MacChatInfoData) -> some View {
-        if let about = info.about, !about.text.isEmpty {
-            Section("About") {
-                Text(macAttributedString(about))
-                    .textSelection(.enabled)
-            }
-        }
-
-        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil {
-            Section("Contact and Links") {
+        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil {
+            Section {
+                if let phoneNumber = info.phoneNumber {
+                    LabeledContent("Phone", value: phoneNumber)
+                        .textSelection(.enabled)
+                }
                 if let username = info.usernames.first,
                    let url = URL(string: "https://t.me/\(username)")
                 {
@@ -307,18 +315,23 @@ struct MacChatInfoView: View {
                         copyValue: isPublicChat ? url.absoluteString : "@\(username)",
                     )
                 }
-                if let phoneNumber = info.phoneNumber {
-                    LabeledContent("Phone", value: phoneNumber)
-                        .textSelection(.enabled)
-                }
                 if let birthdate = info.birthdate {
                     LabeledContent("Birthdate", value: birthdate)
+                }
+                if let about = info.about, !about.text.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(profileInformationLabel(info))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(macAttributedString(about))
+                    }
+                    .textSelection(.enabled)
                 }
             }
         }
 
-        if info.memberCount != nil || info.administratorCount != nil || info.commonGroupCount != nil {
-            Section("Details") {
+        if info.memberCount != nil || info.administratorCount != nil {
+            Section {
                 if let memberCount = info.memberCount {
                     chatMemberCountRow(
                         title: chat.kind == .channel ? "Subscribers" : "Members",
@@ -344,23 +357,18 @@ struct MacChatInfoView: View {
                 if info.canRestrictMembers, let bannedCount = info.bannedCount, bannedCount > 0 {
                     chatMemberCountRow(title: "Banned", count: bannedCount, filter: .banned, enabled: true)
                 }
-                if let commonGroupCount = info.commonGroupCount, commonGroupCount > 0 {
-                    Button {
-                        showsCommonGroups = true
-                    } label: {
-                        LabeledContent("Groups in common", value: commonGroupCount.formatted())
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens the groups in common")
-                }
-                if info.usesUnofficialApp {
-                    Label(
-                        "Telegram reports that this user uses an unofficial app that may pose a security risk.",
-                        systemImage: "exclamationmark.triangle",
-                    )
-                    .foregroundStyle(.orange)
-                }
+            }
+        }
+    }
+
+    @ViewBuilder private func unofficialAppWarningSection(_ info: MacChatInfoData) -> some View {
+        if info.usesUnofficialApp {
+            Section {
+                Label(
+                    "Telegram reports that this user uses an unofficial app that may pose a security risk.",
+                    systemImage: "exclamationmark.triangle",
+                )
+                .foregroundStyle(.orange)
             }
         }
     }
@@ -458,7 +466,7 @@ struct MacChatInfoView: View {
 
     @ViewBuilder private func actionsSection(_ info: MacChatInfoData) -> some View {
         if hasActions(info) {
-            Section("Actions") {
+            Section {
                 if info.blockableUserId != nil {
                     let blockTitle = info.isBot
                         ? (info.isBlocked ? "Restart Bot" : "Stop Bot")
@@ -494,6 +502,13 @@ struct MacChatInfoView: View {
                 }
             }
         }
+    }
+
+    private func profileInformationLabel(_ info: MacChatInfoData) -> String {
+        if info.isBot {
+            return "Bot Info"
+        }
+        return chat.kind == .group || chat.kind == .channel ? "Description" : "Bio"
     }
 
     private func hasActions(_ info: MacChatInfoData) -> Bool {
