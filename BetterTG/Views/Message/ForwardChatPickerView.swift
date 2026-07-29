@@ -35,13 +35,9 @@ struct ForwardChatPickerView: View {
 
                         Image(systemName: selectedChatIds.contains(chat.id) ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(selectedChatIds.contains(chat.id) ? Color.accentColor : .secondary)
-                            .accessibilityHidden(true)
                     }
                 }
                 .disabled(isForwarding)
-                .accessibilityLabel(chat.chat.title)
-                .accessibilityAddTraits(selectedChatIds.contains(chat.id) ? .isSelected : [])
-                .accessibilityHint("Toggles this chat as a forward destination")
             }
             .listStyle(.plain)
             .searchable(text: $query, prompt: "Search chats")

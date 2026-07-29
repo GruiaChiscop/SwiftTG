@@ -452,13 +452,15 @@ private enum MacMessageSenderKey: Hashable {
         voiceRecordingChatId = openedChatId
         voiceRecordingStartedAt = Foundation.Date()
         voiceRecordingDuration = 0
+        voiceRecordingWave = []
         isRecordingVoice = true
         recordingTimer?.cancel()
         recordingTimer = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(200))
+                try? await Task.sleep(for: .milliseconds(50))
                 guard let self, isRecordingVoice, let startedAt = voiceRecordingStartedAt else { return }
                 voiceRecordingDuration = Foundation.Date().timeIntervalSince(startedAt)
+                voiceRecordingWave.append(voiceRecorder?.peakPower ?? -160)
             }
         }
 
@@ -510,6 +512,7 @@ private enum MacMessageSenderKey: Hashable {
             return
         }
 
+        let waveform = TelegramVoiceNoteSending.waveform(from: voiceRecordingWave)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         clearDraft(chatId: chatId)
         replyingToMessage = nil
@@ -523,7 +526,7 @@ private enum MacMessageSenderKey: Hashable {
                     url: url,
                     caption: FormattedText(entities: [], text: ""),
                     duration: duration,
-                    waveform: Data(),
+                    waveform: waveform,
                     replyTo: replyTo,
                 )
             } catch {
@@ -1048,6 +1051,7 @@ private enum MacMessageSenderKey: Hashable {
     @ObservationIgnored private var voiceRecordingChatId: Int64?
     @ObservationIgnored private var voiceRecordingStartedAt: Foundation.Date?
     @ObservationIgnored private var voiceRecordingURL: URL?
+    @ObservationIgnored private var voiceRecordingWave = [Float]()
 
     private static func title(for state: AuthorizationState) -> String {
         switch state {
@@ -1224,6 +1228,7 @@ private enum MacMessageSenderKey: Hashable {
         voiceRecordingChatId = nil
         voiceRecordingStartedAt = nil
         voiceRecordingDuration = 0
+        voiceRecordingWave = []
         isRecordingVoice = false
     }
 

@@ -56,7 +56,6 @@ struct MacMessageRow: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Go to Replied Message")
-                        .accessibilityHint(replyContext.quotedText)
                     }
                     if case .messageDocument(let content) = message.content {
                         MacDocumentMessageContent(
@@ -389,8 +388,6 @@ struct MacMessageRow: View {
             .accessibilityChildren {
                 ForEach(messageLinks) { link in
                     Link(link.displayedText, destination: link.url)
-                        .accessibilityRemoveTraits(.isButton)
-                        .accessibilityAddTraits(.isLink)
                         .macModified {
                             if let destination = linkAccessibilityDestination(link) {
                                 $0.accessibilityValue(destination)

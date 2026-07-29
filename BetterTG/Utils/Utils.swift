@@ -3,6 +3,10 @@
 import SwiftUI
 
 enum Utils {
+    /// `BetterTGTests` runs inside the real `BetterTG.app` process (it needs a host application to
+    /// link against the app's own symbols), so without this check every test run - even one testing
+    /// pure logic - would start a real TDLib client and register for push notifications.
+    static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     static var screen: UIScreen!
     static let applicationVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
     static let modelName: String = {

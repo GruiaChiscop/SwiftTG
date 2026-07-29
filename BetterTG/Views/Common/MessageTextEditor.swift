@@ -156,7 +156,6 @@ struct MessageTextEditor: View {
                 onPasteImages: onPasteImages,
             )
             .accessibilityLabel(placeholder)
-            .accessibilityHint("Enter a message")
         }
         .frame(minHeight: 36, maxHeight: 302)
         .clipped()

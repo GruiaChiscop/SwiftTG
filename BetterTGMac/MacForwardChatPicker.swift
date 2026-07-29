@@ -25,14 +25,10 @@ struct MacForwardChatPicker: View {
                         Spacer()
                         Image(systemName: selectedChatIds.contains(chat.chatId) ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(selectedChatIds.contains(chat.chatId) ? Color.accentColor : .secondary)
-                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(.plain)
                 .disabled(isForwarding)
-                .accessibilityLabel(chat.title)
-                .accessibilityAddTraits(selectedChatIds.contains(chat.chatId) ? .isSelected : [])
-                .accessibilityHint("Toggles this chat as a forward destination")
             }
             .searchable(text: $query, prompt: "Search chats")
             .navigationTitle("Forward to…")

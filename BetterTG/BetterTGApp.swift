@@ -11,6 +11,7 @@ import UserNotifications
     // MARK: Lifecycle
 
     init() {
+        guard !Utils.isRunningTests else { return }
         TDLib.shared.startTdLibUpdateHandler()
 
         #if DEBUG
@@ -33,7 +34,14 @@ import UserNotifications
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            // The test bundle needs BetterTG.app as its host process just to link against the
+            // app's own symbols (see `Utils.isRunningTests`) - it never wants the real app to
+            // actually run, which would otherwise stand up a live TDLib client via `RootVM.shared`.
+            if Utils.isRunningTests {
+                EmptyView()
+            } else {
+                RootView()
+            }
         }
     }
 }
@@ -45,6 +53,7 @@ import UserNotifications
         _: UIApplication,
         didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil,
     ) -> Bool {
+        guard !Utils.isRunningTests else { return true }
         UNUserNotificationCenter.current().delegate = self
         PushNotificationsManager.shared.start()
         return true

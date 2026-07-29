@@ -120,6 +120,30 @@ struct TelegramSharedPoliciesTests {
         #expect(TelegramVoiceNoteSending.waveform(from: [-160, -120]).isEmpty)
     }
 
+    /// Regression test for a bug where `MacSessionModel.sendVoiceRecording()` sent `Data()`
+    /// unconditionally instead of the recorded amplitude, so every macOS-recorded voice note
+    /// showed an empty waveform to every recipient (including other, real Telegram clients).
+    /// Reproduces `VoiceNoteRecorder.updatePeak`'s dB formula for a realistic sequence of
+    /// recorded sample peaks - the same values macOS's recording timer now samples into
+    /// `peakPower` every 50ms - and checks the shared encoder turns them into real, non-empty,
+    /// spec-sized waveform data instead of the empty bytes the bug produced.
+    @Test func `realistic mac recording samples encode into a non-empty waveform`() {
+        func decibels(forPeakSample peak: Int16) -> Float {
+            let normalized = max(Float(peak) / Float(Int16.max), 0.000_000_1)
+            return 20 * log10(normalized)
+        }
+
+        let recordedPeaks: [Int16] = [0, 4000, 12000, 30000, 20000, 500, 0, 8000]
+        let simulatedWave = recordedPeaks.map(decibels(forPeakSample:))
+        let silentWave = [Float](repeating: decibels(forPeakSample: 0), count: recordedPeaks.count)
+
+        let waveform = TelegramVoiceNoteSending.waveform(from: simulatedWave)
+
+        #expect(!waveform.isEmpty)
+        #expect(waveform.count <= 63)
+        #expect(TelegramVoiceNoteSending.waveform(from: silentWave).isEmpty)
+    }
+
     @Test func `voice note staging removes a file after send succeeds`() throws {
         let directory = FileManager.default
             .temporaryDirectory
