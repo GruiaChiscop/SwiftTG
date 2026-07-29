@@ -315,15 +315,24 @@ struct ChatBottomArea: View {
         // placeholder, but offering "Record Voice Message" here would be redundant/confusing
         // alongside the recording indicator's Cancel action and the lock circle's Send action.
         .accessibilityHidden(chatVM.recordingVoiceNote && !chatVM.recordingLocked)
+        .modify {
+            if !chatVM.recordingLocked, !chatVM.showSendButton {
+                $0.accessibilityHint("Double-tap and hold to record a voice message")
+            } else {
+                $0
+            }
+        }
         .accessibilityAction {
             if chatVM.recordingLocked {
                 chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
             } else if chatVM.showSendButton {
                 chatVM.sendMessageTask?.cancel()
                 chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
-            } else {
-                Task.main { await chatVM.mediaStartRecordingVoice() }
             }
+            // Recording itself must only start from a genuine hold, matching the sighted-user
+            // contract exactly (see voiceRecordingGesture) - a plain double-tap here is a no-op,
+            // same as a plain tap for sighted users; VoiceOver's "double-tap and hold" reaches
+            // voiceRecordingGesture directly instead of this shortcut.
         }
     }
 

@@ -34,51 +34,56 @@ struct ChatView: View {
     
     var body: some View {
         @Bindable var chatVM = chatVM
-        ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                ScrollViewReader { scrollViewProxy in
-                    bodyView
-                        .task { chatVM.start() }
-                        .onAppear {
-                            chatVM.scrollViewProxy = scrollViewProxy
-                            positionInitialMessagesIfNeeded(using: scrollViewProxy)
-                        }
-                        .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
-                            guard loaded else { return }
-                            positionInitialMessagesIfNeeded(using: scrollViewProxy)
-                        }
-                        .onChange(of: chatVM.accessibilityFocusRequestMessageId) { _, messageId in
-                            guard let messageId else { return }
-                            focusMessage(messageId, using: scrollViewProxy)
-                        }
-                }
-                .overlay {
-                    if chatVM.customChat.lastMessage == nil {
-                        Text("No messages")
-                            .frame(maxHeight: .infinity)
-                            .background(.black)
+        VStack(spacing: 0) {
+            ScrollViewReader { scrollViewProxy in
+                bodyView
+                    .task { chatVM.start() }
+                    .onAppear {
+                        chatVM.scrollViewProxy = scrollViewProxy
+                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
                     }
-                }
-
-                if !isPreview {
-                    if chatVM.customChat.canPostMessages {
-                        ChatBottomArea(focused: $focused)
-                            .readSize { bottomAreaHeight = $0.height }
-                    } else if chatVM.customChat.kind == .channel {
-                        Text("Only channel administrators can post.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                            .background(.bar)
-                            .readSize { bottomAreaHeight = $0.height }
+                    .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
+                        guard loaded else { return }
+                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
                     }
+                    .onChange(of: chatVM.accessibilityFocusRequestMessageId) { _, messageId in
+                        guard let messageId else { return }
+                        focusMessage(messageId, using: scrollViewProxy)
+                    }
+            }
+            .overlay {
+                if chatVM.customChat.lastMessage == nil {
+                    Text("No messages")
+                        .frame(maxHeight: .infinity)
+                        .background(.black)
                 }
             }
+            // Anchored to the message list itself (not the outer screen) so it stays part of the
+            // messages region visually, not floating over the composer below.
+            .overlay(alignment: .bottomTrailing) {
+                if chatVM.showScrollToBottomButton {
+                    scrollToBottomButton
+                        .padding(8)
+                }
+            }
+            // `.overlay` alone doesn't create a new accessibility grouping level - without this,
+            // VoiceOver still treats the button as a sibling of the composer below (since overlaid
+            // content is flattened to the same level as its base view), regardless of which SwiftUI
+            // view it's visually anchored to. `.contain` makes the messages + button one distinct
+            // region, so the button is guaranteed to read as part of it, before the composer.
+            .accessibilityElement(children: .contain)
 
-            if chatVM.showScrollToBottomButton {
-                scrollToBottomButton
-                    .padding(.bottom, bottomAreaHeight + 8)
+            if !isPreview {
+                if chatVM.customChat.canPostMessages {
+                    ChatBottomArea(focused: $focused)
+                } else if chatVM.customChat.kind == .channel {
+                    Text("Only channel administrators can post.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(.bar)
+                }
             }
         }
         .background(.black)
@@ -222,7 +227,6 @@ struct ChatView: View {
     // MARK: Private
 
     @State private var navigationBarHeight = CGFloat.zero
-    @State private var bottomAreaHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var showsSharedMedia = false
     @State private var showsChatInfo = false
