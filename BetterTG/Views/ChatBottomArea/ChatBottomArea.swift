@@ -211,8 +211,7 @@ struct ChatBottomArea: View {
             }
             .menuOrder(.fixed)
             .disabled(chatVM.editCustomMessage != nil)
-            .frame(height: 36)
-            .padding(.bottom, 2)
+            .frame(width: 44, height: 44)
             .sheet(isPresented: $chatVM.showPhotoPickerView) {
                 PhotoPicker { index, image, error in
                     if let image {
