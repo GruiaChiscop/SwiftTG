@@ -221,7 +221,7 @@ struct ChatView: View {
             Image(systemName: "chevron.down")
                 .offset(y: 1)
                 .font(.title3)
-                .padding(10)
+                .frame(width: 48, height: 48)
                 .background(.black)
                 .clipShape(.circle)
                 .overlay {
@@ -246,7 +246,6 @@ struct ChatView: View {
         }
         .buttonStyle(.plain)
         .transition(.move(edge: .bottom).combined(with: .scale).combined(with: .opacity))
-        .padding(.trailing)
         .accessibilityLabel("Scroll to bottom")
         .accessibilityValue(
             Text("\(chatVM.customChat.unreadCount) unread messages"),

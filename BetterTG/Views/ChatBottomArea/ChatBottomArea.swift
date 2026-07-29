@@ -282,6 +282,7 @@ struct ChatBottomArea: View {
             }
         }
         .font(.title2)
+        .frame(width: 44, height: 44)
         .contentShape(.rect)
         .transition(.scale)
         .modify {
