@@ -33,7 +33,6 @@ struct MacSessionEndedView: View {
                 Button("Reauthenticate") { reauthenticate() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .accessibilityHint("Starts Telegram login again")
             } else {
                 ProgressView("Preparing reauthentication…")
             }

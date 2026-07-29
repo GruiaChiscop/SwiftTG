@@ -231,11 +231,6 @@ struct ChatView: View {
         UIApplication.safeAreaInsets.top + navigationBarHeight
     }
 
-    private var principalAccessibilityLabel: String {
-        let status = !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
-        return status.isEmpty ? chatVM.customChat.chat.title : "\(chatVM.customChat.chat.title), \(status)"
-    }
-    
     private var principal: some View {
         Button {
             showsChatInfo = true
@@ -267,7 +262,6 @@ struct ChatView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(principalAccessibilityLabel)
         .accessibilityAddTraits(.isHeader)
         .accessibilityHint("Opens chat information")
     }

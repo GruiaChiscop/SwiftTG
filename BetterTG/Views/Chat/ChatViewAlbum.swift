@@ -89,18 +89,18 @@ private struct ChatViewAlbumRootView: View {
 
     private var toolbar: some View {
         HStack {
-            Button(systemImage: "xmark.circle.fill") {
+            Button("Close", systemImage: "xmark.circle.fill") {
                 dismiss()
             }
-            .accessibilityLabel("Close")
+            .labelStyle(.iconOnly)
 
             Spacer()
 
             if let shareURL {
-                Button(systemImage: "square.and.arrow.up.circle.fill") {
+                Button("Share", systemImage: "square.and.arrow.up.circle.fill") {
                     showShareSheet([shareURL])
                 }
-                .accessibilityLabel("Share")
+                .labelStyle(.iconOnly)
             }
         }
         .font(.title)

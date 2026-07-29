@@ -55,7 +55,6 @@ struct FolderView: View {
                             .matchedGeometryEffect(id: customChat.chat.id, in: namespace)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(customChat.accessibilityDescription)
                     .accessibilityHint("Opens chat")
                     .accessibilityActions {
                         // SwiftUI presents .accessibilityActions in reverse declaration order, so

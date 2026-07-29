@@ -198,7 +198,6 @@ private struct SharedMediaListLabel: View {
         HStack(spacing: 12) {
             Image(systemName: category.systemImage)
                 .frame(width: 28)
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(telegramSharedMediaTitle(message)).lineLimit(2)
                 Text(telegramSharedMediaSubtitle(message))

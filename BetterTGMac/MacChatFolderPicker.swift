@@ -21,7 +21,6 @@ struct MacChatFolderPicker: View {
             }
         }
         .pickerStyle(.menu)
-        .accessibilityHint("Changes the displayed chat list")
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
     }

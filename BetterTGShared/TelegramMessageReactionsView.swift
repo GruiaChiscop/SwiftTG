@@ -16,7 +16,6 @@ struct TelegramMessageReactionsView: View {
         }
         .buttonStyle(.plain)
         .background(Color.secondary.opacity(0.14), in: Capsule())
-        .accessibilityLabel("Reactions")
         .accessibilityValue(telegramReactionDescription(reactions) ?? "")
     }
 }

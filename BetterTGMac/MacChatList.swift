@@ -54,13 +54,11 @@ struct MacChatRow: View {
                         Image(systemName: "speaker.slash.fill")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                            .accessibilityHidden(true)
                     }
                     if isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                            .accessibilityHidden(true)
                     }
                     if chat.unreadCount > 0 {
                         Text("\(chat.unreadCount)")
@@ -155,7 +153,6 @@ struct MacChatRow: View {
                     .padding(4)
                     .background(Color.accentColor, in: Circle())
                     .overlay(Circle().stroke(.background, lineWidth: 1.5))
-                    .accessibilityHidden(true)
             }
         }
         .frame(width: 40, height: 40)

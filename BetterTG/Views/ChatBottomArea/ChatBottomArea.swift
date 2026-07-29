@@ -207,10 +207,10 @@ struct ChatBottomArea: View {
                     Label("Attach Files", systemImage: "folder")
                 }
             } label: {
-                Image(systemName: "plus")
+                Label("Attach", systemImage: "paperclip")
+                    .labelStyle(.iconOnly)
                     .foregroundStyle(.white)
                     .font(.system(size: 25))
-                    .accessibilityLabel(Text("Attach"))
             }
             .menuOrder(.fixed)
             .disabled(chatVM.editCustomMessage != nil)

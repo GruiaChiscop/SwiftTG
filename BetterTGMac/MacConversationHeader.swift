@@ -34,15 +34,7 @@ struct MacConversationHeader: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Opens chat information")
-    }
-
-    // MARK: Private
-
-    private var accessibilityLabel: String {
-        guard let status, !status.isEmpty else { return title }
-        return "\(title), \(status)"
     }
 }
 

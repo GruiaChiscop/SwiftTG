@@ -123,10 +123,10 @@ private struct MainNavigationRootView: View {
         .toolbar {
             if let archive = rootVM.archive {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(systemImage: "archivebox") {
+                    Button("Archive", systemImage: "archivebox") {
                         rootVM.navigate(to: .archive(archive))
                     }
-                    .accessibilityLabel("Archive")
+                    .labelStyle(.iconOnly)
                 }
             }
             #if DEBUG
@@ -190,7 +190,7 @@ private struct MainNavigationRootView: View {
                             }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
             .padding(.horizontal, 12)
