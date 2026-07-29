@@ -25,20 +25,7 @@ import TDLibKit
     @ObservationIgnored var wave = [Float]()
 
     var formattedTimerCount: String {
-        let time = String(format: "%.2f", timerCount).split(separator: ".", maxSplits: 2)
-        let seconds = Int(time[0]) ?? 0
-        var resultString = ""
-        if seconds >= 60 {
-            resultString += "\(seconds / 60):" // seconds / 60 == minutes
-            var estimatedSeconds = String(seconds % 60)
-            if estimatedSeconds.count == 1 {
-                estimatedSeconds = "0\(estimatedSeconds)"
-            }
-            resultString += "\(estimatedSeconds)"
-        } else {
-            resultString += "\(seconds).\(time[1])" // time[1] == millisecongs
-        }
-        return resultString
+        telegramClockDuration(Int(timerCount))
     }
 
     func startTimer() {

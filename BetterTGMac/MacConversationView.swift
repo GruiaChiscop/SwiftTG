@@ -144,7 +144,7 @@ struct MacConversationView: View {
                     Image(systemName: "waveform")
                         .foregroundStyle(.red)
                         .accessibilityHidden(true)
-                    Text("Recording \(telegramClockDuration(Int(model.voiceRecordingDuration)))")
+                    Text(telegramClockDuration(Int(model.voiceRecordingDuration)))
                         .monospacedDigit()
                     Spacer()
                     Button("Cancel Recording", systemImage: "xmark", role: .cancel) {
