@@ -56,14 +56,19 @@ import Observation
 
     func setAudioSessionRecord() {
         do {
-            try audioSession.setActive(false)
-            try audioSession.setCategory(.playAndRecord, mode: .default, policy: .default, options: [
+            var options: AVAudioSession.CategoryOptions = [
                 .allowAirPlay,
                 .allowBluetoothHFP,
                 .allowBluetoothA2DP,
                 .defaultToSpeaker,
                 .overrideMutedMicrophoneInterruption,
-            ])
+            ]
+            if UIAccessibility.isVoiceOverRunning {
+                options.insert(.mixWithOthers)
+            }
+            // Deactivating the shared session here interrupts VoiceOver before recording starts
+            // and makes it play its context-change earcon when its audio resumes.
+            try audioSession.setCategory(.playAndRecord, mode: .default, policy: .default, options: options)
             try audioSession.setActive(true)
         } catch {
             log("Error setting audioSessionRecord: \(error)")

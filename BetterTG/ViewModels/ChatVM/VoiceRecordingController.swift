@@ -45,8 +45,8 @@ import TDLibKit
     }
 
     @MainActor func mediaStartRecordingVoice() async {
-        Media.shared.setAudioSessionRecord()
         Media.shared.stop()
+        Media.shared.setAudioSessionRecord()
 
         let granted = await AVAudioApplication.requestRecordPermission()
         if granted {
