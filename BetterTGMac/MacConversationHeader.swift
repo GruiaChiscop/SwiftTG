@@ -112,7 +112,7 @@ extension MacSessionModel {
         switch update {
         case .updateUserStatus(let value):
             guard macConversationUserId(openedChatType) == value.userId else { return }
-            conversationHeaderBaseStatus = macUserPresenceDescription(value.status)
+            conversationHeaderBaseStatus = telegramUserPresenceDescription(value.status)
         case .updateUser(let value):
             guard macConversationUserId(openedChatType) == value.user.id else { return }
             conversationHeaderBaseStatus = macConversationUserStatus(value.user)
@@ -180,38 +180,7 @@ func macConversationUserStatus(_ user: User) -> String {
     switch user.type {
     case .userTypeBot: "Bot"
     case .userTypeDeleted: "Deleted account"
-    case .userTypeRegular, .userTypeUnknown: macUserPresenceDescription(user.status)
-    }
-}
-
-private func macUserPresenceDescription(
-    _ status: UserStatus,
-    now: Foundation.Date = Foundation.Date(),
-    calendar: Calendar = .autoupdatingCurrent,
-) -> String {
-    switch status {
-    case .userStatusOnline:
-        return "Online"
-    case .userStatusOffline(let value):
-        guard value.wasOnline > 0 else { return "Offline" }
-        let date = Foundation.Date(timeIntervalSince1970: TimeInterval(value.wasOnline))
-        if calendar.isDate(date, inSameDayAs: now) {
-            return "Last seen today at \(date.formatted(date: .omitted, time: .shortened))"
-        }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(date, inSameDayAs: yesterday)
-        {
-            return "Last seen yesterday at \(date.formatted(date: .omitted, time: .shortened))"
-        }
-        return "Last seen \(date.formatted(date: .abbreviated, time: .shortened))"
-    case .userStatusRecently:
-        return "Last seen recently"
-    case .userStatusLastWeek:
-        return "Last seen within a week"
-    case .userStatusLastMonth:
-        return "Last seen within a month"
-    case .userStatusEmpty:
-        return "Last seen a long time ago"
+    case .userTypeRegular, .userTypeUnknown: telegramUserPresenceDescription(user.status)
     }
 }
 

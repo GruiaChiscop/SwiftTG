@@ -98,11 +98,6 @@ import UniformTypeIdentifiers
         dateFormatter.dateFormat = "HH:mm"
         return dateFormatter
     }()
-    @ObservationIgnored private var lastSeenDateFormatter: DateFormatter = {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "dd.MM.yy"
-        return dateFormatter
-    }()
 
     @ObservationIgnored private var hasStarted = false
     @ObservationIgnored var loadingMessagesTask: Task<Void, Never>?
@@ -319,23 +314,6 @@ import UniformTypeIdentifiers
         withAnimation { showScrollToBottomButton = shouldShowButton }
     }
     
-    func getLastSeenTime(_ time: Int) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(time))
-
-        let difference = Date().timeIntervalSince1970 - TimeInterval(time)
-        if difference < 60 {
-            return "now"
-        } else if difference < 60 * 60 {
-            return "\(Int(difference / 60)) minutes ago"
-        } else if difference < 60 * 60 * 24 {
-            return "\(Int(difference / 60 / 60)) hours ago"
-        } else if difference < 60 * 60 * 24 * 2 {
-            return "yesterday at \(dateFormatter.string(from: date))"
-        } else {
-            return lastSeenDateFormatter.string(from: date)
-        }
-    }
-    
     func scrollToLast() {
         guard let lastId = messages.last?.id, let scrollViewProxy else { return }
         withAnimation { scrollViewProxy.scrollTo(lastId, anchor: .bottom) }
@@ -434,14 +412,7 @@ import UniformTypeIdentifiers
     }
 
     func getOnlineStatus(from userStatus: UserStatus) -> String {
-        switch userStatus {
-        case .userStatusEmpty: "empty"
-        case .userStatusOnline: /* (let userStatusOnline) */ "online"
-        case .userStatusOffline(let userStatusOffline): "last seen \(getLastSeenTime(userStatusOffline.wasOnline))"
-        case .userStatusRecently: "last seen recently"
-        case .userStatusLastWeek: "last seen last week"
-        case .userStatusLastMonth: "last seen last month"
-        }
+        telegramUserPresenceDescription(userStatus)
     }
     
     func loadMessages() {
