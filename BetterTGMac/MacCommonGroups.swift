@@ -47,7 +47,6 @@ struct MacCommonGroupsView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Opens this group")
                 }
                 if hasMore {
                     ProgressView()

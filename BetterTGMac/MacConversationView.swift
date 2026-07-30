@@ -23,6 +23,9 @@ struct MacConversationView: View {
             if model.isConversationSearchActive {
                 conversationSearchField
                 Divider()
+            } else if model.currentPinnedMessage != nil {
+                pinnedMessageBanner
+                Divider()
             }
             messages
             Divider()
@@ -40,6 +43,9 @@ struct MacConversationView: View {
         }
         .sheet(isPresented: $showsChatInfo) {
             MacChatInfoView(model: model, chat: chat)
+        }
+        .sheet(isPresented: $showsPinnedMessages) {
+            MacPinnedMessagesView(model: model)
         }
         .sheet(isPresented: Binding(
             get: { !model.selectedPhotoURLs.isEmpty || !model.selectedDocumentURLs.isEmpty },
@@ -64,6 +70,7 @@ struct MacConversationView: View {
     @FocusState private var conversationSearchFocused
     @State private var isAtBottom = false
     @State private var showsChatInfo = false
+    @State private var showsPinnedMessages = false
 
     private var shouldFollowLatestMessage: Bool {
         switch model.messages.change {
@@ -110,6 +117,41 @@ struct MacConversationView: View {
         }
         .padding(10)
         .background(.bar)
+    }
+
+    private var pinnedMessageBanner: some View {
+        HStack(spacing: 8) {
+            Button {
+                guard let message = model.currentPinnedMessage else { return }
+                model.activateChat(chat.chatId, messageId: message.id)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pinned Message")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tint)
+                    Text(pinnedMessageSummary)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button("Show All Pinned Messages", systemImage: "chevron.right") {
+                showsPinnedMessages = true
+            }
+            .labelStyle(.iconOnly)
+            .frame(width: 36, height: 36)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private var pinnedMessageSummary: String {
+        guard let message = model.currentPinnedMessage else { return "" }
+        return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
     }
 
     private var conversationSearchNavigationBar: some View {

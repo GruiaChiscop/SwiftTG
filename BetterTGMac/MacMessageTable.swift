@@ -242,8 +242,7 @@ private struct MacMessageDayHeader: View {
             Spacer()
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
 }
@@ -262,8 +261,7 @@ private struct MacUnreadMessagesHeader: View {
             Divider()
         }
         .frame(height: 24)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
 

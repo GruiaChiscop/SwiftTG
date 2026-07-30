@@ -96,6 +96,7 @@ extension ChatVM {
         case .messagePinChanged(let value):
             renderStore.invalidate(messageId: value.messageId, version: snapshot.version)
             refreshMessage(messageId: value.messageId, version: snapshot.version)
+            refreshPinnedMessages()
         case .messageSendSucceeded(let value):
             if value.message.isOutgoing {
                 ServiceSoundManager.shared.playMessageDelivered()

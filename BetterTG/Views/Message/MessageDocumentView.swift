@@ -20,7 +20,6 @@ struct MessageDocumentView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Document \(document.fileName)")
-            .accessibilityHint("Double tap to open")
         } placeholder: {
             ProgressView("Downloading \(document.fileName)")
                 .padding(10)

@@ -16,6 +16,13 @@ When using XcodeBuildMCP, call `session-set-defaults` at the start of every sess
 
 `simulatorName` is user-specific and should be set individually per session.
 
+## Accessibility
+
+- Before adding `accessibilityLabel` or `accessibilityHint`, inspect the semantics SwiftUI/AppKit already synthesizes.
+- Do not add a custom label that merely repeats visible text.
+- Do not add a hint that merely restates standard activation, such as “opens”, “selects”, “double tap”, or keyboard activation.
+- Add custom accessibility text only when the default result is missing or inaccurate, or when a nonstandard interaction genuinely needs explanation.
+
 ## How to use skills
 
 - Discovery: The list above is the skills available in this session (name + description + file path). Skill bodies live on disk at the listed paths.

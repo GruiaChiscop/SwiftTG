@@ -51,7 +51,6 @@ struct FolderView: View {
                         ChatsListItemView(customChat: customChat)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Opens chat")
                     .accessibilityActions {
                         // SwiftUI presents .accessibilityActions in reverse declaration order, so
                         // these are declared back-to-front to have VoiceOver announce them
@@ -193,7 +192,6 @@ struct FolderView: View {
                         ChatsListItemView(customChat: customChat)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Opens chat")
                 }
             } header: {
                 Text("Chats (\(rootVM.searchChatResults.count))")
@@ -226,7 +224,6 @@ struct FolderView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Opens this message in the chat")
                     }
                 }
             } header: {

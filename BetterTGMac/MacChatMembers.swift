@@ -100,7 +100,6 @@ struct MacChatMembersView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Opens a conversation with this member")
                 }
 
                 if hasMore {

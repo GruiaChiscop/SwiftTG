@@ -78,7 +78,6 @@ struct MacChatRow: View {
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint("Press Return or Space to open this chat")
         .accessibilityActions { chatAccessibilityActions }
         .contextMenu { chatActions }
         .confirmationDialog("Mute \(chat.title)", isPresented: $showMuteOptions) {

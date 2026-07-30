@@ -38,6 +38,7 @@ import UniformTypeIdentifiers
     deinit {
         conversationStatusTask?.cancel()
         conversationSearchTask?.cancel()
+        pinnedMessagesTask?.cancel()
         guard hasStarted else { return }
         let chatId = customChat.chat.id
         let service = service
@@ -58,6 +59,7 @@ import UniformTypeIdentifiers
         Task { _ = try? await service.openChat(chatId: chatId) }
         setPublishers()
         refreshConversationStatus()
+        refreshPinnedMessages()
         loadMessages()
         Media.shared.onChatOpen(title: customChat.chat.title)
 
@@ -93,6 +95,9 @@ import UniformTypeIdentifiers
     var conversationSearchSelectedIndex: Int?
     var conversationSearchTotalCount = 0
     var conversationSearchError: String?
+    var pinnedMessages = [Message]()
+    var isLoadingPinnedMessages = false
+    var pinnedMessagesError: String?
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
@@ -129,6 +134,8 @@ import UniformTypeIdentifiers
     @ObservationIgnored var conversationSearchNextFromMessageId: Int64 = 0
     @ObservationIgnored var conversationSearchNextOffset = ""
     @ObservationIgnored var conversationSearchUsesSecretMessages = false
+    @ObservationIgnored var pinnedMessagesTask: Task<Void, Never>?
+    @ObservationIgnored var pinnedMessagesGeneration = 0
     // Scroll
     @ObservationIgnored var isAtBottom = true
     var showScrollToBottomButton = false

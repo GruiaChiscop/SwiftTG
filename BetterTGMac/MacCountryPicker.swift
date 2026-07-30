@@ -53,7 +53,6 @@ struct MacCountryPicker: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Selects country")
                 }
             }
         }

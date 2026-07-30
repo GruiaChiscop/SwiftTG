@@ -110,8 +110,6 @@ struct ChatInfoMembersView: View {
                     memberRow(member)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(memberAccessibilityLabel(member))
-                .accessibilityHint("Opens a conversation with this member")
             }
 
             if hasMore {
@@ -170,12 +168,6 @@ struct ChatInfoMembersView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentShape(.rect)
-    }
-
-    private func memberAccessibilityLabel(_ member: ChatInfoMember) -> String {
-        [member.name, member.role, member.presence]
-            .compactMap(\.self)
-            .joined(separator: ", ")
     }
 
     private func loadNextPage() {
@@ -368,8 +360,6 @@ struct ChatInfoCommonGroupsView: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(group.chat.title)
-                .accessibilityHint("Opens this group")
             }
 
             if hasMore {

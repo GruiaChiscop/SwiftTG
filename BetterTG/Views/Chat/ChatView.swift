@@ -46,6 +46,9 @@ struct ChatView: View {
             if chatVM.isConversationSearchActive {
                 conversationSearchField
                 Divider()
+            } else if chatVM.currentPinnedMessage != nil {
+                pinnedMessageBanner
+                Divider()
             }
 
             ScrollViewReader { scrollViewProxy in
@@ -170,6 +173,10 @@ struct ChatView: View {
         .sheet(item: $chatVM.messagePendingForward) { message in
             ForwardChatPickerView(message: message, chatVM: chatVM)
         }
+        .sheet(isPresented: $showsPinnedMessages) {
+            PinnedMessagesView()
+                .environment(chatVM)
+        }
         .environment(chatVM)
     }
     
@@ -262,6 +269,7 @@ struct ChatView: View {
     @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
     @State private var showsChatInfo = false
+    @State private var showsPinnedMessages = false
 
     private var unreadChatCount: Int {
         rootVM.allChats.lazy.filter(\.hasUnreadMessages).count
@@ -314,6 +322,41 @@ struct ChatView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    private var pinnedMessageBanner: some View {
+        HStack(spacing: 8) {
+            Button {
+                guard let message = chatVM.currentPinnedMessage else { return }
+                chatVM.navigateToMessage(id: message.id)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pinned Message")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tint)
+                    Text(pinnedMessageSummary)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button("Show All Pinned Messages", systemImage: "chevron.right") {
+                showsPinnedMessages = true
+            }
+            .labelStyle(.iconOnly)
+            .frame(width: 44, height: 44)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private var pinnedMessageSummary: String {
+        guard let message = chatVM.currentPinnedMessage else { return "" }
+        return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
     }
 
     private var conversationSearchNavigationBar: some View {
@@ -565,8 +608,7 @@ private struct MessageDayHeader: View {
             Spacer()
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
 }
@@ -592,8 +634,7 @@ private struct UnreadMessagesHeader: View {
                 .frame(height: 1)
         }
         .padding(.vertical, 6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
 

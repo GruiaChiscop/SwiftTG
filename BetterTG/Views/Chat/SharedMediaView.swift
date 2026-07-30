@@ -198,6 +198,7 @@ private struct SharedMediaListLabel: View {
         HStack(spacing: 12) {
             Image(systemName: category.systemImage)
                 .frame(width: 28)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(telegramSharedMediaTitle(message)).lineLimit(2)
                 Text(telegramSharedMediaSubtitle(message))
@@ -206,8 +207,7 @@ private struct SharedMediaListLabel: View {
                     .lineLimit(2)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(telegramSharedMediaTitle(message)), \(telegramSharedMediaSubtitle(message))")
+        .accessibilityElement(children: .combine)
         .accessibilityHint("Opens this message in the conversation")
     }
 }

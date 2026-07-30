@@ -244,7 +244,6 @@ struct MacChatInfoView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Opens the groups in common")
             }
         }
     }
@@ -252,36 +251,32 @@ struct MacChatInfoView: View {
     private func identitySection(_ info: MacChatInfoData) -> some View {
         Section {
             VStack(spacing: 10) {
-                VStack(spacing: 10) {
-                    avatar(info)
-                    Text(info.title)
-                        .font(.title2.bold())
-                        .multilineTextAlignment(.center)
-                    Text(model.conversationHeaderStatus ?? info.kind)
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-
-                HStack(spacing: 12) {
-                    Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "bell.slash.fill" : "bell.fill") {
-                        if isMuted {
-                            model.setMuteDuration(0, for: currentChat)
-                        } else {
-                            showMuteOptions = true
-                        }
-                    }
-                    .accessibilityLabel(isMuted ? "Unmute notifications" : "Mute notifications")
-
-                    Button("Search", systemImage: "magnifyingglass") {
-                        openConversationSearch()
-                    }
-                    .accessibilityLabel("Search in conversation")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                avatar(info)
+                Text(info.title)
+                    .font(.title2.bold())
+                    .multilineTextAlignment(.center)
+                Text(model.conversationHeaderStatus ?? info.kind)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+
+            Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "bell.slash.fill" : "bell.fill") {
+                if isMuted {
+                    model.setMuteDuration(0, for: currentChat)
+                } else {
+                    showMuteOptions = true
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            Button("Search", systemImage: "magnifyingglass") {
+                openConversationSearch()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
         }
     }
 
@@ -318,7 +313,6 @@ struct MacChatInfoView: View {
                         subtitle: isPublicChat ? publicLinkSubtitle(info.usernames) : usernameSubtitle(info.usernames),
                         url: url,
                         systemImage: isPublicChat ? "link" : "at",
-                        accessibilityLabel: isPublicChat ? "Link: \(url.absoluteString)" : "Username: \(username)",
                         copyValue: isPublicChat ? url.absoluteString : "@\(username)",
                     )
                 }
@@ -394,7 +388,6 @@ struct MacChatInfoView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Opens the member list")
         } else {
             LabeledContent(title, value: count.formatted())
         }
@@ -405,7 +398,6 @@ struct MacChatInfoView: View {
         subtitle: String,
         url: URL,
         systemImage: String,
-        accessibilityLabel: String,
         copyValue: String,
     ) -> some View {
         Link(destination: url) {
@@ -435,8 +427,6 @@ struct MacChatInfoView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint("Opens the link")
         .contextMenu {
             if copyValue != url.absoluteString {
                 Button("Copy") { copyToPasteboard(copyValue) }
@@ -465,7 +455,6 @@ struct MacChatInfoView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Opens a conversation with this member")
                 }
             }
         }

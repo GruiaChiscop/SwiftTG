@@ -96,6 +96,9 @@ private enum MacMessageSenderKey: Hashable {
     var conversationSearchSelectedIndex: Int?
     var conversationSearchTotalCount = 0
     var conversationSearchError: String?
+    var pinnedMessages = [Message]()
+    var isLoadingPinnedMessages = false
+    var pinnedMessagesError: String?
     var navigationTargetMessageId: Int64?
     var latestHistoryTargetMessageId: Int64?
     var openedUnreadCount = 0
@@ -112,6 +115,8 @@ private enum MacMessageSenderKey: Hashable {
     @ObservationIgnored var conversationSearchNextFromMessageId: Int64 = 0
     @ObservationIgnored var conversationSearchNextOffset = ""
     @ObservationIgnored var conversationSearchUsesSecretMessages = false
+    @ObservationIgnored var pinnedMessagesTask: Task<Void, Never>?
+    @ObservationIgnored var pinnedMessagesGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
     @ObservationIgnored var service: any TelegramService
     @ObservationIgnored var draftReplyLoadTask: Task<Void, Never>?
@@ -311,6 +316,9 @@ private enum MacMessageSenderKey: Hashable {
 
         let previousChatId = openedChatId
         openedChatId = chatId
+        pinnedMessages = []
+        pinnedMessagesError = nil
+        refreshPinnedMessages(for: chatId)
         restoreDraft(openingChat?.draftMessage, chatId: chatId)
         prepareConversationHeader(for: chatId, fallbackKind: openingChat?.kind)
         messages = .empty(chatId: chatId)
@@ -1298,6 +1306,9 @@ private enum MacMessageSenderKey: Hashable {
         // round-trip a `getMessage` RPC here just to pick it up. Only the message's cached
         // capabilities (edit/pin/reaction permissions) still need invalidating, since those
         // aren't part of `Message` itself.
+        if case .messagePinChanged = snapshot.change {
+            refreshPinnedMessages()
+        }
         let messageId: Int64? =
             switch snapshot.change {
             case .messageContentChanged(let update):
@@ -1399,6 +1410,8 @@ private enum MacMessageSenderKey: Hashable {
         countryLoadTask = nil
         conversationHeaderTask?.cancel()
         conversationHeaderTask = nil
+        pinnedMessagesTask?.cancel()
+        pinnedMessagesTask = nil
         messageSubscription?.cancel()
         messageSubscription = nil
         for request in senderNameRequests.values {
@@ -1414,6 +1427,9 @@ private enum MacMessageSenderKey: Hashable {
         openedChatType = nil
         conversationHeaderBaseStatus = nil
         conversationHeaderActivities = [:]
+        pinnedMessages = []
+        pinnedMessagesError = nil
+        isLoadingPinnedMessages = false
         messages = .empty(chatId: 0)
         loadedChatFolderIds = []
         messageText = ""

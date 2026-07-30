@@ -148,7 +148,6 @@ private struct MacChatSidebar: View {
                             model.activateChat(result.message.chatId, messageId: result.message.id)
                         }
                         .accessibilityElement(children: .combine)
-                        .accessibilityHint("Press Return or Space to open this message")
                     }
                 } header: {
                     Text("Messages (\(model.messageSearchResults.count))")

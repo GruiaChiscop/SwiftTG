@@ -30,7 +30,6 @@ struct SelectCountryView: View {
                     .foregroundStyle(.white)
                 }
                 .accessibilityLabel(info.accessibilityLabel)
-                .accessibilityHint("Selects country")
             }
             .background(.black)
             .padding(.top, -20)
