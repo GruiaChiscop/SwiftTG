@@ -163,22 +163,37 @@ struct ChatInfoView: View {
                 .accessibilityElement(children: .combine)
 
                 if let info {
-                    Button {
-                        if isMuted(info) {
-                            setMuteDuration(0)
-                        } else {
-                            showMuteOptions = true
+                    HStack(spacing: 12) {
+                        Button {
+                            if isMuted(info) {
+                                setMuteDuration(0)
+                            } else {
+                                showMuteOptions = true
+                            }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: isMuted(info) ? "bell.slash.fill" : "bell.fill")
+                                Text(isMuted(info) ? "Unmute" : "Mute")
+                                    .font(.caption)
+                            }
+                            .frame(minWidth: 88, minHeight: 44)
                         }
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: isMuted(info) ? "bell.slash.fill" : "bell.fill")
-                            Text(isMuted(info) ? "Unmute" : "Mute")
-                                .font(.caption)
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel(isMuted(info) ? "Unmute notifications" : "Mute notifications")
+
+                        Button {
+                            openConversationSearch()
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "magnifyingglass")
+                                Text("Search")
+                                    .font(.caption)
+                            }
+                            .frame(minWidth: 88, minHeight: 44)
                         }
-                        .frame(minWidth: 88, minHeight: 44)
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Search in conversation")
                     }
-                    .buttonStyle(.bordered)
-                    .accessibilityLabel(isMuted(info) ? "Unmute notifications" : "Mute notifications")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -425,6 +440,14 @@ struct ChatInfoView: View {
             dismiss()
             await Task.yield()
             chatVM.navigateToMessage(id: messageId)
+        }
+    }
+
+    private func openConversationSearch() {
+        dismiss()
+        Task { @MainActor in
+            await Task.yield()
+            chatVM.beginConversationSearch()
         }
     }
 

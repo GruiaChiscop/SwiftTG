@@ -169,6 +169,13 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         offset: String?,
         query: String?,
     ) async throws -> FoundMessages
+    func searchSecretMessages(
+        chatId: Int64?,
+        filter: SearchMessagesFilter?,
+        limit: Int?,
+        offset: String?,
+        query: String?,
+    ) async throws -> FoundMessages
     func setChatNotificationSettings(chatId: Int64?, notificationSettings: ChatNotificationSettings?) async throws -> Ok
     func setChatDraftMessage(chatId: Int64?, draftMessage: DraftMessage?, topicId: MessageTopic?) async throws -> Ok
     func setAuthenticationPhoneNumber(
@@ -269,6 +276,22 @@ extension TelegramSession: TelegramService {
             limit: limit,
             maxDate: maxDate,
             minDate: minDate,
+            offset: offset,
+            query: query,
+        )
+    }
+
+    func searchSecretMessages(
+        chatId: Int64?,
+        filter: SearchMessagesFilter?,
+        limit: Int?,
+        offset: String?,
+        query: String?,
+    ) async throws -> FoundMessages {
+        try await client.searchSecretMessages(
+            chatId: chatId,
+            filter: filter,
+            limit: limit,
             offset: offset,
             query: query,
         )

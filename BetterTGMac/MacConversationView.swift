@@ -20,9 +20,15 @@ struct MacConversationView: View {
                 onOpenInfo: { showsChatInfo = true },
             )
             Divider()
+            if model.isConversationSearchActive {
+                conversationSearchField
+                Divider()
+            }
             messages
             Divider()
-            if chat.kind != .channel || chat.canPostMessages == true {
+            if model.isConversationSearchActive {
+                conversationSearchNavigationBar
+            } else if chat.kind != .channel || chat.canPostMessages == true {
                 composer
             } else {
                 Text("Only channel administrators can post.")
@@ -45,10 +51,17 @@ struct MacConversationView: View {
         )) {
             MacAttachmentPreview(model: model)
         }
+        .onChange(of: model.isConversationSearchActive) { _, isActive in
+            conversationSearchFocused = isActive
+        }
+        .onChange(of: model.conversationSearchQuery) {
+            model.conversationSearchQueryDidChange()
+        }
     }
 
     // MARK: Private
 
+    @FocusState private var conversationSearchFocused
     @State private var isAtBottom = false
     @State private var showsChatInfo = false
 
@@ -73,6 +86,61 @@ struct MacConversationView: View {
 
     private var composerText: String {
         model.editingMessage == nil ? model.messageText : model.editMessageText
+    }
+
+    private var conversationSearchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            TextField("Search messages", text: $model.conversationSearchQuery)
+                .textFieldStyle(.roundedBorder)
+                .focused($conversationSearchFocused)
+                .onSubmit {
+                    if model.canSelectOlderConversationSearchResult {
+                        model.selectOlderConversationSearchResult()
+                    }
+                }
+
+            Button("Cancel", role: .cancel) {
+                model.endConversationSearch()
+            }
+            .keyboardShortcut(.cancelAction)
+        }
+        .padding(10)
+        .background(.bar)
+    }
+
+    private var conversationSearchNavigationBar: some View {
+        HStack(spacing: 12) {
+            if model.isSearchingConversation {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            }
+
+            Text(model.conversationSearchStatus)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Search results, \(model.conversationSearchStatus)")
+
+            Spacer()
+
+            Button("Older result", systemImage: "chevron.up") {
+                model.selectOlderConversationSearchResult()
+            }
+            .labelStyle(.iconOnly)
+            .disabled(!model.canSelectOlderConversationSearchResult || model.isSearchingConversation)
+
+            Button("Newer result", systemImage: "chevron.down") {
+                model.selectNewerConversationSearchResult()
+            }
+            .labelStyle(.iconOnly)
+            .disabled(!model.canSelectNewerConversationSearchResult || model.isSearchingConversation)
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 12)
+        .background(.bar)
     }
 
     private var messages: some View {

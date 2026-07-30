@@ -37,6 +37,7 @@ import UniformTypeIdentifiers
 
     deinit {
         conversationStatusTask?.cancel()
+        conversationSearchTask?.cancel()
         guard hasStarted else { return }
         let chatId = customChat.chat.id
         let service = service
@@ -85,6 +86,13 @@ import UniformTypeIdentifiers
     var messagePendingForward: CustomMessage?
     var messages = [CustomMessage]()
     var initialMessagesLoaded = false
+    var isConversationSearchActive = false
+    var isSearchingConversation = false
+    var conversationSearchQuery = ""
+    var conversationSearchResultIds = [Int64]()
+    var conversationSearchSelectedIndex: Int?
+    var conversationSearchTotalCount = 0
+    var conversationSearchError: String?
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
@@ -121,6 +129,11 @@ import UniformTypeIdentifiers
     @ObservationIgnored var pendingViewedMessageIds = Set<Int64>()
     @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
     @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
+    @ObservationIgnored var conversationSearchTask: Task<Void, Never>?
+    @ObservationIgnored var conversationSearchGeneration = 0
+    @ObservationIgnored var conversationSearchNextFromMessageId: Int64 = 0
+    @ObservationIgnored var conversationSearchNextOffset = ""
+    @ObservationIgnored var conversationSearchUsesSecretMessages = false
     // Scroll
     @ObservationIgnored var isAtBottom = true
     var showScrollToBottomButton = false

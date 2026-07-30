@@ -262,16 +262,23 @@ struct MacChatInfoView: View {
                 }
                 .accessibilityElement(children: .combine)
 
-                Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "bell.slash.fill" : "bell.fill") {
-                    if isMuted {
-                        model.setMuteDuration(0, for: currentChat)
-                    } else {
-                        showMuteOptions = true
+                HStack(spacing: 12) {
+                    Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "bell.slash.fill" : "bell.fill") {
+                        if isMuted {
+                            model.setMuteDuration(0, for: currentChat)
+                        } else {
+                            showMuteOptions = true
+                        }
                     }
+                    .accessibilityLabel(isMuted ? "Unmute notifications" : "Mute notifications")
+
+                    Button("Search", systemImage: "magnifyingglass") {
+                        openConversationSearch()
+                    }
+                    .accessibilityLabel("Search in conversation")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                .accessibilityLabel(isMuted ? "Unmute notifications" : "Mute notifications")
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -509,6 +516,14 @@ struct MacChatInfoView: View {
             return "Bot Info"
         }
         return chat.kind == .group || chat.kind == .channel ? "Description" : "Bio"
+    }
+
+    private func openConversationSearch() {
+        dismiss()
+        Task { @MainActor in
+            await Task.yield()
+            model.beginConversationSearch()
+        }
     }
 
     private func hasActions(_ info: MacChatInfoData) -> Bool {

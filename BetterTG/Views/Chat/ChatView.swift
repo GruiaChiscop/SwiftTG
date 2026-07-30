@@ -43,6 +43,11 @@ struct ChatView: View {
     var body: some View {
         @Bindable var chatVM = chatVM
         VStack(spacing: 0) {
+            if chatVM.isConversationSearchActive {
+                conversationSearchField
+                Divider()
+            }
+
             ScrollViewReader { scrollViewProxy in
                 bodyView
                     .task { chatVM.start() }
@@ -85,7 +90,9 @@ struct ChatView: View {
             // region, so the button is guaranteed to read as part of it, before the composer.
             .accessibilityElement(children: .contain)
 
-            if !isPreview {
+            if chatVM.isConversationSearchActive {
+                conversationSearchNavigationBar
+            } else if !isPreview {
                 if chatVM.customChat.canPostMessages {
                     ChatBottomArea(focused: $focused)
                 } else if chatVM.customChat.kind == .channel {
@@ -107,6 +114,19 @@ struct ChatView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarHeight($navigationBarHeight)
+        .onChange(of: chatVM.isConversationSearchActive) { _, isActive in
+            if isActive {
+                Task { @MainActor in
+                    await Task.yield()
+                    conversationSearchFocused = true
+                }
+            } else {
+                conversationSearchFocused = false
+            }
+        }
+        .onChange(of: chatVM.conversationSearchQuery) {
+            chatVM.conversationSearchQueryDidChange()
+        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: dismiss.callAsFunction) {
@@ -196,7 +216,7 @@ struct ChatView: View {
                 .accessibilityHidden(true)
         }
     }
-    
+
     var scrollToBottomButton: some View {
         Button(action: chatVM.scrollToLast) {
             Image(systemName: "chevron.down")
@@ -237,6 +257,7 @@ struct ChatView: View {
     
     // MARK: Private
 
+    @FocusState private var conversationSearchFocused
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
@@ -266,6 +287,65 @@ struct ChatView: View {
 
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
+    }
+
+    private var conversationSearchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            TextField(
+                "Search messages",
+                text: Binding(
+                    get: { chatVM.conversationSearchQuery },
+                    set: { chatVM.conversationSearchQuery = $0 },
+                ),
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .focused($conversationSearchFocused)
+            .submitLabel(.search)
+
+            Button("Cancel", role: .cancel) {
+                chatVM.endConversationSearch()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private var conversationSearchNavigationBar: some View {
+        HStack(spacing: 12) {
+            if chatVM.isSearchingConversation {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            }
+
+            Text(chatVM.conversationSearchStatus)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Search results, \(chatVM.conversationSearchStatus)")
+
+            Spacer()
+
+            Button("Older result", systemImage: "chevron.up") {
+                chatVM.selectOlderConversationSearchResult()
+            }
+            .labelStyle(.iconOnly)
+            .disabled(!chatVM.canSelectOlderConversationSearchResult || chatVM.isSearchingConversation)
+
+            Button("Newer result", systemImage: "chevron.down") {
+                chatVM.selectNewerConversationSearchResult()
+            }
+            .labelStyle(.iconOnly)
+            .disabled(!chatVM.canSelectNewerConversationSearchResult || chatVM.isSearchingConversation)
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 12)
+        .background(.bar)
     }
 
     private var principal: some View {

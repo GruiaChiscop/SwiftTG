@@ -89,6 +89,13 @@ private enum MacMessageSenderKey: Hashable {
     var messageSearchResults = [MacMessageSearchResult]()
     var focusedSearchResult: MacSearchResultID?
     var isSearching = false
+    var isConversationSearchActive = false
+    var isSearchingConversation = false
+    var conversationSearchQuery = ""
+    var conversationSearchResultIds = [Int64]()
+    var conversationSearchSelectedIndex: Int?
+    var conversationSearchTotalCount = 0
+    var conversationSearchError: String?
     var navigationTargetMessageId: Int64?
     var latestHistoryTargetMessageId: Int64?
     var openedUnreadCount = 0
@@ -100,6 +107,11 @@ private enum MacMessageSenderKey: Hashable {
     @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
     @ObservationIgnored var searchTask: Task<Void, Never>?
     @ObservationIgnored var searchGeneration: UInt64 = 0
+    @ObservationIgnored var conversationSearchTask: Task<Void, Never>?
+    @ObservationIgnored var conversationSearchGeneration: UInt64 = 0
+    @ObservationIgnored var conversationSearchNextFromMessageId: Int64 = 0
+    @ObservationIgnored var conversationSearchNextOffset = ""
+    @ObservationIgnored var conversationSearchUsesSecretMessages = false
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
     @ObservationIgnored var service: any TelegramService
     @ObservationIgnored var draftReplyLoadTask: Task<Void, Never>?
@@ -264,6 +276,10 @@ private enum MacMessageSenderKey: Hashable {
     }
 
     func activateChat(_ chatId: Int64, messageId: Int64? = nil) {
+        if openedChatId != chatId, isConversationSearchActive {
+            endConversationSearch()
+        }
+
         focusedChatId = chatId
         latestHistoryTargetMessageId = nil
         navigationTargetMessageId = messageId
