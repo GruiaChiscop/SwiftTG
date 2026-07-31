@@ -28,7 +28,7 @@ extension RootVM {
         isSearching = true
 
         searchTask = Task.background {
-            try? await Task<Never, Never>.sleep(for: .milliseconds(300))
+            try? await Task<Never, Never>.sleep(for: TelegramSearchPolicy.globalQueryDebounce)
             guard !Task.isCancelled else { return }
 
             async let foundChats = try? service.searchChats(limit: 50, query: normalized, typeFilter: nil)

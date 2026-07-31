@@ -118,11 +118,7 @@ struct MacChatMembersView: View {
         }
         .frame(minWidth: 480, idealWidth: 560, minHeight: 520, idealHeight: 680)
         .task(id: query) {
-            if !query.isEmpty {
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-            guard !Task.isCancelled else { return }
-            await reload()
+            await reload(query: query)
         }
     }
 
@@ -146,17 +142,17 @@ struct MacChatMembersView: View {
         Task { await loadPage(reset: false) }
     }
 
-    private func reload() async {
+    private func reload(query requestedQuery: String) async {
         loadGeneration &+= 1
         let generation = loadGeneration
         isLoading = true
         let page = await model.loadChatInfoMembers(
             for: chat,
             filter: filter,
-            query: query,
+            query: requestedQuery,
             offset: 0,
         )
-        guard !Task.isCancelled, generation == loadGeneration else { return }
+        guard !Task.isCancelled, generation == loadGeneration, requestedQuery == query else { return }
         members = page?.members ?? []
         totalCount = page?.totalCount ?? 0
         hasMore = page?.hasMore ?? false
@@ -173,7 +169,7 @@ struct MacChatMembersView: View {
         let page = await model.loadChatInfoMembers(
             for: chat,
             filter: filter,
-            query: query,
+            query: requestedQuery,
             offset: offset,
         )
         guard !Task.isCancelled, generation == loadGeneration, requestedQuery == query else { return }

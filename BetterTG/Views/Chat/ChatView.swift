@@ -110,6 +110,7 @@ struct ChatView: View {
         }
         .background(.black)
         .ignoresSafeArea(.container, edges: .top)
+        .navigationTitle(chatVM.isConversationSearchActive ? "" : chatVM.customChat.chat.title)
         .navigationBarBackButtonHidden(true)
         .dropDestination(for: SelectedImage.self) { items, _ in
             nc.post(name: .localOnSelectedImagesDrop, object: Array(items.prefix(10)))
@@ -131,25 +132,27 @@ struct ChatView: View {
             chatVM.conversationSearchQueryDidChange()
         }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: dismiss.callAsFunction) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.backward")
-                        Text(backButtonTitle)
-                        if previousChatTitle == nil, unreadChatCount > 0 {
-                            Text("\(unreadChatCount)")
-                                .font(.caption2.bold())
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .background(Color.accentColor, in: Capsule())
-                                .accessibilityHidden(true)
+            if !chatVM.isConversationSearchActive {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: dismiss.callAsFunction) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.backward")
+                            Text(backButtonTitle)
+                            if previousChatTitle == nil, unreadChatCount > 0 {
+                                Text("\(unreadChatCount)")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 5)
+                                    .frame(minWidth: 18, minHeight: 18)
+                                    .background(Color.accentColor, in: Capsule())
+                                    .accessibilityHidden(true)
+                            }
                         }
                     }
+                    .accessibilityLabel(backButtonAccessibilityLabel)
                 }
-                .accessibilityLabel(backButtonAccessibilityLabel)
+                ToolbarItem(placement: .principal) { principal }
             }
-            ToolbarItem(placement: .principal) { principal }
         }
         .alert(
             "Can't Open Destination",

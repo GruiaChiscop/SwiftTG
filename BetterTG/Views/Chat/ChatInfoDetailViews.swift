@@ -122,11 +122,7 @@ struct ChatInfoMembersView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Search \(displayTitle.lowercased())")
         .task(id: query) {
-            if !query.isEmpty {
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-            guard !Task.isCancelled else { return }
-            await reload()
+            await reload(query: query)
         }
     }
 
@@ -175,12 +171,12 @@ struct ChatInfoMembersView: View {
         Task { await loadPage() }
     }
 
-    private func reload() async {
+    private func reload(query requestedQuery: String) async {
         loadGeneration &+= 1
         let generation = loadGeneration
         isLoading = true
-        let page = await loadMembersPage(query: query, offset: 0)
-        guard !Task.isCancelled, generation == loadGeneration else { return }
+        let page = await loadMembersPage(query: requestedQuery, offset: 0)
+        guard !Task.isCancelled, generation == loadGeneration, requestedQuery == query else { return }
         members = page?.members ?? []
         totalCount = page?.totalCount ?? 0
         hasMore = page?.hasMore ?? false

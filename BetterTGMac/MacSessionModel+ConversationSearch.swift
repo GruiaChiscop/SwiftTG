@@ -62,7 +62,7 @@ extension MacSessionModel {
         isSearchingConversation = true
         conversationSearchTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .milliseconds(250))
+                try await Task.sleep(for: TelegramSearchPolicy.conversationQueryDebounce)
                 guard let self, !Task.isCancelled, generation == conversationSearchGeneration else { return }
                 try await loadConversationSearchPage(query: query, generation: generation, selectsFirstNewResult: true)
             } catch is CancellationError {
