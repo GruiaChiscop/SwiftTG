@@ -369,7 +369,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             if let previousChatId {
                 // Closing the old chat is independent from opening the new one. Waiting for its
                 // TDLib round trip delayed the new chat's local-history request for no UI benefit.
-                Task { _ = try? await service.closeChat(chatId: previousChatId) }
+                Task { _ = try? await self.service.closeChat(chatId: previousChatId) }
             }
             guard !Task.isCancelled, openedChatId == chatId else { return }
             _ = try? await service.openChat(chatId: chatId)
@@ -381,7 +381,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 // The subscription already delivered this chat's retained history. Fetching and
                 // merging the same page again only increments the snapshot version and forces a
                 // second table refresh immediately after the cached rows became visible.
-                historyMessages = messages.orderedMessageIds.compactMap { messages.messages[$0] }
+                historyMessages = messages.orderedMessageIds.compactMap { self.messages.messages[$0] }
             } else {
                 historyMessages = await loadInitialHistory(chatId: chatId, around: messageId)
             }
