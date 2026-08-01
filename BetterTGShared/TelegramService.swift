@@ -102,6 +102,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         reactionType: ReactionType?,
     ) async throws -> AddedReactions
     func getMessageProperties(chatId: Int64?, messageId: Int64?) async throws -> MessageProperties
+    func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview
     func getMe() async throws -> User
     func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings
     func getSupergroup(supergroupId: Int64?) async throws -> Supergroup
@@ -545,6 +546,10 @@ extension TelegramSession: TelegramService {
 
     func getMessageProperties(chatId: Int64?, messageId: Int64?) async throws -> MessageProperties {
         try await client.getMessageProperties(chatId: chatId, messageId: messageId)
+    }
+
+    func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview {
+        try await client.getLinkPreview(linkPreviewOptions: linkPreviewOptions, text: text)
     }
 
     func getMe() async throws -> User {

@@ -30,6 +30,7 @@ enum TelegramMessageEditing {
         messageId: Int64,
         messageContent: MessageContent,
         newText: FormattedText,
+        linkPreviewOptions: LinkPreviewOptions? = nil,
     ) async -> Bool {
         let newText = await TelegramTextFormatting.addingAutomaticEntities(service: service, to: newText)
         let edited: Message?
@@ -39,7 +40,7 @@ enum TelegramMessageEditing {
                 chatId: chatId,
                 inputMessageContent: .inputMessageText(.init(
                     clearDraft: true,
-                    linkPreviewOptions: nil,
+                    linkPreviewOptions: linkPreviewOptions,
                     text: newText,
                 )),
                 messageId: messageId,

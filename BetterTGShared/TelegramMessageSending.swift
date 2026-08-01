@@ -16,10 +16,13 @@ enum TelegramMessageSending {
         ))
     }
 
-    static func textContent(_ text: FormattedText) -> InputMessageContent {
+    static func textContent(
+        _ text: FormattedText,
+        linkPreviewOptions: LinkPreviewOptions? = nil,
+    ) -> InputMessageContent {
         .inputMessageText(.init(
             clearDraft: true,
-            linkPreviewOptions: nil,
+            linkPreviewOptions: linkPreviewOptions,
             text: text,
         ))
     }

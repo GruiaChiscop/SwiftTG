@@ -13,11 +13,13 @@ struct MacComposerTextField: NSViewRepresentable {
 
         init(parent: MacComposerTextField) {
             self.parent = parent
+            self.contextID = parent.contextID
         }
 
         // MARK: Internal
 
         var parent: MacComposerTextField
+        var contextID: AnyHashable
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
@@ -29,6 +31,7 @@ struct MacComposerTextField: NSViewRepresentable {
     @Binding var text: String
 
     let accessibilityLabel: String
+    var contextID: AnyHashable = "composer"
     let onPasteFiles: ([URL]) -> Bool
     let onSubmit: () -> Void
 
@@ -42,7 +45,7 @@ struct MacComposerTextField: NSViewRepresentable {
         textView.onPasteFiles = onPasteFiles
         textView.onSubmit = onSubmit
         textView.isRichText = false
-        textView.isAutomaticLinkDetectionEnabled = true
+        textView.isAutomaticLinkDetectionEnabled = false
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.font = .preferredFont(forTextStyle: .body)
@@ -54,6 +57,8 @@ struct MacComposerTextField: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainerInset = NSSize(width: 5, height: 5)
         textView.setAccessibilityLabel(accessibilityLabel)
+        textView.string = text
+        textView.setSelectedRange(NSRange(location: text.utf16.count, length: 0))
 
         let scrollView = NSScrollView()
         scrollView.borderType = .bezelBorder
@@ -66,6 +71,7 @@ struct MacComposerTextField: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? ComposerTextView else { return }
+        let contextChanged = context.coordinator.contextID != contextID
         context.coordinator.parent = self
         textView.onPasteFiles = onPasteFiles
         textView.onSubmit = onSubmit
@@ -73,6 +79,10 @@ struct MacComposerTextField: NSViewRepresentable {
         textView.setAccessibilityLabel(accessibilityLabel)
         if textView.string != text {
             textView.string = text
+        }
+        if contextChanged {
+            textView.setSelectedRange(NSRange(location: text.utf16.count, length: 0))
+            context.coordinator.contextID = contextID
         }
     }
 }

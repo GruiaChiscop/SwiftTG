@@ -97,6 +97,7 @@ enum TDLibFixtures {
         editDate: Int = 0,
         isOutgoing: Bool = false,
         sendingState: MessageSendingState? = nil,
+        linkPreview: LinkPreview? = nil,
     ) -> Message {
         Message(
             authorSignature: "",
@@ -106,7 +107,7 @@ enum TDLibFixtures {
             containsUnreadMention: false,
             containsUnreadPollVotes: false,
             content: .messageText(.init(
-                linkPreview: nil,
+                linkPreview: linkPreview,
                 linkPreviewOptions: nil,
                 text: .init(entities: [], text: text),
             )),

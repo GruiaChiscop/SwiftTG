@@ -3,6 +3,50 @@
 import SwiftUI
 import TDLibKit
 
+// MARK: - TelegramTextLinkStyle
+
+enum TelegramTextLinkStyle: Equatable {
+    case composer
+    case message
+}
+
+// MARK: - TelegramTextURLAttribute
+
+private struct TelegramTextURLAttribute: CodableAttributedStringKey, ObjectiveCConvertibleAttributedStringKey {
+    typealias ObjectiveCValue = NSString
+    typealias Value = String
+
+    static let name = "BetterTG.TelegramTextURL"
+
+    static func objectiveCValue(for value: String) -> NSString {
+        value as NSString
+    }
+
+    static func value(for object: NSString) -> String {
+        object as String
+    }
+}
+
+private extension AttributeScopes {
+    struct BetterTGTextAttributes: AttributeScope {
+        let foundation: FoundationAttributes
+        let telegramTextURL: TelegramTextURLAttribute
+        let uiKit: UIKitAttributes
+    }
+
+    var betterTGText: BetterTGTextAttributes.Type { BetterTGTextAttributes.self }
+}
+
+let telegramTextURLAttributeKey = NSAttributedString.Key(TelegramTextURLAttribute.name)
+
+func telegramAttributedString(from value: NSAttributedString) -> AttributedString {
+    (try? AttributedString(value, including: \.betterTGText)) ?? AttributedString(value)
+}
+
+func telegramNSAttributedString(from value: AttributedString) -> NSAttributedString {
+    (try? NSAttributedString(value, including: \.betterTGText)) ?? NSAttributedString(value)
+}
+
 func defaultAttributes(_ foregroundColor: Color = .white) -> [NSAttributedString.Key: Any] {
     [
         .font: UIFont.body as Any,
@@ -14,6 +58,7 @@ func getAttributedString(
     from formattedText: FormattedText,
     _ foregroundColor: Color = .white,
     withDate: Bool = false,
+    linkStyle: TelegramTextLinkStyle = .message,
 ) -> AttributedString {
     let attributedString = NSMutableAttributedString(
         string: formattedText.text,
@@ -27,18 +72,34 @@ func getAttributedString(
     for link in TelegramTextFormatting.links(in: formattedText) {
         let range = NSRange(location: link.offset, length: link.length)
         guard NSMaxRange(range) <= attributedString.length else { continue }
-        attributedString.addAttributes([
-            .foregroundColor: UIColor.link,
-            .link: link.url,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-        ], range: range)
+
+        if linkStyle == .message {
+            attributedString.addAttributes([
+                .foregroundColor: UIColor.link,
+                .link: link.url,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ], range: range)
+        } else if formattedText.entities.contains(where: { entity in
+            guard entity.offset == link.offset, entity.length == link.length else { return false }
+            if case .textEntityTypeTextUrl = entity.type {
+                return true
+            }
+            return false
+        }) {
+            // Keep an explicit textUrl's destination for a lossless edit, but don't make
+            // an automatically detected URL look like a rendered message link.
+            attributedString.addAttributes([
+                .foregroundColor: UIColor.link,
+                telegramTextURLAttributeKey: link.url.absoluteString,
+            ], range: range)
+        }
     }
 
     if withDate {
         attributedString.append(NSMutableAttributedString.dateString)
     }
 
-    return AttributedString(attributedString)
+    return telegramAttributedString(from: attributedString)
 }
 
 func setEntity(_ entity: TextEntity, for attributedString: NSMutableAttributedString) {
@@ -67,7 +128,7 @@ func setEntity(_ entity: TextEntity, for attributedString: NSMutableAttributedSt
 
 func getEntities(from text: AttributedString) -> [TextEntity] {
     var entities = [TextEntity]()
-    let attributedText = NSAttributedString(text)
+    let attributedText = telegramNSAttributedString(from: text)
     let textRange = NSRange(location: 0, length: attributedText.length)
     attributedText.enumerateAttributes(in: textRange) { attributes, range, _ in
         entities.append(contentsOf: getEntities(from: attributes, using: range))
@@ -96,7 +157,11 @@ private func getEntities(
         }
     }
 
-    if let url = attributes[.link] as? URL {
+    if let urlString = attributes[telegramTextURLAttributeKey] as? String,
+       let url = URL(string: urlString)
+    {
+        entities.append(.init(.textEntityTypeTextUrl(.init(url: url.absoluteString)), range: range))
+    } else if let url = attributes[.link] as? URL {
         entities.append(.init(.textEntityTypeTextUrl(.init(url: url.absoluteString)), range: range))
     } else if let urlString = attributes[.link] as? String,
               let url = URL(string: urlString)

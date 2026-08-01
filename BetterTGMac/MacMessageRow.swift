@@ -91,6 +91,16 @@ struct MacMessageRow: View {
                             service: model.service,
                             player: audioPlayer,
                         )
+                    } else if case .messageText(let content) = message.content {
+                        if let linkPreview = content.linkPreview, linkPreview.showAboveText {
+                            MacLinkPreviewView(model: model, preview: linkPreview)
+                        }
+                        if !content.text.text.isEmpty {
+                            MacFormattedTextView(formattedText: content.text)
+                        }
+                        if let linkPreview = content.linkPreview, !linkPreview.showAboveText {
+                            MacLinkPreviewView(model: model, preview: linkPreview)
+                        }
                     } else if let formattedText = telegramMessageFormattedText(message) {
                         MacFormattedTextView(formattedText: formattedText)
                     } else {
@@ -121,14 +131,14 @@ struct MacMessageRow: View {
                     in: RoundedRectangle(cornerRadius: 12),
                 )
                 .macModified { messageAccessibilityElement($0) }
-                .accessibilityHidden(!messageReactions.isEmpty || !messageLinks.isEmpty)
+                .accessibilityHidden(hasAccessibilityGroup)
                 .contextMenu { messageActions }
                 if !message.isOutgoing, !messageReactions.isEmpty {
                     reactionsButton
                 }
             }
             .macModified {
-                if !messageReactions.isEmpty || !messageLinks.isEmpty {
+                if hasAccessibilityGroup {
                     linkAccessibilityGroup($0)
                 } else {
                     $0
@@ -391,6 +401,19 @@ struct MacMessageRow: View {
         return TelegramTextFormatting.links(in: formattedText)
     }
 
+    private var separatePreviewAccessibilityLink: TelegramLinkPreviewPresentation? {
+        guard let linkPreview = telegramMessageLinkPreview(message) else { return nil }
+        let presentation = TelegramLinkPreviewPresentation(linkPreview)
+        guard let destination = presentation.url,
+              !messageLinks.contains(where: { telegramURLsReferToSameResource($0.url, destination) })
+        else { return nil }
+        return presentation
+    }
+
+    private var hasAccessibilityGroup: Bool {
+        !messageReactions.isEmpty || !messageLinks.isEmpty || separatePreviewAccessibilityLink != nil
+    }
+
     private var rowActions: [MacRowAction] {
         var items = [MacRowAction]()
         if capabilities?.properties.canBeReplied == true {
@@ -500,6 +523,9 @@ struct MacMessageRow: View {
                                 $0
                             }
                         }
+                }
+                if let preview = separatePreviewAccessibilityLink, let destination = preview.url {
+                    Link(preview.accessibilityLinkLabel, destination: destination)
                 }
                 if !messageReactions.isEmpty {
                     Button("Reactions") { showReactionDetails = true }

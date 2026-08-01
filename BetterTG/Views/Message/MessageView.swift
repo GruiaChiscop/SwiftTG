@@ -106,6 +106,12 @@ struct MessageView: View {
                     )
                 }
 
+                if let linkPreview, linkPreview.showAboveText {
+                    TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 8)
+                }
+
                 if let formattedText = customMessage.formattedText {
                     MessageTextView(formattedText: formattedText)
                         .padding(8)
@@ -114,6 +120,12 @@ struct MessageView: View {
                             customMessage.replySenderName != nil && customMessage.replyToMessage != nil
                                 || customMessage.forwardedFrom != nil ? -8 : 0,
                         )
+                }
+
+                if let linkPreview, !linkPreview.showAboveText {
+                    TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                 }
             }
             .background(
@@ -141,14 +153,14 @@ struct MessageView: View {
                 messageContextMenu
             }
             .modify { messageAccessibilityElement($0) }
-            .accessibilityHidden(!textLinks.isEmpty)
+            .accessibilityHidden(hasAccessibilityGroup)
 
             if !customMessage.message.isOutgoing, !messageReactions.isEmpty {
                 reactionsButton
             }
         }
         .modify {
-            if textLinks.isEmpty {
+            if !hasAccessibilityGroup {
                 $0
             } else {
                 linkAccessibilityGroup($0)
@@ -218,6 +230,23 @@ struct MessageView: View {
         return TelegramTextFormatting.links(in: formattedText)
     }
 
+    private var linkPreview: LinkPreview? {
+        telegramMessageLinkPreview(customMessage.message)
+    }
+
+    private var separatePreviewAccessibilityLink: TelegramLinkPreviewPresentation? {
+        guard let linkPreview else { return nil }
+        let presentation = TelegramLinkPreviewPresentation(linkPreview)
+        guard let destination = presentation.url,
+              !textLinks.contains(where: { telegramURLsReferToSameResource($0.url, destination) })
+        else { return nil }
+        return presentation
+    }
+
+    private var hasAccessibilityGroup: Bool {
+        !textLinks.isEmpty || separatePreviewAccessibilityLink != nil
+    }
+
     private var audioPlaylist: [Audio] {
         chatVM.audioPlaylist
     }
@@ -276,7 +305,7 @@ struct MessageView: View {
         TelegramMessageReactionsView(reactions: messageReactions) {
             showReactionDetails = true
         }
-        .accessibilityHidden(!textLinks.isEmpty)
+        .accessibilityHidden(hasAccessibilityGroup)
     }
 
     private func linkAccessibilityGroup(_ content: some View) -> some View {
@@ -295,6 +324,11 @@ struct MessageView: View {
                                 $0
                             }
                         }
+                }
+                if let preview = separatePreviewAccessibilityLink, let destination = preview.url {
+                    Link(preview.accessibilityLinkLabel, destination: destination)
+                        .accessibilityRemoveTraits(.isButton)
+                        .accessibilityAddTraits(.isLink)
                 }
                 if !messageReactions.isEmpty {
                     Button("Reactions") { showReactionDetails = true }

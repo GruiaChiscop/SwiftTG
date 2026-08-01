@@ -180,6 +180,10 @@ import UniformTypeIdentifiers
         set { composer.showPhotoPickerView = newValue }
     }
 
+    var activeLinkPreviewComposer: TelegramLinkPreviewComposer {
+        composer.activeLinkPreviewComposer
+    }
+
     var sendMessageTask: Task<Void, Never>? {
         get { composer.sendMessageTask }
         set { composer.sendMessageTask = newValue }
@@ -465,14 +469,7 @@ import UniformTypeIdentifiers
     }
 
     func reply(to message: CustomMessage?) {
-        if replyMessage != nil {
-            withAnimation { replyMessage = nil }
-            Task.main(delay: 0.4) {
-                withAnimation { self.replyMessage = message }
-            }
-        } else {
-            withAnimation { replyMessage = message }
-        }
+        withAnimation { replyMessage = message }
     }
 
     func edit(_ message: CustomMessage?) {
@@ -480,14 +477,8 @@ import UniformTypeIdentifiers
             displayedImages.removeAll()
             displayedDocuments.removeAll()
         }
-        if editCustomMessage != nil {
-            withAnimation { editCustomMessage = nil }
-            Task.main(delay: 0.4) {
-                withAnimation { self.editCustomMessage = message }
-            }
-        } else {
-            withAnimation { editCustomMessage = message }
-        }
+        setEditMessageText(from: message?.message)
+        withAnimation { editCustomMessage = message }
     }
 
     func togglePinnedMessage(_ message: Message) {

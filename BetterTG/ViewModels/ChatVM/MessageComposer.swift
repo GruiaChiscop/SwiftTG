@@ -12,17 +12,19 @@ import TDLibKit
     init(chatId: Int64, service: any TelegramService, draftMessage: DraftMessage?) {
         self.chatId = chatId
         self.service = service
+        self.linkPreviewComposer = TelegramLinkPreviewComposer(service: service)
+        self.editLinkPreviewComposer = TelegramLinkPreviewComposer(service: service)
         if let draftMessage,
            case .draftMessageContentText(let draftMessageContentText) = draftMessage.content
         {
-            self.text = getAttributedString(from: draftMessageContentText.text)
+            linkPreviewComposer.configure(preview: nil, options: draftMessageContentText.linkPreviewOptions)
+            self.text = getAttributedString(from: draftMessageContentText.text, linkStyle: .composer)
+            linkPreviewComposer.update(text: draftMessageContentText.text)
         }
     }
 
     // MARK: Internal
 
-    var text: AttributedString = ""
-    var editMessageText: AttributedString = ""
     var editCustomMessage: CustomMessage?
     var replyMessage: CustomMessage?
     var showSendButton = false
@@ -33,6 +35,21 @@ import TDLibKit
     var showDocumentPicker = false
     var showPhotoPickerView = false
     @ObservationIgnored var sendMessageTask: Task<Void, Never>?
+
+    let linkPreviewComposer: TelegramLinkPreviewComposer
+    let editLinkPreviewComposer: TelegramLinkPreviewComposer
+
+    var text: AttributedString = "" {
+        didSet { linkPreviewComposer.update(text: formattedText(from: text)) }
+    }
+
+    var editMessageText: AttributedString = "" {
+        didSet { editLinkPreviewComposer.update(text: formattedText(from: editMessageText)) }
+    }
+
+    var activeLinkPreviewComposer: TelegramLinkPreviewComposer {
+        editCustomMessage == nil ? linkPreviewComposer : editLinkPreviewComposer
+    }
 
     var canEditMessage: Bool {
         guard let editCustomMessage else { return false }
@@ -125,7 +142,10 @@ import TDLibKit
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
         )
-        let content = TelegramMessageSending.textContent(formattedText)
+        let content = TelegramMessageSending.textContent(
+            formattedText,
+            linkPreviewOptions: linkPreviewComposer.options,
+        )
         _ = try? await TelegramMessageSending.send(
             service: service,
             chatId: chatId,
@@ -136,13 +156,17 @@ import TDLibKit
 
     func editMessage() async {
         guard let message = editCustomMessage?.message else { return }
-        let newText = FormattedText(entities: getEntities(from: editMessageText), text: editMessageText.string)
+        let newText = await TelegramTextFormatting.addingAutomaticEntities(
+            service: service,
+            to: formattedText(from: editMessageText),
+        )
         let supported = await TelegramMessageEditing.editMessage(
             service: service,
             chatId: chatId,
             messageId: message.id,
             messageContent: message.content,
             newText: newText,
+            linkPreviewOptions: editLinkPreviewComposer.options,
         )
         if !supported {
             log("Unsupported edit message type")
@@ -172,6 +196,7 @@ import TDLibKit
                 text: text.string,
             ),
             replyMessageId: replyMessage?.id,
+            linkPreviewOptions: linkPreviewComposer.options,
         )
         _ = try? await service.setChatDraftMessage(
             chatId: chatId,
@@ -190,8 +215,15 @@ import TDLibKit
     func setEditMessageText(from message: Message?) {
         withAnimation {
             guard let message, let formattedText = TelegramMessageEditing.editableFormattedText(from: message)
-            else { return }
-            editMessageText = getAttributedString(from: formattedText)
+            else {
+                editLinkPreviewComposer.configure(preview: nil, options: nil)
+                return
+            }
+            editLinkPreviewComposer.configure(
+                preview: telegramMessageLinkPreview(message),
+                options: telegramMessageLinkPreviewOptions(message),
+            )
+            editMessageText = getAttributedString(from: formattedText, linkStyle: .composer)
         }
     }
 
@@ -199,6 +231,13 @@ import TDLibKit
 
     private let chatId: Int64
     private let service: any TelegramService
+
+    private func formattedText(from attributedString: AttributedString) -> FormattedText {
+        FormattedText(
+            entities: getEntities(from: attributedString),
+            text: attributedString.string,
+        )
+    }
 
     private func getMessageReplyTo(from customMessage: CustomMessage?) -> InputMessageReplyTo? {
         TelegramMessageSending.replyTo(messageId: customMessage?.message.id)

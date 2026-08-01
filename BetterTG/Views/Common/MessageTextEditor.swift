@@ -62,19 +62,22 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
 
         init(parent: MessageUITextViewRepresentable) {
             self.parent = parent
+            self.contextID = parent.contextID
         }
 
         // MARK: Internal
 
         var parent: MessageUITextViewRepresentable
+        var contextID: AnyHashable
 
         func textViewDidChange(_ textView: UITextView) {
-            parent.text = AttributedString(textView.attributedText)
+            parent.text = telegramAttributedString(from: textView.attributedText)
         }
     }
 
     @Binding var text: AttributedString
 
+    let contextID: AnyHashable
     let onSubmit: (() -> Void)?
     let onPasteImages: (([SelectedImage]) -> Void)?
 
@@ -94,7 +97,8 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
         textView.textColor = .white
         textView.tintColor = .link
         textView.typingAttributes = defaultAttributes()
-        textView.attributedText = NSAttributedString(text)
+        textView.attributedText = telegramNSAttributedString(from: text)
+        textView.selectedRange = NSRange(location: textView.attributedText.length, length: 0)
         textView.isEditable = true
         textView.isSelectable = true
         textView.isScrollEnabled = true
@@ -104,14 +108,23 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: MessageUITextView, context: Context) {
+        let contextChanged = context.coordinator.contextID != contextID
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
         textView.onPasteImages = onPasteImages
 
-        let newValue = NSAttributedString(text)
-        guard textView.attributedText != newValue else { return }
+        let newValue = telegramNSAttributedString(from: text)
+        guard textView.attributedText != newValue else {
+            if contextChanged {
+                textView.selectedRange = NSRange(location: newValue.length, length: 0)
+                context.coordinator.contextID = contextID
+            }
+            return
+        }
 
-        let selection = textView.selectedRange
+        let selection = contextChanged
+            ? NSRange(location: newValue.length, length: 0)
+            : textView.selectedRange
         textView.attributedText = newValue
         textView.selectedRange = NSRange(
             location: min(selection.location, newValue.length),
@@ -120,6 +133,7 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
         if newValue.length == 0 {
             textView.typingAttributes = defaultAttributes()
         }
+        context.coordinator.contextID = contextID
     }
 }
 
@@ -131,11 +145,13 @@ struct MessageTextEditor: View {
     init(
         _ placeholder: String = "",
         text: Binding<AttributedString>,
+        contextID: AnyHashable = "composer",
         onSubmit: (() -> Void)? = nil,
         onPasteImages: (([SelectedImage]) -> Void)? = nil,
     ) {
         self.placeholder = placeholder
         self._text = text
+        self.contextID = contextID
         self.onSubmit = onSubmit
         self.onPasteImages = onPasteImages
     }
@@ -156,6 +172,7 @@ struct MessageTextEditor: View {
 
             MessageUITextViewRepresentable(
                 text: $text,
+                contextID: contextID,
                 onSubmit: onSubmit,
                 onPasteImages: onPasteImages,
             )
@@ -169,6 +186,7 @@ struct MessageTextEditor: View {
 
     @Binding private var text: AttributedString
 
+    private let contextID: AnyHashable
     private let placeholder: String
     private let onSubmit: (() -> Void)?
     private let onPasteImages: (([SelectedImage]) -> Void)?

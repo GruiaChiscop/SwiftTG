@@ -22,7 +22,13 @@ func telegramMessageFormattedText(_ message: Message) -> FormattedText? {
 func telegramMessageContentDescription(_ content: MessageContent) -> String {
     switch content {
     case .messageText(let content):
-        content.text.text
+        if let preview = content.linkPreview {
+            [content.text.text, TelegramLinkPreviewPresentation(preview).accessibilityDescription]
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
+        } else {
+            content.text.text
+        }
     case .messagePhoto(let content):
         content.caption.text.isEmpty ? "Photo" : "Photo: \(content.caption.text)"
     case .messageVoiceNote(let content):

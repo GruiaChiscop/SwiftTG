@@ -58,6 +58,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         let session = TelegramSession()
         self.session = session
         self.service = session
+        self.linkPreviewComposer = TelegramLinkPreviewComposer(service: session)
+        self.editLinkPreviewComposer = TelegramLinkPreviewComposer(service: session)
         self.pushNotifications = TelegramApplePushRegistration(
             service: session,
             isAppSandbox: Self.isAppSandbox,
@@ -76,8 +78,6 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var focusedChatId: Int64?
     var openedChatId: Int64?
     var messages = TelegramMessageSnapshot.empty(chatId: 0)
-    var messageText = ""
-    var editMessageText = ""
     var editingMessage: Message?
     var replyingToMessage: Message?
     var messageCapabilities = [Int64: MacMessageCapabilities]()
@@ -125,6 +125,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var conversationHeaderBaseStatus: String?
     var conversationHeaderActivities = [MessageSender: ChatAction]()
 
+    let linkPreviewComposer: TelegramLinkPreviewComposer
+    let editLinkPreviewComposer: TelegramLinkPreviewComposer
+
     @ObservationIgnored var bootstrapTask: Task<Void, Never>?
     @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
     @ObservationIgnored var searchTask: Task<Void, Never>?
@@ -142,6 +145,18 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
     @ObservationIgnored var conversationHeaderTask: Task<Void, Never>?
     @ObservationIgnored var openedChatType: ChatType?
+
+    var messageText = "" {
+        didSet { linkPreviewComposer.update(text: FormattedText(entities: [], text: messageText)) }
+    }
+
+    var editMessageText = "" {
+        didSet { editLinkPreviewComposer.update(text: FormattedText(entities: [], text: editMessageText)) }
+    }
+
+    var activeLinkPreviewComposer: TelegramLinkPreviewComposer {
+        editingMessage == nil ? linkPreviewComposer : editLinkPreviewComposer
+    }
 
     var chatItems: [ChatListItemState] {
         chatList.chatIds(in: selectedChatList).compactMap { chatList.items[$0] }
@@ -638,6 +653,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         editingMessage = nil
         replyingToMessage = nil
         editMessageText = ""
+        editLinkPreviewComposer.configure(preview: nil, options: nil)
     }
 
     func beginEditing(_ message: Message) {
@@ -645,6 +661,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         selectedPhotoURLs = []
         selectedDocumentURLs = []
         replyingToMessage = nil
+        editLinkPreviewComposer.configure(
+            preview: telegramMessageLinkPreview(message),
+            options: telegramMessageLinkPreviewOptions(message),
+        )
         editingMessage = message
         editMessageText = text
     }
@@ -1039,7 +1059,11 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
     func saveCurrentDraft() {
         guard editingMessage == nil, let chatId = openedChatId else { return }
-        let draft = TelegramDrafts.make(text: messageText, replyMessageId: replyingToMessage?.id)
+        let draft = TelegramDrafts.make(
+            formattedText: FormattedText(entities: [], text: messageText),
+            replyMessageId: replyingToMessage?.id,
+            linkPreviewOptions: linkPreviewComposer.options,
+        )
         let service = service
         Task {
             _ = try? await service.setChatDraftMessage(
@@ -1142,6 +1166,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     private func restoreDraft(_ draft: DraftMessage?, chatId: Int64) {
         draftReplyLoadTask?.cancel()
         draftReplyLoadTask = nil
+        let linkPreviewOptions: LinkPreviewOptions? =
+            if let draft, case .draftMessageContentText(let content) = draft.content {
+                content.linkPreviewOptions
+            } else {
+                nil
+            }
+        linkPreviewComposer.configure(preview: nil, options: linkPreviewOptions)
         messageText = TelegramDrafts.text(from: draft)
         replyingToMessage = nil
 
@@ -1163,6 +1194,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let openedChatId, !text.isEmpty else { return }
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        let linkPreviewOptions = linkPreviewComposer.options
         clearDraft(chatId: openedChatId)
         messageText = ""
         replyingToMessage = nil
@@ -1175,7 +1207,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 try await TelegramMessageSending.send(
                     service: service,
                     chatId: openedChatId,
-                    contents: [TelegramMessageSending.textContent(formattedText)],
+                    contents: [TelegramMessageSending.textContent(
+                        formattedText,
+                        linkPreviewOptions: linkPreviewOptions,
+                    )],
                     replyTo: replyTo,
                 )
             } catch {
@@ -1279,6 +1314,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         if case .messageText = message.content, text.isEmpty {
             return
         }
+        let linkPreviewOptions = editLinkPreviewComposer.options
         editingMessage = nil
         editMessageText = ""
 
@@ -1289,6 +1325,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 messageId: message.id,
                 messageContent: message.content,
                 newText: FormattedText(entities: [], text: text),
+                linkPreviewOptions: linkPreviewOptions,
             )
         }
     }

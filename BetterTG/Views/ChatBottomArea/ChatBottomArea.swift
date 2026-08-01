@@ -90,7 +90,6 @@ struct ChatBottomArea: View {
             guard newPhase != .active else { return }
             Task.background { [chatVM] in await chatVM.updateDraft() }
         }
-        .task(id: chatVM.editCustomMessage) { chatVM.setEditMessageText(from: chatVM.editCustomMessage?.message) }
         .alert("Error", isPresented: $chatVM.errorShown) {
             Text("""
             Access to Microphone isn't granted.
@@ -332,32 +331,40 @@ struct ChatBottomArea: View {
         }
     }
 
-    @ViewBuilder var topSide: some View {
-        if let editCustomMessage = chatVM.editCustomMessage {
-            replyMessageView(editCustomMessage, type: .edit)
-        } else if let replyMessage = chatVM.replyMessage {
-            replyMessageView(replyMessage, type: .reply)
+    var topSide: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let editCustomMessage = chatVM.editCustomMessage {
+                replyMessageView(editCustomMessage, type: .edit)
+            } else if let replyMessage = chatVM.replyMessage {
+                replyMessageView(replyMessage, type: .reply)
+            }
+
+            if chatVM.displayedImages.isEmpty,
+               chatVM.displayedDocuments.isEmpty,
+               let preview = chatVM.activeLinkPreviewComposer.preview
+            {
+                linkPreviewAccessory(preview)
+            }
         }
     }
-    
-    @ViewBuilder var textField: some View {
+
+    var textField: some View {
         @Bindable var chatVM = chatVM
-        Group {
-            if chatVM.editCustomMessage == nil {
-                MessageTextEditor("Type a message", text: $chatVM.text, onSubmit: submitMessage) { images in
+        let isEditing = chatVM.editCustomMessage != nil
+        return MessageTextEditor(
+            isEditing ? "Edit a message" : "Type a message",
+            text: isEditing ? $chatVM.editMessageText : $chatVM.text,
+            contextID: chatVM.editCustomMessage.map { AnyHashable($0.id) } ?? AnyHashable("composer"),
+            onSubmit: submitMessage,
+            onPasteImages: isEditing
+                ? nil
+                : { images in
                     withAnimation {
                         chatVM.displayedDocuments.removeAll()
                         chatVM.displayedImages.append(contentsOf: images)
                     }
-                }
-            } else {
-                MessageTextEditor(
-                    "Edit a message",
-                    text: $chatVM.editMessageText,
-                    onSubmit: submitMessage,
-                )
-            }
-        }
+                },
+        )
         .focused(focused)
         .lineLimit(10)
         .padding(.horizontal, 5)
@@ -417,6 +424,30 @@ struct ChatBottomArea: View {
             }
         }
         .padding(.bottom, 6)
+    }
+
+    func linkPreviewAccessory(_ preview: LinkPreview) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            TelegramLinkPreviewView(preview: preview, service: chatVM.service)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu("Link Preview Options", systemImage: "ellipsis.circle") {
+                Button(chatVM.activeLinkPreviewComposer.showsAboveText ? "Move Below Text" : "Move Above Text") {
+                    chatVM.activeLinkPreviewComposer.togglePosition()
+                }
+                if preview.hasLargeMedia {
+                    Button(chatVM.activeLinkPreviewComposer.showsLargeMedia ? "Use Small Media" : "Use Large Media") {
+                        chatVM.activeLinkPreviewComposer.toggleMediaSize()
+                    }
+                }
+            }
+            .labelStyle(.iconOnly)
+
+            Button("Remove Link Preview", systemImage: "xmark") {
+                chatVM.activeLinkPreviewComposer.dismiss()
+            }
+            .labelStyle(.iconOnly)
+        }
     }
 
     func replyMessageView(_ customMessage: CustomMessage, type: ReplyMessageType) -> some View {

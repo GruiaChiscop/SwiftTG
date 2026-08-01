@@ -2,6 +2,7 @@
 
 import AppKit
 import SwiftUI
+import TDLibKit
 
 // MARK: - MacConversationView
 
@@ -249,6 +250,13 @@ struct MacConversationView: View {
                 }
             }
 
+            if model.selectedPhotoURLs.isEmpty,
+               model.selectedDocumentURLs.isEmpty,
+               let preview = model.activeLinkPreviewComposer.preview
+            {
+                linkPreviewAccessory(preview)
+            }
+
             if model.isRecordingVoice {
                 HStack(spacing: 10) {
                     Image(systemName: "waveform")
@@ -274,23 +282,15 @@ struct MacConversationView: View {
                     .labelStyle(.iconOnly)
                     .help("Attach photos or files")
 
-                    if model.editingMessage == nil {
-                        MacComposerTextField(
-                            text: $model.messageText,
-                            accessibilityLabel: "Message",
-                            onPasteFiles: model.attachPastedFiles,
-                            onSubmit: model.submitComposer,
-                        )
-                        .frame(minHeight: 32, idealHeight: 48, maxHeight: 112)
-                    } else {
-                        MacComposerTextField(
-                            text: $model.editMessageText,
-                            accessibilityLabel: "Edit message",
-                            onPasteFiles: { _ in false },
-                            onSubmit: model.submitComposer,
-                        )
-                        .frame(minHeight: 32, idealHeight: 48, maxHeight: 112)
-                    }
+                    let isEditing = model.editingMessage != nil
+                    MacComposerTextField(
+                        text: isEditing ? $model.editMessageText : $model.messageText,
+                        accessibilityLabel: isEditing ? "Edit message" : "Message",
+                        contextID: model.editingMessage.map { AnyHashable($0.id) } ?? AnyHashable("composer"),
+                        onPasteFiles: isEditing ? { _ in false } : model.attachPastedFiles,
+                        onSubmit: model.submitComposer,
+                    )
+                    .frame(minHeight: 32, idealHeight: 48, maxHeight: 112)
 
                     if model.editingMessage == nil,
                        model.selectedDocumentURLs.isEmpty,
@@ -320,5 +320,29 @@ struct MacConversationView: View {
             }
         }
         .padding(12)
+    }
+
+    private func linkPreviewAccessory(_ preview: LinkPreview) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            MacLinkPreviewView(model: model, preview: preview)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu("Link Preview Options", systemImage: "ellipsis.circle") {
+                Button(model.activeLinkPreviewComposer.showsAboveText ? "Move Below Text" : "Move Above Text") {
+                    model.activeLinkPreviewComposer.togglePosition()
+                }
+                if preview.hasLargeMedia {
+                    Button(model.activeLinkPreviewComposer.showsLargeMedia ? "Use Small Media" : "Use Large Media") {
+                        model.activeLinkPreviewComposer.toggleMediaSize()
+                    }
+                }
+            }
+            .labelStyle(.iconOnly)
+
+            Button("Remove Link Preview", systemImage: "xmark") {
+                model.activeLinkPreviewComposer.dismiss()
+            }
+            .labelStyle(.iconOnly)
+        }
     }
 }

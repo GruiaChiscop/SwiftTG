@@ -15,13 +15,14 @@ enum TelegramDrafts {
     static func make(
         formattedText: FormattedText,
         replyMessageId: Int64?,
+        linkPreviewOptions: LinkPreviewOptions? = nil,
         date: Foundation.Date = .now,
     ) -> DraftMessage? {
         guard !formattedText.text.isEmpty || replyMessageId != nil else { return nil }
         return DraftMessage(
             content: .draftMessageContentText(
                 DraftMessageContentText(
-                    linkPreviewOptions: nil,
+                    linkPreviewOptions: linkPreviewOptions,
                     text: formattedText,
                 ),
             ),
