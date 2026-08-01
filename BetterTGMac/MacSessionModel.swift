@@ -30,6 +30,25 @@ private enum MacMessageSenderKey: Hashable {
     case user(Int64)
 }
 
+/// Keep TDLib's high-volume update stream off the main queue unless the macOS presentation model
+/// actually consumes the update. Cold chats can emit many file-progress and synchronization
+/// updates; scheduling those no-op events on MainActor can starve AppKit input handling.
+private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
+    switch update {
+    case .updateNotificationGroup,
+         .updateUserStatus,
+         .updateUser,
+         .updateBasicGroup,
+         .updateSupergroup,
+         .updateBasicGroupFullInfo,
+         .updateSupergroupFullInfo,
+         .updateChatAction:
+        true
+    default:
+        false
+    }
+}
+
 // MARK: - MacSessionModel
 
 @MainActor @Observable final class MacSessionModel {
@@ -1342,6 +1361,9 @@ private enum MacMessageSenderKey: Hashable {
             .store(in: &cancellables)
 
         service.updatePublisher
+            // Filter on TelegramUpdateStore's background queue, before `receive(on:)` schedules
+            // work on AppKit's event loop. The two handlers below ignore every other update type.
+            .filter(isMacSessionPresentationUpdate)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] update in
                 self?.handleNotificationUpdate(update)
