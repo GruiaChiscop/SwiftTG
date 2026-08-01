@@ -12,6 +12,12 @@ BetterTG.app
 BetterTG.dmg
 BetterTG.ipa
 
+# Xcode archives and distribution exports
+*.xcarchive/
+*.xcdistributionlogs/
+*.xcresult/
+BetterTG ????-??-?? ??-??-??/
+
 *.cer
 *.mobileprovision
 api_key.json

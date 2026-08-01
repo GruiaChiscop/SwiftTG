@@ -581,7 +581,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTG/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = BetterTG;
+				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We would like to access your Camera to let you send photos in chats.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "We would like to access your contacts to help you connect with people you know on Telegram.";
@@ -601,7 +601,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4;
+				MARKETING_VERSION = 1;
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.gruiachiscop.BetterTG;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -633,7 +633,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTG/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = BetterTG;
+				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We would like to access your Camera to let you send photos in chats.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "We would like to access your contacts to help you connect with people you know on Telegram.";
@@ -653,7 +653,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4;
+				MARKETING_VERSION = 1;
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.gruiachiscop.BetterTG;
 				PRODUCT_NAME = "$(TARGET_NAME)";
