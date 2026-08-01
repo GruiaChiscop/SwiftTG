@@ -27,8 +27,8 @@ struct MacChatRow: View {
                             Date(timeIntervalSince1970: TimeInterval(previewDate)),
                             format: .dateTime.hour().minute(),
                         )
-                            .font(.caption)
-                            .foregroundStyle(chat.hasUnreadMessages ? Color.accentColor : .secondary)
+                        .font(.caption)
+                        .foregroundStyle(chat.hasUnreadMessages ? Color.accentColor : .secondary)
                     }
                 }
 
@@ -130,33 +130,18 @@ struct MacChatRow: View {
 
     // MARK: Private
 
+    /// Actions common to the context menu and VoiceOver's accessibility actions; kept as one list
+    /// so the two presentations (menu buttons with icons vs. plain accessibility actions) can't
+    /// drift, mirroring the pattern in `MacMessageRow`'s `rowActions`.
+    private enum MacChatRowAction {
+        case button(title: String, systemImage: String, role: ButtonRole? = nil, action: () -> Void)
+        case divider
+    }
+
     @State private var showClearHistoryOptions = false
     @State private var showDeleteOptions = false
     @State private var showLeaveConfirmation = false
     @State private var showMuteOptions = false
-
-    private var chatAvatar: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Circle()
-                .fill(avatarColor)
-                .overlay {
-                    Text(String(chat.title.prefix(1)).uppercased())
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
-
-            if chat.kind != .privateChat {
-                Image(systemName: chat.kind.systemImage)
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(4)
-                    .background(Color.accentColor, in: Circle())
-                    .overlay(Circle().stroke(.background, lineWidth: 1.5))
-            }
-        }
-        .frame(width: 40, height: 40)
-        .accessibilityHidden(true)
-    }
 
     private var avatarColor: Color {
         let palette: [Color] = [.blue, .indigo, .purple, .pink, .orange, .teal]
@@ -220,14 +205,6 @@ struct MacChatRow: View {
         chat.position(in: .chatListArchive) != nil
     }
 
-    /// Actions common to the context menu and VoiceOver's accessibility actions; kept as one list
-    /// so the two presentations (menu buttons with icons vs. plain accessibility actions) can't
-    /// drift, mirroring the pattern in `MacMessageRow`'s `rowActions`.
-    private enum MacChatRowAction {
-        case button(title: String, systemImage: String, role: ButtonRole? = nil, action: () -> Void)
-        case divider
-    }
-
     private var rowActions: [MacChatRowAction] {
         let policy = chat.actionPolicy
         var items: [MacChatRowAction] = [
@@ -276,7 +253,30 @@ struct MacChatRow: View {
         return items
     }
 
-    @ViewBuilder private var chatActions: some View {
+    private var chatAvatar: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Circle()
+                .fill(avatarColor)
+                .overlay {
+                    Text(String(chat.title.prefix(1)).uppercased())
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+
+            if chat.kind != .privateChat {
+                Image(systemName: chat.kind.systemImage)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(4)
+                    .background(Color.accentColor, in: Circle())
+                    .overlay(Circle().stroke(.background, lineWidth: 1.5))
+            }
+        }
+        .frame(width: 40, height: 40)
+        .accessibilityHidden(true)
+    }
+
+    private var chatActions: some View {
         ForEach(Array(rowActions.enumerated()), id: \.offset) { _, item in
             switch item {
             case .button(let title, let systemImage, let role, let action):

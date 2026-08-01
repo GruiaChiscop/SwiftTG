@@ -21,7 +21,7 @@ enum TelegramMessageChange: Sendable {
     case userStatus(UpdateUserStatus)
 }
 
-extension Optional where Wrapped == TelegramMessageChange {
+extension TelegramMessageChange? {
     var isHistoryMerge: Bool {
         guard case .some(.historyMerged) = self else { return false }
         return true
@@ -66,11 +66,11 @@ struct TelegramMessageSnapshot: Sendable {
 
 // MARK: - Message patching
 
-extension Message {
+private extension Message {
     /// TDLibKit's `Message` is all `let` - this is the only way to produce an updated copy.
     /// Only the fields `TelegramMessageStore.reduce(_:)` actually patches from push updates are
     /// exposed here; everything else passes through unchanged.
-    fileprivate func applying(
+    func applying(
         content: MessageContent? = nil,
         editDate: Int? = nil,
         replyMarkup: ReplyMarkup?? = nil,
@@ -293,6 +293,14 @@ final class TelegramMessageStore: @unchecked Sendable {
 
     // MARK: Private
 
+    #if os(macOS)
+    /// SwiftUI's lazy list can retain every page the user has explicitly loaded. Trimming the
+    /// oldest entries here made backward pagination discard the page it had just fetched.
+    private static let maxRetainedMessagesPerChat: Int? = nil
+    #else
+    private static let maxRetainedMessagesPerChat: Int? = 500
+    #endif
+
     private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.telegram-messages")
     private let stateLock = NSLock()
     private var deletedMessageIds = [Int64: Set<Int64>]()
@@ -304,6 +312,28 @@ final class TelegramMessageStore: @unchecked Sendable {
             return lhs.id < rhs.id
         }
         return lhs.date < rhs.date
+    }
+
+    private static func trimmed(_ snapshot: TelegramMessageSnapshot, keeping limit: Int) -> TelegramMessageSnapshot {
+        let overflow = snapshot.orderedMessageIds.count - limit
+        guard overflow > 0 else { return snapshot }
+
+        let droppedIds = snapshot.orderedMessageIds.prefix(overflow)
+        let keptIds = Array(snapshot.orderedMessageIds.suffix(from: overflow))
+        var keptMessages = snapshot.messages
+        for id in droppedIds {
+            keptMessages.removeValue(forKey: id)
+        }
+
+        return TelegramMessageSnapshot(
+            chatId: snapshot.chatId,
+            version: snapshot.version,
+            messages: keptMessages,
+            orderedMessageIds: keptIds,
+            unreadCount: snapshot.unreadCount,
+            hasMergedHistory: snapshot.hasMergedHistory,
+            change: snapshot.change,
+        )
     }
 
     private func merge(chatId: Int64, messages: [Message], marksHistoryLoaded: Bool) {
@@ -344,14 +374,6 @@ final class TelegramMessageStore: @unchecked Sendable {
         }
     }
 
-    #if os(macOS)
-    /// SwiftUI's lazy list can retain every page the user has explicitly loaded. Trimming the
-    /// oldest entries here made backward pagination discard the page it had just fetched.
-    private static let maxRetainedMessagesPerChat: Int? = nil
-    #else
-    private static let maxRetainedMessagesPerChat: Int? = 500
-    #endif
-
     private func publish(_ snapshot: TelegramMessageSnapshot) {
         dispatchPrecondition(condition: .onQueue(queue))
         let retainedSnapshot = Self.maxRetainedMessagesPerChat.map {
@@ -362,28 +384,6 @@ final class TelegramMessageStore: @unchecked Sendable {
             return subjects[retainedSnapshot.chatId]
         }
         subject?.send(retainedSnapshot)
-    }
-
-    private static func trimmed(_ snapshot: TelegramMessageSnapshot, keeping limit: Int) -> TelegramMessageSnapshot {
-        let overflow = snapshot.orderedMessageIds.count - limit
-        guard overflow > 0 else { return snapshot }
-
-        let droppedIds = snapshot.orderedMessageIds.prefix(overflow)
-        let keptIds = Array(snapshot.orderedMessageIds.suffix(from: overflow))
-        var keptMessages = snapshot.messages
-        for id in droppedIds {
-            keptMessages.removeValue(forKey: id)
-        }
-
-        return TelegramMessageSnapshot(
-            chatId: snapshot.chatId,
-            version: snapshot.version,
-            messages: keptMessages,
-            orderedMessageIds: keptIds,
-            unreadCount: snapshot.unreadCount,
-            hasMergedHistory: snapshot.hasMergedHistory,
-            change: snapshot.change,
-        )
     }
 
     private func reduction(for update: Update) -> (chatId: Int64, change: TelegramMessageChange)? {

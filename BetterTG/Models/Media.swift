@@ -11,7 +11,7 @@ import Observation
     // MARK: Lifecycle
 
     init() {
-        engine = MainActor.assumeIsolated { VoiceMessagePlaybackEngine() }
+        self.engine = MainActor.assumeIsolated { VoiceMessagePlaybackEngine() }
         setCommandCenterControls()
         MainActor.assumeIsolated {
             engine.trace = { voicePlaybackTrace($0) }
@@ -94,7 +94,8 @@ import Observation
                 .interruptSpokenAudioAndMixWithOthers,
             ])
             try audioSession.setActive(true, options: [])
-            let outputs = audioSession.currentRoute.outputs
+            let outputs = audioSession.currentRoute
+                .outputs
                 .map { "\($0.portType.rawValue):\($0.portName)" }
                 .joined(separator: ",")
             voicePlaybackTrace("session active outputs=[\(outputs)] volume=\(audioSession.outputVolume)")
@@ -132,7 +133,11 @@ import Observation
             guard let self else { return .commandFailed }
             return MainActor.assumeIsolated {
                 guard !self.savedMediaPath.isEmpty, self.engine.isReady else { return .commandFailed }
-                if self.isPlaying { self.engine.pause() } else { self.engine.play() }
+                if self.isPlaying {
+                    self.engine.pause()
+                } else {
+                    self.engine.play()
+                }
                 return .success
             }
         }

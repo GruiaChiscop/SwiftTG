@@ -28,6 +28,7 @@ enum TelegramVoiceNoteSending {
                 result.append(level)
             }
         }
+        guard levels.contains(where: { $0 > 0 }) else { return Data() }
         return Data(pack(levels)).prefix(63)
     }
 

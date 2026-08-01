@@ -35,14 +35,14 @@ private enum MacMessageSenderKey: Hashable {
 /// updates; scheduling those no-op events on MainActor can starve AppKit input handling.
 private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     switch update {
-    case .updateNotificationGroup,
-         .updateUserStatus,
-         .updateUser,
-         .updateBasicGroup,
-         .updateSupergroup,
+    case .updateBasicGroup,
          .updateBasicGroupFullInfo,
+         .updateChatAction,
+         .updateNotificationGroup,
+         .updateSupergroup,
          .updateSupergroupFullInfo,
-         .updateChatAction:
+         .updateUser,
+         .updateUserStatus:
         true
     default:
         false
@@ -373,18 +373,17 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             }
             guard !Task.isCancelled, openedChatId == chatId else { return }
             _ = try? await service.openChat(chatId: chatId)
-            let historyMessages: [Message]
-            if messageId == nil,
-               messages.hasMergedHistory,
-               !messages.orderedMessageIds.isEmpty
-            {
-                // The subscription already delivered this chat's retained history. Fetching and
-                // merging the same page again only increments the snapshot version and forces a
-                // second table refresh immediately after the cached rows became visible.
-                historyMessages = messages.orderedMessageIds.compactMap { self.messages.messages[$0] }
-            } else {
-                historyMessages = await loadInitialHistory(chatId: chatId, around: messageId)
-            }
+            let historyMessages: [Message] =
+                if messageId == nil,
+                messages.hasMergedHistory,
+                !messages.orderedMessageIds.isEmpty {
+                    // The subscription already delivered this chat's retained history. Fetching and
+                    // merging the same page again only increments the snapshot version and forces a
+                    // second table refresh immediately after the cached rows became visible.
+                    messages.orderedMessageIds.compactMap { self.messages.messages[$0] }
+                } else {
+                    await loadInitialHistory(chatId: chatId, around: messageId)
+                }
             guard !Task.isCancelled, openedChatId == chatId else { return }
             if let newestMessageId = historyMessages.max(by: { $0.id < $1.id })?.id {
                 _ = try? await service.viewMessages(
@@ -438,8 +437,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         selectedDocumentURLs = panel.urls
     }
 
-    @discardableResult
-    func attachPastedFiles(_ urls: [URL]) -> Bool {
+    @discardableResult func attachPastedFiles(_ urls: [URL]) -> Bool {
         guard !isRecordingVoice, editingMessage == nil else { return false }
         let pastedFiles = urls.filter { url in
             guard url.isFileURL else { return false }
@@ -714,7 +712,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             messageId: message.id,
             rowSize: 8,
         ),
-              openedChatId == message.chatId
+            openedChatId == message.chatId
         else { return }
         messageAvailableReactions[message.id] = telegramAvailableReactions(availableReactions)
     }
@@ -1039,6 +1037,19 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         }
     }
 
+    func saveCurrentDraft() {
+        guard editingMessage == nil, let chatId = openedChatId else { return }
+        let draft = TelegramDrafts.make(text: messageText, replyMessageId: replyingToMessage?.id)
+        let service = service
+        Task {
+            _ = try? await service.setChatDraftMessage(
+                chatId: chatId,
+                draftMessage: draft,
+                topicId: nil,
+            )
+        }
+    }
+
     // MARK: Private
 
     private static var databaseDirectoryName: String {
@@ -1114,19 +1125,6 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         switch message.senderId {
         case .messageSenderUser(let sender): .user(sender.userId)
         case .messageSenderChat(let sender): .chat(sender.chatId)
-        }
-    }
-
-    func saveCurrentDraft() {
-        guard editingMessage == nil, let chatId = openedChatId else { return }
-        let draft = TelegramDrafts.make(text: messageText, replyMessageId: replyingToMessage?.id)
-        let service = service
-        Task {
-            _ = try? await service.setChatDraftMessage(
-                chatId: chatId,
-                draftMessage: draft,
-                topicId: nil,
-            )
         }
     }
 
@@ -1363,13 +1361,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         service.updatePublisher
             // Filter on TelegramUpdateStore's background queue, before `receive(on:)` schedules
             // work on AppKit's event loop. The two handlers below ignore every other update type.
-            .filter(isMacSessionPresentationUpdate)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] update in
-                self?.handleNotificationUpdate(update)
-                self?.handleConversationHeaderUpdate(update)
-            }
-            .store(in: &cancellables)
+                .filter(isMacSessionPresentationUpdate)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] update in
+                    self?.handleNotificationUpdate(update)
+                    self?.handleConversationHeaderUpdate(update)
+                }
+                .store(in: &cancellables)
     }
 
     private func applyAuthorizationState(_ state: AuthorizationState) {

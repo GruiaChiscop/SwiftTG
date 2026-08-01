@@ -6,6 +6,8 @@ import TDLibKit
 // MARK: - ChatsListItemView
 
 struct ChatsListItemView: View {
+    // MARK: Internal
+
     @State var customChat: CustomChat
     
     var accessibilityDescription: String {
@@ -94,6 +96,8 @@ struct ChatsListItemView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
     }
+
+    // MARK: Private
 
     private func chatListTimestamp(_ timestamp: Int) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(timestamp))

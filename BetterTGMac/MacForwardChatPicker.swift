@@ -4,13 +4,11 @@ import SwiftUI
 import TDLibKit
 
 struct MacForwardChatPicker: View {
-    @Bindable var model: MacSessionModel
-    let message: Message
+    // MARK: Internal
 
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var selectedChatIds = Set<Int64>()
-    @State private var isForwarding = false
+    @Bindable var model: MacSessionModel
+
+    let message: Message
 
     var body: some View {
         NavigationStack {
@@ -48,6 +46,13 @@ struct MacForwardChatPicker: View {
         }
         .frame(width: 380, height: 460)
     }
+
+    // MARK: Private
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var selectedChatIds = Set<Int64>()
+    @State private var isForwarding = false
 
     private var chats: [ChatListItemState] {
         let all = model.allChatItems

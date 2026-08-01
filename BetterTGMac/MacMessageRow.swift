@@ -237,6 +237,15 @@ struct MacMessageRow: View {
 
     // MARK: Private
 
+    /// Actions common to the context menu and VoiceOver's accessibility actions; kept as one list so
+    /// the two presentations (menu buttons with icons vs. plain accessibility actions) can't drift.
+    /// "React" and "Delete" are still special-cased below since each renders differently per surface
+    /// (a reactions submenu vs. a single toggle; a destructive button with a leading divider vs. plain).
+    private enum MacRowAction {
+        case button(title: String, systemImage: String, action: () -> Void)
+        case reactions
+    }
+
     @State private var player = MacVoicePlayer.shared
     @State private var audioPlayer = TelegramAudioPlayer.shared
     @State private var documentPath: String?
@@ -382,58 +391,6 @@ struct MacMessageRow: View {
         return TelegramTextFormatting.links(in: formattedText)
     }
 
-    private func linkAccessibilityGroup(_ content: some View) -> some View {
-        content
-            .accessibilityElement(children: .contain)
-            .accessibilityChildren {
-                ForEach(messageLinks) { link in
-                    Link(link.displayedText, destination: link.url)
-                        .macModified {
-                            if let destination = linkAccessibilityDestination(link) {
-                                $0.accessibilityValue(destination)
-                            } else {
-                                $0
-                            }
-                        }
-                }
-                if !messageReactions.isEmpty {
-                    Button("Reactions") { showReactionDetails = true }
-                        .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
-                }
-            }
-            .accessibilityIdentifier("message-\(message.id)")
-            .accessibilityLabel(accessibilityDescription)
-            .accessibilityRespondsToUserInteraction(true)
-            .modifier(OptionalAccessibilityActivation(
-                isEnabled: hasDefaultActivation,
-                action: activateMessage,
-            ))
-            .accessibilityActions { messageAccessibilityActions }
-            .contextMenu { messageActions }
-    }
-
-    private func messageAccessibilityElement(_ content: some View) -> some View {
-        content
-            .accessibilityElement(children: .ignore)
-            .accessibilityIdentifier("message-\(message.id)")
-            .accessibilityLabel(accessibilityDescription)
-            .accessibilityHint(activationHint)
-            .modifier(OptionalAccessibilityActivation(
-                isEnabled: hasDefaultActivation,
-                action: activateMessage,
-            ))
-            .accessibilityActions { messageAccessibilityActions }
-    }
-
-    /// Actions common to the context menu and VoiceOver's accessibility actions; kept as one list so
-    /// the two presentations (menu buttons with icons vs. plain accessibility actions) can't drift.
-    /// "React" and "Delete" are still special-cased below since each renders differently per surface
-    /// (a reactions submenu vs. a single toggle; a destructive button with a leading divider vs. plain).
-    private enum MacRowAction {
-        case button(title: String, systemImage: String, action: () -> Void)
-        case reactions
-    }
-
     private var rowActions: [MacRowAction] {
         var items = [MacRowAction]()
         if capabilities?.properties.canBeReplied == true {
@@ -530,6 +487,60 @@ struct MacMessageRow: View {
         .contextMenu { messageActions }
     }
 
+    private func linkAccessibilityGroup(_ content: some View) -> some View {
+        content
+            .accessibilityElement(children: .contain)
+            .accessibilityChildren {
+                ForEach(messageLinks) { link in
+                    Link(link.displayedText, destination: link.url)
+                        .macModified {
+                            if let destination = linkAccessibilityDestination(link) {
+                                $0.accessibilityValue(destination)
+                            } else {
+                                $0
+                            }
+                        }
+                }
+                if !messageReactions.isEmpty {
+                    Button("Reactions") { showReactionDetails = true }
+                        .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
+                }
+            }
+            .accessibilityIdentifier("message-\(message.id)")
+            .accessibilityLabel(accessibilityDescription)
+            .accessibilityRespondsToUserInteraction(true)
+            .modifier(OptionalAccessibilityActivation(
+                isEnabled: hasDefaultActivation,
+                action: activateMessage,
+            ))
+            .accessibilityActions { messageAccessibilityActions }
+            .contextMenu { messageActions }
+    }
+
+    private func messageAccessibilityElement(_ content: some View) -> some View {
+        content
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("message-\(message.id)")
+            .accessibilityLabel(accessibilityDescription)
+            .accessibilityHint(activationHint)
+            .modifier(OptionalAccessibilityActivation(
+                isEnabled: hasDefaultActivation,
+                action: activateMessage,
+            ))
+            .accessibilityActions { messageAccessibilityActions }
+    }
+
+    /// Cold-opening a chat reveals dozens of rows at once, whose photo/thumbnail loads (already
+    /// cached, so they resolve almost together) previously each called `NSImage(contentsOfFile:)`
+    /// synchronously on the MainActor with no yield point in between - decoding ~30 images
+    /// back-to-back that way is enough by itself to freeze the UI for several seconds. Decoding
+    /// off the main actor and only handing back the finished `NSImage` avoids that pile-up.
+    private static func decodedImage(atPath path: String) async -> NSImage? {
+        await Task.detached(priority: .userInitiated) {
+            NSImage(contentsOfFile: path)
+        }.value
+    }
+
     private func copyMessageText() {
         guard let text = copyableMessageText(message) else { return }
         NSPasteboard.general.clearContents()
@@ -549,17 +560,6 @@ struct MacMessageRow: View {
             documentPath = path
             NSWorkspace.shared.open(URL(filePath: path))
         }
-    }
-
-    /// Cold-opening a chat reveals dozens of rows at once, whose photo/thumbnail loads (already
-    /// cached, so they resolve almost together) previously each called `NSImage(contentsOfFile:)`
-    /// synchronously on the MainActor with no yield point in between - decoding ~30 images
-    /// back-to-back that way is enough by itself to freeze the UI for several seconds. Decoding
-    /// off the main actor and only handing back the finished `NSImage` avoids that pile-up.
-    private static func decodedImage(atPath path: String) async -> NSImage? {
-        await Task.detached(priority: .userInitiated) {
-            NSImage(contentsOfFile: path)
-        }.value
     }
 
     private func activateMessage() {

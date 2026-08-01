@@ -300,6 +300,11 @@ struct ChatView: View {
         UIApplication.safeAreaInsets.top + navigationBarHeight
     }
 
+    private var pinnedMessageSummary: String {
+        guard let message = chatVM.currentPinnedMessage else { return "" }
+        return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
+    }
+
     private var conversationSearchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
@@ -355,11 +360,6 @@ struct ChatView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.bar)
-    }
-
-    private var pinnedMessageSummary: String {
-        guard let message = chatVM.currentPinnedMessage else { return "" }
-        return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
     }
 
     private var conversationSearchNavigationBar: some View {
@@ -499,7 +499,7 @@ struct ChatView: View {
 /// Keeps per-message observation local so a metadata update does not invalidate
 /// and rebuild the entire chat list.
 private struct ChatMessageListRows: View {
-    @Environment(ChatVM.self) private var chatVM
+    // MARK: Internal
 
     let customMessage: CustomMessage
     let previousMessage: CustomMessage?
@@ -576,6 +576,10 @@ private struct ChatMessageListRows: View {
         .listRowSeparator(.hidden)
         .onAppear { chatVM.loadMoreIfNeeded(distanceFromStart: distanceFromStart) }
     }
+
+    // MARK: Private
+
+    @Environment(ChatVM.self) private var chatVM
 
     private var startsNewDay: Bool {
         guard let previousMessage else { return true }

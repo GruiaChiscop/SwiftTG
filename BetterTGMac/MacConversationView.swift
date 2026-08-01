@@ -95,6 +95,11 @@ struct MacConversationView: View {
         model.editingMessage == nil ? model.messageText : model.editMessageText
     }
 
+    private var pinnedMessageSummary: String {
+        guard let message = model.currentPinnedMessage else { return "" }
+        return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
+    }
+
     private var conversationSearchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
@@ -147,11 +152,6 @@ struct MacConversationView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.bar)
-    }
-
-    private var pinnedMessageSummary: String {
-        guard let message = model.currentPinnedMessage else { return "" }
-        return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
     }
 
     private var conversationSearchNavigationBar: some View {

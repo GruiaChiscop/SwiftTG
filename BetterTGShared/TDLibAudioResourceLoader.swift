@@ -3,7 +3,7 @@
 import AVFoundation
 import Combine
 import Foundation
-import TDLibKit
+@preconcurrency import TDLibKit
 import UniformTypeIdentifiers
 
 // MARK: - TDLibAudioResourceLoader
@@ -174,7 +174,7 @@ final class TDLibAudioResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @
     private func processActiveRequest() {
         guard let request = activeRequest else { return }
         do {
-            let bytesProvided = try provideAvailableData(to: request)
+            try provideAvailableData(to: request)
             if request.nextOffset >= request.endOffset {
                 finishActiveRequest()
                 return
@@ -188,7 +188,7 @@ final class TDLibAudioResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @
         }
     }
 
-    private func provideAvailableData(to request: PendingRequest) throws -> Int64 {
+    private func provideAvailableData(to request: PendingRequest) throws {
         let availableRange: Range<Int64>
         if file.local.isDownloadingCompleted {
             availableRange = 0..<fileSize
@@ -196,18 +196,17 @@ final class TDLibAudioResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @
             let start = file.local.downloadOffset
             availableRange = start..<(start + file.local.downloadedPrefixSize)
         }
-        guard availableRange.contains(request.nextOffset), !file.local.path.isEmpty else { return 0 }
+        guard availableRange.contains(request.nextOffset), !file.local.path.isEmpty else { return }
         let readableEnd = min(request.endOffset, availableRange.upperBound)
         let byteCount = readableEnd - request.nextOffset
-        guard byteCount > 0 else { return 0 }
+        guard byteCount > 0 else { return }
 
         let handle = try FileHandle(forReadingFrom: URL(filePath: file.local.path))
         defer { try? handle.close() }
         try handle.seek(toOffset: UInt64(request.nextOffset))
-        guard let data = try handle.read(upToCount: Int(byteCount)), !data.isEmpty else { return 0 }
+        guard let data = try handle.read(upToCount: Int(byteCount)), !data.isEmpty else { return }
         request.loadingRequest.dataRequest?.respond(with: data)
         request.nextOffset += Int64(data.count)
-        return Int64(data.count)
     }
 
     private func requestNextChunk(for request: PendingRequest) {

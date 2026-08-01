@@ -17,6 +17,7 @@ import Observation
     static let shared = MacVoicePlayer()
 
     private(set) var currentFileId: Int?
+
     var currentTime: Int { engine.currentTime }
     var isPlaying: Bool { engine.isPlaying }
 

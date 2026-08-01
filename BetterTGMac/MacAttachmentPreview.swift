@@ -108,15 +108,13 @@ struct MacAttachmentPreview: View {
         }
     }
 
-    private func thumbnail(for url: URL) -> some View {
-        Group {
-            if isPhotos, let image = NSImage(contentsOf: url) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "doc.fill")
-            }
+    @ViewBuilder private func thumbnail(for url: URL) -> some View {
+        if isPhotos, let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            Image(systemName: "doc.fill")
         }
     }
 

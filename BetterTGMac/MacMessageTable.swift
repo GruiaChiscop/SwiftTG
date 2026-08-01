@@ -1,3 +1,5 @@
+// MacMessageTable.swift
+
 import SwiftUI
 import TDLibKit
 
@@ -7,29 +9,32 @@ import TDLibKit
 /// avoids churn in the project file while removing the NSTableView/NSHostingView bridge that used
 /// to wrap every message row.
 struct MacMessageTable: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
 
     let chat: ChatListItemState
     let unreadBoundaryMessageId: Int64?
     let shouldFollowLatestMessage: Bool
+
     @Binding var isAtBottom: Bool
 
     var body: some View {
         List(messageRows, selection: $selectedRowId) { row in
             switch row.kind {
-            case let .day(title):
+            case .day(let title):
                 MacMessageDayHeader(title: title)
                     .tag(row.id)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
 
-            case let .unread(count):
+            case .unread(let count):
                 MacUnreadMessagesHeader(count: count)
                     .tag(row.id)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
 
-            case let .message(messageId):
+            case .message(let messageId):
                 if let message = model.messages.messages[messageId] {
                     MacMessageRow(
                         model: model,
@@ -77,7 +82,7 @@ struct MacMessageTable: View {
             positionSearchResult(messageId)
         }
         .task(id: selectedRowId) {
-            guard case let .message(messageId) = selectedRowId,
+            guard case .message(let messageId) = selectedRowId,
                   let message = model.messages.messages[messageId]
             else { return }
             await model.loadAvailableReactions(for: message)
@@ -92,13 +97,15 @@ struct MacMessageTable: View {
         }
     }
 
+    // MARK: Private
+
     @State private var historyAnchorMessageId: Int64?
     @State private var hasPositionedInitialMessages = false
     @State private var selectedRowId: MacMessageListRow.ID?
     @State private var scrollPosition = ScrollPosition(idType: MacMessageListRow.ID.self)
 
     private var messageRows: [MacMessageListRow] {
-        var rows: [MacMessageListRow] = []
+        var rows = [MacMessageListRow]()
         rows.reserveCapacity(model.messages.orderedMessageIds.count + 2)
         let calendar = Calendar.autoupdatingCurrent
         var previousMessage: Message?
@@ -250,6 +257,8 @@ private struct MacMessageDayHeader: View {
 // MARK: - MacUnreadMessagesHeader
 
 private struct MacUnreadMessagesHeader: View {
+    // MARK: Internal
+
     let count: Int
 
     var body: some View {
@@ -264,6 +273,8 @@ private struct MacUnreadMessagesHeader: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
+
+    // MARK: Private
 
     private var title: String {
         "\(count) unread \(count == 1 ? "message" : "messages")"

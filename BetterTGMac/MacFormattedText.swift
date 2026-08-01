@@ -28,6 +28,8 @@ func macAttributedString(_ formattedText: FormattedText) -> AttributedString {
 /// SwiftUI can reevaluate a message row whenever asynchronously loaded metadata changes. Keep the
 /// comparatively expensive link detection and attributed-string construction out of those redraws.
 private final class MacFormattedTextCache {
+    // MARK: Internal
+
     static let shared = MacFormattedTextCache()
 
     func attributedString(for formattedText: FormattedText) -> AttributedString {
@@ -41,16 +43,16 @@ private final class MacFormattedTextCache {
         return value
     }
 
-    private let values: NSCache<Key, Value> = {
-        let cache = NSCache<Key, Value>()
-        cache.countLimit = 512
-        return cache
-    }()
+    // MARK: Private
 
     private final class Key: NSObject {
+        // MARK: Lifecycle
+
         init(_ formattedText: FormattedText) {
             self.formattedText = formattedText
         }
+
+        // MARK: Internal
 
         override var hash: Int {
             formattedText.hashValue
@@ -61,16 +63,28 @@ private final class MacFormattedTextCache {
             return formattedText == other.formattedText
         }
 
+        // MARK: Private
+
         private let formattedText: FormattedText
     }
 
     private final class Value {
+        // MARK: Lifecycle
+
         init(_ value: AttributedString) {
             self.value = value
         }
 
+        // MARK: Internal
+
         let value: AttributedString
     }
+
+    private let values: NSCache<Key, Value> = {
+        let cache = NSCache<Key, Value>()
+        cache.countLimit = 512
+        return cache
+    }()
 }
 
 func macNSAttributedString(_ formattedText: FormattedText) -> NSAttributedString {

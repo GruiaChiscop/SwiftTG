@@ -16,7 +16,7 @@ enum Route: Hashable {
         switch (lhs, rhs) {
         case (
             .customChat(let lhsChat, let lhsMessageId, let lhsMovesFocus),
-            .customChat(let rhsChat, let rhsMessageId, let rhsMovesFocus)
+            .customChat(let rhsChat, let rhsMessageId, let rhsMovesFocus),
         ):
             lhsChat.id == rhsChat.id
                 && lhsMessageId == rhsMessageId

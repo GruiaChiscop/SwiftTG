@@ -114,7 +114,7 @@ enum TelegramTextFormatting {
         case .textEntityTypeUrl:
             value = normalizedURLString(displayedText)
         case .textEntityTypeDateTime(let dateTime):
-            value="calendar://\(dateTime.unixTime)"
+            value = "calendar://\(dateTime.unixTime)"
         default:
             return nil
         }

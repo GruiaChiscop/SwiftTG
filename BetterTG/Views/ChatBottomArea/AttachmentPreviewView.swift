@@ -7,9 +7,9 @@ import SwiftUI
 /// and a way to drop individual items before confirming - rather than sending straight from the
 /// picker with the caption typed into the regular chat compose field.
 struct AttachmentPreviewView: View {
-    @Environment(ChatVM.self) var chatVM
+    // MARK: Internal
 
-    @State private var selectedIndex = 0
+    @Environment(ChatVM.self) var chatVM
 
     var body: some View {
         @Bindable var chatVM = chatVM
@@ -49,15 +49,45 @@ struct AttachmentPreviewView: View {
                     }
                 }
             }
-            .navigationTitle(itemCount > 1 ? "\(itemCount) Items" : (chatVM.displayedImages.isEmpty ? "Document" : "Photo"))
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(itemCount > 1
+                ? "\(itemCount) Items"
+                : (chatVM.displayedImages.isEmpty ? "Document" : "Photo"))
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 
     // MARK: Private
 
+    @State private var selectedIndex = 0
+
     private var itemCount: Int {
         chatVM.displayedImages.count + chatVM.displayedDocuments.count
+    }
+
+    private var captionBar: some View {
+        @Bindable var chatVM = chatVM
+        return HStack(alignment: .bottom, spacing: 10) {
+            MessageTextEditor("Add a caption...", text: $chatVM.text, onSubmit: send) { images in
+                withAnimation {
+                    chatVM.displayedDocuments.removeAll()
+                    chatVM.displayedImages.append(contentsOf: images)
+                }
+            }
+            .lineLimit(6)
+            .padding(.horizontal, 5)
+            .background(Color.gray6)
+            .clipShape(.rect(cornerRadius: 15))
+
+            Button(action: send) {
+                Image("send")
+                    .resizable()
+                    .clipShape(.circle)
+                    .frame(width: 32, height: 32)
+            }
+            .accessibilityLabel("Send")
+        }
+        .padding(10)
+        .background(.bar)
     }
 
     private func documentPreview(for url: URL) -> some View {
@@ -71,32 +101,6 @@ struct AttachmentPreviewView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
         }
-    }
-
-    private var captionBar: some View {
-        @Bindable var chatVM = chatVM
-        return HStack(alignment: .bottom, spacing: 10) {
-            MessageTextEditor("Add a caption...", text: $chatVM.text, onSubmit: send) { images in
-                withAnimation {
-                    chatVM.displayedDocuments.removeAll()
-                    chatVM.displayedImages.append(contentsOf: images)
-                }
-            }
-                .lineLimit(6)
-                .padding(.horizontal, 5)
-                .background(Color.gray6)
-                .clipShape(.rect(cornerRadius: 15))
-
-            Button(action: send) {
-                Image("send")
-                    .resizable()
-                    .clipShape(.circle)
-                    .frame(width: 32, height: 32)
-            }
-            .accessibilityLabel("Send")
-        }
-        .padding(10)
-        .background(.bar)
     }
 
     private func send() {

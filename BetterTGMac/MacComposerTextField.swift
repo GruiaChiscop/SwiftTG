@@ -6,6 +6,26 @@ import SwiftUI
 // MARK: - MacComposerTextField
 
 struct MacComposerTextField: NSViewRepresentable {
+    // MARK: Coordinator
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        // MARK: Lifecycle
+
+        init(parent: MacComposerTextField) {
+            self.parent = parent
+        }
+
+        // MARK: Internal
+
+        var parent: MacComposerTextField
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
+            textView.needsDisplay = true
+        }
+    }
+
     @Binding var text: String
 
     let accessibilityLabel: String
@@ -55,27 +75,13 @@ struct MacComposerTextField: NSViewRepresentable {
             textView.string = text
         }
     }
-
-    // MARK: Coordinator
-
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        init(parent: MacComposerTextField) {
-            self.parent = parent
-        }
-
-        var parent: MacComposerTextField
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
-            textView.needsDisplay = true
-        }
-    }
 }
 
 // MARK: - ComposerTextView
 
 private final class ComposerTextView: NSTextView {
+    // MARK: Internal
+
     var onPasteFiles: (([URL]) -> Bool)?
     var onSubmit: (() -> Void)?
     var placeholder = ""
@@ -120,6 +126,8 @@ private final class ComposerTextView: NSTextView {
         }
     }
 
+    // MARK: Private
+
     private func pastedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
         if let objects = pasteboard.readObjects(
             forClasses: [NSURL.self],
@@ -150,18 +158,18 @@ private final class ComposerTextView: NSTextView {
     private func fileURL(fromPathText text: String) -> URL? {
         var path = text
         if path.count >= 2,
-           (path.first == "\"" && path.last == "\"" || path.first == "'" && path.last == "'")
+           path.first == "\"" && path.last == "\"" || path.first == "'" && path.last == "'"
         {
             path.removeFirst()
             path.removeLast()
         }
         path = path.replacingOccurrences(of: "\\ ", with: " ")
-        let url: URL
-        if let parsed = URL(string: path), parsed.isFileURL {
-            url = parsed
-        } else {
-            url = URL(filePath: (path as NSString).expandingTildeInPath)
-        }
+        let url: URL =
+            if let parsed = URL(string: path), parsed.isFileURL {
+                parsed
+            } else {
+                URL(filePath: (path as NSString).expandingTildeInPath)
+            }
         return url.isExistingFile ? url : nil
     }
 
@@ -170,7 +178,8 @@ private final class ComposerTextView: NSTextView {
               let representation = NSBitmapImageRep(data: tiff),
               let data = representation.representation(using: .png, properties: [:])
         else { return nil }
-        let directory = FileManager.default.temporaryDirectory
+        let directory = FileManager.default
+            .temporaryDirectory
             .appending(path: "BetterTGPastedAttachments", directoryHint: .isDirectory)
         let url = directory.appending(path: "image-\(UUID().uuidString).png")
         do {

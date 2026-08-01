@@ -3,6 +3,8 @@
 import SwiftUI
 import TDLibKit
 
+// MARK: - TelegramMessageReactionsView
+
 struct TelegramMessageReactionsView: View {
     let reactions: [MessageReaction]
     let action: () -> Void
@@ -20,7 +22,11 @@ struct TelegramMessageReactionsView: View {
     }
 }
 
+// MARK: - TelegramReactionDetailsView
+
 struct TelegramReactionDetailsView: View {
+    // MARK: Internal
+
     let service: any TelegramService
     let chatId: Int64
     let messageId: Int64
@@ -70,19 +76,20 @@ struct TelegramReactionDetailsView: View {
         .task { await loadNextPage() }
     }
 
-    @Environment(\.dismiss) private var dismiss
-    @State private var entries = [ReactionEntry]()
-    @State private var nextOffset: String? = ""
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    // MARK: Private
 
     private struct ReactionEntry {
         let reaction: AddedReaction
         let senderName: String
     }
 
-    @MainActor
-    private func loadNextPage() async {
+    @Environment(\.dismiss) private var dismiss
+    @State private var entries = [ReactionEntry]()
+    @State private var nextOffset: String? = ""
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    @MainActor private func loadNextPage() async {
         guard !isLoading, let offset = nextOffset else { return }
         isLoading = true
         errorMessage = nil
@@ -98,15 +105,15 @@ struct TelegramReactionDetailsView: View {
             )
             var newEntries = [ReactionEntry]()
             for reaction in page.reactions {
-                let senderName: String
-                if reaction.isOutgoing {
-                    senderName = "You"
-                } else {
-                    senderName = await TelegramSenderName.displayName(
-                        service: service,
-                        senderId: reaction.senderId,
-                    ) ?? "Unknown"
-                }
+                let senderName: String =
+                    if reaction.isOutgoing {
+                        "You"
+                    } else {
+                        await TelegramSenderName.displayName(
+                            service: service,
+                            senderId: reaction.senderId,
+                        ) ?? "Unknown"
+                    }
                 newEntries.append(ReactionEntry(reaction: reaction, senderName: senderName))
             }
             entries.append(contentsOf: newEntries)

@@ -5,6 +5,8 @@ import Observation
 import SwiftUI
 import TDLibKit
 
+// MARK: - TelegramAudioPlayer
+
 @MainActor @Observable final class TelegramAudioPlayer {
     // MARK: Lifecycle
 
@@ -246,11 +248,12 @@ import TDLibKit
         for item in proposedPlaylist where seenFileIds.insert(item.audio.id).inserted {
             unique.append(item)
         }
-        if unique.contains(where: { $0.audio.id == audio.audio.id }) {
-            playlist = unique
-        } else {
-            playlist = [audio]
-        }
+        playlist =
+            if unique.contains(where: { $0.audio.id == audio.audio.id }) {
+                unique
+            } else {
+                [audio]
+            }
     }
 
     private func play() {
@@ -354,7 +357,7 @@ import TDLibKit
 // MARK: - TelegramAudioPlayerBar
 
 struct TelegramAudioPlayerBar: View {
-    @State private var player = TelegramAudioPlayer.shared
+    // MARK: Internal
 
     var body: some View {
         if let audio = player.currentAudio {
@@ -415,4 +418,8 @@ struct TelegramAudioPlayerBar: View {
             .accessibilityLabel("Audio player")
         }
     }
+
+    // MARK: Private
+
+    @State private var player = TelegramAudioPlayer.shared
 }

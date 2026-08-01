@@ -163,14 +163,14 @@ private struct MainNavigationRootView: View {
                 rootVM.navigate(to: .customChat(chat, messageId: nil))
             }
             #endif
-            if rootVM.currentFolder == nil {
+                if rootVM.currentFolder == nil {
+                    rootVM.currentFolder = rootVM.folders.first?.id
+                }
+            }
+            .onChange(of: rootVM.folders) {
+                guard rootVM.currentFolder == nil else { return }
                 rootVM.currentFolder = rootVM.folders.first?.id
             }
-        }
-        .onChange(of: rootVM.folders) {
-            guard rootVM.currentFolder == nil else { return }
-            rootVM.currentFolder = rootVM.folders.first?.id
-        }
     }
 
     var folderTabsBar: some View {

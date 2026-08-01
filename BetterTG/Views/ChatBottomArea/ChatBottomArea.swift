@@ -13,7 +13,6 @@ struct ChatBottomArea: View {
 
     @Namespace var namespace
     @Environment(ChatVM.self) var chatVM
-    @Environment(\.scenePhase) private var scenePhase
 
     /// Thresholds mirror Telegram's own recording button: drag left to cancel,
     /// drag up to lock into hands-free recording.
@@ -448,6 +447,8 @@ struct ChatBottomArea: View {
     }
 
     // MARK: Private
+
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var hasBegunRecording = false
 

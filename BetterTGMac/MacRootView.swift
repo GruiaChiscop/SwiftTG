@@ -6,6 +6,8 @@ import TDLibKit
 // MARK: - MacRootView
 
 struct MacRootView: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
 
     var body: some View {
@@ -45,6 +47,7 @@ private struct MacAuthorizationView: View {
     // MARK: Internal
 
     @Bindable var model: MacSessionModel
+
     var isPreview = false
 
     var body: some View {
@@ -158,8 +161,8 @@ private struct MacAuthorizationView: View {
         case password
     }
 
-    @FocusState private var focusedPhoneField: PhoneField?
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var focusedPhoneField: PhoneField?
     @State private var confirmsPhoneNumber = false
     @State private var previewCallingCode = AuthenticationPreviewData.countries[0].phoneNumberPrefix
     @State private var previewLoginCode = ""

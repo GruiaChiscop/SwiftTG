@@ -7,8 +7,6 @@ import TDLibKit
 // MARK: - MacConversationHeader
 
 struct MacConversationHeader: View {
-    // MARK: Internal
-
     let title: String
     let status: String?
     let onOpenInfo: () -> Void

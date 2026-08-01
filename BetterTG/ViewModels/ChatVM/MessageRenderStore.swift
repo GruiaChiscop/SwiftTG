@@ -35,8 +35,9 @@ struct MessageRenderState: Equatable {
 /// starts no async work itself — ChatVM drives it and performs the TDLib calls its decisions
 /// call for.
 struct MessageRenderStore {
+    // MARK: Internal
+
     private(set) var states = [Int64: MessageRenderState]()
-    private var nextRenderGeneration: UInt64 = 0
 
     /// Drops bookkeeping for ids no longer present in the chat, then returns the messages that
     /// need a new render started now, each with the invalidation version it should be rendered
@@ -65,8 +66,7 @@ struct MessageRenderStore {
 
     /// Marks a render as started for `message`, returning the generation to check for staleness
     /// when the async work completes.
-    @discardableResult
-    mutating func beginRendering(_ message: Message, invalidationVersion: UInt64) -> UInt64 {
+    @discardableResult mutating func beginRendering(_ message: Message, invalidationVersion: UInt64) -> UInt64 {
         nextRenderGeneration += 1
         let generation = nextRenderGeneration
         var state = states[message.id] ?? MessageRenderState()
@@ -93,7 +93,7 @@ struct MessageRenderStore {
     }
 
     /// Commits a completed render: clears the in-flight bookkeeping and records the result.
-    mutating func commitRender(messageId: Int64, message: Message, invalidationVersion: UInt64) {
+    mutating func commitRender(messageId: Int64, message _: Message, invalidationVersion: UInt64) {
         var state = states[messageId] ?? MessageRenderState()
         state.renderingVersion = nil
         state.renderedVersion = invalidationVersion
@@ -142,4 +142,8 @@ struct MessageRenderStore {
             states[messageId]?.refreshVersion = nil
         }
     }
+
+    // MARK: Private
+
+    private var nextRenderGeneration: UInt64 = 0
 }

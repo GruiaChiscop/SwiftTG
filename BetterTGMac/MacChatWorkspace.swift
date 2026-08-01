@@ -2,9 +2,9 @@
 
 import SwiftUI
 
-struct MacChatWorkspace: View {
-    // MARK: Internal
+// MARK: - MacChatWorkspace
 
+struct MacChatWorkspace: View {
     @Bindable var model: MacSessionModel
 
     var body: some View {
@@ -35,12 +35,14 @@ struct MacChatWorkspace: View {
     }
 }
 
-// MARK: - Isolated navigation columns
+// MARK: - MacChatSidebar
 
 /// Keeping the sidebar and detail in separate observation scopes prevents an `openedChatId`
 /// change from rebuilding the entire chat list, and a `focusedChatId` change from reconstructing
 /// the conversation hierarchy.
 private struct MacChatSidebar: View {
+    // MARK: Internal
+
     @Bindable var model: MacSessionModel
 
     var body: some View {
@@ -178,6 +180,8 @@ private struct MacChatSidebar: View {
         }
     }
 }
+
+// MARK: - MacChatDetail
 
 private struct MacChatDetail: View {
     @Bindable var model: MacSessionModel

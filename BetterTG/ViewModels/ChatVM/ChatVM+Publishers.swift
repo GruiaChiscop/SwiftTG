@@ -185,7 +185,7 @@ extension ChatVM {
             switch message.content {
             case .messageText(let messageText):
                 messageText.text
-            case .messagePhoto, .messageVideo, .messageDocument, .messageVoiceNote, .messageAudio:
+            case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
                 telegramMessageFormattedText(message)
             case .messageUnsupported:
                 FormattedText(entities: [], text: "TDLib not supported")
@@ -366,13 +366,16 @@ private func isConversationStatusUpdate(_ update: Update, for chatType: CustomCh
     }
 }
 
+// MARK: - MessageRenderLimiter
+
 actor MessageRenderLimiter {
-    private var availablePermits: Int
-    private var waiters = [CheckedContinuation<Void, Never>]()
+    // MARK: Lifecycle
 
     init(limit: Int) {
-        availablePermits = max(1, limit)
+        self.availablePermits = max(1, limit)
     }
+
+    // MARK: Internal
 
     func acquire() async {
         if availablePermits > 0 {
@@ -391,4 +394,9 @@ actor MessageRenderLimiter {
             waiters.removeFirst().resume()
         }
     }
+
+    // MARK: Private
+
+    private var availablePermits: Int
+    private var waiters = [CheckedContinuation<Void, Never>]()
 }

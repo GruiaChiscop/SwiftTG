@@ -9,8 +9,7 @@ import SwiftOGG
 /// concerns (audio session setup, Now Playing/remote-command integration on iOS; nothing extra on
 /// macOS) around this.
 @MainActor
-@Observable
-final class VoiceMessagePlaybackEngine {
+@Observable final class VoiceMessagePlaybackEngine {
     // MARK: Lifecycle
 
     init() {}
@@ -163,7 +162,8 @@ final class VoiceMessagePlaybackEngine {
         return buffer
     }
 
-    private nonisolated static func opusStreamFormat(from data: Data) -> (sampleRate: Double, channels: AVAudioChannelCount) {
+    private nonisolated static func opusStreamFormat(from data: Data)
+    -> (sampleRate: Double, channels: AVAudioChannelCount) {
         guard let headerRange = data.range(of: Data("OpusHead".utf8)),
               data.count >= headerRange.lowerBound + 16
         else { return (48000, 1) }
@@ -206,7 +206,7 @@ final class VoiceMessagePlaybackEngine {
                 case .success(let buffer) where buffer.frameLength > 0:
                     self.decodedBufferCache.setObject(
                         buffer,
-                        forKey: cacheKey,
+                        forKey: sourcePath as NSString,
                         cost: Int(buffer.frameLength) * Int(buffer.format.streamDescription.pointee.mBytesPerFrame),
                     )
                     self.configure(with: buffer)

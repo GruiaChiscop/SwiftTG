@@ -5,8 +5,7 @@ import SwiftUI
 // MARK: - MessageUITextView
 
 private final class MessageUITextView: UITextView {
-    var onSubmit: (() -> Void)?
-    var onPasteImages: (([SelectedImage]) -> Void)?
+    // MARK: Internal
 
     override var keyCommands: [UIKeyCommand]? {
         (super.keyCommands ?? []) + [
@@ -17,6 +16,9 @@ private final class MessageUITextView: UITextView {
             ),
         ]
     }
+
+    var onSubmit: (() -> Void)?
+    var onPasteImages: (([SelectedImage]) -> Void)?
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         guard action == #selector(paste(_:)), UIPasteboard.general.hasImages else {
@@ -44,6 +46,8 @@ private final class MessageUITextView: UITextView {
             argument: images.count == 1 ? "Photo attached" : "\(images.count) photos attached",
         )
     }
+
+    // MARK: Private
 
     @objc private func submit(_: UIKeyCommand) {
         onSubmit?()
