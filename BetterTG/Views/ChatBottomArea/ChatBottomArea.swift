@@ -96,6 +96,7 @@ struct ChatBottomArea: View {
                 rightSide
             }
         }
+        .disabled(chatVM.isSubmittingMessage)
         .onDisappear { Task.background { [chatVM] in await chatVM.updateDraft() } }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase != .active else { return }
@@ -358,6 +359,7 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.displayedImages, chatVM.setShowSendButton)
         .onChange(of: chatVM.displayedDocuments, chatVM.setShowSendButton)
         .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
+        .disabled(chatVM.isSubmittingMessage)
         .accessibilityElement()
         .accessibilityLabel(
             chatVM.recordingLocked
@@ -425,6 +427,7 @@ struct ChatBottomArea: View {
                 },
         )
         .focused(focused)
+        .disabled(chatVM.isSubmittingMessage)
         .lineLimit(10)
         .padding(.horizontal, 5)
         .background(Color.gray6)

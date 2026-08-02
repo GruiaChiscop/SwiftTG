@@ -190,6 +190,11 @@ import UniformTypeIdentifiers
         set { composer.sendMessageTask = newValue }
     }
 
+    var isSubmittingMessage: Bool {
+        get { composer.isSubmittingMessage }
+        set { composer.isSubmittingMessage = newValue }
+    }
+
     var errorShown: Bool {
         get { voiceRecorder.errorShown }
         set { voiceRecorder.errorShown = newValue }
@@ -289,7 +294,22 @@ import UniformTypeIdentifiers
         }
     }
 
-    func sendMessage() async { await composer.sendMessage() }
+    func sendMessage() async {
+        guard !composer.isSubmittingMessage else { return }
+        let isEditing = composer.editCustomMessage != nil
+        composer.isSubmittingMessage = true
+        messageActionError = nil
+        defer { composer.isSubmittingMessage = false }
+
+        do {
+            try await composer.sendMessage()
+        } catch {
+            guard !Task.isCancelled else { return }
+            let action = isEditing ? "updated" : "sent"
+            messageActionError = "Message couldn't be \(action): \(telegramErrorDescription(error))"
+        }
+    }
+
     func stageDocuments(_ urls: [URL]) async { await composer.stageDocuments(urls) }
     func setShowSendButton() { composer.setShowSendButton() }
     func setEditMessageText(from message: Message?) { composer.setEditMessageText(from: message) }
@@ -301,11 +321,19 @@ import UniformTypeIdentifiers
     func mediaStopRecordingVoice(duration: Int, wave: [Float]) {
         guard let artifact = voiceRecorder.mediaStopRecordingVoice(duration: duration, wave: wave) else { return }
         Task.background {
-            await self.composer.sendMessageVoiceNote(
-                url: artifact.url,
-                duration: artifact.duration,
-                waveform: artifact.waveform,
-            )
+            do {
+                try await self.composer.sendMessageVoiceNote(
+                    url: artifact.url,
+                    duration: artifact.duration,
+                    waveform: artifact.waveform,
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                await main {
+                    self.messageActionError =
+                        "Voice message couldn't be sent: \(telegramErrorDescription(error))"
+                }
+            }
         }
     }
 

@@ -87,6 +87,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var messageSenderNames = [Int64: String]()
     var messageServiceDescriptions = [Int64: String]()
     var messageActionError: String?
+    var isSubmittingMessage = false
     var selectedDocumentURLs = [URL]()
     var selectedPhotoURLs = [URL]()
     var countryNumbers = [PhoneNumberInfo]()
@@ -413,6 +414,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     }
 
     func submitComposer() {
+        guard !isSubmittingMessage else { return }
         if !selectedDocumentURLs.isEmpty, editingMessage == nil {
             sendSelectedDocuments()
         } else if !selectedPhotoURLs.isEmpty, editingMessage == nil {
@@ -550,7 +552,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     }
 
     func sendVoiceRecording() {
-        guard let recorder = voiceRecorder,
+        guard !isSubmittingMessage,
+              let recorder = voiceRecorder,
               let url = voiceRecordingURL,
               let chatId = voiceRecordingChatId,
               openedChatId == chatId
@@ -570,11 +573,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
         let waveform = TelegramVoiceNoteSending.waveform(from: voiceRecordingWave)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
-        clearDraft(chatId: chatId)
-        replyingToMessage = nil
+        let replyMessageId = replyingToMessage?.id
         resetVoiceRecordingState()
+        messageActionError = nil
+        isSubmittingMessage = true
 
         Task {
+            defer { isSubmittingMessage = false }
             do {
                 try await TelegramVoiceNoteSending.send(
                     service: service,
@@ -585,8 +590,12 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     waveform: waveform,
                     replyTo: replyTo,
                 )
+                clearDraft(chatId: chatId)
+                guard openedChatId == chatId, replyingToMessage?.id == replyMessageId else { return }
+                replyingToMessage = nil
             } catch {
-                messageActionError = error.localizedDescription
+                guard !Task.isCancelled else { return }
+                messageActionError = "Voice message couldn't be sent: \(telegramErrorDescription(error))"
             }
         }
     }
@@ -1213,11 +1222,12 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         let text = macComposerFormattedText(messageText, trimmingWhitespace: true)
         guard let openedChatId, !text.text.isEmpty else { return }
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        let replyMessageId = replyingToMessage?.id
         let linkPreviewOptions = linkPreviewComposer.options
-        clearDraft(chatId: openedChatId)
-        messageText = NSAttributedString(string: "")
-        replyingToMessage = nil
+        messageActionError = nil
+        isSubmittingMessage = true
         Task {
+            defer { isSubmittingMessage = false }
             do {
                 let formattedText = await TelegramTextFormatting.addingAutomaticEntities(
                     service: service,
@@ -1232,8 +1242,15 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     )],
                     replyTo: replyTo,
                 )
+                clearDraft(chatId: openedChatId)
+                guard self.openedChatId == openedChatId else { return }
+                messageText = NSAttributedString(string: "")
+                if replyingToMessage?.id == replyMessageId {
+                    replyingToMessage = nil
+                }
             } catch {
-                messageActionError = error.localizedDescription
+                guard !Task.isCancelled else { return }
+                messageActionError = "Message couldn't be sent: \(telegramErrorDescription(error))"
             }
         }
     }
@@ -1243,6 +1260,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         let urls = selectedPhotoURLs
         let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        let replyMessageId = replyingToMessage?.id
         let photos = urls.compactMap { url -> (URL, CGSize)? in
             guard let size = imagePixelSize(at: url), size.width > 0, size.height > 0 else { return nil }
             return (url, size)
@@ -1252,11 +1270,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             return
         }
 
-        clearDraft(chatId: chatId)
-        selectedPhotoURLs = []
-        messageText = NSAttributedString(string: "")
-        replyingToMessage = nil
+        messageActionError = nil
+        isSubmittingMessage = true
         Task {
+            defer { isSubmittingMessage = false }
             do {
                 let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
                     service: service,
@@ -1277,8 +1294,16 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     replyTo: replyTo,
                     uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
                 )
+                clearDraft(chatId: chatId)
+                guard openedChatId == chatId else { return }
+                selectedPhotoURLs = []
+                messageText = NSAttributedString(string: "")
+                if replyingToMessage?.id == replyMessageId {
+                    replyingToMessage = nil
+                }
             } catch {
-                messageActionError = error.localizedDescription
+                guard !Task.isCancelled else { return }
+                messageActionError = "Message couldn't be sent: \(telegramErrorDescription(error))"
             }
         }
     }
@@ -1287,13 +1312,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         guard let chatId = openedChatId, !selectedDocumentURLs.isEmpty else { return }
         let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
+        let replyMessageId = replyingToMessage?.id
         let urls = selectedDocumentURLs
 
-        clearDraft(chatId: chatId)
-        selectedDocumentURLs = []
-        messageText = NSAttributedString(string: "")
-        replyingToMessage = nil
+        messageActionError = nil
+        isSubmittingMessage = true
         Task {
+            defer { isSubmittingMessage = false }
             do {
                 let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
                     service: service,
@@ -1309,8 +1334,16 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     replyTo: replyTo,
                     uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
                 )
+                clearDraft(chatId: chatId)
+                guard openedChatId == chatId else { return }
+                selectedDocumentURLs = []
+                messageText = NSAttributedString(string: "")
+                if replyingToMessage?.id == replyMessageId {
+                    replyingToMessage = nil
+                }
             } catch {
-                messageActionError = error.localizedDescription
+                guard !Task.isCancelled else { return }
+                messageActionError = "Message couldn't be sent: \(telegramErrorDescription(error))"
             }
         }
     }
@@ -1334,18 +1367,30 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             return
         }
         let linkPreviewOptions = editLinkPreviewComposer.options
-        editingMessage = nil
-        editMessageText = NSAttributedString(string: "")
-
-        performMessageAction {
-            await TelegramMessageEditing.editMessage(
-                service: self.service,
-                chatId: message.chatId,
-                messageId: message.id,
-                messageContent: message.content,
-                newText: text,
-                linkPreviewOptions: linkPreviewOptions,
-            )
+        messageActionError = nil
+        isSubmittingMessage = true
+        Task {
+            defer { isSubmittingMessage = false }
+            do {
+                let supported = try await TelegramMessageEditing.editMessage(
+                    service: service,
+                    chatId: message.chatId,
+                    messageId: message.id,
+                    messageContent: message.content,
+                    newText: text,
+                    linkPreviewOptions: linkPreviewOptions,
+                )
+                guard supported else {
+                    messageActionError = "This type of message can't be edited."
+                    return
+                }
+                guard openedChatId == message.chatId, editingMessage?.id == message.id else { return }
+                editingMessage = nil
+                editMessageText = NSAttributedString(string: "")
+            } catch {
+                guard !Task.isCancelled else { return }
+                messageActionError = "Message couldn't be updated: \(telegramErrorDescription(error))"
+            }
         }
     }
 

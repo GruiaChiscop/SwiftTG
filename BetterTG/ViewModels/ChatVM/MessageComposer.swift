@@ -34,6 +34,7 @@ import TDLibKit
     var showCameraView = false
     var showDocumentPicker = false
     var showPhotoPickerView = false
+    var isSubmittingMessage = false
     @ObservationIgnored var sendMessageTask: Task<Void, Never>?
 
     let linkPreviewComposer: TelegramLinkPreviewComposer
@@ -63,29 +64,39 @@ import TDLibKit
         }
     }
 
-    func sendMessage() async {
+    func sendMessage() async throws {
+        let wasEditing = editCustomMessage != nil
+        let submitted: Bool
         if !displayedDocuments.isEmpty {
-            await sendMessageDocuments()
+            try await sendMessageDocuments()
+            submitted = true
         } else if !displayedImages.isEmpty {
-            await sendMessagePhotos()
+            try await sendMessagePhotos()
+            submitted = true
         } else if canEditMessage {
-            await editMessage()
+            submitted = try await editMessage()
         } else if !text.characters.isEmpty {
-            await sendMessageText()
+            try await sendMessageText()
+            submitted = true
         } else {
             return
         }
 
+        guard submitted else { return }
         await main {
             withAnimation {
-                self.displayedImages.removeAll()
-                self.displayedDocuments.removeAll()
-                self.editMessageText = ""
-                self.text = ""
-                self.replyMessage = nil
-                self.editCustomMessage = nil
+                if wasEditing {
+                    self.editMessageText = ""
+                    self.editCustomMessage = nil
+                } else {
+                    self.displayedImages.removeAll()
+                    self.displayedDocuments.removeAll()
+                    self.text = ""
+                    self.replyMessage = nil
+                }
             }
         }
+        await updateDraft()
     }
 
     func stageDocuments(_ urls: [URL]) async {
@@ -95,7 +106,7 @@ import TDLibKit
         setShowSendButton()
     }
 
-    func sendMessageDocuments() async {
+    func sendMessageDocuments() async throws {
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
@@ -103,7 +114,7 @@ import TDLibKit
         let contents = displayedDocuments.map { url in
             TelegramMessageSending.documentContent(url: url, caption: caption)
         }
-        _ = try? await TelegramMessageSending.send(
+        try await TelegramMessageSending.send(
             service: service,
             chatId: chatId,
             contents: contents,
@@ -112,13 +123,13 @@ import TDLibKit
         )
     }
 
-    func sendMessagePhotos() async {
+    func sendMessagePhotos() async throws {
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
         )
         let contents = displayedImages.map { makeInputMessageContent(for: $0.url, caption: caption) }
-        _ = try? await TelegramMessageSending.send(
+        try await TelegramMessageSending.send(
             service: service,
             chatId: chatId,
             contents: contents,
@@ -137,7 +148,7 @@ import TDLibKit
         )
     }
 
-    func sendMessageText() async {
+    func sendMessageText() async throws {
         let formattedText = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
@@ -146,7 +157,7 @@ import TDLibKit
             formattedText,
             linkPreviewOptions: linkPreviewComposer.options,
         )
-        _ = try? await TelegramMessageSending.send(
+        try await TelegramMessageSending.send(
             service: service,
             chatId: chatId,
             contents: [content],
@@ -154,13 +165,13 @@ import TDLibKit
         )
     }
 
-    func editMessage() async {
-        guard let message = editCustomMessage?.message else { return }
+    func editMessage() async throws -> Bool {
+        guard let message = editCustomMessage?.message else { return false }
         let newText = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: formattedText(from: editMessageText),
         )
-        let supported = await TelegramMessageEditing.editMessage(
+        let supported = try await TelegramMessageEditing.editMessage(
             service: service,
             chatId: chatId,
             messageId: message.id,
@@ -171,10 +182,11 @@ import TDLibKit
         if !supported {
             log("Unsupported edit message type")
         }
+        return supported
     }
 
-    func sendMessageVoiceNote(url: URL, duration: Int, waveform: Data) async {
-        try? await TelegramVoiceNoteSending.send(
+    func sendMessageVoiceNote(url: URL, duration: Int, waveform: Data) async throws {
+        try await TelegramVoiceNoteSending.send(
             service: service,
             chatId: chatId,
             url: url,
@@ -186,7 +198,11 @@ import TDLibKit
             waveform: waveform,
             replyTo: getMessageReplyTo(from: replyMessage),
         )
-        text = ""
+        await main {
+            self.text = ""
+            self.replyMessage = nil
+        }
+        await updateDraft()
     }
 
     func updateDraft() async {

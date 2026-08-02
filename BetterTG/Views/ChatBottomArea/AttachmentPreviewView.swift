@@ -54,6 +54,21 @@ struct AttachmentPreviewView: View {
                 : (chatVM.displayedImages.isEmpty ? "Document" : "Photo"))
                 .navigationBarTitleDisplayMode(.inline)
         }
+        .alert(
+            "Send Failed",
+            isPresented: Binding(
+                get: { chatVM.messageActionError != nil },
+                set: {
+                    if !$0 {
+                        chatVM.messageActionError = nil
+                    }
+                },
+            ),
+        ) {
+            Button("OK") { chatVM.messageActionError = nil }
+        } message: {
+            Text(chatVM.messageActionError ?? "Telegram couldn't send the message.")
+        }
     }
 
     // MARK: Private
@@ -88,6 +103,7 @@ struct AttachmentPreviewView: View {
         }
         .padding(10)
         .background(.bar)
+        .disabled(chatVM.isSubmittingMessage)
     }
 
     private func documentPreview(for url: URL) -> some View {

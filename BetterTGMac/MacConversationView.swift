@@ -373,6 +373,7 @@ struct MacConversationView: View {
             }
         }
         .padding(12)
+        .disabled(model.isSubmittingMessage)
     }
 
     private func linkPreviewAccessory(_ preview: LinkPreview) -> some View {

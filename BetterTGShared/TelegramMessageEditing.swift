@@ -31,35 +31,49 @@ enum TelegramMessageEditing {
         messageContent: MessageContent,
         newText: FormattedText,
         linkPreviewOptions: LinkPreviewOptions? = nil,
-    ) async -> Bool {
+    ) async throws -> Bool {
         let newText = await TelegramTextFormatting.addingAutomaticEntities(service: service, to: newText)
-        let edited: Message?
+        let edited = try await performEdit(
+            messageContent: messageContent,
+            editText: {
+                try await service.editMessageText(
+                    chatId: chatId,
+                    inputMessageContent: .inputMessageText(.init(
+                        clearDraft: true,
+                        linkPreviewOptions: linkPreviewOptions,
+                        text: newText,
+                    )),
+                    messageId: messageId,
+                    replyMarkup: nil,
+                )
+            },
+            editCaption: {
+                try await service.editMessageCaption(
+                    caption: newText,
+                    chatId: chatId,
+                    messageId: messageId,
+                    replyMarkup: nil,
+                    showCaptionAboveMedia: false,
+                )
+            },
+        )
+        guard let edited else { return false }
+        service.notifyMessageContentChanged(chatId: chatId, messageId: messageId, newContent: edited.content)
+        return true
+    }
+
+    static func performEdit(
+        messageContent: MessageContent,
+        editText: () async throws -> Message,
+        editCaption: () async throws -> Message,
+    ) async throws -> Message? {
         switch messageContent {
         case .messageText:
-            edited = try? await service.editMessageText(
-                chatId: chatId,
-                inputMessageContent: .inputMessageText(.init(
-                    clearDraft: true,
-                    linkPreviewOptions: linkPreviewOptions,
-                    text: newText,
-                )),
-                messageId: messageId,
-                replyMarkup: nil,
-            )
+            try await editText()
         case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
-            edited = try? await service.editMessageCaption(
-                caption: newText,
-                chatId: chatId,
-                messageId: messageId,
-                replyMarkup: nil,
-                showCaptionAboveMedia: false,
-            )
+            try await editCaption()
         default:
-            return false
+            nil
         }
-        if let edited {
-            service.notifyMessageContentChanged(chatId: chatId, messageId: messageId, newContent: edited.content)
-        }
-        return true
     }
 }

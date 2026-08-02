@@ -55,6 +55,22 @@ struct MacAttachmentPreview: View {
         .onChange(of: itemCount) { _, newValue in
             selectedIndex = min(selectedIndex, max(0, newValue - 1))
         }
+        .disabled(model.isSubmittingMessage)
+        .alert(
+            "Send Failed",
+            isPresented: Binding(
+                get: { model.messageActionError != nil },
+                set: {
+                    if !$0 {
+                        model.messageActionError = nil
+                    }
+                },
+            ),
+        ) {
+            Button("OK") { model.messageActionError = nil }
+        } message: {
+            Text(model.messageActionError ?? "Telegram couldn't send the message.")
+        }
     }
 
     // MARK: Private
