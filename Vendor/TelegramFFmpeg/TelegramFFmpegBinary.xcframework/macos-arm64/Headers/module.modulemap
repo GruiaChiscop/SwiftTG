@@ -1,0 +1,4 @@
+module TelegramFFmpegBinary [system] {
+    header "TelegramFFmpegBinary.h"
+    export *
+}

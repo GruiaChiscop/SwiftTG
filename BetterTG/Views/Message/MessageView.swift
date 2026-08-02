@@ -96,11 +96,13 @@ struct MessageView: View {
                     || customMessage.messageVideo != nil
                     || customMessage.messageVoiceNote != nil
                     || customMessage.messageAudio != nil
+                    || customMessage.messageSticker != nil
                     || !customMessage.album.isEmpty
                 {
                     MessageContentView(
                         customMessage: customMessage,
                         audioPlaylist: audioPlaylist,
+                        service: chatVM.service,
                         onMediaTap: openAlbum,
                         onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
                     )
@@ -128,11 +130,13 @@ struct MessageView: View {
                         .padding(.bottom, 8)
                 }
             }
-            .background(
-                chatVM.highlightedMessageId == customMessage.id
-                    ? .white.opacity(0.5)
-                    : (customMessage.serviceMessageText == nil ? .gray6 : .gray6.opacity(0.75)),
-            )
+            .background {
+                if !isStickerMessage {
+                    chatVM.highlightedMessageId == customMessage.id
+                        ? Color.white.opacity(0.5)
+                        : (customMessage.serviceMessageText == nil ? Color.gray6 : Color.gray6.opacity(0.75))
+                }
+            }
             .clipShape(.rect(cornerRadius: 20))
             .overlay(alignment: .bottomTrailing) {
                 HStack(spacing: 3) {
@@ -223,6 +227,10 @@ struct MessageView: View {
     /// sender chat's own title instead, matching how macOS resolves the same case.
     private var channelOrGroupAwareSenderName: String {
         customMessage.senderUser?.firstName ?? customMessage.senderChatTitle ?? "Unknown"
+    }
+
+    private var isStickerMessage: Bool {
+        customMessage.messageSticker != nil
     }
 
     private var textLinks: [TelegramTextLink] {

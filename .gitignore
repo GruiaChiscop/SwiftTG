@@ -23,5 +23,8 @@ BetterTG ????-??-?? ??-??-??/
 api_key.json
 report.xml
 build
+.build/
+.swiftpm/
+Vendor/TelegramFFmpeg/.build-artifacts/
 .xcodebuildmcp
 .claude

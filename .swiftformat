@@ -25,6 +25,7 @@
 --enum-namespaces always
 --enum-threshold 0
 --equatable-macro none
+--exclude Vendor
 --exponent-case lowercase
 --exponent-grouping disabled
 --extension-acl on-extension

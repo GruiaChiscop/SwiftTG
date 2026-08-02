@@ -54,13 +54,14 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
     
     private func download(_ id: Int? = nil) async {
         do {
-            _ = try await service.downloadFile(
+            let downloadedFile = try await service.downloadFile(
                 fileId: id ?? self.id,
                 limit: 0,
                 offset: 0,
                 priority: 1,
                 synchronous: false,
             )
+            await setImage(from: downloadedFile)
         } catch {
             log("Error downloading file: \(error)")
         }

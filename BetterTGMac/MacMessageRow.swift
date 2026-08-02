@@ -91,6 +91,8 @@ struct MacMessageRow: View {
                             service: model.service,
                             player: audioPlayer,
                         )
+                    } else if case .messageSticker(let content) = message.content {
+                        MacStickerView(model: model, content: content)
                     } else if case .messageText(let content) = message.content {
                         if let linkPreview = content.linkPreview, linkPreview.showAboveText {
                             MacLinkPreviewView(model: model, preview: linkPreview)
@@ -124,12 +126,18 @@ struct MacMessageRow: View {
                 }
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
-                .background(
-                    isServiceMessage
-                        ? Color.secondary.opacity(0.12)
-                        : (message.isOutgoing ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12)),
-                    in: RoundedRectangle(cornerRadius: 12),
-                )
+                .background {
+                    if !isStickerMessage {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                isServiceMessage
+                                    ? Color.secondary.opacity(0.12)
+                                    : (message.isOutgoing
+                                        ? Color.accentColor.opacity(0.18)
+                                        : Color.secondary.opacity(0.12)),
+                            )
+                    }
+                }
                 .macModified { messageAccessibilityElement($0) }
                 .accessibilityHidden(hasAccessibilityGroup)
                 .contextMenu { messageActions }
@@ -394,6 +402,14 @@ struct MacMessageRow: View {
 
     private var isServiceMessage: Bool {
         TelegramServiceMessage.isServiceMessage(message.content)
+    }
+
+    private var isStickerMessage: Bool {
+        if case .messageSticker = message.content {
+            true
+        } else {
+            false
+        }
     }
 
     private var messageLinks: [TelegramTextLink] {

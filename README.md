@@ -17,7 +17,7 @@
 - sending/reading text/photo/voice/album messages
 - replying to/editing messages
 - draft, forwarded from
-- animojis (tgs, webp, sometimes webm)
+- stickers (WebP, animated TGS, and animated WebM)
 - pinned chats
 - searching your/global chats
 - custom settings sheet
@@ -52,10 +52,6 @@ or [AltStore (suggested)](https://altstore.io).
 <span><img src=".github/images/screenshots/16.png" alt="screenshots/16" width="270px"></span>
 <span><img src=".github/images/screenshots/17.png" alt="screenshots/17" width="270px"></span>
 <span><img src=".github/images/screenshots/18.png" alt="screenshots/18" width="270px"></span>
-
-# Important
-
-- Performance with animoji's is terrible, I recommend disabling them in settings
 
 # Contributing
 

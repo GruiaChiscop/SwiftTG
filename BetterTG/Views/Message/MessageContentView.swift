@@ -6,6 +6,7 @@ import TDLibKit
 struct MessageContentView: View {
     let customMessage: CustomMessage
     let audioPlaylist: [Audio]
+    let service: any TelegramService
     let onMediaTap: (Message?) -> Void
     var onVoiceNoteLocalPathResolved: (String) -> Void = { _ in }
 
@@ -27,6 +28,8 @@ struct MessageContentView: View {
                     )
                 case .messageAudio(let messageAudio):
                     MessageAudioView(audio: messageAudio.audio, playlist: audioPlaylist)
+                case .messageSticker(let messageSticker):
+                    TelegramStickerView(content: messageSticker, service: service)
                 default:
                     EmptyView()
                 }

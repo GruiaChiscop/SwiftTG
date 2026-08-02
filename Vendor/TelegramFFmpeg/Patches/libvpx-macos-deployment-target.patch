@@ -1,0 +1,12 @@
+--- a/build/make/configure.sh
++++ b/build/make/configure.sh
+@@ -946,6 +946,8 @@
+       ;;
+     *-darwin2[0-2]-*)
+       add_cflags  "-arch ${toolchain%%-*}"
++      add_cflags  "-mmacosx-version-min=15.0"
+       add_ldflags "-arch ${toolchain%%-*}"
++      add_ldflags "-mmacosx-version-min=15.0"
+       ;;
+     *-iphonesimulator-*)
+       add_cflags  "-miphoneos-version-min=${IOS_VERSION_MIN}"

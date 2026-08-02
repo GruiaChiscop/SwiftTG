@@ -639,6 +639,22 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         return file.local.path
     }
 
+    func localStickerPath(fileId: Int) async -> String? {
+        if let cachedPath = stickerPaths[fileId] {
+            return cachedPath
+        }
+        guard let file = try? await service.downloadFile(
+            fileId: fileId,
+            limit: 0,
+            offset: 0,
+            priority: 24,
+            synchronous: true,
+        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
+        else { return nil }
+        stickerPaths[fileId] = file.local.path
+        return file.local.path
+    }
+
     func beginReply(to message: Message) {
         draftReplyLoadTask?.cancel()
         draftReplyLoadTask = nil
@@ -1116,6 +1132,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored private var openTask: Task<Void, Never>?
     @ObservationIgnored private var documentPaths = [Int: String]()
     @ObservationIgnored private var photoPaths = [Int: String]()
+    @ObservationIgnored private var stickerPaths = [Int: String]()
     @ObservationIgnored private var preferredCountryId: String?
     @ObservationIgnored private var videoPaths = [Int: String]()
     @ObservationIgnored private var recordingTimer: Task<Void, Never>?

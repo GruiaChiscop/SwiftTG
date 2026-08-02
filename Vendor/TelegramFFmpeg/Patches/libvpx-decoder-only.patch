@@ -1,0 +1,13 @@
+--- build-libvpx.sh
++++ build-libvpx.sh
+@@ -17,8 +17,8 @@
+                 --disable-vp9-postproc
+                 --disable-vp9-temporal-denoising
+                 --disable-unit-tests
+-                --enable-realtime-only
+-                --enable-multi-res-encoding
++                --disable-vp8
++                --disable-vp9-encoder
+                 --size-limit=8192x8192"
+ DIST_DIR="_dist"
+ FRAMEWORK_DIR="VPX.framework"

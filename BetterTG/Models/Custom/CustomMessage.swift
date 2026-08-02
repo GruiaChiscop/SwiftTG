@@ -94,6 +94,13 @@ import TDLibKit
         }
         return nil
     }
+
+    var messageSticker: MessageSticker? {
+        if case .messageSticker(let messageSticker) = message.content {
+            return messageSticker
+        }
+        return nil
+    }
 }
 
 // MARK: Hashable
