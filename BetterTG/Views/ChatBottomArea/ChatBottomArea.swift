@@ -117,6 +117,18 @@ struct ChatBottomArea: View {
         )) {
             AttachmentPreviewView()
         }
+        .sheet(isPresented: $showsPollComposer) {
+            TelegramPollComposerView { draft in
+                try await TelegramPollSending.send(
+                    draft: draft,
+                    service: chatVM.service,
+                    chatId: chatVM.customChat.chat.id,
+                    replyToMessageId: chatVM.replyMessage?.id,
+                )
+                chatVM.replyMessage = nil
+                await chatVM.updateDraft()
+            }
+        }
         .padding(.vertical, 5)
         .padding(.horizontal, 10)
         .background(.bar)
@@ -167,6 +179,13 @@ struct ChatBottomArea: View {
             UIAccessibility.post(notification: .announcement, argument: "Recording locked")
         }
         .onChange(of: chatVM.displayedImages) { nc.post(name: .localScrollToLastIfNeeded) }
+        .task(id: chatVM.customChat.chat.id) {
+            pollIsAvailable = false
+            pollIsAvailable = await TelegramPollSending.isAvailable(
+                service: chatVM.service,
+                chatId: chatVM.customChat.chat.id,
+            )
+        }
         .onReceive(nc.publisher(for: .localOnSelectedImagesDrop)) { notification in
             guard let selectedImages = notification.object as? [SelectedImage] else { return }
             withAnimation {
@@ -200,6 +219,17 @@ struct ChatBottomArea: View {
                     chatVM.showDocumentPicker = true
                 } label: {
                     Label("Attach Files", systemImage: "folder")
+                }
+                if pollIsAvailable {
+                    Button {
+                        withAnimation {
+                            chatVM.displayedImages.removeAll()
+                            chatVM.displayedDocuments.removeAll()
+                        }
+                        showsPollComposer = true
+                    } label: {
+                        Label("Poll", systemImage: "chart.bar")
+                    }
                 }
             } label: {
                 Label("Attach", systemImage: "paperclip")
@@ -480,6 +510,9 @@ struct ChatBottomArea: View {
     // MARK: Private
 
     @Environment(\.scenePhase) private var scenePhase
+
+    @State private var showsPollComposer = false
+    @State private var pollIsAvailable = false
 
     @State private var hasBegunRecording = false
 

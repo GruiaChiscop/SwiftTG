@@ -30,6 +30,8 @@ struct MessageContentView: View {
                     MessageAudioView(audio: messageAudio.audio, playlist: audioPlaylist)
                 case .messageSticker(let messageSticker):
                     TelegramStickerView(content: messageSticker, service: service)
+                case .messagePoll(let messagePoll):
+                    TelegramPollView(content: messagePoll, message: customMessage.message, service: service)
                 default:
                     EmptyView()
                 }

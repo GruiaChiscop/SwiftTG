@@ -101,6 +101,13 @@ import TDLibKit
         }
         return nil
     }
+
+    var messagePoll: MessagePoll? {
+        if case .messagePoll(let messagePoll) = message.content {
+            return messagePoll
+        }
+        return nil
+    }
 }
 
 // MARK: Hashable

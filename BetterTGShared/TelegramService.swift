@@ -102,6 +102,13 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         reactionType: ReactionType?,
     ) async throws -> AddedReactions
     func getMessageProperties(chatId: Int64?, messageId: Int64?) async throws -> MessageProperties
+    func getPollVoters(
+        chatId: Int64?,
+        limit: Int?,
+        messageId: Int64?,
+        offset: Int?,
+        optionId: Int?,
+    ) async throws -> PollVoters
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview
     func getMe() async throws -> User
     func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings
@@ -184,6 +191,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         settings: PhoneNumberAuthenticationSettings?,
     ) async throws -> Ok
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
+    func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok
     func toggleChatIsMarkedAsUnread(chatId: Int64?, isMarkedAsUnread: Bool?) async throws -> Ok
     func toggleChatIsPinned(chatId: Int64?, chatList: ChatList?, isPinned: Bool?) async throws -> Ok
     func unpinChatMessage(chatId: Int64?, messageId: Int64?) async throws -> Ok
@@ -339,6 +347,22 @@ extension TelegramSession: TelegramService {
             messageId: messageId,
             offset: offset,
             reactionType: reactionType,
+        )
+    }
+
+    func getPollVoters(
+        chatId: Int64?,
+        limit: Int?,
+        messageId: Int64?,
+        offset: Int?,
+        optionId: Int?,
+    ) async throws -> PollVoters {
+        try await client.getPollVoters(
+            chatId: chatId,
+            limit: limit,
+            messageId: messageId,
+            offset: offset,
+            optionId: optionId,
         )
     }
 
@@ -672,6 +696,10 @@ extension TelegramSession: TelegramService {
 
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok {
         try await client.setMessageSenderBlockList(blockList: blockList, senderId: senderId)
+    }
+
+    func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok {
+        try await client.setPollAnswer(chatId: chatId, messageId: messageId, optionIds: optionIds)
     }
 
     func setChatDraftMessage(chatId: Int64?, draftMessage: DraftMessage?, topicId: MessageTopic?) async throws -> Ok {

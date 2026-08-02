@@ -133,6 +133,8 @@ struct ReplyMessageView: View {
             } else {
                 Text(getAttributedString(from: messageDocument.caption))
             }
+        case .messagePoll(let messagePoll):
+            Text("\(messagePoll.poll.type.isQuiz ? "Quiz" : "Poll"): \(messagePoll.poll.question.text)")
         case .messageUnsupported:
             Text("TDLib not supported")
         default:

@@ -77,6 +77,21 @@ enum TelegramMutePreset: CaseIterable, Identifiable, Sendable {
 // MARK: - TelegramMessageActions
 
 enum TelegramMessageActions {
+    static func setPollAnswer(
+        service: any TelegramService,
+        message: Message,
+        optionPositions: [Int],
+    ) async throws {
+        _ = try await service.setPollAnswer(
+            chatId: message.chatId,
+            messageId: message.id,
+            optionIds: optionPositions,
+        )
+        if let refreshedMessage = try? await service.getMessage(chatId: message.chatId, messageId: message.id) {
+            service.mergeMessages(chatId: message.chatId, messages: [refreshedMessage])
+        }
+    }
+
     static func toggleReaction(
         service: any TelegramService,
         message: Message,

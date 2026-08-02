@@ -655,7 +655,7 @@ import UniformTypeIdentifiers
                     messageText.text
                 case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
                     telegramMessageFormattedText(message)
-                case .messageSticker:
+                case .messagePoll, .messageSticker:
                     nil
                 case .messageUnsupported:
                     FormattedText(entities: [], text: "TDLib not supported")

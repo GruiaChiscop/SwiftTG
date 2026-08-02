@@ -48,6 +48,19 @@ struct MacConversationView: View {
         .sheet(isPresented: $showsPinnedMessages) {
             MacPinnedMessagesView(model: model)
         }
+        .sheet(isPresented: $showsPollComposer) {
+            TelegramPollComposerView { draft in
+                guard let chatId = model.openedChatId else { return }
+                try await TelegramPollSending.send(
+                    draft: draft,
+                    service: model.service,
+                    chatId: chatId,
+                    replyToMessageId: model.replyingToMessage?.id,
+                )
+                model.replyingToMessage = nil
+                model.saveCurrentDraft()
+            }
+        }
         .sheet(isPresented: Binding(
             get: { !model.selectedPhotoURLs.isEmpty || !model.selectedDocumentURLs.isEmpty },
             set: { isPresented in
@@ -64,6 +77,13 @@ struct MacConversationView: View {
         .onChange(of: model.conversationSearchQuery) {
             model.conversationSearchQueryDidChange()
         }
+        .task(id: chat.chatId) {
+            pollIsAvailable = false
+            pollIsAvailable = await TelegramPollSending.isAvailable(
+                service: model.service,
+                chatId: chat.chatId,
+            )
+        }
     }
 
     // MARK: Private
@@ -72,6 +92,8 @@ struct MacConversationView: View {
     @State private var isAtBottom = false
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
+    @State private var showsPollComposer = false
+    @State private var pollIsAvailable = false
 
     private var shouldFollowLatestMessage: Bool {
         switch model.messages.change {
@@ -278,6 +300,10 @@ struct MacConversationView: View {
                     Menu("Attach", systemImage: "paperclip") {
                         Button("Photos", systemImage: "photo") { model.choosePhotos() }
                         Button("Files", systemImage: "doc") { model.chooseDocuments() }
+                        if pollIsAvailable {
+                            Button("Poll", systemImage: "chart.bar") { showsPollComposer = true }
+                                .disabled(model.editingMessage != nil)
+                        }
                     }
                     .labelStyle(.iconOnly)
                     .help("Attach photos or files")

@@ -93,6 +93,8 @@ struct MacMessageRow: View {
                         )
                     } else if case .messageSticker(let content) = message.content {
                         MacStickerView(model: model, content: content)
+                    } else if case .messagePoll(let content) = message.content {
+                        TelegramPollView(content: content, message: message, service: model.service)
                     } else if case .messageText(let content) = message.content {
                         if let linkPreview = content.linkPreview, linkPreview.showAboveText {
                             MacLinkPreviewView(model: model, preview: linkPreview)
@@ -138,7 +140,13 @@ struct MacMessageRow: View {
                             )
                     }
                 }
-                .macModified { messageAccessibilityElement($0) }
+                .macModified {
+                    if isPollMessage {
+                        pollAccessibilityElement($0)
+                    } else {
+                        messageAccessibilityElement($0)
+                    }
+                }
                 .accessibilityHidden(hasAccessibilityGroup)
                 .contextMenu { messageActions }
                 if !message.isOutgoing, !messageReactions.isEmpty {
@@ -412,6 +420,14 @@ struct MacMessageRow: View {
         }
     }
 
+    private var isPollMessage: Bool {
+        if case .messagePoll = message.content {
+            true
+        } else {
+            false
+        }
+    }
+
     private var messageLinks: [TelegramTextLink] {
         guard let formattedText = telegramMessageFormattedText(message) else { return [] }
         return TelegramTextFormatting.links(in: formattedText)
@@ -427,7 +443,8 @@ struct MacMessageRow: View {
     }
 
     private var hasAccessibilityGroup: Bool {
-        !messageReactions.isEmpty || !messageLinks.isEmpty || separatePreviewAccessibilityLink != nil
+        !isPollMessage &&
+            (!messageReactions.isEmpty || !messageLinks.isEmpty || separatePreviewAccessibilityLink != nil)
     }
 
     private var rowActions: [MacRowAction] {
@@ -476,6 +493,22 @@ struct MacMessageRow: View {
         return items
     }
 
+    private var pollAccessibilityContextDescription: String {
+        var parts = [message.isOutgoing ? "You" : model.cachedSenderName(for: message) ?? "Unknown sender"]
+        if case .messagePoll(let content) = message.content {
+            parts.append(content.poll.type.isQuiz ? "Quiz" : "Poll")
+            parts.append(content.poll.question.text)
+        }
+        parts.append(telegramMessageDateDescription(message.date))
+        if let status = telegramMessageDeliveryStatus(
+            message,
+            lastReadOutboxMessageId: lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        return parts.joined(separator: ", ")
+    }
+
     @ViewBuilder private var messageActions: some View {
         ForEach(Array(rowActions.enumerated()), id: \.offset) { _, item in
             switch item {
@@ -520,7 +553,7 @@ struct MacMessageRow: View {
         TelegramMessageReactionsView(reactions: messageReactions) {
             showReactionDetails = true
         }
-        .accessibilityHidden(true)
+        .accessibilityHidden(!isPollMessage)
         .fixedSize(horizontal: true, vertical: false)
         .layoutPriority(2)
         .contextMenu { messageActions }
@@ -569,6 +602,14 @@ struct MacMessageRow: View {
                 isEnabled: hasDefaultActivation,
                 action: activateMessage,
             ))
+            .accessibilityActions { messageAccessibilityActions }
+    }
+
+    private func pollAccessibilityElement(_ content: some View) -> some View {
+        content
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("message-\(message.id)")
+            .accessibilityLabel(pollAccessibilityContextDescription)
             .accessibilityActions { messageAccessibilityActions }
     }
 

@@ -97,6 +97,7 @@ struct MessageView: View {
                     || customMessage.messageVoiceNote != nil
                     || customMessage.messageAudio != nil
                     || customMessage.messageSticker != nil
+                    || customMessage.messagePoll != nil
                     || !customMessage.album.isEmpty
                 {
                     MessageContentView(
@@ -156,7 +157,13 @@ struct MessageView: View {
             .contextMenu {
                 messageContextMenu
             }
-            .modify { messageAccessibilityElement($0) }
+            .modify {
+                if isPollMessage {
+                    pollAccessibilityElement($0)
+                } else {
+                    messageAccessibilityElement($0)
+                }
+            }
             .accessibilityHidden(hasAccessibilityGroup)
 
             if !customMessage.message.isOutgoing, !messageReactions.isEmpty {
@@ -233,6 +240,10 @@ struct MessageView: View {
         customMessage.messageSticker != nil
     }
 
+    private var isPollMessage: Bool {
+        customMessage.messagePoll != nil
+    }
+
     private var textLinks: [TelegramTextLink] {
         guard let formattedText = customMessage.formattedText else { return [] }
         return TelegramTextFormatting.links(in: formattedText)
@@ -252,7 +263,7 @@ struct MessageView: View {
     }
 
     private var hasAccessibilityGroup: Bool {
-        !textLinks.isEmpty || separatePreviewAccessibilityLink != nil
+        !isPollMessage && (!textLinks.isEmpty || separatePreviewAccessibilityLink != nil)
     }
 
     private var audioPlaylist: [Audio] {
@@ -307,6 +318,22 @@ struct MessageView: View {
     private var hasNavigableReply: Bool {
         guard case .messageReplyToMessage(let reply) = customMessage.message.replyTo else { return false }
         return reply.messageId != 0
+    }
+
+    private var pollAccessibilityContextDescription: String {
+        var parts = [customMessage.message.isOutgoing ? "You" : channelOrGroupAwareSenderName]
+        if let poll = customMessage.messagePoll?.poll {
+            parts.append(poll.type.isQuiz ? "Quiz" : "Poll")
+            parts.append(poll.question.text)
+        }
+        parts.append(telegramMessageDateDescription(customMessage.message.date))
+        if let status = telegramMessageDeliveryStatus(
+            customMessage.message,
+            lastReadOutboxMessageId: chatVM.customChat.lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var reactionsButton: some View {
@@ -391,6 +418,16 @@ struct MessageView: View {
                     }
                 }
             }
+            .accessibilityActions {
+                messageAccessibilityActions
+            }
+    }
+
+    private func pollAccessibilityElement(_ content: some View) -> some View {
+        content
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("message-\(customMessage.id)")
+            .accessibilityLabel(pollAccessibilityContextDescription)
             .accessibilityActions {
                 messageAccessibilityActions
             }

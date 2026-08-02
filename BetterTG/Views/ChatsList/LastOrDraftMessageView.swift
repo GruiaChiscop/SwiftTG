@@ -109,6 +109,8 @@ private struct LastMesssageView: View {
             }
         case .messageText(let messageText):
             Text(getAttributedString(from: messageText.text, .gray))
+        case .messagePoll(let messagePoll):
+            Text("\(messagePoll.poll.type.isQuiz ? "Quiz" : "Poll"): \(messagePoll.poll.question.text)")
         case .messageUnsupported:
             Text("TDLib not supported")
         default:
