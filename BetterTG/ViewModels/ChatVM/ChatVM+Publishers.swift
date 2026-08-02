@@ -220,13 +220,17 @@ extension ChatVM {
         var displayedMessages = [CustomMessage]()
         var processedAlbums = Set<TdInt64>()
         var albumMessageIds = [TdInt64: [Int64]]()
+        // The shared store retains up to 500 messages per chat, while this ChatVM intentionally
+        // displays only its paged window. Scanning the whole retained history here runs on the
+        // main actor and made reopening heavily visited/media-rich chats noticeably stall.
+        let orderedLoadedMessageIds = snapshot.orderedMessageIds.filter(loadedMessageIds.contains)
 
-        for messageId in snapshot.orderedMessageIds {
+        for messageId in orderedLoadedMessageIds {
             guard let albumId = snapshot.messages[messageId]?.mediaAlbumId, albumId != 0 else { continue }
             albumMessageIds[albumId, default: []].append(messageId)
         }
 
-        for messageId in snapshot.orderedMessageIds {
+        for messageId in orderedLoadedMessageIds {
             guard let rawMessage = snapshot.messages[messageId] else { continue }
             if rawMessage.mediaAlbumId == 0 {
                 if let rendered = renderedMessages[messageId] {

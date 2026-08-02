@@ -50,11 +50,9 @@ import UniformTypeIdentifiers
 
     // MARK: End facade
 
-    /// Starts fetching the next batch once the user is getting close to the start of what's loaded,
-    /// not only once they've hit it exactly - a VoiceOver swipe (or a fast scroll) that lands right on
-    /// the edge would otherwise stall waiting on the network round trip before it has anything further
-    /// to move to.
-    static let loadMoreLookahead = 10
+    /// Telegram-iOS opens a chat around a bounded 44-message history view. Keeping the same-sized
+    /// initial window prevents both a one-message flash and unbounded eager pagination.
+    static let initialHistoryWindowSize = 44
 
     var customChat: CustomChat
     let initialMessageId: Int64?
@@ -92,6 +90,7 @@ import UniformTypeIdentifiers
     }()
 
     @ObservationIgnored var loadingMessagesTask: Task<Void, Never>?
+    @ObservationIgnored var hasReachedBeginningOfHistory = false
     @ObservationIgnored let service: any TelegramService
     @ObservationIgnored var appliedMessageSnapshotVersion: UInt64?
     @ObservationIgnored var latestMessageSnapshot: TelegramMessageSnapshot?
@@ -337,11 +336,6 @@ import UniformTypeIdentifiers
         }
     }
 
-    func loadMoreIfNeeded(distanceFromStart: Int) {
-        guard distanceFromStart <= Self.loadMoreLookahead else { return }
-        loadMessages()
-    }
-
     func updateBottomVisibility(isLastMessageVisible: Bool) {
         isAtBottom = isLastMessageVisible
         let shouldShowButton = !isLastMessageVisible
@@ -451,33 +445,81 @@ import UniformTypeIdentifiers
     }
     
     func loadMessages() {
-        guard loadingMessagesTask == nil else { return }
+        guard loadingMessagesTask == nil, !hasReachedBeginningOfHistory else { return }
         let fromMessageId = messages.first?.message.id ?? initialMessageId ?? 0
+        let loadsAroundInitialMessage = initialMessageId != nil && messages.isEmpty
+        let initialWindowTarget =
+            loadedMessageIds.isEmpty && initialMessageId == nil
+                ? Self.initialHistoryWindowSize
+                : nil
         loadingMessagesGeneration += 1
         let generation = loadingMessagesGeneration
         loadingMessagesTask = Task.background {
-            await self._loadMessages(fromMessageId: fromMessageId, generation: generation)
+            await self._loadMessages(
+                fromMessageId: fromMessageId,
+                generation: generation,
+                loadsAroundInitialMessage: loadsAroundInitialMessage,
+                initialWindowTarget: initialWindowTarget,
+            )
         }
     }
 
-    func _loadMessages(fromMessageId: Int64, generation: Int) async {
-        guard let chatHistory = try? await service.getChatHistory(
-            chatId: customChat.chat.id,
-            fromMessageId: fromMessageId,
-            limit: initialMessageId != nil && messages.isEmpty ? 31 : 30,
-            offset: initialMessageId != nil && messages.isEmpty ? -15 : 0,
-            onlyLocal: false,
-        )
-        .messages else {
-            await main {
-                guard self.loadingMessagesGeneration == generation else { return }
-                self.loadingMessagesTask = nil
+    func _loadMessages(
+        fromMessageId: Int64,
+        generation: Int,
+        loadsAroundInitialMessage: Bool,
+        initialWindowTarget: Int?,
+    ) async {
+        var collectedMessages = [Message]()
+        var collectedIds = Set<Int64>()
+        var nextFromMessageId = fromMessageId
+        var reachedBeginning = false
+        let maximumRequestCount = initialWindowTarget == nil ? 1 : 2
+
+        for requestIndex in 0..<maximumRequestCount {
+            let remainingInitialMessages = initialWindowTarget.map {
+                max(1, $0 - collectedIds.count + (nextFromMessageId == 0 ? 0 : 1))
             }
-            return
+            let limit = loadsAroundInitialMessage ? 31 : (remainingInitialMessages ?? 30)
+            let offset = loadsAroundInitialMessage ? -15 : 0
+
+            guard let history = try? await service.getChatHistory(
+                chatId: customChat.chat.id,
+                fromMessageId: nextFromMessageId,
+                limit: limit,
+                offset: offset,
+                onlyLocal: false,
+            ), let page = history.messages else {
+                break
+            }
+
+            if page.isEmpty {
+                reachedBeginning = true
+                break
+            }
+
+            for message in page where collectedIds.insert(message.id).inserted {
+                collectedMessages.append(message)
+            }
+
+            guard let initialWindowTarget, collectedIds.count < initialWindowTarget,
+                  requestIndex + 1 < maximumRequestCount,
+                  let boundaryMessage = page.last(where: { $0.id != nextFromMessageId })
+            else { break }
+            nextFromMessageId = boundaryMessage.id
         }
 
-        await main { self.loadedMessageIds.formUnion(chatHistory.map(\.id)) }
-        service.mergeMessageHistory(chatId: customChat.chat.id, messages: chatHistory)
+        let loadedIds = collectedIds
+        let didReachBeginning = reachedBeginning
+        await main {
+            self.loadedMessageIds.formUnion(loadedIds)
+            if didReachBeginning {
+                self.hasReachedBeginningOfHistory = true
+            }
+        }
+        if !collectedMessages.isEmpty {
+            service.mergeMessageHistory(chatId: customChat.chat.id, messages: collectedMessages)
+        }
         await main {
             guard self.loadingMessagesGeneration == generation else { return }
             self.loadingMessagesTask = nil
@@ -664,37 +706,41 @@ import UniformTypeIdentifiers
         async let serviceMessageTextTask = TelegramServiceMessage.description(service: service, message: message)
 
         let replyToMessage = await replyToMessageTask
-        let customMessage = await CustomMessage(
-            message: message,
-            replyToMessage: replyToMessage,
-            forwardedFrom: forwardedFromTask,
-            properties: (try? propertiesTask) ?? .default,
-        )
-        customMessage.senderUser = await senderUserTask
-        if case .messageSenderChat = message.senderId {
-            customMessage.senderChatTitle = await TelegramSenderName.displayName(
-                service: service,
-                senderId: message.senderId,
-            )
-        }
-        customMessage.serviceMessageText = await serviceMessageTextTask
-        if let reactions = try? await reactionsTask {
-            customMessage.availableReactions = telegramAvailableReactions(reactions)
-        }
+        let forwardedFrom = await forwardedFromTask
+        let properties = await (try? propertiesTask) ?? .default
+        let senderUser = await senderUserTask
+        let senderChatTitle: String? =
+            if case .messageSenderChat = message.senderId {
+                await TelegramSenderName.displayName(
+                    service: service,
+                    senderId: message.senderId,
+                )
+            } else {
+                nil
+            }
+        let serviceMessageText = await serviceMessageTextTask
+        let availableReactions: [AvailableReaction] =
+            if let reactions = try? await reactionsTask {
+                telegramAvailableReactions(reactions)
+            } else {
+                []
+            }
 
-        if message.mediaAlbumId != 0 {
-            customMessage.album.append(message)
-        }
-
+        let replyUser: User?
+        let replySenderName: String?
         if case .messageSenderUser(let messageSenderUser) = replyToMessage?.senderId {
-            customMessage.replyUser = try? await service.getUser(userId: messageSenderUser.userId)
-            customMessage.replySenderName = customMessage.replyUser.map(telegramUserDisplayName)
+            replyUser = try? await service.getUser(userId: messageSenderUser.userId)
+            replySenderName = replyUser.map(telegramUserDisplayName)
         } else if case .messageSenderChat(let messageSenderChat) = replyToMessage?.senderId {
-            customMessage.replySenderName = try? await service.getChat(chatId: messageSenderChat.chatId).title
+            replyUser = nil
+            replySenderName = try? await service.getChat(chatId: messageSenderChat.chatId).title
+        } else {
+            replyUser = nil
+            replySenderName = nil
         }
-        
-        customMessage.formattedText =
-            if let serviceMessageText = customMessage.serviceMessageText {
+
+        let formattedText: FormattedText? =
+            if let serviceMessageText {
                 FormattedText(entities: [], text: serviceMessageText)
             } else {
                 switch message.content {
@@ -708,8 +754,21 @@ import UniformTypeIdentifiers
                     FormattedText(entities: [], text: telegramMessageContentDescription(message))
                 }
             }
-        
-        return customMessage
+
+        return CustomMessage(
+            message: message,
+            senderUser: senderUser,
+            senderChatTitle: senderChatTitle,
+            replyUser: replyUser,
+            replySenderName: replySenderName,
+            replyToMessage: replyToMessage,
+            album: message.mediaAlbumId == 0 ? [] : [message],
+            forwardedFrom: forwardedFrom,
+            serviceMessageText: serviceMessageText,
+            formattedText: formattedText,
+            properties: properties,
+            availableReactions: availableReactions,
+        )
     }
 
     func resolvedSenderUser(for senderId: MessageSender) async -> User? {
@@ -740,7 +799,7 @@ import UniformTypeIdentifiers
         }
         return nil
     }
-    
+
     // MARK: Private
 
     @ObservationIgnored private var hasStarted = false

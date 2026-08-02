@@ -205,7 +205,6 @@ struct ChatView: View {
                     customMessage: customMessage,
                     previousMessage: chatVM.messages[safe: index - 1],
                     nextMessage: chatVM.messages[safe: index + 1],
-                    distanceFromStart: index,
                     shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
                     isPreview: isPreview,
                 )
@@ -218,7 +217,7 @@ struct ChatView: View {
         .listRowSpacing(5)
         .contentMargins(.bottom, 0, for: .scrollContent)
         .defaultScrollAnchor(.bottom)
-        .scrollPosition(id: $initialScrollPositionId, anchor: initialScrollAnchor)
+        .scrollPosition($initialScrollPosition)
         .background(.black)
         .scrollDismissesKeyboard(.interactively)
         .scrollBounceBehavior(.always)
@@ -230,6 +229,13 @@ struct ChatView: View {
         } action: { _, isAtBottom in
             guard !isPreview else { return }
             chatVM.updateBottomVisibility(isLastMessageVisible: isAtBottom)
+        }
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentSize.height > geometry.containerSize.height
+                && geometry.visibleRect.minY <= 250
+        } action: { wasNearTop, isNearTop in
+            guard !isPreview, positionedInitialMessages, !wasNearTop, isNearTop else { return }
+            chatVM.loadMessages()
         }
         .overlay(alignment: .top) {
             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
@@ -280,7 +286,7 @@ struct ChatView: View {
     // MARK: Private
 
     @FocusState private var conversationSearchFocused
-    @State private var initialScrollPositionId: Int64?
+    @State private var initialScrollPosition = ScrollPosition(idType: Int64.self, edge: .bottom)
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
@@ -316,16 +322,6 @@ struct ChatView: View {
     private var pinnedMessageSummary: String {
         guard let message = chatVM.currentPinnedMessage else { return "" }
         return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
-    }
-
-    private var initialScrollAnchor: UnitPoint {
-        if chatVM.initialMessageId != nil {
-            return .center
-        }
-        if initialUnreadMessageId != nil {
-            return .top
-        }
-        return .bottom
     }
 
     private var initialUnreadMessageId: Int64? {
@@ -462,21 +458,24 @@ struct ChatView: View {
 
     private func positionInitialMessagesIfNeeded() {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
-        guard let targetId = chatVM.initialMessageId ?? initialUnreadMessageId ?? chatVM.messages.last?.id else {
-            return
-        }
         positionedInitialMessages = true
         var transaction = Transaction()
         transaction.animation = nil
         withTransaction(transaction) {
-            initialScrollPositionId = targetId
+            if let initialMessageId = chatVM.initialMessageId {
+                initialScrollPosition.scrollTo(id: initialMessageId, anchor: .center)
+            } else if let initialUnreadMessageId {
+                initialScrollPosition.scrollTo(id: initialUnreadMessageId, anchor: .top)
+            } else {
+                initialScrollPosition.scrollTo(edge: .bottom)
+            }
         }
-        if chatVM.initialMessageId != nil {
+        if let initialMessageId = chatVM.initialMessageId {
             Task { @MainActor in
                 await Task.yield()
-                chatVM.highlightedMessageId = targetId
+                chatVM.highlightedMessageId = initialMessageId
                 if chatVM.movesAccessibilityFocusToInitialMessage {
-                    accessibilityFocusedMessageId = targetId
+                    accessibilityFocusedMessageId = initialMessageId
                 }
                 Task.main(delay: 0.8) { chatVM.highlightedMessageId = nil }
             }
@@ -532,7 +531,6 @@ private struct ChatMessageListRows: View {
     let customMessage: CustomMessage
     let previousMessage: CustomMessage?
     let nextMessage: CustomMessage?
-    let distanceFromStart: Int
     let shouldShowProfileImage: Bool
     let isPreview: Bool
 
@@ -602,7 +600,7 @@ private struct ChatMessageListRows: View {
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
-        .onAppear { chatVM.loadMoreIfNeeded(distanceFromStart: distanceFromStart) }
+        .id(customMessage.id)
     }
 
     // MARK: Private
