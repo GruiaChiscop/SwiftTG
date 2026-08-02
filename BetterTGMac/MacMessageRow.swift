@@ -15,6 +15,7 @@ struct MacMessageRow: View {
     let message: Message
     let albumMessages: [Message]
     let lastReadOutboxMessageId: Int64
+    let showsSenderName: Bool
 
     var body: some View {
         HStack {
@@ -26,6 +27,14 @@ struct MacMessageRow: View {
                     reactionsButton
                 }
                 VStack(alignment: .leading, spacing: 4) {
+                    if showsVisualSenderName, let senderName = model.cachedSenderName(for: message) {
+                        Text(senderName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tint)
+                            .lineLimit(1)
+                            .accessibilityHidden(true)
+                    }
+
                     if let forwardedFrom = model.messageForwardedFrom[message.id] {
                         if canNavigateToForwardOrigin {
                             Button {
@@ -145,6 +154,7 @@ struct MacMessageRow: View {
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
@@ -453,6 +463,10 @@ struct MacMessageRow: View {
 
     private var displayedMessageText: String {
         model.messageServiceDescriptions[message.id] ?? telegramMessageContentDescription(message)
+    }
+
+    private var showsVisualSenderName: Bool {
+        showsSenderName && !message.isOutgoing && !isServiceMessage
     }
 
     private var isServiceMessage: Bool {

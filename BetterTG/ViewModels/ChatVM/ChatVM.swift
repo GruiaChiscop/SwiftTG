@@ -658,10 +658,8 @@ import UniformTypeIdentifiers
                     telegramMessageFormattedText(message)
                 case .messagePoll, .messageSticker:
                     nil
-                case .messageUnsupported:
-                    FormattedText(entities: [], text: "TDLib not supported")
                 default:
-                    FormattedText(entities: [], text: "BTG not supported")
+                    FormattedText(entities: [], text: telegramMessageContentDescription(message))
                 }
             }
         

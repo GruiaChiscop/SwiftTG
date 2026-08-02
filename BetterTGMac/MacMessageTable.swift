@@ -41,6 +41,7 @@ struct MacMessageTable: View {
                         message: message,
                         albumMessages: albumMessageIds?.compactMap { model.messages.messages[$0] } ?? [],
                         lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
+                        showsSenderName: chat.kind == .group,
                     )
                     .tag(row.id)
                     .padding(.horizontal, 8)

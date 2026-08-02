@@ -196,10 +196,10 @@ extension ChatVM {
                 messageText.text
             case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
                 telegramMessageFormattedText(message)
-            case .messageUnsupported:
-                FormattedText(entities: [], text: "TDLib not supported")
-            default:
+            case .messagePoll, .messageSticker:
                 nil
+            default:
+                FormattedText(entities: [], text: telegramMessageContentDescription(message))
             }
         return customMessage
     }

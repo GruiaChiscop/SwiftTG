@@ -135,10 +135,8 @@ struct ReplyMessageView: View {
             }
         case .messagePoll(let messagePoll):
             Text("\(messagePoll.poll.type.isQuiz ? "Quiz" : "Poll"): \(messagePoll.poll.question.text)")
-        case .messageUnsupported:
-            Text("TDLib not supported")
         default:
-            Text("BTG not supported")
+            Text(telegramMessageContentDescription(message))
         }
     }
 }

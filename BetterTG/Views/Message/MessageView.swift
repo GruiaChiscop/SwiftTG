@@ -84,6 +84,16 @@ struct MessageView: View {
             }
 
             VStack(alignment: .leading, spacing: 1) {
+                if showsVisualSenderName, let visualSenderName {
+                    Text(visualSenderName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tint)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 6)
+                        .accessibilityHidden(true)
+                }
+
                 if let forwardedFrom = customMessage.forwardedFrom {
                     ForwardedFromView(
                         name: forwardedFrom,
@@ -167,6 +177,12 @@ struct MessageView: View {
                         Text(editStatus)
                     }
                     Text(chatVM.dateFormatter.string(from: customMessage.date))
+                    if let status = telegramMessageDeliveryStatus(
+                        customMessage.message,
+                        lastReadOutboxMessageId: chatVM.customChat.lastReadOutboxMessageId,
+                    ) {
+                        Text(status)
+                    }
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(.white)
@@ -175,6 +191,7 @@ struct MessageView: View {
                 .clipShape(.rect(cornerRadius: 10))
                 .padding(5)
                 .opacity(0.5)
+                .accessibilityHidden(true)
             }
             .contextMenu {
                 messageContextMenu
@@ -255,7 +272,18 @@ struct MessageView: View {
     /// falling back straight to "Unknown" there was wrong for every such message - fall back to the
     /// sender chat's own title instead, matching how macOS resolves the same case.
     private var channelOrGroupAwareSenderName: String {
-        customMessage.senderUser?.firstName ?? customMessage.senderChatTitle ?? "Unknown"
+        visualSenderName ?? "Unknown"
+    }
+
+    private var visualSenderName: String? {
+        customMessage.senderUser.map(telegramUserDisplayName)
+            ?? customMessage.senderChatTitle
+    }
+
+    private var showsVisualSenderName: Bool {
+        chatVM.customChat.showsMessageSender
+            && !customMessage.message.isOutgoing
+            && customMessage.serviceMessageText == nil
     }
 
     private var isStickerMessage: Bool {

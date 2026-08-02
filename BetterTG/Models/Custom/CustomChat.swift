@@ -88,6 +88,10 @@ import TDLibKit
     }
 
     var showsLastMessageSender: Bool {
+        showsMessageSender
+    }
+
+    var showsMessageSender: Bool {
         switch type {
         case .group: true
         case .supergroup(let supergroup): !supergroup.isChannel
