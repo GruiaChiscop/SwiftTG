@@ -146,12 +146,12 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored var conversationHeaderTask: Task<Void, Never>?
     @ObservationIgnored var openedChatType: ChatType?
 
-    var messageText = "" {
-        didSet { linkPreviewComposer.update(text: FormattedText(entities: [], text: messageText)) }
+    var messageText = NSAttributedString(string: "") {
+        didSet { linkPreviewComposer.update(text: macComposerFormattedText(messageText)) }
     }
 
-    var editMessageText = "" {
-        didSet { editLinkPreviewComposer.update(text: FormattedText(entities: [], text: editMessageText)) }
+    var editMessageText = NSAttributedString(string: "") {
+        didSet { editLinkPreviewComposer.update(text: macComposerFormattedText(editMessageText)) }
     }
 
     var activeLinkPreviewComposer: TelegramLinkPreviewComposer {
@@ -358,7 +358,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         messages = .empty(chatId: chatId)
         editingMessage = nil
         replyingToMessage = nil
-        editMessageText = ""
+        editMessageText = NSAttributedString(string: "")
         messageCapabilities = [:]
         messageAvailableReactions = [:]
         messageReplyContexts = [:]
@@ -659,7 +659,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         draftReplyLoadTask?.cancel()
         draftReplyLoadTask = nil
         editingMessage = nil
-        editMessageText = ""
+        editMessageText = NSAttributedString(string: "")
         replyingToMessage = message
     }
 
@@ -668,12 +668,12 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         draftReplyLoadTask = nil
         editingMessage = nil
         replyingToMessage = nil
-        editMessageText = ""
+        editMessageText = NSAttributedString(string: "")
         editLinkPreviewComposer.configure(preview: nil, options: nil)
     }
 
     func beginEditing(_ message: Message) {
-        guard let text = TelegramMessageEditing.editableFormattedText(from: message)?.text else { return }
+        guard let text = TelegramMessageEditing.editableFormattedText(from: message) else { return }
         selectedPhotoURLs = []
         selectedDocumentURLs = []
         replyingToMessage = nil
@@ -682,7 +682,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             options: telegramMessageLinkPreviewOptions(message),
         )
         editingMessage = message
-        editMessageText = text
+        editMessageText = macComposerAttributedString(text)
     }
 
     @discardableResult func forward(_ message: Message, to chatId: Int64) async -> Bool {
@@ -1076,7 +1076,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     func saveCurrentDraft() {
         guard editingMessage == nil, let chatId = openedChatId else { return }
         let draft = TelegramDrafts.make(
-            formattedText: FormattedText(entities: [], text: messageText),
+            formattedText: macComposerFormattedText(messageText),
             replyMessageId: replyingToMessage?.id,
             linkPreviewOptions: linkPreviewComposer.options,
         )
@@ -1190,7 +1190,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 nil
             }
         linkPreviewComposer.configure(preview: nil, options: linkPreviewOptions)
-        messageText = TelegramDrafts.text(from: draft)
+        messageText = TelegramDrafts.formattedText(from: draft)
+            .map(macComposerAttributedString)
+            ?? NSAttributedString(string: "")
         replyingToMessage = nil
 
         guard let replyMessageId = TelegramDrafts.replyMessageId(from: draft) else { return }
@@ -1208,18 +1210,18 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     }
 
     private func sendTextMessage() {
-        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let openedChatId, !text.isEmpty else { return }
+        let text = macComposerFormattedText(messageText, trimmingWhitespace: true)
+        guard let openedChatId, !text.text.isEmpty else { return }
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let linkPreviewOptions = linkPreviewComposer.options
         clearDraft(chatId: openedChatId)
-        messageText = ""
+        messageText = NSAttributedString(string: "")
         replyingToMessage = nil
         Task {
             do {
                 let formattedText = await TelegramTextFormatting.addingAutomaticEntities(
                     service: service,
-                    to: FormattedText(entities: [], text: text),
+                    to: text,
                 )
                 try await TelegramMessageSending.send(
                     service: service,
@@ -1239,7 +1241,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     private func sendSelectedPhotos() {
         guard let chatId = openedChatId, !selectedPhotoURLs.isEmpty else { return }
         let urls = selectedPhotoURLs
-        let caption = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let photos = urls.compactMap { url -> (URL, CGSize)? in
             guard let size = imagePixelSize(at: url), size.width > 0, size.height > 0 else { return nil }
@@ -1252,13 +1254,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
         clearDraft(chatId: chatId)
         selectedPhotoURLs = []
-        messageText = ""
+        messageText = NSAttributedString(string: "")
         replyingToMessage = nil
         Task {
             do {
                 let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
                     service: service,
-                    to: FormattedText(entities: [], text: caption),
+                    to: caption,
                 )
                 let contents = photos.map { url, size in
                     TelegramMessageSending.photoContent(
@@ -1283,19 +1285,19 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
     private func sendSelectedDocuments() {
         guard let chatId = openedChatId, !selectedDocumentURLs.isEmpty else { return }
-        let caption = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let urls = selectedDocumentURLs
 
         clearDraft(chatId: chatId)
         selectedDocumentURLs = []
-        messageText = ""
+        messageText = NSAttributedString(string: "")
         replyingToMessage = nil
         Task {
             do {
                 let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
                     service: service,
-                    to: FormattedText(entities: [], text: caption),
+                    to: caption,
                 )
                 let contents = urls.map { url in
                     TelegramMessageSending.documentContent(url: url, caption: formattedCaption)
@@ -1327,13 +1329,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
     private func editMessage() {
         guard let message = editingMessage else { return }
-        let text = editMessageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if case .messageText = message.content, text.isEmpty {
+        let text = macComposerFormattedText(editMessageText, trimmingWhitespace: true)
+        if case .messageText = message.content, text.text.isEmpty {
             return
         }
         let linkPreviewOptions = editLinkPreviewComposer.options
         editingMessage = nil
-        editMessageText = ""
+        editMessageText = NSAttributedString(string: "")
 
         performMessageAction {
             await TelegramMessageEditing.editMessage(
@@ -1341,7 +1343,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 chatId: message.chatId,
                 messageId: message.id,
                 messageContent: message.content,
-                newText: FormattedText(entities: [], text: text),
+                newText: text,
                 linkPreviewOptions: linkPreviewOptions,
             )
         }
@@ -1508,8 +1510,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         isLoadingPinnedMessages = false
         messages = .empty(chatId: 0)
         loadedChatFolderIds = []
-        messageText = ""
-        editMessageText = ""
+        messageText = NSAttributedString(string: "")
+        editMessageText = NSAttributedString(string: "")
         editingMessage = nil
         replyingToMessage = nil
         messageCapabilities = [:]

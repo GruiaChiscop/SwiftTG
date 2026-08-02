@@ -8,7 +8,7 @@ import SwiftUI
 struct MacComposerTextField: NSViewRepresentable {
     // MARK: Coordinator
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextStorageDelegate, NSTextViewDelegate {
         // MARK: Lifecycle
 
         init(parent: MacComposerTextField) {
@@ -20,15 +20,25 @@ struct MacComposerTextField: NSViewRepresentable {
 
         var parent: MacComposerTextField
         var contextID: AnyHashable
+        var isApplyingModelText = false
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
             textView.needsDisplay = true
+        }
+
+        func textStorage(
+            _ textStorage: NSTextStorage,
+            didProcessEditing _: NSTextStorageEditActions,
+            range _: NSRange,
+            changeInLength _: Int,
+        ) {
+            guard !isApplyingModelText else { return }
+            parent.text = NSAttributedString(attributedString: textStorage)
         }
     }
 
-    @Binding var text: String
+    @Binding var text: NSAttributedString
 
     let accessibilityLabel: String
     var contextID: AnyHashable = "composer"
@@ -44,8 +54,9 @@ struct MacComposerTextField: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.onPasteFiles = onPasteFiles
         textView.onSubmit = onSubmit
-        textView.isRichText = false
+        textView.isRichText = true
         textView.isAutomaticLinkDetectionEnabled = false
+        textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.font = .preferredFont(forTextStyle: .body)
@@ -57,8 +68,10 @@ struct MacComposerTextField: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainerInset = NSSize(width: 5, height: 5)
         textView.setAccessibilityLabel(accessibilityLabel)
-        textView.string = text
-        textView.setSelectedRange(NSRange(location: text.utf16.count, length: 0))
+        textView.typingAttributes = macComposerDefaultAttributes
+        textView.textStorage?.setAttributedString(text)
+        textView.textStorage?.delegate = context.coordinator
+        textView.setSelectedRange(NSRange(location: text.length, length: 0))
 
         let scrollView = NSScrollView()
         scrollView.borderType = .bezelBorder
@@ -77,11 +90,24 @@ struct MacComposerTextField: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.placeholder = accessibilityLabel
         textView.setAccessibilityLabel(accessibilityLabel)
-        if textView.string != text {
-            textView.string = text
+        if !textView.attributedString().isEqual(to: text) {
+            let selection = contextChanged
+                ? NSRange(location: text.length, length: 0)
+                : textView.selectedRange()
+            context.coordinator.isApplyingModelText = true
+            textView.textStorage?.setAttributedString(text)
+            context.coordinator.isApplyingModelText = false
+            textView.setSelectedRange(NSRange(
+                location: min(selection.location, text.length),
+                length: min(selection.length, max(0, text.length - selection.location)),
+            ))
+        } else if contextChanged {
+            textView.setSelectedRange(NSRange(location: text.length, length: 0))
+        }
+        if text.length == 0 {
+            textView.typingAttributes = macComposerDefaultAttributes
         }
         if contextChanged {
-            textView.setSelectedRange(NSRange(location: text.utf16.count, length: 0))
             context.coordinator.contextID = contextID
         }
     }

@@ -136,7 +136,7 @@ struct MacConversationView: View {
     }
 
     private var composerText: String {
-        model.editingMessage == nil ? model.messageText : model.editMessageText
+        (model.editingMessage == nil ? model.messageText : model.editMessageText).string
     }
 
     private var pinnedMessageSummary: String {

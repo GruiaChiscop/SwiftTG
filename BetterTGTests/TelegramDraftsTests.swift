@@ -36,6 +36,7 @@ struct TelegramDraftsTests {
         }
 
         #expect(content.text == text)
+        #expect(TelegramDrafts.formattedText(from: draft) == text)
     }
 
     @Test func `empty formatted composer clears the draft`() {

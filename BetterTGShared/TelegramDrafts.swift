@@ -34,10 +34,14 @@ enum TelegramDrafts {
     }
 
     static func text(from draft: DraftMessage?) -> String {
+        formattedText(from: draft)?.text ?? ""
+    }
+
+    static func formattedText(from draft: DraftMessage?) -> FormattedText? {
         guard let draft,
               case .draftMessageContentText(let content) = draft.content
-        else { return "" }
-        return content.text.text
+        else { return nil }
+        return content.text
     }
 
     static func replyMessageId(from draft: DraftMessage?) -> Int64? {
