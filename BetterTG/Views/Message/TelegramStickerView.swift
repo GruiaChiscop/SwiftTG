@@ -4,10 +4,40 @@ import SwiftUI
 import TDLibKit
 
 struct TelegramStickerView: View {
+    // MARK: Lifecycle
+
+    init(
+        content: MessageSticker,
+        service: any TelegramService,
+        maxSide: CGFloat = 224,
+        playsAnimation: Bool = true,
+    ) {
+        self.init(
+            sticker: content.sticker,
+            service: service,
+            maxSide: maxSide,
+            playsAnimation: playsAnimation,
+        )
+    }
+
+    init(
+        sticker: Sticker,
+        service: any TelegramService,
+        maxSide: CGFloat = 224,
+        playsAnimation: Bool = true,
+    ) {
+        self.sticker = sticker
+        self.service = service
+        self.maxSide = maxSide
+        self.playsAnimation = playsAnimation
+    }
+
     // MARK: Internal
 
-    let content: MessageSticker
+    let sticker: Sticker
     let service: any TelegramService
+    let maxSide: CGFloat
+    let playsAnimation: Bool
 
     var body: some View {
         Group {
@@ -21,22 +51,30 @@ struct TelegramStickerView: View {
                     placeholder
                 }
             case .vectorAnimation:
-                AsyncTdFile(id: presentation.fileId, service: service) { file in
-                    TelegramStickerAnimationView(
-                        fileURL: URL(filePath: file.local.path),
-                        renderSize: displaySize,
-                        shouldPlay: isVisible && scenePhase == .active && !reduceMotion,
-                    )
-                } placeholder: {
+                if playsAnimation {
+                    AsyncTdFile(id: presentation.fileId, service: service) { file in
+                        TelegramStickerAnimationView(
+                            fileURL: URL(filePath: file.local.path),
+                            renderSize: displaySize,
+                            shouldPlay: isVisible && scenePhase == .active && !reduceMotion,
+                        )
+                    } placeholder: {
+                        placeholder
+                    }
+                } else {
                     placeholder
                 }
             case .video:
-                AsyncTdFile(id: presentation.fileId, service: service) { file in
-                    TelegramStickerVideoView(
-                        fileURL: URL(filePath: file.local.path),
-                        shouldPlay: isVisible && scenePhase == .active && !reduceMotion,
-                    )
-                } placeholder: {
+                if playsAnimation {
+                    AsyncTdFile(id: presentation.fileId, service: service) { file in
+                        TelegramStickerVideoView(
+                            fileURL: URL(filePath: file.local.path),
+                            shouldPlay: isVisible && scenePhase == .active && !reduceMotion,
+                        )
+                    } placeholder: {
+                        videoPreview
+                    }
+                } else {
                     videoPreview
                 }
             }
@@ -55,11 +93,11 @@ struct TelegramStickerView: View {
     @State private var isVisible = false
 
     private var presentation: TelegramStickerPresentation {
-        TelegramStickerPresentation(content)
+        TelegramStickerPresentation(sticker)
     }
 
     private var displaySize: CGSize {
-        presentation.displaySize()
+        presentation.displaySize(maxSide: maxSide)
     }
 
     @ViewBuilder private var placeholder: some View {
@@ -72,7 +110,7 @@ struct TelegramStickerView: View {
                 loadingPlaceholder
             }
         } else {
-            loadingPlaceholder
+            fallbackPreview
         }
     }
 
@@ -97,5 +135,15 @@ struct TelegramStickerView: View {
             }
             .clipShape(.rect(cornerRadius: 20))
         }
+    }
+
+    private var fallbackPreview: some View {
+        ZStack {
+            Color.secondary.opacity(0.12)
+            Text(presentation.emoji.isEmpty ? "Sticker" : presentation.emoji)
+                .font(presentation.emoji.isEmpty ? .caption : .system(size: min(56, maxSide * 0.5)))
+                .foregroundStyle(.secondary)
+        }
+        .clipShape(.rect(cornerRadius: 20))
     }
 }

@@ -112,6 +112,15 @@ extension ChatVM {
                 pendingScrollMessageIds.insert(value.message.id)
             }
             reconcileMessages(with: snapshot)
+        case .messageSendFailed(let value):
+            messageActionError = "Message couldn't be sent: \(telegramErrorDescription(value.error))"
+            loadedMessageIds.insert(value.message.id)
+            renderedMessages.removeValue(forKey: value.oldMessageId)
+            renderStore.invalidate(messageId: value.message.id, version: snapshot.version)
+            if pendingScrollMessageIds.remove(value.oldMessageId) != nil {
+                pendingScrollMessageIds.insert(value.message.id)
+            }
+            reconcileMessages(with: snapshot)
         case .userStatus(let value):
             withAnimation { onlineStatus = getOnlineStatus(from: value.status) }
         case .chatAction(let value):

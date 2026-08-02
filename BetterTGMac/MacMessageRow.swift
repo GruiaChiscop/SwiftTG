@@ -92,7 +92,11 @@ struct MacMessageRow: View {
                             player: audioPlayer,
                         )
                     } else if case .messageSticker(let content) = message.content {
-                        MacStickerView(model: model, content: content)
+                        MacStickerView(
+                            model: model,
+                            content: content,
+                            playsAnimation: message.sendingState == nil,
+                        )
                     } else if case .messagePoll(let content) = message.content {
                         TelegramPollView(content: content, message: message, service: model.service) {
                             Text(content.poll.question.text)

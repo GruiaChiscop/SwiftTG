@@ -114,6 +114,52 @@ struct TelegramMessageStoreTests {
         #expect(snapshot.orderedMessageIds == [confirmed.id])
     }
 
+    @Test func `failed send replaces temporary message with failed message`() throws {
+        let store = TelegramMessageStore()
+        let chatId: Int64 = 41
+        let temporary = TDLibFixtures.message(
+            id: -1,
+            chatId: chatId,
+            date: 100,
+            isOutgoing: true,
+            sendingState: .messageSendingStatePending(.init(sendingId: 7)),
+        )
+        let error = TDLibKit.Error(code: 400, message: "STICKER_INVALID")
+        let failed = TDLibFixtures.message(
+            id: -2,
+            chatId: chatId,
+            date: 100,
+            isOutgoing: true,
+            sendingState: .messageSendingStateFailed(.init(
+                canRetry: false,
+                error: error,
+                needAnotherReplyQuote: false,
+                needAnotherSender: false,
+                needDropReply: false,
+                requiredPaidMessageStarCount: 0,
+                retryAfter: 0,
+            )),
+        )
+
+        let snapshot = try waitForSnapshot(store: store, chatId: chatId, matching: {
+            $0.messages[failed.id] != nil && $0.messages[temporary.id] == nil
+        }) {
+            store.mergeMessages(chatId: chatId, messages: [temporary])
+            store.reduce(.updateMessageSendFailed(.init(
+                error: error,
+                message: failed,
+                oldMessageId: temporary.id,
+            )))
+        }
+
+        #expect(snapshot.orderedMessageIds == [failed.id])
+        guard case .messageSendFailed(let update) = snapshot.change else {
+            Issue.record("Expected a message-send-failed change")
+            return
+        }
+        #expect(update.error == error)
+    }
+
     @Test func `first subscriber does not replay an old transient change`() throws {
         let store = TelegramMessageStore()
         let chatId: Int64 = 50

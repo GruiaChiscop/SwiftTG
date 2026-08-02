@@ -45,25 +45,91 @@ struct TelegramStickerTests {
         #expect(presentation.displaySize() == CGSize(width: 224, height: 224))
     }
 
+    @Test func `picker labels identify stickers without exposing their format`() {
+        let presentation = presentation(format: .stickerFormatTgs, emoji: "👋")
+
+        #expect(presentation.pickerAccessibilityLabel(packTitle: "Greetings") == "Sticker, 👋, from Greetings")
+    }
+
+    @Test func `premium stickers are identified from their premium animation`() {
+        let presentation = presentation(
+            format: .stickerFormatTgs,
+            emoji: "💃",
+            isPremium: true,
+        )
+
+        #expect(presentation.isPremium)
+        #expect(presentation.pickerAccessibilityLabel(packTitle: "Hot Cherry") == "Premium sticker, 💃, from Hot Cherry")
+    }
+
+    @Test func `sending reuses the existing sticker file and metadata`() {
+        let sticker = sticker(format: .stickerFormatWebm, emoji: "🎉", height: 320, width: 480)
+        let content = TelegramStickerSending.content(for: sticker)
+        guard case .inputMessageSticker(let input) = content else {
+            Issue.record("Expected sticker message content")
+            return
+        }
+        guard case .inputFileId(let file) = input.sticker.sticker else {
+            Issue.record("Expected an existing TDLib file identifier")
+            return
+        }
+
+        #expect(input.emoji == "🎉")
+        #expect(input.sticker.height == 320)
+        #expect(input.sticker.width == 480)
+        #expect(input.sticker.thumbnail == nil)
+        #expect(file.id == 11)
+    }
+
+    @Test func `duplicate stickers are removed without changing order`() {
+        let first = sticker(format: .stickerFormatWebp, emoji: "1️⃣", fileId: 11)
+        let duplicate = sticker(format: .stickerFormatTgs, emoji: "2️⃣", fileId: 11)
+        let second = sticker(format: .stickerFormatWebm, emoji: "3️⃣", fileId: 12)
+
+        #expect(telegramUniqueStickers([first, duplicate, second]).map(\.sticker.id) == [11, 12])
+    }
+
     // MARK: Private
 
     private func presentation(
         format: StickerFormat,
         emoji: String = "",
         height: Int = 512,
+        isPremium: Bool = false,
         thumbnail: Thumbnail? = nil,
         width: Int = 512,
     ) -> TelegramStickerPresentation {
-        TelegramStickerPresentation(Sticker(
-            emoji: emoji,
+        TelegramStickerPresentation(sticker(
             format: format,
-            fullType: .stickerFullTypeRegular(.init(premiumAnimation: nil)),
+            emoji: emoji,
             height: height,
-            id: 1,
-            setId: 2,
-            sticker: TDLibFixtures.file(id: 11, downloadedSize: 0),
+            isPremium: isPremium,
             thumbnail: thumbnail,
             width: width,
         ))
+    }
+
+    private func sticker(
+        format: StickerFormat,
+        emoji: String = "",
+        fileId: Int = 11,
+        height: Int = 512,
+        isPremium: Bool = false,
+        thumbnail: Thumbnail? = nil,
+        width: Int = 512,
+    ) -> Sticker {
+        Sticker(
+            emoji: emoji,
+            format: format,
+            fullType: .stickerFullTypeRegular(.init(
+                premiumAnimation: isPremium ? TDLibFixtures.file(id: 99, downloadedSize: 0) : nil,
+            )),
+            height: height,
+            id: 1,
+            setId: 2,
+            sticker: TDLibFixtures.file(id: fileId, downloadedSize: 0),
+            thumbnail: thumbnail,
+            width: width,
+        )
     }
 }

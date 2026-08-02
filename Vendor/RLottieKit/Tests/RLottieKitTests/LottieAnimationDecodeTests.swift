@@ -39,6 +39,24 @@ final class LottieAnimationDecodeTests: XCTestCase {
         XCTAssertTrue(pixels.contains { $0 != 0 }, "Rendered sticker must contain visible pixels")
     }
 
+    func testConcurrentAnimationsCanRenderFrames() throws {
+        let url = try visibleTgsURL()
+        let animations = try (0..<8).map { _ in
+            try XCTUnwrap(LottieAnimation(tgsFileURL: url))
+        }
+
+        DispatchQueue.concurrentPerform(iterations: 64) { iteration in
+            let animation = animations[iteration % animations.count]
+            _ = animation.renderFrame(
+                index: iteration % animation.frameCount,
+                size: CGSize(width: 64, height: 64),
+                scale: 1,
+            )
+        }
+
+        XCTAssertNotNil(animations[0].renderFrame(index: 0, size: CGSize(width: 64, height: 64), scale: 1))
+    }
+
     private func visibleTgsURL() throws -> URL {
         let base64 = "H4sIAAAAAAAAA3VSwU7EIBC9+xVmzmRDo1sTPsAPUG8bDthSt2lLEVDTNPy7M5RouqRJ6cAb3ps3E1b4BgHn09OpBgadA/HAGfQWBIbZbscfEBXHeM3RTMgJvVmQ0rZtuqu818GDuEgGo1q0o/36l+4NxopBWEA8ZoUX3d6/fn4pp1HHu5QfkLbCTD+ViEOqGRm4HUaI3SGXM2f4cYkZtc8guuF+j1MzeclItDml/FVZvdknu+Aa6jPZuxGoOauTsC0KysJyRZ5z401Q5mPUEFmu0Y1Yo7mxR7ZZRUoHA6my4HM/jv9awcGRo3Iwx2MpO+AHTvxQXPOqgJLTN6eM72Y3QZTFO/MhHd8nIsh49wuls23cnQIAAA=="
         let data = try XCTUnwrap(Data(base64Encoded: base64))

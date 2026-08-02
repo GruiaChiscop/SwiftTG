@@ -1367,6 +1367,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             MacServiceSoundManager.shared.playIncomingMessageIfAppropriate(isMuted: isMuted)
         case .messageSendSucceeded(let update) where update.message.isOutgoing:
             MacServiceSoundManager.shared.playMessageDelivered()
+        case .messageSendFailed(let update):
+            messageActionError = "Message couldn't be sent: \(telegramErrorDescription(update.error))"
         default:
             break
         }

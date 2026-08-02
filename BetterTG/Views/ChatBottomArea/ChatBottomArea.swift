@@ -80,6 +80,17 @@ struct ChatBottomArea: View {
                     leftSide
 
                     textField
+
+                    Button {
+                        showsStickerPicker = true
+                    } label: {
+                        Label("Stickers", systemImage: "face.smiling")
+                            .labelStyle(.iconOnly)
+                    }
+                    .font(.system(size: 22))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .disabled(chatVM.editCustomMessage != nil)
                 }
 
                 rightSide
@@ -127,6 +138,24 @@ struct ChatBottomArea: View {
                 )
                 chatVM.replyMessage = nil
                 await chatVM.updateDraft()
+            }
+        }
+        .sheet(isPresented: $showsStickerPicker) {
+            TelegramStickerPickerView(
+                service: chatVM.service,
+                chatId: chatVM.customChat.chat.id,
+                replyToMessageId: chatVM.replyMessage?.id,
+                onSent: {
+                    chatVM.replyMessage = nil
+                    await chatVM.updateDraft()
+                },
+            ) { sticker in
+                TelegramStickerView(
+                    sticker: sticker,
+                    service: chatVM.service,
+                    maxSide: 76,
+                    playsAnimation: false,
+                )
             }
         }
         .padding(.vertical, 5)
@@ -512,6 +541,7 @@ struct ChatBottomArea: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var showsPollComposer = false
+    @State private var showsStickerPicker = false
     @State private var pollIsAvailable = false
 
     @State private var hasBegunRecording = false

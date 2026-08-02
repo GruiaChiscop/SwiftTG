@@ -17,7 +17,7 @@
 - sending/reading text/photo/voice/album messages
 - replying to/editing messages
 - draft, forwarded from
-- stickers (WebP, animated TGS, and animated WebM)
+- viewing and sending stickers (WebP, animated TGS, and animated WebM)
 - polls and quizzes with creation and voting
 - pinned chats
 - searching your/global chats

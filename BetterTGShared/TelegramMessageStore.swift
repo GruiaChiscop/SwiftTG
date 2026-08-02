@@ -14,6 +14,7 @@ enum TelegramMessageChange: Sendable {
     case messageEdited(UpdateMessageEdited)
     case messageInteractionInfo(UpdateMessageInteractionInfo)
     case messagePinChanged(UpdateMessageIsPinned)
+    case messageSendFailed(UpdateMessageSendFailed)
     case messageSendSucceeded(UpdateMessageSendSucceeded)
     case newMessage(UpdateNewMessage)
     case readInbox(UpdateChatReadInbox)
@@ -250,6 +251,14 @@ final class TelegramMessageStore: @unchecked Sendable {
                 } else if !orderedIds.contains(value.message.id) {
                     orderedIds.append(value.message.id)
                 }
+            case .messageSendFailed(let value):
+                messages[value.oldMessageId] = nil
+                messages[value.message.id] = value.message
+                if let index = orderedIds.firstIndex(of: value.oldMessageId) {
+                    orderedIds[index] = value.message.id
+                } else if !orderedIds.contains(value.message.id) {
+                    orderedIds.append(value.message.id)
+                }
             case .readInbox(let value):
                 unreadCount = value.unreadCount
             // These four all carry enough of the new state in the update itself to patch the
@@ -408,6 +417,8 @@ final class TelegramMessageStore: @unchecked Sendable {
             (value.chatId, .messagePinChanged(value))
         case .updateMessageSendSucceeded(let value):
             (value.message.chatId, .messageSendSucceeded(value))
+        case .updateMessageSendFailed(let value):
+            (value.message.chatId, .messageSendFailed(value))
         case .updateNewMessage(let value):
             (value.message.chatId, .newMessage(value))
         case .updateUserStatus(let value):

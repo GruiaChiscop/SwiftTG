@@ -31,6 +31,13 @@ struct TelegramStickerPresentation: Equatable {
             self.pixelHeight = 512
         }
         self.emoji = sticker.emoji
+        self.isPremium =
+            switch sticker.fullType {
+            case .stickerFullTypeRegular(let regular):
+                regular.premiumAnimation != nil
+            case .stickerFullTypeCustomEmoji, .stickerFullTypeMask:
+                false
+            }
         self.kind =
             switch sticker.format {
             case .stickerFormatWebp: .image
@@ -46,10 +53,22 @@ struct TelegramStickerPresentation: Equatable {
     let pixelWidth: Int
     let pixelHeight: Int
     let emoji: String
+    let isPremium: Bool
     let kind: TelegramStickerKind
 
     var accessibilityLabel: String {
         emoji.isEmpty ? "Sticker" : "Sticker \(emoji)"
+    }
+
+    func pickerAccessibilityLabel(packTitle: String?) -> String {
+        var parts = [isPremium ? "Premium sticker" : "Sticker"]
+        if !emoji.isEmpty {
+            parts.append(emoji)
+        }
+        if let packTitle, !packTitle.isEmpty {
+            parts.append("from \(packTitle)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     func displaySize(maxSide: CGFloat = 224) -> CGSize {

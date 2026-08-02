@@ -88,6 +88,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getCountries() async throws -> Countries
     func getCountryCode() async throws -> Text
     func getGroupsInCommon(limit: Int?, offsetChatId: Int64?, userId: Int64?) async throws -> Chats
+    func getInstalledStickerSets(stickerType: StickerType?) async throws -> StickerSets
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message
     func getMessageAvailableReactions(
         chatId: Int64?,
@@ -109,6 +110,14 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         offset: Int?,
         optionId: Int?,
     ) async throws -> PollVoters
+    func getRecentStickers(isAttached: Bool?) async throws -> Stickers
+    func getStickerSet(setId: TdInt64?) async throws -> StickerSet
+    func getStickers(
+        chatId: Int64?,
+        limit: Int?,
+        query: String?,
+        stickerType: StickerType?,
+    ) async throws -> Stickers
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview
     func getMe() async throws -> User
     func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings
@@ -556,6 +565,10 @@ extension TelegramSession: TelegramService {
         try await client.getGroupsInCommon(limit: limit, offsetChatId: offsetChatId, userId: userId)
     }
 
+    func getInstalledStickerSets(stickerType: StickerType?) async throws -> StickerSets {
+        try await client.getInstalledStickerSets(stickerType: stickerType)
+    }
+
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message {
         try await client.getMessage(chatId: chatId, messageId: messageId)
     }
@@ -570,6 +583,28 @@ extension TelegramSession: TelegramService {
 
     func getMessageProperties(chatId: Int64?, messageId: Int64?) async throws -> MessageProperties {
         try await client.getMessageProperties(chatId: chatId, messageId: messageId)
+    }
+
+    func getRecentStickers(isAttached: Bool?) async throws -> Stickers {
+        try await client.getRecentStickers(isAttached: isAttached)
+    }
+
+    func getStickerSet(setId: TdInt64?) async throws -> StickerSet {
+        try await client.getStickerSet(setId: setId)
+    }
+
+    func getStickers(
+        chatId: Int64?,
+        limit: Int?,
+        query: String?,
+        stickerType: StickerType?,
+    ) async throws -> Stickers {
+        try await client.getStickers(
+            chatId: chatId,
+            limit: limit,
+            query: query,
+            stickerType: stickerType,
+        )
     }
 
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview {

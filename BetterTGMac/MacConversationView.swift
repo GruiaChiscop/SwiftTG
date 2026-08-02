@@ -61,6 +61,24 @@ struct MacConversationView: View {
                 model.saveCurrentDraft()
             }
         }
+        .sheet(isPresented: $showsStickerPicker) {
+            TelegramStickerPickerView(
+                service: model.service,
+                chatId: chat.chatId,
+                replyToMessageId: model.replyingToMessage?.id,
+                onSent: {
+                    model.replyingToMessage = nil
+                    model.saveCurrentDraft()
+                },
+            ) { sticker in
+                MacStickerView(
+                    model: model,
+                    sticker: sticker,
+                    maxSide: 76,
+                    playsAnimation: false,
+                )
+            }
+        }
         .sheet(isPresented: Binding(
             get: { !model.selectedPhotoURLs.isEmpty || !model.selectedDocumentURLs.isEmpty },
             set: { isPresented in
@@ -93,6 +111,7 @@ struct MacConversationView: View {
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
     @State private var showsPollComposer = false
+    @State private var showsStickerPicker = false
     @State private var pollIsAvailable = false
 
     private var shouldFollowLatestMessage: Bool {
@@ -100,6 +119,8 @@ struct MacConversationView: View {
         case .newMessage(let update):
             isAtBottom || update.message.isOutgoing
         case .messageSendSucceeded:
+            true
+        case .messageSendFailed:
             true
         default:
             false
@@ -317,6 +338,12 @@ struct MacConversationView: View {
                         onSubmit: model.submitComposer,
                     )
                     .frame(minHeight: 32, idealHeight: 48, maxHeight: 112)
+
+                    Button("Stickers", systemImage: "face.smiling") {
+                        showsStickerPicker = true
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(model.editingMessage != nil)
 
                     if model.editingMessage == nil,
                        model.selectedDocumentURLs.isEmpty,

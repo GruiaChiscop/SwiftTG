@@ -169,6 +169,21 @@ struct ChatView: View {
         } message: {
             Text(chatVM.navigationError ?? "The destination is unavailable.")
         }
+        .alert(
+            "Action Failed",
+            isPresented: Binding(
+                get: { chatVM.messageActionError != nil },
+                set: {
+                    if !$0 {
+                        chatVM.messageActionError = nil
+                    }
+                },
+            ),
+        ) {
+            Button("OK") { chatVM.messageActionError = nil }
+        } message: {
+            Text(chatVM.messageActionError ?? "Unknown error")
+        }
         .navigationDestination(isPresented: $showsChatInfo) {
             ChatInfoView()
                 .environment(chatVM)

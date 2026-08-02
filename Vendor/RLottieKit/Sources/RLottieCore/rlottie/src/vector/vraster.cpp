@@ -23,6 +23,7 @@
 #include <climits>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include "config.h"
 #include "v_ft_raster.h"
 #include "v_ft_stroker.h"
@@ -497,6 +498,7 @@ class RleTaskScheduler {
 public:
     FTOutline     outlineRef{};
     SW_FT_Stroker stroker;
+    std::mutex    mutex;
 
 public:
     static RleTaskScheduler &instance()
@@ -509,7 +511,15 @@ public:
 
     ~RleTaskScheduler() { SW_FT_Stroker_Done(stroker); }
 
-    void process(VTask task) { (*task)(outlineRef, stroker); }
+    void process(VTask task)
+    {
+        // The non-threaded scheduler owns one outline and stroker shared by every
+        // Animation instance. BetterTG renders different stickers on concurrent
+        // Swift tasks, so access to that shared scratch state must still be
+        // serialized even though rlottie's internal worker pool is disabled.
+        std::lock_guard<std::mutex> guard(mutex);
+        (*task)(outlineRef, stroker);
+    }
 };
 #endif
 

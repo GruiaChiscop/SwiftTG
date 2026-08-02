@@ -5,11 +5,41 @@ import SwiftUI
 import TDLibKit
 
 struct MacStickerView: View {
+    // MARK: Lifecycle
+
+    init(
+        model: MacSessionModel,
+        content: MessageSticker,
+        maxSide: CGFloat = 224,
+        playsAnimation: Bool = true,
+    ) {
+        self.init(
+            model: model,
+            sticker: content.sticker,
+            maxSide: maxSide,
+            playsAnimation: playsAnimation,
+        )
+    }
+
+    init(
+        model: MacSessionModel,
+        sticker: Sticker,
+        maxSide: CGFloat = 224,
+        playsAnimation: Bool = true,
+    ) {
+        self.model = model
+        self.sticker = sticker
+        self.maxSide = maxSide
+        self.playsAnimation = playsAnimation
+    }
+
     // MARK: Internal
 
     @Bindable var model: MacSessionModel
 
-    let content: MessageSticker
+    let sticker: Sticker
+    let maxSide: CGFloat
+    let playsAnimation: Bool
 
     var body: some View {
         Group {
@@ -23,7 +53,7 @@ struct MacStickerView: View {
                     placeholder
                 }
             case .vectorAnimation:
-                if let stickerPath {
+                if let stickerPath, playsAnimation {
                     TelegramStickerAnimationView(
                         fileURL: URL(filePath: stickerPath),
                         renderSize: displaySize,
@@ -33,7 +63,7 @@ struct MacStickerView: View {
                     placeholder
                 }
             case .video:
-                if let stickerPath {
+                if let stickerPath, playsAnimation {
                     TelegramStickerVideoView(
                         fileURL: URL(filePath: stickerPath),
                         shouldPlay: isVisible && scenePhase == .active && !reduceMotion,
@@ -49,6 +79,7 @@ struct MacStickerView: View {
         .onAppear { isVisible = true }
         .onDisappear { isVisible = false }
         .task(id: presentation.fileId) {
+            guard presentation.kind == .image || playsAnimation else { return }
             guard let path = await model.localStickerPath(fileId: presentation.fileId)
             else { return }
             stickerPath = path
@@ -74,11 +105,11 @@ struct MacStickerView: View {
     @State private var isVisible = false
 
     private var presentation: TelegramStickerPresentation {
-        TelegramStickerPresentation(content)
+        TelegramStickerPresentation(sticker)
     }
 
     private var displaySize: CGSize {
-        presentation.displaySize()
+        presentation.displaySize(maxSide: maxSide)
     }
 
     @ViewBuilder private var placeholder: some View {
@@ -87,12 +118,7 @@ struct MacStickerView: View {
                 .resizable()
                 .scaledToFit()
         } else {
-            ZStack {
-                Color.secondary.opacity(0.08)
-                ProgressView()
-            }
-            .clipShape(.rect(cornerRadius: 20))
-            .accessibilityHidden(true)
+            fallbackPreview
         }
     }
 
@@ -108,6 +134,16 @@ struct MacStickerView: View {
             }
             .clipShape(.rect(cornerRadius: 20))
         }
+    }
+
+    private var fallbackPreview: some View {
+        ZStack {
+            Color.secondary.opacity(0.12)
+            Text(presentation.emoji.isEmpty ? "Sticker" : presentation.emoji)
+                .font(presentation.emoji.isEmpty ? .caption : .system(size: min(56, maxSide * 0.5)))
+                .foregroundStyle(.secondary)
+        }
+        .clipShape(.rect(cornerRadius: 20))
     }
 
     private static func decodeImage(atPath path: String) async -> NSImage? {

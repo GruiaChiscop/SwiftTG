@@ -71,6 +71,7 @@ import UniformTypeIdentifiers
     var scrollRequestMessageId: Int64?
     var accessibilityFocusRequestMessageId: Int64?
     var navigationError: String?
+    var messageActionError: String?
     var messagePendingForward: CustomMessage?
     var messages = [CustomMessage]()
     var initialMessagesLoaded = false
