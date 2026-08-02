@@ -5,28 +5,113 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PACKAGE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPOSITORY_DIR="$(cd "$PACKAGE_DIR/../.." && pwd)"
-TELEGRAM_IOS_SOURCE="${TELEGRAM_IOS_SOURCE:-$(cd "$REPOSITORY_DIR/.." && pwd)/Telegram-iOS}"
 JOBS="${TELEGRAM_FFMPEG_JOBS:-4}"
 WORK_DIR="${TELEGRAM_FFMPEG_WORK_DIR:-$PACKAGE_DIR/.build-artifacts}"
 OUTPUT="$PACKAGE_DIR/TelegramFFmpegBinary.xcframework"
 
 TELEGRAM_COMMIT="6ad963e5b62d354da79040f388ae2b9132fb17b8"
+TELEGRAM_REPOSITORY="${TELEGRAM_IOS_REPOSITORY:-https://github.com/TelegramMessenger/Telegram-iOS.git}"
+LIBVPX_COMMIT="e7bfd8b6c230a6824e7fd1efa2378a7322986128"
 FFMPEG_VERSION="7.1.1"
-FFMPEG_SOURCE="$TELEGRAM_IOS_SOURCE/submodules/ffmpeg/Sources/FFMpeg/ffmpeg-$FFMPEG_VERSION"
-LIBVPX_SOURCE="$TELEGRAM_IOS_SOURCE/third-party/libvpx/libvpx"
-LIBVPX_BUILD_SCRIPT="$TELEGRAM_IOS_SOURCE/third-party/libvpx/build-libvpx-bazel.sh"
-LIBVPX_SIMULATOR_PATCH="$TELEGRAM_IOS_SOURCE/third-party/libvpx/0001-Support-arm64-simulator.patch"
+MANAGED_TELEGRAM_SOURCE="$PACKAGE_DIR/.build-sources/Telegram-iOS"
+SIBLING_TELEGRAM_SOURCE="$(cd "$REPOSITORY_DIR/.." && pwd)/Telegram-iOS"
+
+FORCE=false
+CLEAN=false
+
+usage() {
+    echo "Usage: $0 [--force] [--clean]"
+    echo
+    echo "  --force  Recreate the XCFramework while reusing compiled slices."
+    echo "  --clean  Remove compiled slices and rebuild everything."
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force)
+            FORCE=true
+            ;;
+        --clean)
+            CLEAN=true
+            FORCE=true
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+for command in git make patch pkg-config xcodebuild xcrun; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "Missing required command: $command" >&2
+        exit 1
+    fi
+done
+
+if [[ -d "$OUTPUT" && "$FORCE" == false ]]; then
+    echo "Already built: $OUTPUT"
+    exit 0
+fi
+
+if [[ "$CLEAN" == true ]]; then
+    rm -rf "$WORK_DIR"
+fi
+
+TELEGRAM_SOURCE_IS_MANAGED=false
+if [[ -n "${TELEGRAM_IOS_SOURCE:-}" ]]; then
+    TELEGRAM_SOURCE="$TELEGRAM_IOS_SOURCE"
+elif [[ -d "$SIBLING_TELEGRAM_SOURCE/.git" ]] \
+    && [[ "$(git -C "$SIBLING_TELEGRAM_SOURCE" rev-parse HEAD)" == "$TELEGRAM_COMMIT" ]]; then
+    TELEGRAM_SOURCE="$SIBLING_TELEGRAM_SOURCE"
+else
+    TELEGRAM_SOURCE="$MANAGED_TELEGRAM_SOURCE"
+    TELEGRAM_SOURCE_IS_MANAGED=true
+fi
+
+prepare_managed_telegram_source() {
+    if [[ ! -d "$TELEGRAM_SOURCE/.git" ]]; then
+        mkdir -p "$TELEGRAM_SOURCE"
+        git -C "$TELEGRAM_SOURCE" init
+        git -C "$TELEGRAM_SOURCE" remote add origin "$TELEGRAM_REPOSITORY"
+    fi
+
+    git -C "$TELEGRAM_SOURCE" fetch --depth 1 origin "$TELEGRAM_COMMIT"
+    git -C "$TELEGRAM_SOURCE" checkout --detach FETCH_HEAD
+    git -C "$TELEGRAM_SOURCE" submodule update --init --depth 1 third-party/libvpx/libvpx
+}
+
+if [[ "$TELEGRAM_SOURCE_IS_MANAGED" == true ]]; then
+    prepare_managed_telegram_source
+fi
+
+FFMPEG_SOURCE="$TELEGRAM_SOURCE/submodules/ffmpeg/Sources/FFMpeg/ffmpeg-$FFMPEG_VERSION"
+LIBVPX_SOURCE="$TELEGRAM_SOURCE/third-party/libvpx/libvpx"
+LIBVPX_BUILD_SCRIPT="$TELEGRAM_SOURCE/third-party/libvpx/build-libvpx-bazel.sh"
+LIBVPX_SIMULATOR_PATCH="$TELEGRAM_SOURCE/third-party/libvpx/0001-Support-arm64-simulator.patch"
 LIBVPX_DEPLOYMENT_PATCH="$PACKAGE_DIR/Patches/libvpx-macos-deployment-target.patch"
 LIBVPX_DECODER_PATCH="$PACKAGE_DIR/Patches/libvpx-decoder-only.patch"
 
 if [[ ! -f "$FFMPEG_SOURCE/configure" || ! -f "$LIBVPX_SOURCE/configure" ]]; then
-    echo "Telegram-iOS sources not found at: $TELEGRAM_IOS_SOURCE" >&2
+    echo "Required Telegram-iOS sources not found at: $TELEGRAM_SOURCE" >&2
     exit 1
 fi
 
-ACTUAL_COMMIT="$(git -C "$TELEGRAM_IOS_SOURCE" rev-parse HEAD)"
+ACTUAL_COMMIT="$(git -C "$TELEGRAM_SOURCE" rev-parse HEAD)"
 if [[ "$ACTUAL_COMMIT" != "$TELEGRAM_COMMIT" ]]; then
     echo "Expected Telegram-iOS $TELEGRAM_COMMIT, found $ACTUAL_COMMIT" >&2
+    exit 1
+fi
+
+ACTUAL_LIBVPX_COMMIT="$(git -C "$LIBVPX_SOURCE" rev-parse HEAD)"
+if [[ "$ACTUAL_LIBVPX_COMMIT" != "$LIBVPX_COMMIT" ]]; then
+    echo "Expected libvpx $LIBVPX_COMMIT, found $ACTUAL_LIBVPX_COMMIT" >&2
     exit 1
 fi
 
@@ -132,10 +217,8 @@ build_slice "ios-arm64" "arm64" "iphoneos" "arm64-apple-ios17.0" "-mios-version-
 build_slice "ios-simulator-arm64" "sim_arm64" "iphonesimulator" "arm64-apple-ios17.0-simulator" "-mios-simulator-version-min=17.0"
 build_slice "macos-arm64" "macos_arm64" "macosx" "arm64-apple-macos15.0" "-mmacosx-version-min=15.0"
 
-if [[ -e "$OUTPUT" ]]; then
-    echo "Refusing to overwrite existing output: $OUTPUT" >&2
-    exit 1
-fi
+TEMP_OUTPUT="$WORK_DIR/TelegramFFmpegBinary.xcframework"
+rm -rf "$TEMP_OUTPUT"
 
 xcodebuild -create-xcframework \
     -library "$WORK_DIR/ios-arm64/libTelegramFFmpegBinary.a" \
@@ -144,6 +227,11 @@ xcodebuild -create-xcframework \
     -headers "$WORK_DIR/ios-simulator-arm64/Headers" \
     -library "$WORK_DIR/macos-arm64/libTelegramFFmpegBinary.a" \
     -headers "$WORK_DIR/macos-arm64/Headers" \
-    -output "$OUTPUT"
+    -output "$TEMP_OUTPUT"
+
+if [[ -e "$OUTPUT" ]]; then
+    rm -rf "$OUTPUT"
+fi
+mv "$TEMP_OUTPUT" "$OUTPUT"
 
 echo "Created $OUTPUT"

@@ -26,5 +26,7 @@ build
 .build/
 .swiftpm/
 Vendor/TelegramFFmpeg/.build-artifacts/
+Vendor/TelegramFFmpeg/.build-sources/
+Vendor/**/*.xcframework/
 .xcodebuildmcp
 .claude

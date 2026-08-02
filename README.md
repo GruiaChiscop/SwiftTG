@@ -81,10 +81,15 @@ You need to have [Homebrew](https://brew.sh) installed. \
 Now run these commands:
 
 ```shell
-brew install swift-sh
+brew install swift-sh pkg-config
 sudo chmod +x environment.swift
 sudo chmod +x gyb.sh
 ./environment.swift <api_id> <api_hash>
+./Scripts/build-dependencies.sh
 ```
+
+The dependency script builds the local FFmpeg XCFramework used for animated
+WebM stickers. Generated XCFrameworks and their build caches are intentionally
+not stored in Git.
 
 Everything is set up now! **GL HF**
