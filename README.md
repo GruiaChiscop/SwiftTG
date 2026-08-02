@@ -88,8 +88,9 @@ sudo chmod +x gyb.sh
 ./Scripts/build-dependencies.sh
 ```
 
-The dependency script builds the local FFmpeg XCFramework used for animated
-WebM stickers. Generated XCFrameworks and their build caches are intentionally
-not stored in Git.
+The dependency script fetches the pinned official rlottie source and builds the
+local FFmpeg XCFramework used for animated stickers. Downloaded sources,
+generated XCFrameworks, and their build caches are intentionally not stored in
+Git.
 
 Everything is set up now! **GL HF**

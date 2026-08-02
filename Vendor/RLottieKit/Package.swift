@@ -16,39 +16,49 @@ let package = Package(
             name: "RLottieCore",
             path: "Sources/RLottieCore",
             exclude: [
-                // License files — not source
+                // The engine is an unmodified checkout of TelegramMessenger/rlottie.
+                // Keep its build system, examples, tests, and C API outside this
+                // SwiftPM target; RLottieKit uses the C++ interface directly.
+                "rlottie/.Gifs",
+                "rlottie/example",
+                "rlottie/test",
+                "rlottie/cmake",
+                "rlottie/packaging",
+                "rlottie/vs2019",
+                "rlottie/licenses",
                 "rlottie/COPYING",
-                "rlottie/COPYING.MIT",
-                // C API surface — we use the C++ Animation:: interface directly.
-                // lottieitem_capi.cpp is NOT excluded: it contains buildLayerNode()
-                // implementations for SolidLayer/ImageLayer/CompLayer/Layer and
-                // Drawable::sync(), all of which are required to satisfy vtables.
+                "rlottie/AUTHORS",
+                "rlottie/README.md",
                 "rlottie/inc/rlottie_capi.h",
-                "rlottie/src/binding/c/lottieanimation_capi.cpp",
-                // WASM build — skip on Apple platforms
-                "rlottie/src/wasm",
-                // NEON acceleration calls external pixman assembly (.S) which
-                // SPM won't assemble; vdrawhelper.cpp provides the scalar fallback
-                // when __ARM_NEON__ is not defined.
+                "rlottie/src/binding",
+                // The NEON implementation calls external pixman assembly. SwiftPM
+                // does not assemble that source, so use rlottie's scalar fallback.
                 "rlottie/src/vector/vdrawhelper_neon.cpp",
-                // Pixman assembly — not assembled by SPM; NEON path excluded above
-                "rlottie/src/vector/pixman",
+                "rlottie/src/vector/pixman/pixman-arm-neon-asm.S",
             ],
             publicHeadersPath: "include",
             cxxSettings: [
+                .headerSearchPath("."),
                 .headerSearchPath("rlottie/inc"),
                 .headerSearchPath("rlottie/src"),
                 .headerSearchPath("rlottie/src/lottie"),
                 .headerSearchPath("rlottie/src/vector"),
                 .headerSearchPath("rlottie/src/vector/freetype"),
+                .headerSearchPath("rlottie/src/vector/pixman"),
                 .headerSearchPath("rlottie/src/vector/stb"),
                 .define("LOT_BUILD"),
                 .define("NDEBUG"),
+                // BetterTG can render several stickers concurrently. With the
+                // engine's worker pool disabled, this keeps rasterizer scratch
+                // storage local to each render instead of sharing it globally.
+                .define("LOTTIE_THREAD_SAFE"),
                 // Disable NEON intrinsics: vdrawhelper_neon.cpp is excluded (it pulls
                 // in pixman .S assembly that SPM won't assemble). Undefining __ARM_NEON__
                 // activates the scalar memfill32 fallback in vdrawhelper.cpp and prevents
                 // RenderFuncTable::RenderFuncTable() from calling the missing neon() stub.
-                .unsafeFlags(["-U__ARM_NEON__"]),
+                // Xcode defines DEBUG for Debug configurations, but upstream's
+                // embedded pixman region file has no debug self-check function.
+                .unsafeFlags(["-U__ARM_NEON__", "-UDEBUG"]),
             ]
         ),
         .target(
