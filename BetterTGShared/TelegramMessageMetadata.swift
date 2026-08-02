@@ -7,6 +7,19 @@ func telegramMessageContentDescription(_ message: Message) -> String {
     telegramMessageContentDescription(message.content)
 }
 
+/// The chat list only receives TDLib's last message, not every member of its media album.
+/// Match Telegram-iOS by preferring an album caption and otherwise identifying the grouped
+/// media as an album, without guessing an item count that isn't available here.
+func telegramChatListMessageDescription(_ message: Message) -> String {
+    guard message.mediaAlbumId != 0 else {
+        return telegramMessageContentDescription(message)
+    }
+    if let caption = telegramMessageFormattedText(message)?.text, !caption.isEmpty {
+        return caption
+    }
+    return "Album"
+}
+
 func telegramMessageFormattedText(_ message: Message) -> FormattedText? {
     switch message.content {
     case .messageAudio(let content): content.caption.text.isEmpty ? nil : content.caption

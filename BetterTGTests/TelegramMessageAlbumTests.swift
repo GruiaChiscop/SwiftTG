@@ -54,6 +54,18 @@ struct TelegramMessageAlbumTests {
         #expect(telegramMediaAlbumAccessibilityDescription(itemCount: 3) == "Album with 3 items")
     }
 
+    @Test func `chat list identifies an album when its item count is unavailable`() {
+        let lastMessage = message(id: 20, albumId: 80, content: photoContent())
+
+        #expect(telegramChatListMessageDescription(lastMessage) == "Album")
+    }
+
+    @Test func `chat list preserves an album caption`() {
+        let lastMessage = message(id: 21, albumId: 80, content: photoContent(caption: "Trip"))
+
+        #expect(telegramChatListMessageDescription(lastMessage) == "Trip")
+    }
+
     // MARK: Private
 
     private func message(
@@ -70,9 +82,9 @@ struct TelegramMessageAlbumTests {
         )
     }
 
-    private func photoContent() -> MessageContent {
+    private func photoContent(caption: String = "") -> MessageContent {
         .messagePhoto(.init(
-            caption: .init(entities: [], text: ""),
+            caption: .init(entities: [], text: caption),
             hasSpoiler: false,
             isSecret: false,
             photo: .init(hasStickers: false, minithumbnail: nil, sizes: []),

@@ -131,7 +131,7 @@ extension CustomChat {
             if lastMessage.forwardInfo != nil {
                 parts.append("Forwarded")
             }
-            let messageText = telegramMessageContentDescription(lastMessage)
+            let messageText = telegramChatListMessageDescription(lastMessage)
             if showsLastMessageSender, let lastMessageSenderName {
                 parts.append("\(lastMessageSenderName): \(messageText)")
             } else {

@@ -61,9 +61,50 @@ private struct DraftMessageView: View {
 // MARK: - LastMesssageView
 
 private struct LastMesssageView: View {
+    // MARK: Internal
+
     let lastMessage: Message
     
     var body: some View {
+        if lastMessage.mediaAlbumId != 0 {
+            albumPreview
+        } else {
+            messagePreview
+        }
+    }
+
+    // MARK: Private
+
+    @ViewBuilder private var albumPreview: some View {
+        switch lastMessage.content {
+        case .messagePhoto(let messagePhoto):
+            HStack(alignment: .center, spacing: 3) {
+                TdImage(photo: messagePhoto.photo, size: .sBox, contentMode: .fit)
+                    .frame(width: 20, height: 20)
+
+                if messagePhoto.caption.text.isEmpty {
+                    Text("Album")
+                } else {
+                    Text(getAttributedString(from: messagePhoto.caption, .gray))
+                }
+            }
+        case .messageVideo(let messageVideo):
+            HStack(alignment: .center, spacing: 3) {
+                TdVideoThumbnail(messageVideo: messageVideo, contentMode: .fit)
+                    .frame(width: 20, height: 20)
+
+                if messageVideo.caption.text.isEmpty {
+                    Text("Album")
+                } else {
+                    Text(getAttributedString(from: messageVideo.caption, .gray))
+                }
+            }
+        default:
+            Text(telegramChatListMessageDescription(lastMessage))
+        }
+    }
+
+    @ViewBuilder private var messagePreview: some View {
         switch lastMessage.content {
         case .messagePhoto(let messagePhoto):
             HStack(alignment: .center, spacing: 3) {

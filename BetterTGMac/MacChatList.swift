@@ -45,7 +45,7 @@ struct MacChatRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     } else {
-                        Text(chat.lastMessage.map(macMessageText) ?? "No messages")
+                        Text(chat.lastMessage.map(telegramChatListMessageDescription) ?? "No messages")
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -172,7 +172,7 @@ struct MacChatRow: View {
             parts.append(description)
             parts.append(telegramMessageDateDescription(draft.date))
         } else if let lastMessage = chat.lastMessage {
-            parts.append(macMessageText(lastMessage))
+            parts.append(telegramChatListMessageDescription(lastMessage))
             parts.append(telegramMessageDateDescription(lastMessage.date))
         } else {
             parts.append("No messages")
