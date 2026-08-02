@@ -159,27 +159,28 @@ struct MessageTextEditor: View {
     // MARK: Internal
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            sizingText
-
-            if text.characters.isEmpty {
-                Text(placeholder)
-                    .foregroundStyle(.gray)
-                    .padding(.leading, 5)
-                    .padding(.top, 8)
-                    .accessibilityHidden(true)
+        sizingText
+            .overlay(alignment: .topLeading) {
+                if text.characters.isEmpty {
+                    Text(placeholder)
+                        .foregroundStyle(.gray)
+                        .padding(.leading, 5)
+                        .padding(.top, 8)
+                        .accessibilityHidden(true)
+                }
             }
-
-            MessageUITextViewRepresentable(
-                text: $text,
-                contextID: contextID,
-                onSubmit: onSubmit,
-                onPasteImages: onPasteImages,
-            )
-            .accessibilityLabel(placeholder)
-        }
-        .frame(minHeight: 36, maxHeight: 302)
-        .clipped()
+            .overlay {
+                MessageUITextViewRepresentable(
+                    text: $text,
+                    contextID: contextID,
+                    onSubmit: onSubmit,
+                    onPasteImages: onPasteImages,
+                )
+                .accessibilityLabel(placeholder)
+            }
+            .frame(minHeight: 36)
+            .fixedSize(horizontal: false, vertical: true)
+            .clipped()
     }
 
     // MARK: Private
@@ -194,6 +195,7 @@ struct MessageTextEditor: View {
     private var sizingText: some View {
         Text(text.characters.isEmpty ? AttributedString(" ") : text)
             .font(.body)
+            .lineLimit(10)
             .padding(.horizontal, 5)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)

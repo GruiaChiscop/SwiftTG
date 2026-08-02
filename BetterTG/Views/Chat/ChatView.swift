@@ -56,11 +56,11 @@ struct ChatView: View {
                     .task { chatVM.start() }
                     .onAppear {
                         chatVM.scrollViewProxy = scrollViewProxy
-                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                        positionInitialMessagesIfNeeded()
                     }
                     .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
                         guard loaded else { return }
-                        positionInitialMessagesIfNeeded(using: scrollViewProxy)
+                        positionInitialMessagesIfNeeded()
                     }
                     .onChange(of: chatVM.scrollRequestMessageId) { _, messageId in
                         guard let messageId else { return }
@@ -214,8 +214,11 @@ struct ChatView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 1)
         .listRowSpacing(5)
+        .contentMargins(.bottom, 0, for: .scrollContent)
         .defaultScrollAnchor(.bottom)
+        .scrollPosition(id: $initialScrollPositionId, anchor: initialScrollAnchor)
         .background(.black)
         .scrollDismissesKeyboard(.interactively)
         .scrollBounceBehavior(.always)
@@ -231,12 +234,6 @@ struct ChatView: View {
         .overlay(alignment: .top) {
             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: topGradientHeight)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-        .overlay(alignment: .bottom) {
-            LinearGradient(colors: [.black, .clear], startPoint: .bottom, endPoint: .top)
-                .frame(height: 24)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
@@ -283,6 +280,7 @@ struct ChatView: View {
     // MARK: Private
 
     @FocusState private var conversationSearchFocused
+    @State private var initialScrollPositionId: Int64?
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
@@ -318,6 +316,24 @@ struct ChatView: View {
     private var pinnedMessageSummary: String {
         guard let message = chatVM.currentPinnedMessage else { return "" }
         return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
+    }
+
+    private var initialScrollAnchor: UnitPoint {
+        if chatVM.initialMessageId != nil {
+            return .center
+        }
+        if initialUnreadMessageId != nil {
+            return .top
+        }
+        return .bottom
+    }
+
+    private var initialUnreadMessageId: Int64? {
+        guard chatVM.initialUnreadCount > 0 else { return nil }
+        return chatVM.messages
+            .first {
+                !$0.message.isOutgoing && $0.id > chatVM.initialLastReadInboxMessageId
+            }?.id
     }
 
     private var conversationSearchField: some View {
@@ -444,23 +460,20 @@ struct ChatView: View {
         .accessibilityHint("Opens chat information")
     }
 
-    private func positionInitialMessagesIfNeeded(using scrollViewProxy: ScrollViewProxy) {
+    private func positionInitialMessagesIfNeeded() {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
+        guard let targetId = chatVM.initialMessageId ?? initialUnreadMessageId ?? chatVM.messages.last?.id else {
+            return
+        }
         positionedInitialMessages = true
-        Task { @MainActor in
-            // Allow List to commit the first history snapshot before positioning it.
-            await Task.yield()
-            await Task.yield()
-            guard let targetId = chatVM.initialMessageId ?? chatVM.messages.last?.id else { return }
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                scrollViewProxy.scrollTo(
-                    targetId,
-                    anchor: chatVM.initialMessageId == nil ? .bottom : .center,
-                )
-            }
-            if chatVM.initialMessageId != nil {
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            initialScrollPositionId = targetId
+        }
+        if chatVM.initialMessageId != nil {
+            Task { @MainActor in
+                await Task.yield()
                 chatVM.highlightedMessageId = targetId
                 if chatVM.movesAccessibilityFocusToInitialMessage {
                     accessibilityFocusedMessageId = targetId

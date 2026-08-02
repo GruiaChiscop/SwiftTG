@@ -67,13 +67,25 @@ struct ChatBottomArea: View {
             && !chatVM.showDocumentPicker
     }
 
+    var showsTopSide: Bool {
+        if chatVM.editCustomMessage != nil || chatVM.replyMessage != nil {
+            return true
+        }
+        return chatVM.displayedImages.isEmpty
+            && chatVM.displayedDocuments.isEmpty
+            && chatVM.activeLinkPreviewComposer.preview != nil
+    }
+
     var body: some View {
         @Bindable var chatVM = chatVM
-        VStack(spacing: 5) {
-            topSide
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+        VStack(spacing: 0) {
+            if showsTopSide {
+                topSide
+                    .padding(.bottom, 5)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
 
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: 6) {
                 if chatVM.recordingVoiceNote {
                     recordingIndicator
                 } else {
@@ -89,7 +101,7 @@ struct ChatBottomArea: View {
                     }
                     .font(.system(size: 22))
                     .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 40, height: 40)
                     .disabled(chatVM.editCustomMessage != nil)
                 }
 
@@ -159,11 +171,10 @@ struct ChatBottomArea: View {
                 )
             }
         }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .background(.bar)
         .clipShape(.rect(cornerRadius: 15))
-        .padding([.bottom, .horizontal], 5)
+        .padding(.horizontal, 5)
         .overlay(alignment: .bottomTrailing) {
             Circle()
                 .fill(.blue)
@@ -269,7 +280,7 @@ struct ChatBottomArea: View {
             }
             .menuOrder(.fixed)
             .disabled(chatVM.editCustomMessage != nil)
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 40)
             .sheet(isPresented: $chatVM.showPhotoPickerView) {
                 PhotoPicker { index, image, error in
                     if let image {
@@ -339,7 +350,7 @@ struct ChatBottomArea: View {
             }
         }
         .font(.title2)
-        .frame(width: 44, height: 44)
+        .frame(width: 40, height: 40)
         .contentShape(.rect)
         .transition(.scale)
         .modify {

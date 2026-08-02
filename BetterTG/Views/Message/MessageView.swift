@@ -83,116 +83,101 @@ struct MessageView: View {
                 reactionsButton
             }
 
-            VStack(alignment: .leading, spacing: 1) {
-                if showsVisualSenderName, let visualSenderName {
-                    Text(visualSenderName)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tint)
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 6)
-                        .accessibilityHidden(true)
-                }
-
-                if let forwardedFrom = customMessage.forwardedFrom {
-                    ForwardedFromView(
-                        name: forwardedFrom,
-                        onTap: canNavigateToForwardOrigin
-                            ? { chatVM.navigateToForwardOrigin(from: customMessage.message) }
-                            : nil,
-                    )
-                }
-
-                if customMessage.replySenderName != nil, customMessage.replyToMessage != nil {
-                    ReplyMessageView(
-                        customMessage: customMessage,
-                        type: .replied,
-                        onTap: { chatVM.navigateToRepliedMessage(from: customMessage.message) },
-                    )
-                }
-
-                if let messagePoll = customMessage.messagePoll {
-                    TelegramPollView(
-                        content: messagePoll,
-                        message: customMessage.message,
-                        service: chatVM.service,
-                    ) {
-                        Text(messagePoll.poll.question.text)
-                            .accessibilityIdentifier("message-\(customMessage.id)")
-                            .accessibilityLabel(pollAccessibilityContextDescription)
-                            .accessibilityActions {
-                                messageAccessibilityActions
-                            }
+            VStack(alignment: .trailing, spacing: 1) {
+                VStack(alignment: .leading, spacing: 1) {
+                    if showsVisualSenderName, let visualSenderName {
+                        Text(visualSenderName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tint)
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 6)
+                            .accessibilityHidden(true)
                     }
-                } else if customMessage.messageDocument != nil
-                    || customMessage.messagePhoto != nil
-                    || customMessage.messageVideo != nil
-                    || customMessage.messageVoiceNote != nil
-                    || customMessage.messageAudio != nil
-                    || customMessage.messageSticker != nil
-                    || !customMessage.album.isEmpty
-                {
-                    MessageContentView(
-                        customMessage: customMessage,
-                        audioPlaylist: audioPlaylist,
-                        service: chatVM.service,
-                        onMediaTap: openAlbum,
-                        onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
-                    )
-                }
 
-                if let linkPreview, linkPreview.showAboveText {
-                    TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 8)
-                }
+                    if let forwardedFrom = customMessage.forwardedFrom {
+                        ForwardedFromView(
+                            name: forwardedFrom,
+                            onTap: canNavigateToForwardOrigin
+                                ? { chatVM.navigateToForwardOrigin(from: customMessage.message) }
+                                : nil,
+                        )
+                    }
 
-                if let formattedText = customMessage.formattedText {
-                    MessageTextView(formattedText: formattedText)
+                    if customMessage.replySenderName != nil, customMessage.replyToMessage != nil {
+                        ReplyMessageView(
+                            customMessage: customMessage,
+                            type: .replied,
+                            onTap: { chatVM.navigateToRepliedMessage(from: customMessage.message) },
+                        )
+                    }
+
+                    if let messagePoll = customMessage.messagePoll {
+                        TelegramPollView(
+                            content: messagePoll,
+                            message: customMessage.message,
+                            service: chatVM.service,
+                        ) {
+                            Text(messagePoll.poll.question.text)
+                                .accessibilityIdentifier("message-\(customMessage.id)")
+                                .accessibilityLabel(pollAccessibilityContextDescription)
+                                .accessibilityActions {
+                                    messageAccessibilityActions
+                                }
+                        }
+                    } else if customMessage.messageDocument != nil
+                        || customMessage.messagePhoto != nil
+                        || customMessage.messageVideo != nil
+                        || customMessage.messageVoiceNote != nil
+                        || customMessage.messageAudio != nil
+                        || customMessage.messageSticker != nil
+                        || !customMessage.album.isEmpty
+                    {
+                        MessageContentView(
+                            customMessage: customMessage,
+                            audioPlaylist: audioPlaylist,
+                            service: chatVM.service,
+                            onMediaTap: openAlbum,
+                            onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
+                        )
+                    }
+
+                    if let linkPreview, linkPreview.showAboveText {
+                        TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 8)
+                    }
+
+                    if let formattedText = customMessage.formattedText, !formattedText.text.isEmpty {
+                        MessageTextView(
+                            formattedText: formattedText,
+                            trailingText: visualMessageMetadataText,
+                        )
                         .padding(8)
                         .padding(
                             .top,
                             customMessage.replySenderName != nil && customMessage.replyToMessage != nil
                                 || customMessage.forwardedFrom != nil ? -8 : 0,
                         )
+                    }
+
+                    if let linkPreview, !linkPreview.showAboveText {
+                        TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
+                    }
                 }
 
-                if let linkPreview, !linkPreview.showAboveText {
-                    TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 8)
+                if !hasInlineVisualMetadata {
+                    standaloneVisualMessageMetadata
                 }
             }
             .background {
                 if !isStickerMessage {
-                    chatVM.highlightedMessageId == customMessage.id
-                        ? Color.white.opacity(0.5)
-                        : (customMessage.serviceMessageText == nil ? Color.gray6 : Color.gray6.opacity(0.75))
+                    messageBubbleColor
                 }
             }
             .clipShape(.rect(cornerRadius: 20))
-            .overlay(alignment: .bottomTrailing) {
-                HStack(spacing: 3) {
-                    if let editStatus = telegramMessageEditStatus(customMessage.message) {
-                        Text(editStatus)
-                    }
-                    Text(chatVM.dateFormatter.string(from: customMessage.date))
-                    if let status = telegramMessageDeliveryStatus(
-                        customMessage.message,
-                        lastReadOutboxMessageId: chatVM.customChat.lastReadOutboxMessageId,
-                    ) {
-                        Text(status)
-                    }
-                }
-                .font(.system(size: 12))
-                .foregroundStyle(.white)
-                .padding(3)
-                .background(Color.gray6)
-                .clipShape(.rect(cornerRadius: 10))
-                .padding(5)
-                .opacity(0.5)
-                .accessibilityHidden(true)
-            }
             .contextMenu {
                 messageContextMenu
             }
@@ -294,6 +279,23 @@ struct MessageView: View {
         customMessage.messagePoll != nil
     }
 
+    private var hasInlineVisualMetadata: Bool {
+        guard let formattedText = customMessage.formattedText else { return false }
+        return !formattedText.text.isEmpty
+    }
+
+    private var messageBubbleColor: Color {
+        if chatVM.highlightedMessageId == customMessage.id {
+            return Color.white.opacity(0.5)
+        }
+        if customMessage.serviceMessageText != nil {
+            return Color.gray6.opacity(0.75)
+        }
+        return customMessage.message.isOutgoing
+            ? Color.accentColor.opacity(0.85)
+            : Color.gray6
+    }
+
     private var textLinks: [TelegramTextLink] {
         guard let formattedText = customMessage.formattedText else { return [] }
         return TelegramTextFormatting.links(in: formattedText)
@@ -384,6 +386,48 @@ struct MessageView: View {
             parts.append(status)
         }
         return parts.joined(separator: ", ")
+    }
+
+    private var visualMessageMetadataText: AttributedString {
+        var value = " "
+        if telegramMessageEditStatus(customMessage.message) != nil {
+            value += "edited "
+        }
+        value += chatVM.dateFormatter.string(from: customMessage.date)
+        if let visualDeliveryStatusGlyph {
+            value += " \(visualDeliveryStatusGlyph)"
+        }
+        return telegramAttributedString(from: NSAttributedString(
+            string: value,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 12),
+                .foregroundColor: UIColor.white.withAlphaComponent(0.65),
+            ],
+        ))
+    }
+
+    private var visualDeliveryStatusGlyph: String? {
+        guard customMessage.message.isOutgoing else { return nil }
+        switch customMessage.message.sendingState {
+        case .messageSendingStatePending:
+            return "◷"
+        case .messageSendingStateFailed:
+            return "⚠︎"
+        case nil:
+            return customMessage.id <= chatVM.customChat.lastReadOutboxMessageId ? "✓✓" : "✓"
+        }
+    }
+
+    private var standaloneVisualMessageMetadata: some View {
+        Text(visualMessageMetadataText)
+            .padding(3)
+            .background(Color.gray6)
+            .clipShape(.rect(cornerRadius: 10))
+            .padding(.horizontal, 5)
+            .padding(.bottom, 5)
+            .fixedSize()
+            .opacity(0.5)
+            .accessibilityHidden(true)
     }
 
     private var reactionsButton: some View {
