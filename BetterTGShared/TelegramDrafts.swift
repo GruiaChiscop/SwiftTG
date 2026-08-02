@@ -46,4 +46,8 @@ enum TelegramDrafts {
         else { return nil }
         return reply.messageId == 0 ? nil : reply.messageId
     }
+
+    static func previewDate(draft: DraftMessage?, lastMessage: Message?) -> Int? {
+        draft?.date ?? lastMessage?.date
+    }
 }

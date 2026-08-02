@@ -43,4 +43,16 @@ struct TelegramDraftsTests {
 
         #expect(TelegramDrafts.make(formattedText: text, replyMessageId: nil) == nil)
     }
+
+    @Test func `chat list preview prefers the draft date`() throws {
+        let draft = try #require(TelegramDrafts.make(
+            text: "Draft",
+            replyMessageId: nil,
+            date: Foundation.Date(timeIntervalSince1970: 200),
+        ))
+        let lastMessage = TDLibFixtures.message(id: 1, chatId: 1, date: 100)
+
+        #expect(TelegramDrafts.previewDate(draft: draft, lastMessage: lastMessage) == 200)
+        #expect(TelegramDrafts.previewDate(draft: nil, lastMessage: lastMessage) == 100)
+    }
 }

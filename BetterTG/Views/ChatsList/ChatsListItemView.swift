@@ -44,8 +44,11 @@ struct ChatsListItemView: View {
 
                     Spacer(minLength: 8)
 
-                    if let lastMessage = customChat.lastMessage {
-                        Text(chatListTimestamp(lastMessage.date))
+                    if let previewDate = TelegramDrafts.previewDate(
+                        draft: customChat.draftMessage,
+                        lastMessage: customChat.lastMessage,
+                    ) {
+                        Text(chatListTimestamp(previewDate))
                             .font(.caption)
                             .foregroundStyle(
                                 customChat.hasUnreadMessages

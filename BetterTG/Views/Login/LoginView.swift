@@ -142,8 +142,20 @@ struct LoginView: View {
                 .buttonStyle(.borderedProminent)
                 .padding()
             }
-            .alert("Error", isPresented: $model.errorShown) {
-                Text("There was an error with Authorization State. Please restart the app.")
+            .alert(
+                "Login Failed",
+                isPresented: Binding(
+                    get: { model.errorMessage != nil },
+                    set: {
+                        if !$0 {
+                            model.errorMessage = nil
+                        }
+                    },
+                ),
+            ) {
+                Button("OK") { model.errorMessage = nil }
+            } message: {
+                Text(model.errorMessage ?? "Telegram couldn't complete the login.")
             }
             .alert("Error", isPresented: $model.waitPremiumErrorShown) {
                 Text("In order to login, you need to upgrade to Telegram Premium. Please do it in the Telegram app.")

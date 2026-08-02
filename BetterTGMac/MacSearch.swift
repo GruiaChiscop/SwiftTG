@@ -49,6 +49,7 @@ extension MacSessionModel {
         let generation = searchGeneration
         let service = service
         let searchedChatList = selectedChatList
+        let messageChatList = TelegramSearchPolicy.messageChatListScope(for: searchedChatList)
         isSearching = true
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: TelegramSearchPolicy.globalQueryDebounce)
@@ -56,7 +57,7 @@ extension MacSessionModel {
 
             async let chatResponse = try? service.searchChats(limit: 50, query: normalized, typeFilter: nil)
             async let messageResponse = try? service.searchMessages(
-                chatList: nil,
+                chatList: messageChatList,
                 chatTypeFilter: nil,
                 filter: nil,
                 limit: 50,

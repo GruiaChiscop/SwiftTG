@@ -194,7 +194,7 @@ struct MacChatRow: View {
     }
 
     private var previewDate: Int? {
-        chat.draftMessage?.date ?? chat.lastMessage?.date
+        TelegramDrafts.previewDate(draft: chat.draftMessage, lastMessage: chat.lastMessage)
     }
 
     private var isPinned: Bool {

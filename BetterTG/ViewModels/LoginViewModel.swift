@@ -23,7 +23,7 @@ import TDLibKit
     var code = ""
     var expectedCodeLength: Int?
     var countryNums = [PhoneNumberInfo]()
-    var errorShown = false
+    var errorMessage: String?
     var hint = ""
     var loginState = LoginState.phoneNumber
     var phoneNumber = ""
@@ -74,9 +74,25 @@ import TDLibKit
             guard TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) != nil else { return }
             showPhoneConfirmation = true
         case .code:
-            Task { _ = try? await service.checkAuthenticationCode(code: code) }
+            errorMessage = nil
+            Task {
+                do {
+                    _ = try await service.checkAuthenticationCode(code: code)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = TelegramLoginGuidance.errorDescription(error)
+                }
+            }
         case .twoFactor:
-            Task { _ = try? await service.checkAuthenticationPassword(password: twoFactor) }
+            errorMessage = nil
+            Task {
+                do {
+                    _ = try await service.checkAuthenticationPassword(password: twoFactor)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = TelegramLoginGuidance.errorDescription(error)
+                }
+            }
         }
     }
 
@@ -89,8 +105,14 @@ import TDLibKit
         }
 
         guard let number = TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) else { return }
+        errorMessage = nil
         Task {
-            _ = try? await service.setAuthenticationPhoneNumber(phoneNumber: number, settings: nil)
+            do {
+                _ = try await service.setAuthenticationPhoneNumber(phoneNumber: number, settings: nil)
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = TelegramLoginGuidance.errorDescription(error)
+            }
         }
     }
 
@@ -140,7 +162,7 @@ import TDLibKit
             loginState = .phoneNumber
         case .authorizationStateClosed, .authorizationStateClosing, .authorizationStateLoggingOut:
             loginState = .phoneNumber
-            errorShown = true
+            errorMessage = "The Telegram authorization session ended. Please try again."
         case .authorizationStateWaitPremiumPurchase:
             waitPremiumErrorShown = true
         default:
