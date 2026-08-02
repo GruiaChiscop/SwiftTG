@@ -76,7 +76,9 @@ struct ChatInfoView: View {
             ForEach(TelegramMutePreset.allCases) { preset in
                 Button(preset.title) { setMuteDuration(preset.duration) }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                showMuteOptions = false
+            }
         }
         .alert(
             "Delete \(chat.chat.title)?",

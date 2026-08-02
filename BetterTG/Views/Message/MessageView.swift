@@ -226,7 +226,7 @@ struct MessageView: View {
                 messageId: customMessage.id,
             )
         }
-        .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
+        .alert("Delete message?", isPresented: $showDeleteOptions) {
             if customMessage.properties.canBeDeletedOnlyForSelf {
                 Button("Delete only for me", role: .destructive) {
                     chatVM.deleteMessage(id: customMessage.id, deleteForBoth: false)
@@ -239,13 +239,13 @@ struct MessageView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("React", isPresented: $showReactionOptions) {
-            ForEach(reactionChoices, id: \.self) { reaction in
-                Button(telegramReactionActionTitle(reaction, existing: messageReactions)) {
-                    toggleReaction(reaction)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
+        .popover(
+            isPresented: $showReactionOptions,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom,
+        ) {
+            reactionPicker
+                .presentationCompactAdaptation(.popover)
         }
     }
 

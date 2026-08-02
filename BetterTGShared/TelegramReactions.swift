@@ -57,8 +57,8 @@ func telegramReactionName(_ type: ReactionType) -> String {
 func telegramReactionActionTitle(_ type: ReactionType, existing: [MessageReaction]) -> String {
     let isRemovableAndChosen = telegramReactionCanBeRemoved(type)
         && existing.contains { $0.type == type && $0.isChosen }
-    let verb = isRemovableAndChosen ? "Remove reaction" : "React with"
-    return "\(verb) \(telegramReactionName(type))"
+    let name = telegramReactionName(type)
+    return isRemovableAndChosen ? "Remove \(name)" : name
 }
 
 func telegramReactionDescription(_ reactions: [MessageReaction]) -> String? {

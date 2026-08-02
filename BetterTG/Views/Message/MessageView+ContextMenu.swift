@@ -4,6 +4,43 @@ import SwiftUI
 import TDLibKit
 
 extension MessageView {
+    var reactionPicker: some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 4) {
+                    ForEach(reactionChoices, id: \.self) { reaction in
+                        let isSelected = messageReactions.contains {
+                            $0.type == reaction && $0.isChosen
+                        }
+                        Button {
+                            toggleReaction(reaction)
+                            showReactionOptions = false
+                        } label: {
+                            Text(telegramReactionSymbol(reaction))
+                                .font(.title2)
+                                .frame(width: 44, height: 44)
+                                .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+                                .clipShape(.circle)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    }
+                }
+                .padding(8)
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: 60)
+
+            Divider()
+
+            Button("Dismiss", role: .cancel) {
+                showReactionOptions = false
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .frame(width: max(140, min(CGFloat(reactionChoices.count) * 48 + 16, 320)))
+    }
+
     /// SwiftUI announces actions in reverse declaration order, so declare them from last to first.
     @ViewBuilder var messageAccessibilityActions: some View {
         if customMessage.properties.canBeDeletedOnlyForSelf

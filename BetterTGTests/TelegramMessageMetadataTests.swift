@@ -109,7 +109,8 @@ struct TelegramMessageMetadataTests {
         ]
 
         #expect(telegramReactionChoices(existing: existing, available: available) == [heart, thumbsUp])
-        #expect(telegramReactionActionTitle(heart, existing: existing) == "Remove reaction ❤")
+        #expect(telegramReactionActionTitle(heart, existing: existing) == "Remove ❤")
+        #expect(telegramReactionActionTitle(thumbsUp, existing: existing) == "👍")
         #expect(telegramReactionDescription(existing) == "Reactions: ❤ 2 in total. You also reacted")
     }
 }

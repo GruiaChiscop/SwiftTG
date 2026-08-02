@@ -487,8 +487,8 @@ import UniformTypeIdentifiers
     func deleteMessage(id: Int64, deleteForBoth: Bool) {
         guard let customMessage = messages.first(where: { $0.message.id == id }) else { return }
         let messageIds = customMessage.album.isEmpty ? [id] : customMessage.album.map(\.id)
-        Task.background {
-            try? await TelegramMessageActions.delete(
+        performMessageAction(failureMessage: "Message couldn't be deleted") {
+            try await TelegramMessageActions.delete(
                 service: self.service,
                 chatId: self.customChat.chat.id,
                 messageIds: messageIds,
@@ -511,7 +511,8 @@ import UniformTypeIdentifiers
     }
 
     func togglePinnedMessage(_ message: Message) {
-        Task.background {
+        let action = message.isPinned ? "unpinned" : "pinned"
+        performMessageAction(failureMessage: "Message couldn't be \(action)") {
             try await TelegramMessageActions.togglePinned(service: self.service, message: message)
         }
     }
@@ -555,12 +556,29 @@ import UniformTypeIdentifiers
     }
 
     func toggleReaction(_ reaction: ReactionType, on message: Message) {
-        Task.background {
-            try? await TelegramMessageActions.toggleReaction(
+        performMessageAction(failureMessage: "Reaction couldn't be updated") {
+            try await TelegramMessageActions.toggleReaction(
                 service: self.service,
                 message: message,
                 reaction: reaction,
             )
+        }
+    }
+
+    func performMessageAction(
+        failureMessage: String,
+        _ action: @escaping @Sendable () async throws -> Void,
+    ) {
+        messageActionError = nil
+        Task.background {
+            do {
+                try await action()
+            } catch {
+                guard !Task.isCancelled else { return }
+                await main {
+                    self.messageActionError = "\(failureMessage): \(telegramErrorDescription(error))"
+                }
+            }
         }
     }
 
