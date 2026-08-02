@@ -91,13 +91,25 @@ struct MessageView: View {
                     )
                 }
 
-                if customMessage.messageDocument != nil
+                if let messagePoll = customMessage.messagePoll {
+                    TelegramPollView(
+                        content: messagePoll,
+                        message: customMessage.message,
+                        service: chatVM.service,
+                    ) {
+                        Text(messagePoll.poll.question.text)
+                            .accessibilityIdentifier("message-\(customMessage.id)")
+                            .accessibilityLabel(pollAccessibilityContextDescription)
+                            .accessibilityActions {
+                                messageAccessibilityActions
+                            }
+                    }
+                } else if customMessage.messageDocument != nil
                     || customMessage.messagePhoto != nil
                     || customMessage.messageVideo != nil
                     || customMessage.messageVoiceNote != nil
                     || customMessage.messageAudio != nil
                     || customMessage.messageSticker != nil
-                    || customMessage.messagePoll != nil
                     || !customMessage.album.isEmpty
                 {
                     MessageContentView(
@@ -159,7 +171,7 @@ struct MessageView: View {
             }
             .modify {
                 if isPollMessage {
-                    pollAccessibilityElement($0)
+                    $0
                 } else {
                     messageAccessibilityElement($0)
                 }
@@ -418,16 +430,6 @@ struct MessageView: View {
                     }
                 }
             }
-            .accessibilityActions {
-                messageAccessibilityActions
-            }
-    }
-
-    private func pollAccessibilityElement(_ content: some View) -> some View {
-        content
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("message-\(customMessage.id)")
-            .accessibilityLabel(pollAccessibilityContextDescription)
             .accessibilityActions {
                 messageAccessibilityActions
             }

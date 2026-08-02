@@ -94,7 +94,12 @@ struct MacMessageRow: View {
                     } else if case .messageSticker(let content) = message.content {
                         MacStickerView(model: model, content: content)
                     } else if case .messagePoll(let content) = message.content {
-                        TelegramPollView(content: content, message: message, service: model.service)
+                        TelegramPollView(content: content, message: message, service: model.service) {
+                            Text(content.poll.question.text)
+                                .accessibilityIdentifier("message-\(message.id)")
+                                .accessibilityLabel(pollAccessibilityContextDescription)
+                                .accessibilityActions { messageAccessibilityActions }
+                        }
                     } else if case .messageText(let content) = message.content {
                         if let linkPreview = content.linkPreview, linkPreview.showAboveText {
                             MacLinkPreviewView(model: model, preview: linkPreview)
@@ -142,7 +147,7 @@ struct MacMessageRow: View {
                 }
                 .macModified {
                     if isPollMessage {
-                        pollAccessibilityElement($0)
+                        $0
                     } else {
                         messageAccessibilityElement($0)
                     }
@@ -602,14 +607,6 @@ struct MacMessageRow: View {
                 isEnabled: hasDefaultActivation,
                 action: activateMessage,
             ))
-            .accessibilityActions { messageAccessibilityActions }
-    }
-
-    private func pollAccessibilityElement(_ content: some View) -> some View {
-        content
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("message-\(message.id)")
-            .accessibilityLabel(pollAccessibilityContextDescription)
             .accessibilityActions { messageAccessibilityActions }
     }
 

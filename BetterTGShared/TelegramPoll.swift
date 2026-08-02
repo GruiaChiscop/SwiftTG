@@ -178,13 +178,19 @@ extension PollType {
 
 // MARK: - TelegramPollView
 
-struct TelegramPollView: View {
+struct TelegramPollView<MessageHeader: View>: View {
     // MARK: Lifecycle
 
-    init(content: MessagePoll, message: Message, service: any TelegramService) {
+    init(
+        content: MessagePoll,
+        message: Message,
+        service: any TelegramService,
+        @ViewBuilder messageHeader: () -> MessageHeader,
+    ) {
         self.content = content
         self.message = message
         self.service = service
+        self.messageHeader = messageHeader()
         _selection = State(initialValue: TelegramPollPresentation(content).chosenOptionPositions)
     }
 
@@ -193,13 +199,13 @@ struct TelegramPollView: View {
     let content: MessagePoll
     let message: Message
     let service: any TelegramService
+    let messageHeader: MessageHeader
 
     var body: some View {
         let presentation = TelegramPollPresentation(content)
         VStack(alignment: .leading, spacing: 10) {
-            Text(presentation.question)
+            messageHeader
                 .font(.headline)
-                .accessibilityHidden(true)
 
             Text(presentation.typeDescription)
                 .font(.caption)
