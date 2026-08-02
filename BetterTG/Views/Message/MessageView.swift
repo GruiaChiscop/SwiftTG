@@ -31,7 +31,17 @@ struct MessageView: View {
             parts.append(serviceMessageText)
         } else {
             let sender = customMessage.message.isOutgoing ? "You" : channelOrGroupAwareSenderName
-            parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
+            if customMessage.album.isEmpty {
+                parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
+            } else {
+                let albumDescription = telegramMediaAlbumAccessibilityDescription(
+                    itemCount: customMessage.album.count,
+                )
+                parts.append("\(sender): \(albumDescription)")
+                if let caption = customMessage.formattedText?.text, !caption.isEmpty {
+                    parts.append(caption)
+                }
+            }
         }
         if let editStatus = telegramMessageEditStatus(customMessage.message) {
             parts.append(editStatus)

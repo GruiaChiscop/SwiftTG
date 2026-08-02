@@ -3,6 +3,7 @@
 import AVKit
 import SwiftUI
 import TDLibKit
+import UIKit
 
 // MARK: - ChatViewAlbum
 
@@ -47,13 +48,13 @@ private struct ChatViewAlbumRootView: View {
                         ChatVideoPage(
                             messageVideo: messageVideo,
                             isSelected: selection == albumMessage.id,
-                            onLoad: { fileId, path in videos[fileId] = path },
+                            onLoad: recordVideo,
                         )
                         .tag(albumMessage.id)
                     }
                 }
             }
-            .tabViewStyle(.page)
+            .tabViewStyle(.page(indexDisplayMode: .never))
 
             toolbar
                 .frame(maxWidth: .infinity)
@@ -96,12 +97,23 @@ private struct ChatViewAlbumRootView: View {
 
             Spacer()
 
-            if let shareURL {
-                Button("Share", systemImage: "square.and.arrow.up.circle.fill") {
+            if album.count > 1 {
+                ChatAlbumPageControl(
+                    selection: $selection,
+                    messageIds: album.map(\.id),
+                )
+                .frame(maxWidth: 180, minHeight: 32)
+
+                Spacer()
+            }
+
+            Button("Share", systemImage: "square.and.arrow.up.circle.fill") {
+                if let shareURL {
                     showShareSheet([shareURL])
                 }
-                .labelStyle(.iconOnly)
             }
+            .labelStyle(.iconOnly)
+            .disabled(shareURL == nil)
         }
         .font(.title)
         .foregroundStyle(.white)
@@ -109,8 +121,67 @@ private struct ChatViewAlbumRootView: View {
 
     private func makeMessagePhoto(from messagePhoto: MessagePhoto) -> some View {
         TdImage(photo: messagePhoto.photo, size: .yBox, contentMode: .fit) { size, file in
-            withAnimation { photos[size.photo.id] = file.local.path }
+            guard photos[size.photo.id] != file.local.path else { return }
+            photos[size.photo.id] = file.local.path
         }
+    }
+
+    private func recordVideo(fileId: Int, path: String) {
+        guard videos[fileId] != path else { return }
+        videos[fileId] = path
+    }
+}
+
+// MARK: - ChatAlbumPageControl
+
+private struct ChatAlbumPageControl: UIViewRepresentable {
+    // MARK: - Coordinator
+
+    final class Coordinator: NSObject {
+        // MARK: Lifecycle
+
+        init(selection: Binding<Int64>, messageIds: [Int64]) {
+            self.selection = selection
+            self.messageIds = messageIds
+        }
+
+        // MARK: Internal
+
+        var selection: Binding<Int64>
+        var messageIds: [Int64]
+
+        @objc func pageChanged(_ sender: UIPageControl) {
+            guard messageIds.indices.contains(sender.currentPage) else { return }
+            selection.wrappedValue = messageIds[sender.currentPage]
+        }
+    }
+
+    @Binding var selection: Int64
+
+    let messageIds: [Int64]
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection, messageIds: messageIds)
+    }
+
+    func makeUIView(context: Context) -> UIPageControl {
+        let pageControl = UIPageControl()
+        pageControl.hidesForSinglePage = true
+        pageControl.currentPageIndicatorTintColor = .white
+        pageControl.pageIndicatorTintColor = UIColor.white.withAlphaComponent(0.35)
+        pageControl.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.pageChanged(_:)),
+            for: .valueChanged,
+        )
+        return pageControl
+    }
+
+    func updateUIView(_ pageControl: UIPageControl, context: Context) {
+        context.coordinator.selection = $selection
+        context.coordinator.messageIds = messageIds
+        pageControl.numberOfPages = messageIds.count
+        pageControl.currentPage = messageIds.firstIndex(of: selection) ?? 0
     }
 }
 

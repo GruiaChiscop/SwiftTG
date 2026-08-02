@@ -98,6 +98,8 @@ enum TDLibFixtures {
         isOutgoing: Bool = false,
         sendingState: MessageSendingState? = nil,
         linkPreview: LinkPreview? = nil,
+        mediaAlbumId: TdInt64 = 0,
+        content: MessageContent? = nil,
     ) -> Message {
         Message(
             authorSignature: "",
@@ -106,7 +108,7 @@ enum TDLibFixtures {
             chatId: chatId,
             containsUnreadMention: false,
             containsUnreadPollVotes: false,
-            content: .messageText(.init(
+            content: content ?? .messageText(.init(
                 linkPreview: linkPreview,
                 linkPreviewOptions: nil,
                 text: .init(entities: [], text: text),
@@ -128,7 +130,7 @@ enum TDLibFixtures {
             isPaidGramSuggestedPost: false,
             isPaidStarSuggestedPost: false,
             isPinned: false,
-            mediaAlbumId: 0,
+            mediaAlbumId: mediaAlbumId,
             paidMessageStarCount: 0,
             receiverId: nil,
             replyMarkup: nil,

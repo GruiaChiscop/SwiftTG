@@ -13,6 +13,7 @@ struct MacMessageRow: View {
     @Bindable var model: MacSessionModel
 
     let message: Message
+    let albumMessages: [Message]
     let lastReadOutboxMessageId: Int64
 
     var body: some View {
@@ -57,7 +58,17 @@ struct MacMessageRow: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("Go to Replied Message")
                     }
-                    if case .messageDocument(let content) = message.content {
+                    if isVisualAlbum {
+                        if albumCaptionShowsAbove, let albumCaption {
+                            MacFormattedTextView(formattedText: albumCaption)
+                        }
+                        MacMediaAlbumView(model: model, messages: albumMessages) { albumMessage in
+                            selectedAlbumMessage = albumMessage
+                        }
+                        if !albumCaptionShowsAbove, let albumCaption {
+                            MacFormattedTextView(formattedText: albumCaption)
+                        }
+                    } else if case .messageDocument(let content) = message.content {
                         MacDocumentMessageContent(
                             content: content,
                             isDownloaded: documentPath != nil,
@@ -152,6 +163,8 @@ struct MacMessageRow: View {
                 .macModified {
                     if isPollMessage {
                         $0
+                    } else if isVisualAlbum {
+                        albumAccessibilityRepresentation($0)
                     } else {
                         messageAccessibilityElement($0)
                     }
@@ -180,7 +193,8 @@ struct MacMessageRow: View {
             voicePath = await model.localVoiceNotePath(fileId: voiceFileId)
         }
         .task(id: presentationTaskID) {
-            guard let photoFileId,
+            guard !isVisualAlbum,
+                  let photoFileId,
                   let path = await model.localPhotoPath(fileId: photoFileId)
             else {
                 photoPath = nil
@@ -191,7 +205,8 @@ struct MacMessageRow: View {
             photoImage = await Self.decodedImage(atPath: path)
         }
         .task(id: presentationTaskID) {
-            guard let videoThumbnailFileId,
+            guard !isVisualAlbum,
+                  let videoThumbnailFileId,
                   let path = await model.localPhotoPath(fileId: videoThumbnailFileId)
             else {
                 videoThumbnailImage = nil
@@ -258,6 +273,9 @@ struct MacMessageRow: View {
                 )
             }
         }
+        .sheet(item: $selectedAlbumMessage) { albumMessage in
+            MacAlbumMediaPreview(model: model, message: albumMessage)
+        }
         .sheet(isPresented: $showReactionDetails) {
             TelegramReactionDetailsView(
                 service: model.service,
@@ -295,6 +313,7 @@ struct MacMessageRow: View {
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
     @State private var showForwardPicker = false
+    @State private var selectedAlbumMessage: Message?
 
     private var capabilities: MacMessageCapabilities? {
         model.messageCapabilities[message.id]
@@ -311,6 +330,25 @@ struct MacMessageRow: View {
 
     private var presentationTaskID: String {
         "\(message.id):\(message.editDate)"
+    }
+
+    private var isVisualAlbum: Bool {
+        !albumMessages.isEmpty
+    }
+
+    private var albumCaption: FormattedText? {
+        albumMessages.lazy.compactMap(telegramMessageFormattedText).first
+    }
+
+    private var albumCaptionShowsAbove: Bool {
+        guard let captionMessage = albumMessages.first(where: { telegramMessageFormattedText($0) != nil }) else {
+            return false
+        }
+        switch captionMessage.content {
+        case .messagePhoto(let content): return content.showCaptionAboveMedia
+        case .messageVideo(let content): return content.showCaptionAboveMedia
+        default: return false
+        }
     }
 
     private var canNavigateToForwardOrigin: Bool {
@@ -438,7 +476,9 @@ struct MacMessageRow: View {
     }
 
     private var messageLinks: [TelegramTextLink] {
-        guard let formattedText = telegramMessageFormattedText(message) else { return [] }
+        guard let formattedText = isVisualAlbum ? albumCaption : telegramMessageFormattedText(message) else {
+            return []
+        }
         return TelegramTextFormatting.links(in: formattedText)
     }
 
@@ -484,10 +524,10 @@ struct MacMessageRow: View {
         if canCopy {
             items.append(.button(title: "Copy", systemImage: "doc.on.doc") { copyMessageText() })
         }
-        if photoImage != nil {
+        if !isVisualAlbum, photoImage != nil {
             items.append(.button(title: "Open Photo", systemImage: "photo") { showPhotoPreview = true })
         }
-        if videoFileId != nil {
+        if !isVisualAlbum, videoFileId != nil {
             items.append(.button(title: "Play Video", systemImage: "play.rectangle") { showVideoPreview = true })
         }
         if capabilities?.properties.canBeEdited == true, editableMessageText(message) != nil {
@@ -507,6 +547,22 @@ struct MacMessageRow: View {
         if case .messagePoll(let content) = message.content {
             parts.append(content.poll.type.isQuiz ? "Quiz" : "Poll")
             parts.append(content.poll.question.text)
+        }
+        parts.append(telegramMessageDateDescription(message.date))
+        if let status = telegramMessageDeliveryStatus(
+            message,
+            lastReadOutboxMessageId: lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var albumAccessibilityDescription: String {
+        var parts = [message.isOutgoing ? "You" : model.cachedSenderName(for: message) ?? "Unknown sender"]
+        parts.append(telegramMediaAlbumAccessibilityDescription(itemCount: albumMessages.count))
+        if let albumCaption {
+            parts.append(albumCaption.text)
         }
         parts.append(telegramMessageDateDescription(message.date))
         if let status = telegramMessageDeliveryStatus(
@@ -601,6 +657,41 @@ struct MacMessageRow: View {
             .contextMenu { messageActions }
     }
 
+    private func albumAccessibilityRepresentation(_ content: some View) -> some View {
+        content
+            .accessibilityRepresentation {
+                VStack {
+                    Text("Album message")
+                        .accessibilityIdentifier("message-\(message.id)")
+                        .accessibilityLabel(albumAccessibilityDescription)
+                        .accessibilityRespondsToUserInteraction(true)
+                        .accessibilityActions { messageAccessibilityActions }
+
+                    ForEach(Array(albumMessages.enumerated()), id: \.offset) { index, albumMessage in
+                        Button(albumItemAccessibilityLabel(albumMessage, index: index)) {
+                            selectedAlbumMessage = albumMessage
+                        }
+                    }
+
+                    ForEach(messageLinks) { link in
+                        Link(link.displayedText, destination: link.url)
+                            .macModified {
+                                if let destination = linkAccessibilityDestination(link) {
+                                    $0.accessibilityValue(destination)
+                                } else {
+                                    $0
+                                }
+                            }
+                    }
+
+                    if !messageReactions.isEmpty {
+                        Button("Reactions") { showReactionDetails = true }
+                            .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
+                    }
+                }
+            }
+    }
+
     private func messageAccessibilityElement(_ content: some View) -> some View {
         content
             .accessibilityElement(children: .ignore)
@@ -623,6 +714,10 @@ struct MacMessageRow: View {
         await Task.detached(priority: .userInitiated) {
             NSImage(contentsOfFile: path)
         }.value
+    }
+
+    private func albumItemAccessibilityLabel(_ albumMessage: Message, index: Int) -> String {
+        "Item \(index + 1) of \(albumMessages.count), \(telegramMessageContentDescription(albumMessage))"
     }
 
     private func copyMessageText() {

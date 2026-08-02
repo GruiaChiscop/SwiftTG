@@ -34,11 +34,12 @@ struct MacMessageTable: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
 
-            case .message(let messageId):
+            case .message(let messageId, let albumMessageIds):
                 if let message = model.messages.messages[messageId] {
                     MacMessageRow(
                         model: model,
                         message: message,
+                        albumMessages: albumMessageIds?.compactMap { model.messages.messages[$0] } ?? [],
                         lastReadOutboxMessageId: chat.lastReadOutboxMessageId,
                     )
                     .tag(row.id)
@@ -110,7 +111,12 @@ struct MacMessageTable: View {
         let calendar = Calendar.autoupdatingCurrent
         var previousMessage: Message?
 
-        for messageId in model.messages.orderedMessageIds {
+        let groups = telegramVisualMessageAlbumGroups(
+            orderedMessageIds: model.messages.orderedMessageIds,
+            messages: model.messages.messages,
+        )
+        for group in groups {
+            let messageId = group.representativeMessageId
             guard let message = model.messages.messages[messageId] else { continue }
 
             let startsNewDay = previousMessage.map {
@@ -128,7 +134,7 @@ struct MacMessageTable: View {
                 )
             }
 
-            if unreadBoundaryMessageId == messageId {
+            if let unreadBoundaryMessageId, group.messageIds.contains(unreadBoundaryMessageId) {
                 rows.append(
                     MacMessageListRow(
                         id: .unread(messageId),
@@ -137,8 +143,11 @@ struct MacMessageTable: View {
                 )
             }
 
-            rows.append(MacMessageListRow(id: .message(messageId), kind: .message(messageId)))
-            previousMessage = message
+            rows.append(MacMessageListRow(
+                id: .message(messageId),
+                kind: .message(messageId, albumMessageIds: group.isAlbum ? group.messageIds : nil),
+            ))
+            previousMessage = group.messageIds.last.flatMap { model.messages.messages[$0] } ?? message
         }
 
         return rows
@@ -155,7 +164,7 @@ struct MacMessageTable: View {
             positionSearchResult(targetMessageId)
         } else if let anchorMessageId = historyAnchorMessageId {
             if model.messages.orderedMessageIds.first != anchorMessageId {
-                scrollPosition.scrollTo(id: MacMessageListRow.ID.message(anchorMessageId), anchor: .top)
+                scrollPosition.scrollTo(id: messageRowID(containing: anchorMessageId), anchor: .top)
                 historyAnchorMessageId = nil
             }
         } else if !model.isLoadingMessages,
@@ -166,13 +175,14 @@ struct MacMessageTable: View {
         } else if shouldFollowLatestMessage,
                   let lastMessageId = model.messages.orderedMessageIds.last
         {
-            scrollPosition.scrollTo(id: MacMessageListRow.ID.message(lastMessageId), anchor: .bottom)
+            scrollPosition.scrollTo(id: messageRowID(containing: lastMessageId), anchor: .bottom)
         }
     }
 
     private func positionSearchResult(_ messageId: Int64) {
-        selectedRowId = .message(messageId)
-        scrollPosition.scrollTo(id: MacMessageListRow.ID.message(messageId), anchor: .center)
+        let rowID = messageRowID(containing: messageId)
+        selectedRowId = rowID
+        scrollPosition.scrollTo(id: rowID, anchor: .center)
         model.navigationTargetMessageId = nil
         hasPositionedInitialMessages = true
     }
@@ -182,18 +192,27 @@ struct MacMessageTable: View {
         var transaction = Transaction()
         transaction.animation = nil
         withTransaction(transaction) {
-            scrollPosition.scrollTo(id: MacMessageListRow.ID.message(messageId), anchor: .bottom)
+            scrollPosition.scrollTo(id: messageRowID(containing: messageId), anchor: .bottom)
         }
         hasPositionedInitialMessages = true
         isAtBottom = true
     }
 
     private func positionAtLatestHistory(_ messageId: Int64) {
-        selectedRowId = .message(messageId)
-        scrollPosition.scrollTo(id: MacMessageListRow.ID.message(messageId), anchor: .bottom)
+        let rowID = messageRowID(containing: messageId)
+        selectedRowId = rowID
+        scrollPosition.scrollTo(id: rowID, anchor: .bottom)
         isAtBottom = true
         hasPositionedInitialMessages = true
         model.latestHistoryTargetMessageId = nil
+    }
+
+    private func messageRowID(containing messageId: Int64) -> MacMessageListRow.ID {
+        .message(telegramVisualMessageAlbumRepresentativeId(
+            for: messageId,
+            orderedMessageIds: model.messages.orderedMessageIds,
+            messages: model.messages.messages,
+        ))
     }
 
     private func beginLoadingOlderMessages() {
@@ -226,7 +245,7 @@ private struct MacMessageListRow: Identifiable {
     enum Kind {
         case day(String)
         case unread(Int)
-        case message(Int64)
+        case message(Int64, albumMessageIds: [Int64]?)
     }
 
     let id: ID
