@@ -2,6 +2,15 @@
 
 import SwiftUI
 
+// MARK: - PresentedAttachmentError
+
+private struct PresentedAttachmentError: Identifiable {
+    let id = UUID()
+    let message: String
+}
+
+// MARK: - AttachmentPreviewView
+
 /// Full-screen review step shown after picking photos or files, matching Telegram/Unigram's own
 /// "send media" screen: a paged preview of what's about to be sent, with one shared caption field
 /// and a way to drop individual items before confirming - rather than sending straight from the
@@ -54,26 +63,25 @@ struct AttachmentPreviewView: View {
                 : (chatVM.displayedImages.isEmpty ? "Document" : "Photo"))
                 .navigationBarTitleDisplayMode(.inline)
         }
-        .alert(
-            "Send Failed",
-            isPresented: Binding(
-                get: { chatVM.messageActionError != nil },
-                set: {
-                    if !$0 {
-                        chatVM.messageActionError = nil
-                    }
+        .onChange(of: chatVM.messageActionError) { _, message in
+            guard let message else { return }
+            presentedError = PresentedAttachmentError(message: message)
+        }
+        .alert(item: $presentedError) { error in
+            Alert(
+                title: Text("Send Failed"),
+                message: Text(error.message),
+                dismissButton: .default(Text("OK")) {
+                    chatVM.messageActionError = nil
                 },
-            ),
-        ) {
-            Button("OK") { chatVM.messageActionError = nil }
-        } message: {
-            Text(chatVM.messageActionError ?? "Telegram couldn't send the message.")
+            )
         }
     }
 
     // MARK: Private
 
     @State private var selectedIndex = 0
+    @State private var presentedError: PresentedAttachmentError?
 
     private var itemCount: Int {
         chatVM.displayedImages.count + chatVM.displayedDocuments.count

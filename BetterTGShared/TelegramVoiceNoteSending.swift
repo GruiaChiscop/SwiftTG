@@ -43,7 +43,7 @@ enum TelegramVoiceNoteSending {
             selfDestructType: nil,
             voiceNote: InputVoiceNote(
                 duration: max(1, duration),
-                voiceNote: .inputFileLocal(.init(path: url.path())),
+                voiceNote: .inputFileLocal(.init(path: TelegramMessageSending.localFilePath(url))),
                 waveform: waveform,
             ),
         ))

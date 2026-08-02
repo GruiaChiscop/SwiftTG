@@ -10,6 +10,7 @@ struct ChatBottomArea: View {
     // MARK: Internal
 
     var focused: FocusState<Bool>.Binding
+    var onAttachmentPreviewDismissed: () -> Void
 
     @Namespace var namespace
     @Environment(ChatVM.self) var chatVM
@@ -127,18 +128,21 @@ struct ChatBottomArea: View {
             allowsMultipleSelection: true,
         ) { result in
             guard case .success(let urls) = result else { return }
-            Task { await chatVM.stageDocuments(urls) }
+            Task { @MainActor in await chatVM.stageDocuments(urls) }
         }
-        .sheet(isPresented: Binding(
-            get: { showAttachmentPreview },
-            set: { isPresented in
-                guard !isPresented else { return }
-                withAnimation {
-                    chatVM.displayedImages.removeAll()
-                    chatVM.displayedDocuments.removeAll()
-                }
-            },
-        )) {
+        .sheet(
+            isPresented: Binding(
+                get: { showAttachmentPreview },
+                set: { isPresented in
+                    guard !isPresented else { return }
+                    withAnimation {
+                        chatVM.displayedImages.removeAll()
+                        chatVM.displayedDocuments.removeAll()
+                    }
+                },
+            ),
+            onDismiss: onAttachmentPreviewDismissed,
+        ) {
             AttachmentPreviewView()
         }
         .sheet(isPresented: $showsPollComposer) {

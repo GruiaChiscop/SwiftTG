@@ -1324,7 +1324,18 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     service: service,
                     to: caption,
                 )
-                let contents = urls.map { url in
+                var stagedURLs = [URL]()
+                stagedURLs.reserveCapacity(urls.count)
+                for url in urls {
+                    let stagedURL = try await TelegramDocumentExport.stagedURL(
+                        sourceURL: url,
+                        suggestedFileName: url.lastPathComponent,
+                        identifier: UUID().uuidString,
+                        forceCopy: true,
+                    )
+                    stagedURLs.append(stagedURL)
+                }
+                let contents = stagedURLs.map { url in
                     TelegramMessageSending.documentContent(url: url, caption: formattedCaption)
                 }
                 try await TelegramMessageSending.send(

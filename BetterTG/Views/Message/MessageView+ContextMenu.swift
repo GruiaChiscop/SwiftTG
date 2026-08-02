@@ -59,6 +59,9 @@ extension MessageView {
         {
             Button("Copy", action: copyMessageText)
         }
+        if customMessage.messageDocument != nil {
+            Button("Save to Files", action: saveDocument)
+        }
         if !reactionChoices.isEmpty {
             Button("React") { showReactionOptions = true }
         }
@@ -103,6 +106,12 @@ extension MessageView {
             Button(action: copyMessageText) {
                 Label("Copy", systemImage: "rectangle.portrait.on.rectangle.portrait")
             }
+        }
+        if customMessage.messageDocument != nil {
+            Button(action: saveDocument) {
+                Label("Save to Files", systemImage: "folder")
+            }
+            .disabled(isSavingDocument)
         }
         if customMessage.properties.canBeEdited {
             Button(action: edit) {
@@ -160,5 +169,36 @@ extension MessageView {
     func copyMessageText() {
         guard let formattedText = telegramMessageFormattedText(customMessage.message) else { return }
         UIPasteboard.setFormattedText(formattedText)
+    }
+
+    func saveDocument() {
+        guard !isSavingDocument, let messageDocument = customMessage.messageDocument else { return }
+        isSavingDocument = true
+        chatVM.messageActionError = nil
+
+        Task { @MainActor in
+            defer { isSavingDocument = false }
+            do {
+                let file = try await chatVM.service.downloadFile(
+                    fileId: messageDocument.document.document.id,
+                    limit: 0,
+                    offset: 0,
+                    priority: 24,
+                    synchronous: true,
+                )
+                guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else {
+                    throw TelegramDocumentExportError.sourceUnavailable
+                }
+                let exportURL = try await TelegramDocumentExport.stagedURL(
+                    sourceURL: URL(filePath: file.local.path),
+                    suggestedFileName: messageDocument.document.fileName,
+                    identifier: String(customMessage.id),
+                )
+                showDocumentExporter(exportURL)
+            } catch {
+                guard !Task.isCancelled else { return }
+                chatVM.messageActionError = "File couldn't be saved: \(telegramErrorDescription(error))"
+            }
+        }
     }
 }

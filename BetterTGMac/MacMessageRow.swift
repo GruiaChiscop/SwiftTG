@@ -538,6 +538,11 @@ struct MacMessageRow: View {
         if canCopy {
             items.append(.button(title: "Copy", systemImage: "doc.on.doc") { copyMessageText() })
         }
+        if documentFileId != nil {
+            items.append(.button(title: "Save As…", systemImage: "square.and.arrow.down") {
+                saveDocument()
+            })
+        }
         if !isVisualAlbum, photoImage != nil {
             items.append(.button(title: "Open Photo", systemImage: "photo") { showPhotoPreview = true })
         }
@@ -752,6 +757,46 @@ struct MacMessageRow: View {
             guard let path = await model.localDocumentPath(fileId: documentFileId) else { return }
             documentPath = path
             NSWorkspace.shared.open(URL(filePath: path))
+        }
+    }
+
+    private func saveDocument() {
+        guard !isLoadingDocument,
+              case .messageDocument(let content) = message.content,
+              let documentFileId
+        else { return }
+
+        isLoadingDocument = true
+        model.messageActionError = nil
+        Task { @MainActor in
+            defer { isLoadingDocument = false }
+            let resolvedPath: String? =
+                if let documentPath {
+                    documentPath
+                } else {
+                    await model.localDocumentPath(fileId: documentFileId)
+                }
+            guard let path = resolvedPath else {
+                model.messageActionError = "File couldn't be downloaded."
+                return
+            }
+            documentPath = path
+
+            let panel = NSSavePanel()
+            panel.title = "Save File"
+            panel.prompt = "Save"
+            panel.canCreateDirectories = true
+            panel.nameFieldStringValue = TelegramDocumentExport.fileName(content.document.fileName)
+            guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+
+            do {
+                try await TelegramDocumentExport.copyFile(
+                    from: URL(filePath: path),
+                    to: destinationURL,
+                )
+            } catch {
+                model.messageActionError = "File couldn't be saved: \(telegramErrorDescription(error))"
+            }
         }
     }
 

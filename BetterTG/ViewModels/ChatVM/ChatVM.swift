@@ -309,7 +309,15 @@ import UniformTypeIdentifiers
         }
     }
 
-    func stageDocuments(_ urls: [URL]) async { await composer.stageDocuments(urls) }
+    @MainActor func stageDocuments(_ urls: [URL]) async {
+        messageActionError = nil
+        do {
+            try await composer.stageDocuments(urls)
+        } catch {
+            messageActionError = "File couldn't be prepared: \(telegramErrorDescription(error))"
+        }
+    }
+
     func setShowSendButton() { composer.setShowSendButton() }
     func setEditMessageText(from message: Message?) { composer.setEditMessageText(from: message) }
     func updateDraft() async { await composer.updateDraft() }

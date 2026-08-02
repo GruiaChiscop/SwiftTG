@@ -27,3 +27,15 @@ func showShareSheet(_ items: [Any]) {
         rootVC.present(vc, animated: true)
     }
 }
+
+@MainActor func showDocumentExporter(_ url: URL) {
+    guard let rootViewController = UIApplication.currentKeyWindow?.rootViewController else { return }
+    var presentingViewController = rootViewController
+    while let presentedViewController = presentingViewController.presentedViewController {
+        presentingViewController = presentedViewController
+    }
+
+    let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+    picker.shouldShowFileExtensions = true
+    presentingViewController.present(picker, animated: true)
+}

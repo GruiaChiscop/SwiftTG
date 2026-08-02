@@ -16,6 +16,7 @@ struct MessageView: View {
     @State var showDeleteOptions = false
     @State var showReactionOptions = false
     @State var showReactionDetails = false
+    @State var isSavingDocument = false
 
     var accessibilityDescription: String {
         var prefix = ""

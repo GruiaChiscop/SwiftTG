@@ -5,6 +5,13 @@ import PhotosUI
 import SwiftUI
 import TDLibKit
 
+// MARK: - PresentedChatActionError
+
+private struct PresentedChatActionError: Identifiable {
+    let id = UUID()
+    let message: String
+}
+
 // MARK: - ChatView
 
 struct ChatView: View {
@@ -97,7 +104,10 @@ struct ChatView: View {
                 conversationSearchNavigationBar
             } else if !isPreview {
                 if chatVM.customChat.canPostMessages {
-                    ChatBottomArea(focused: $focused)
+                    ChatBottomArea(focused: $focused) {
+                        guard let message = chatVM.messageActionError else { return }
+                        presentedActionError = PresentedChatActionError(message: message)
+                    }
                 } else if chatVM.customChat.kind == .channel {
                     Text("Only channel administrators can post.")
                         .font(.callout)
@@ -169,20 +179,18 @@ struct ChatView: View {
         } message: {
             Text(chatVM.navigationError ?? "The destination is unavailable.")
         }
-        .alert(
-            "Action Failed",
-            isPresented: Binding(
-                get: { chatVM.messageActionError != nil },
-                set: {
-                    if !$0 {
-                        chatVM.messageActionError = nil
-                    }
+        .onChange(of: chatVM.messageActionError) { _, message in
+            guard let message else { return }
+            presentedActionError = PresentedChatActionError(message: message)
+        }
+        .alert(item: $presentedActionError) { error in
+            Alert(
+                title: Text("Action Failed"),
+                message: Text(error.message),
+                dismissButton: .default(Text("OK")) {
+                    chatVM.messageActionError = nil
                 },
-            ),
-        ) {
-            Button("OK") { chatVM.messageActionError = nil }
-        } message: {
-            Text(chatVM.messageActionError ?? "Unknown error")
+            )
         }
         .navigationDestination(isPresented: $showsChatInfo) {
             ChatInfoView()
@@ -292,6 +300,7 @@ struct ChatView: View {
     @State private var rootVM = RootVM.shared
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
+    @State private var presentedActionError: PresentedChatActionError?
 
     private var unreadChatCount: Int {
         rootVM.allChats.lazy.filter(\.hasUnreadMessages).count

@@ -32,7 +32,7 @@ enum TelegramMessageSending {
             caption: caption,
             document: InputDocument(
                 disableContentTypeDetection: true,
-                document: .inputFileLocal(.init(path: url.path())),
+                document: .inputFileLocal(.init(path: localFilePath(url))),
                 thumbnail: nil,
             ),
         ))
@@ -50,7 +50,7 @@ enum TelegramMessageSending {
             photo: InputPhoto(
                 addedStickerFileIds: [],
                 height: height,
-                photo: .inputFileLocal(.init(path: url.path())),
+                photo: .inputFileLocal(.init(path: localFilePath(url))),
                 thumbnail: nil,
                 video: nil,
                 width: width,
@@ -58,6 +58,10 @@ enum TelegramMessageSending {
             selfDestructType: nil,
             showCaptionAboveMedia: false,
         ))
+    }
+
+    static func localFilePath(_ url: URL) -> String {
+        url.path(percentEncoded: false)
     }
 
     @discardableResult static func send(

@@ -99,8 +99,25 @@ import TDLibKit
         await updateDraft()
     }
 
-    func stageDocuments(_ urls: [URL]) async {
-        let stagedURLs = await stageAttachmentURLs(urls)
+    @MainActor func stageDocuments(_ urls: [URL]) async throws {
+        var stagedURLs = [URL]()
+        stagedURLs.reserveCapacity(urls.count)
+        do {
+            for sourceURL in urls {
+                let stagedURL = try await TelegramDocumentExport.stagedURL(
+                    sourceURL: sourceURL,
+                    suggestedFileName: sourceURL.lastPathComponent,
+                    identifier: UUID().uuidString,
+                    forceCopy: true,
+                )
+                stagedURLs.append(stagedURL)
+            }
+        } catch {
+            for stagedURL in stagedURLs {
+                try? FileManager.default.removeItem(at: stagedURL.deletingLastPathComponent())
+            }
+            throw error
+        }
         displayedImages.removeAll()
         displayedDocuments = stagedURLs
         setShowSendButton()
@@ -257,32 +274,5 @@ import TDLibKit
 
     private func getMessageReplyTo(from customMessage: CustomMessage?) -> InputMessageReplyTo? {
         TelegramMessageSending.replyTo(messageId: customMessage?.message.id)
-    }
-
-    /// Stages each URL under its own UUID-named subdirectory, rather than folding the UUID into
-    /// the file name itself - `documentContent(url:caption:)` uploads using the staged file's own
-    /// name, so a `"<uuid>-original.ext"` staging name would send (and permanently store) that
-    /// prefixed name as the document's file name instead of the original.
-    private func stageAttachmentURLs(_ urls: [URL]) async -> [URL] {
-        await Task.detached(priority: .userInitiated) {
-            urls.compactMap { source -> URL? in
-                let accessed = source.startAccessingSecurityScopedResource()
-                defer {
-                    if accessed {
-                        source.stopAccessingSecurityScopedResource()
-                    }
-                }
-                let destinationDirectory = URL(filePath: NSTemporaryDirectory())
-                    .appending(path: UUID().uuidString, directoryHint: .isDirectory)
-                let destination = destinationDirectory.appending(path: source.lastPathComponent)
-                do {
-                    try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-                    try FileManager.default.copyItem(at: source, to: destination)
-                    return destination
-                } catch {
-                    return nil
-                }
-            }
-        }.value
     }
 }
