@@ -24,7 +24,7 @@ extension SelectedImage: Equatable {
 extension SelectedImage: Transferable {
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(importedContentType: .image) { data in
-            let imageUrl = URL(filePath: NSTemporaryDirectory()).appending(path: "\(UUID().uuidString).png")
+            let imageUrl = TelegramOutgoingFileStaging.shared.imageFileURL(fileExtension: "png")
             try data.write(to: imageUrl, options: .atomic)
 
             guard let preview = downsampledImage(at: imageUrl, maxPixelSize: 320)

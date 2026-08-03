@@ -27,6 +27,9 @@ import TDLibKit
         for url in displayedDocuments {
             TelegramOutgoingFileStaging.shared.discard(fileURL: url)
         }
+        for image in displayedImages {
+            TelegramOutgoingFileStaging.shared.discard(fileURL: image.url)
+        }
     }
 
     // MARK: Internal
@@ -124,7 +127,7 @@ import TDLibKit
             throw error
         }
         discardDisplayedDocuments()
-        displayedImages.removeAll()
+        discardDisplayedImages()
         displayedDocuments = stagedURLs
         setShowSendButton()
     }
@@ -161,6 +164,13 @@ import TDLibKit
         displayedDocuments.removeAll()
     }
 
+    func discardDisplayedImages() {
+        for image in displayedImages {
+            TelegramOutgoingFileStaging.shared.discard(fileURL: image.url)
+        }
+        displayedImages.removeAll()
+    }
+
     func sendMessageDocuments(schedulingState: MessageSchedulingState? = nil) async throws {
         let documentURLs = displayedDocuments
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
@@ -188,6 +198,7 @@ import TDLibKit
     }
 
     func sendMessagePhotos(schedulingState: MessageSchedulingState? = nil) async throws {
+        let imageURLs = displayedImages.map(\.url)
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
@@ -200,6 +211,13 @@ import TDLibKit
             replyTo: getMessageReplyTo(from: replyMessage),
             uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
             schedulingState: schedulingState,
+            onAccepted: { messages in
+                TelegramOutgoingFileStaging.shared.register(
+                    fileURLs: imageURLs,
+                    chatId: self.chatId,
+                    temporaryMessageIds: messages.map(\.id),
+                )
+            },
         )
     }
 

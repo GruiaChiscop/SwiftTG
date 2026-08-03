@@ -10,8 +10,7 @@ func writeImage(_ uiImage: UIImage?, withSaving saving: Bool = false) -> Selecte
         UIImageWriteToSavedPhotosAlbum(uiImage, nil, nil, nil)
     }
 
-    let imageUrl = URL(filePath: NSTemporaryDirectory())
-        .appending(path: "\(UUID().uuidString).jpeg")
+    let imageUrl = TelegramOutgoingFileStaging.shared.imageFileURL()
 
     do {
         try data.write(to: imageUrl, options: .atomic)

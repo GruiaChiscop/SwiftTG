@@ -39,7 +39,13 @@ extension ChatVM {
 
     var displayedImages: [SelectedImage] {
         get { composer.displayedImages }
-        set { composer.displayedImages = newValue }
+        set {
+            let retainedURLs = Set(newValue.map(\.url))
+            for removedImage in composer.displayedImages where !retainedURLs.contains(removedImage.url) {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: removedImage.url)
+            }
+            composer.displayedImages = newValue
+        }
     }
 
     var displayedDocuments: [URL] {
