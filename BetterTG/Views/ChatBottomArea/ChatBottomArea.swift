@@ -375,6 +375,34 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.displayedDocuments, chatVM.setShowSendButton)
         .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
         .disabled(chatVM.isSubmittingMessage)
+        .modify {
+            if chatVM.recordingLocked {
+                $0.contextMenu {
+                    Button("Send Later…", systemImage: "clock") { showsScheduleVoicePicker = true }
+                }
+            } else if chatVM.showSendButton, chatVM.editCustomMessage == nil {
+                $0.contextMenu {
+                    Button("Send Later…", systemImage: "clock") { showsScheduleSendPicker = true }
+                }
+            } else {
+                $0
+            }
+        }
+        .sheet(isPresented: $showsScheduleSendPicker) {
+            ScheduleSendView(allowsSendWhenOnline: chatVM.customChat.user != nil) { schedulingState in
+                chatVM.sendMessageTask?.cancel()
+                chatVM.sendMessageTask = Task.main { await chatVM.sendMessage(schedulingState: schedulingState) }
+            }
+        }
+        .sheet(isPresented: $showsScheduleVoicePicker) {
+            ScheduleSendView(allowsSendWhenOnline: chatVM.customChat.user != nil) { schedulingState in
+                chatVM.mediaStopRecordingVoice(
+                    duration: Int(chatVM.timerCount),
+                    wave: chatVM.wave,
+                    schedulingState: schedulingState,
+                )
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel(
             chatVM.recordingLocked
@@ -404,6 +432,17 @@ struct ChatBottomArea: View {
             // contract exactly (see voiceRecordingGesture) - a plain double-tap here is a no-op,
             // same as a plain tap for sighted users; VoiceOver's "double-tap and hold" reaches
             // voiceRecordingGesture directly instead of this shortcut.
+        }
+        // The context menus above need a long-press VoiceOver users can't reliably perform;
+        // this surfaces the same "Send Later" entry points through the rotor's actions instead.
+        .modify {
+            if chatVM.recordingLocked {
+                $0.accessibilityAction(named: "Send Later") { showsScheduleVoicePicker = true }
+            } else if chatVM.showSendButton, chatVM.editCustomMessage == nil {
+                $0.accessibilityAction(named: "Send Later") { showsScheduleSendPicker = true }
+            } else {
+                $0
+            }
         }
     }
 
@@ -542,6 +581,8 @@ struct ChatBottomArea: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var showsPollComposer = false
+    @State private var showsScheduleSendPicker = false
+    @State private var showsScheduleVoicePicker = false
     @State private var showsStickerPicker = false
     @State private var pollIsAvailable = false
 

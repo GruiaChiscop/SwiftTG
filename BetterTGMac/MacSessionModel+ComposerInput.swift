@@ -9,16 +9,16 @@ extension MacSessionModel {
         editingMessage == nil ? linkPreviewComposer : editLinkPreviewComposer
     }
 
-    func submitComposer() {
+    func submitComposer(schedulingState: MessageSchedulingState? = nil) {
         guard !isSubmittingMessage else { return }
         if !selectedDocumentURLs.isEmpty, editingMessage == nil {
-            sendSelectedDocuments()
+            sendSelectedDocuments(schedulingState: schedulingState)
         } else if !selectedPhotoURLs.isEmpty, editingMessage == nil {
-            sendSelectedPhotos()
+            sendSelectedPhotos(schedulingState: schedulingState)
         } else if editingMessage != nil {
             editMessage()
         } else {
-            sendTextMessage()
+            sendTextMessage(schedulingState: schedulingState)
         }
     }
 
@@ -48,6 +48,36 @@ extension MacSessionModel {
         guard panel.runModal() == .OK else { return }
         selectedPhotoURLs = []
         selectedDocumentURLs = panel.urls
+    }
+
+    /// Unlike `choosePhotos()`, adds to whatever's already selected instead of replacing it - for
+    /// picking more photos from the attachment review screen, where the existing selection must
+    /// survive.
+    func addPhotos() {
+        guard !isRecordingVoice, editingMessage == nil else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Add Photos"
+        panel.prompt = "Add"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image]
+        guard panel.runModal() == .OK else { return }
+        selectedPhotoURLs.append(contentsOf: panel.urls)
+    }
+
+    /// Unlike `chooseDocuments()`, adds to whatever's already selected instead of replacing it.
+    func addDocuments() {
+        guard !isRecordingVoice, editingMessage == nil else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Add Files"
+        panel.prompt = "Add"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.item]
+        guard panel.runModal() == .OK else { return }
+        selectedDocumentURLs.append(contentsOf: panel.urls)
     }
 
     @discardableResult func attachPastedFiles(_ urls: [URL]) -> Bool {

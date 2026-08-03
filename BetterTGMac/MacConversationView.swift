@@ -48,6 +48,16 @@ struct MacConversationView: View {
         .sheet(isPresented: $showsPinnedMessages) {
             MacPinnedMessagesView(model: model)
         }
+        .sheet(isPresented: $showsScheduleSendPicker) {
+            MacScheduleSendView(allowsSendWhenOnline: model.openedChat?.kind == .privateChat) { schedulingState in
+                model.submitComposer(schedulingState: schedulingState)
+            }
+        }
+        .sheet(isPresented: $showsScheduleVoicePicker) {
+            MacScheduleSendView(allowsSendWhenOnline: model.openedChat?.kind == .privateChat) { schedulingState in
+                model.sendVoiceRecording(schedulingState: schedulingState)
+            }
+        }
         .sheet(isPresented: $showsPollComposer) {
             TelegramPollComposerView { draft in
                 guard let chatId = model.openedChatId else { return }
@@ -111,6 +121,8 @@ struct MacConversationView: View {
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
     @State private var showsPollComposer = false
+    @State private var showsScheduleSendPicker = false
+    @State private var showsScheduleVoicePicker = false
     @State private var showsStickerPicker = false
     @State private var pollIsAvailable = false
 
@@ -315,6 +327,11 @@ struct MacConversationView: View {
                         model.sendVoiceRecording()
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
+                    .contextMenu {
+                        Button("Send Later…", systemImage: "clock") {
+                            showsScheduleVoicePicker = true
+                        }
+                    }
                 }
             } else {
                 HStack(alignment: .bottom, spacing: 10) {
@@ -335,7 +352,7 @@ struct MacConversationView: View {
                         accessibilityLabel: isEditing ? "Edit message" : "Message",
                         contextID: model.editingMessage.map { AnyHashable($0.id) } ?? AnyHashable("composer"),
                         onPasteFiles: isEditing ? { _ in false } : model.attachPastedFiles,
-                        onSubmit: model.submitComposer,
+                        onSubmit: { model.submitComposer() },
                     )
                     .frame(minHeight: 32, idealHeight: 48, maxHeight: 112)
 
@@ -368,6 +385,13 @@ struct MacConversationView: View {
                                 && model.selectedPhotoURLs.isEmpty
                                 && composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                         )
+                        .contextMenu {
+                            if model.editingMessage == nil {
+                                Button("Send Later…", systemImage: "clock") {
+                                    showsScheduleSendPicker = true
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -70,19 +70,19 @@ import TDLibKit
         }
     }
 
-    func sendMessage() async throws {
+    func sendMessage(schedulingState: MessageSchedulingState? = nil) async throws {
         let wasEditing = editCustomMessage != nil
         let submitted: Bool
         if !displayedDocuments.isEmpty {
-            try await sendMessageDocuments()
+            try await sendMessageDocuments(schedulingState: schedulingState)
             submitted = true
         } else if !displayedImages.isEmpty {
-            try await sendMessagePhotos()
+            try await sendMessagePhotos(schedulingState: schedulingState)
             submitted = true
         } else if canEditMessage {
             submitted = try await editMessage()
         } else if !text.characters.isEmpty {
-            try await sendMessageText()
+            try await sendMessageText(schedulingState: schedulingState)
             submitted = true
         } else {
             return
@@ -129,6 +129,31 @@ import TDLibKit
         setShowSendButton()
     }
 
+    /// Unlike `stageDocuments(_:)`, adds to whatever's already staged instead of replacing it - for
+    /// picking more files from the attachment review screen, where the existing selection must
+    /// survive.
+    @MainActor func appendStagedDocuments(_ urls: [URL]) async throws {
+        var stagedURLs = [URL]()
+        stagedURLs.reserveCapacity(urls.count)
+        do {
+            for sourceURL in urls {
+                let stagedURL = try await TelegramOutgoingFileStaging.shared.stageDocument(
+                    sourceURL: sourceURL,
+                    suggestedFileName: sourceURL.lastPathComponent,
+                    identifier: UUID().uuidString,
+                )
+                stagedURLs.append(stagedURL)
+            }
+        } catch {
+            for stagedURL in stagedURLs {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: stagedURL)
+            }
+            throw error
+        }
+        displayedDocuments.append(contentsOf: stagedURLs)
+        setShowSendButton()
+    }
+
     func discardDisplayedDocuments() {
         for url in displayedDocuments {
             TelegramOutgoingFileStaging.shared.discard(fileURL: url)
@@ -136,7 +161,7 @@ import TDLibKit
         displayedDocuments.removeAll()
     }
 
-    func sendMessageDocuments() async throws {
+    func sendMessageDocuments(schedulingState: MessageSchedulingState? = nil) async throws {
         let documentURLs = displayedDocuments
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
@@ -151,6 +176,7 @@ import TDLibKit
             contents: contents,
             replyTo: getMessageReplyTo(from: replyMessage),
             uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
+            schedulingState: schedulingState,
             onAccepted: { messages in
                 TelegramOutgoingFileStaging.shared.register(
                     fileURLs: documentURLs,
@@ -161,7 +187,7 @@ import TDLibKit
         )
     }
 
-    func sendMessagePhotos() async throws {
+    func sendMessagePhotos(schedulingState: MessageSchedulingState? = nil) async throws {
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
@@ -173,6 +199,7 @@ import TDLibKit
             contents: contents,
             replyTo: getMessageReplyTo(from: replyMessage),
             uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
+            schedulingState: schedulingState,
         )
     }
 
@@ -186,7 +213,7 @@ import TDLibKit
         )
     }
 
-    func sendMessageText() async throws {
+    func sendMessageText(schedulingState: MessageSchedulingState? = nil) async throws {
         let formattedText = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
@@ -200,6 +227,7 @@ import TDLibKit
             chatId: chatId,
             contents: [content],
             replyTo: getMessageReplyTo(from: replyMessage),
+            schedulingState: schedulingState,
         )
     }
 
@@ -223,7 +251,12 @@ import TDLibKit
         return supported
     }
 
-    func sendMessageVoiceNote(url: URL, duration: Int, waveform: Data) async throws {
+    func sendMessageVoiceNote(
+        url: URL,
+        duration: Int,
+        waveform: Data,
+        schedulingState: MessageSchedulingState? = nil,
+    ) async throws {
         try await TelegramVoiceNoteSending.send(
             service: service,
             chatId: chatId,
@@ -235,6 +268,7 @@ import TDLibKit
             duration: duration,
             waveform: waveform,
             replyTo: getMessageReplyTo(from: replyMessage),
+            schedulingState: schedulingState,
         )
         await main {
             self.text = ""

@@ -57,6 +57,7 @@ enum TelegramVoiceNoteSending {
         duration: Int,
         waveform: Data,
         replyTo: InputMessageReplyTo?,
+        schedulingState: MessageSchedulingState? = nil,
     ) async throws {
         let caption = await TelegramTextFormatting.addingAutomaticEntities(service: service, to: caption)
         do {
@@ -66,6 +67,7 @@ enum TelegramVoiceNoteSending {
                 contents: [content(url: url, caption: caption, duration: duration, waveform: waveform)],
                 replyTo: replyTo,
                 uploadAction: .chatActionUploadingVoiceNote(.init(progress: 0)),
+                schedulingState: schedulingState,
                 onAccepted: { messages in
                     guard let message = messages.first else { return }
                     TelegramOutgoingFileStaging.shared.register(

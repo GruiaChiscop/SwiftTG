@@ -1,6 +1,7 @@
 // AttachmentPreviewView.swift
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - PresentedAttachmentError
 
@@ -52,6 +53,9 @@ struct AttachmentPreviewView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: cancel)
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    addMenu
+                }
                 if itemCount > 1 {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Remove", systemImage: "trash", role: .destructive, action: removeSelectedItem)
@@ -76,15 +80,70 @@ struct AttachmentPreviewView: View {
                 },
             )
         }
+        .sheet(isPresented: $showsPhotoPicker) {
+            PhotoPicker { index, image, error in
+                if let image {
+                    let baseCount = addPhotoBaseCount
+                    Task.main {
+                        withAnimation {
+                            chatVM.displayedImages.place(image, at: baseCount + index)
+                        }
+                    }
+                } else if let error {
+                    print("Error picking image: \(error.localizedDescription)")
+                }
+            } clear: {}
+                .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showsCamera) {
+            NavigationStack {
+                CameraView { selectedImage in
+                    withAnimation { chatVM.displayedImages.append(selectedImage) }
+                }
+                .navigationTitle("Camera")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+        .fileImporter(
+            isPresented: $showsDocumentPicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true,
+        ) { result in
+            guard case .success(let urls) = result else { return }
+            Task { @MainActor in await chatVM.appendStagedDocuments(urls) }
+        }
     }
 
     // MARK: Private
 
     @State private var selectedIndex = 0
     @State private var presentedError: PresentedAttachmentError?
+    @State private var showsPhotoPicker = false
+    @State private var showsCamera = false
+    @State private var showsDocumentPicker = false
+    @State private var showsScheduleSendPicker = false
+    @State private var addPhotoBaseCount = 0
 
     private var itemCount: Int {
         chatVM.displayedImages.count + chatVM.displayedDocuments.count
+    }
+
+    @ViewBuilder private var addMenu: some View {
+        if chatVM.displayedImages.isEmpty {
+            Button("Add Files", systemImage: "plus") {
+                showsDocumentPicker = true
+            }
+        } else {
+            Menu("Add", systemImage: "plus") {
+                Button("Add Photos", systemImage: "photo") {
+                    addPhotoBaseCount = chatVM.displayedImages.count
+                    showsPhotoPicker = true
+                }
+                Button("Take Photo", systemImage: "camera.fill") {
+                    showsCamera = true
+                }
+            }
+        }
     }
 
     private var captionBar: some View {
@@ -108,10 +167,20 @@ struct AttachmentPreviewView: View {
                     .frame(width: 32, height: 32)
             }
             .accessibilityLabel("Send")
+            .contextMenu {
+                Button("Send Later…", systemImage: "clock") { showsScheduleSendPicker = true }
+            }
+            .accessibilityAction(named: "Send Later") { showsScheduleSendPicker = true }
         }
         .padding(10)
         .background(.bar)
         .disabled(chatVM.isSubmittingMessage)
+        .sheet(isPresented: $showsScheduleSendPicker) {
+            ScheduleSendView(allowsSendWhenOnline: chatVM.customChat.user != nil) { schedulingState in
+                chatVM.sendMessageTask?.cancel()
+                chatVM.sendMessageTask = Task.main { await chatVM.sendMessage(schedulingState: schedulingState) }
+            }
+        }
     }
 
     private func documentPreview(for url: URL) -> some View {

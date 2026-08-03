@@ -70,10 +70,13 @@ enum TelegramMessageSending {
         contents: [InputMessageContent],
         replyTo: InputMessageReplyTo?,
         uploadAction: ChatAction? = nil,
+        schedulingState: MessageSchedulingState? = nil,
         onAccepted: (([Message]) -> Void)? = nil,
     ) async throws -> [Message] {
         guard !contents.isEmpty else { return [] }
-        if let uploadAction {
+        // A scheduled send has nothing to upload yet from the recipient's perspective, and
+        // shouldn't flash a "typing"/"uploading" indicator for a message that isn't being sent now.
+        if let uploadAction, schedulingState == nil {
             _ = try? await service.sendChatAction(
                 action: uploadAction,
                 businessConnectionId: nil,
@@ -81,13 +84,14 @@ enum TelegramMessageSending {
                 topicId: nil,
             )
         }
+        let options = sendOptions(schedulingState: schedulingState)
         do {
             // swiftformat:disable:next conditionalAssignment
             if contents.count == 1, let content = contents.first {
                 let message = try await service.sendMessage(
                     chatId: chatId,
                     inputMessageContent: content,
-                    options: nil,
+                    options: options,
                     replyMarkup: nil,
                     replyTo: replyTo,
                     topicId: nil,
@@ -99,7 +103,7 @@ enum TelegramMessageSending {
                 let messages = try await service.sendMessageAlbum(
                     chatId: chatId,
                     inputMessageContents: contents,
-                    options: nil,
+                    options: options,
                     replyTo: replyTo,
                     topicId: nil,
                 )
@@ -114,6 +118,23 @@ enum TelegramMessageSending {
     }
 
     // MARK: Private
+
+    private static func sendOptions(schedulingState: MessageSchedulingState?) -> MessageSendOptions? {
+        guard let schedulingState else { return nil }
+        return MessageSendOptions(
+            allowPaidBroadcast: false,
+            disableNotification: false,
+            effectId: 0,
+            fromBackground: false,
+            onlyPreview: false,
+            paidMessageStarCount: 0,
+            protectContent: false,
+            schedulingState: schedulingState,
+            sendingId: 0,
+            suggestedPostInfo: nil,
+            updateOrderOfInstalledStickerSets: false,
+        )
+    }
 
     private static func cancelChatAction(service: any TelegramService, chatId: Int64) async {
         _ = try? await service.sendChatAction(

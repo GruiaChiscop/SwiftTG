@@ -6,7 +6,7 @@ import TDLibKit
 extension MacSessionModel {
     // MARK: Internal (called from `submitComposer()` in `+ComposerInput.swift`, a different file)
 
-    func sendTextMessage() {
+    func sendTextMessage(schedulingState: MessageSchedulingState? = nil) {
         let text = macComposerFormattedText(messageText, trimmingWhitespace: true)
         guard let openedChatId, !text.text.isEmpty else { return }
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
@@ -29,6 +29,7 @@ extension MacSessionModel {
                         linkPreviewOptions: linkPreviewOptions,
                     )],
                     replyTo: replyTo,
+                    schedulingState: schedulingState,
                 )
                 clearDraft(chatId: openedChatId)
                 guard self.openedChatId == openedChatId else { return }
@@ -43,7 +44,7 @@ extension MacSessionModel {
         }
     }
 
-    func sendSelectedPhotos() {
+    func sendSelectedPhotos(schedulingState: MessageSchedulingState? = nil) {
         guard let chatId = openedChatId, !selectedPhotoURLs.isEmpty else { return }
         let urls = selectedPhotoURLs
         let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
@@ -81,6 +82,7 @@ extension MacSessionModel {
                     contents: contents,
                     replyTo: replyTo,
                     uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
+                    schedulingState: schedulingState,
                 )
                 clearDraft(chatId: chatId)
                 guard openedChatId == chatId else { return }
@@ -96,7 +98,7 @@ extension MacSessionModel {
         }
     }
 
-    func sendSelectedDocuments() {
+    func sendSelectedDocuments(schedulingState: MessageSchedulingState? = nil) {
         guard let chatId = openedChatId, !selectedDocumentURLs.isEmpty else { return }
         let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
@@ -131,6 +133,7 @@ extension MacSessionModel {
                     contents: contents,
                     replyTo: replyTo,
                     uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
+                    schedulingState: schedulingState,
                     onAccepted: { messages in
                         TelegramOutgoingFileStaging.shared.register(
                             fileURLs: stagedURLs,

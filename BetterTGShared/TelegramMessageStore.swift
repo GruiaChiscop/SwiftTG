@@ -211,7 +211,31 @@ final class TelegramMessageStore: @unchecked Sendable {
                 failedMessageId: value.message.id,
             )
         }
+        // Staged-file bookkeeping has to happen regardless of whether the message ends up in the
+        // live snapshot below - a scheduled message being confirmed by the server still hands its
+        // attachment over from the temporary id to the real one, and that mapping would otherwise
+        // leak (never cleaned up) once the scheduling filter skips this update further down.
+        if case .updateMessageSendSucceeded(let value) = update {
+            TelegramOutgoingFileStaging.shared.messageSendSucceeded(
+                chatId: value.message.chatId,
+                oldMessageId: value.oldMessageId,
+            )
+        }
         guard let reduction = reduction(for: update) else { return }
+        // Scheduled messages (Send Later / Send When Online) aren't part of the live chat - they
+        // stay invisible until they actually send, at which point TDLib delivers them again through
+        // a fresh, unscheduled update. The Scheduled Messages screen is fed by its own on-demand
+        // `getChatScheduledMessages` fetch, not by this store, so there's nothing else to update here.
+        switch reduction.change {
+        case .newMessage(let value) where value.message.schedulingState != nil:
+            return
+        case .messageSendSucceeded(let value) where value.message.schedulingState != nil:
+            return
+        case .messageSendFailed(let value) where value.message.schedulingState != nil:
+            return
+        default:
+            break
+        }
         queue.async {
             let chatId = reduction.chatId
             var snapshot = self.snapshots[chatId] ?? .empty(chatId: chatId)
@@ -239,10 +263,6 @@ final class TelegramMessageStore: @unchecked Sendable {
                 }
                 orderedIds.removeAll { deletedIds.contains($0) }
             case .messageSendSucceeded(let value):
-                TelegramOutgoingFileStaging.shared.messageSendSucceeded(
-                    chatId: chatId,
-                    oldMessageId: value.oldMessageId,
-                )
                 self.deletedMessageIds[chatId]?.remove(value.message.id)
                 messages[value.oldMessageId] = nil
                 messages[value.message.id] = value.message

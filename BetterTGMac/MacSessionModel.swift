@@ -91,6 +91,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var pinnedMessages = [Message]()
     var isLoadingPinnedMessages = false
     var pinnedMessagesError: String?
+    var scheduledMessages = [Message]()
+    var isLoadingScheduledMessages = false
+    var scheduledMessagesError: String?
     var navigationTargetMessageId: Int64?
     var latestHistoryTargetMessageId: Int64?
     var openedUnreadCount = 0
@@ -108,6 +111,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored var searchGeneration: UInt64 = 0
     @ObservationIgnored var pinnedMessagesTask: Task<Void, Never>?
     @ObservationIgnored var pinnedMessagesGeneration: UInt64 = 0
+    @ObservationIgnored var scheduledMessagesTask: Task<Void, Never>?
+    @ObservationIgnored var scheduledMessagesGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
     @ObservationIgnored var service: any TelegramService
     @ObservationIgnored var draftReplyLoadTask: Task<Void, Never>?
@@ -380,6 +385,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         conversationHeaderTask = nil
         pinnedMessagesTask?.cancel()
         pinnedMessagesTask = nil
+        scheduledMessagesTask?.cancel()
+        scheduledMessagesTask = nil
         messageSubscription?.cancel()
         messageSubscription = nil
         for request in senderNameRequests.values {
@@ -397,6 +404,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         conversationHeaderActivities = [:]
         pinnedMessages = []
         pinnedMessagesError = nil
+        scheduledMessages = []
+        scheduledMessagesError = nil
         isLoadingPinnedMessages = false
         messages = .empty(chatId: 0)
         loadedChatFolderIds = []

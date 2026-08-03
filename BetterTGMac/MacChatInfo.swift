@@ -72,6 +72,9 @@ struct MacChatInfoView: View {
                 }
             }
         }
+        .sheet(isPresented: $showsScheduledMessages) {
+            MacScheduledMessagesView(model: model)
+        }
         .confirmationDialog("Mute \(chat.title)", isPresented: $showMuteOptions) {
             ForEach(TelegramMutePreset.allCases) { preset in
                 Button(preset.title) { model.setMuteDuration(preset.duration, for: currentChat) }
@@ -154,6 +157,7 @@ struct MacChatInfoView: View {
     @State private var showDeleteOptions = false
     @State private var showMuteOptions = false
     @State private var showsCommonGroups = false
+    @State private var showsScheduledMessages = false
     @State private var showsSharedMedia = false
 
     private var currentChat: ChatListItemState {
@@ -193,6 +197,11 @@ struct MacChatInfoView: View {
                 showsSharedMedia = true
             }
             .accessibilityHint("Shows media, files, links, music, and voice messages")
+
+            Button("Scheduled Messages", systemImage: "clock") {
+                showsScheduledMessages = true
+            }
+            .accessibilityHint("Shows messages scheduled to be sent later")
 
             if let commonGroupCount = info.commonGroupCount, commonGroupCount > 0 {
                 Button {

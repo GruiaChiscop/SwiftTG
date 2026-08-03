@@ -116,7 +116,7 @@ extension ChatVM {
 
     // MARK: Sending/recording
 
-    func sendMessage() async {
+    func sendMessage(schedulingState: MessageSchedulingState? = nil) async {
         guard !composer.isSubmittingMessage else { return }
         let isEditing = composer.editCustomMessage != nil
         composer.isSubmittingMessage = true
@@ -124,7 +124,7 @@ extension ChatVM {
         defer { composer.isSubmittingMessage = false }
 
         do {
-            try await composer.sendMessage()
+            try await composer.sendMessage(schedulingState: schedulingState)
         } catch {
             guard !Task.isCancelled else { return }
             let action = isEditing ? "updated" : "sent"
@@ -141,6 +141,15 @@ extension ChatVM {
         }
     }
 
+    @MainActor func appendStagedDocuments(_ urls: [URL]) async {
+        messageActionError = nil
+        do {
+            try await composer.appendStagedDocuments(urls)
+        } catch {
+            messageActionError = "File couldn't be prepared: \(telegramErrorDescription(error))"
+        }
+    }
+
     func setShowSendButton() { composer.setShowSendButton() }
     func setEditMessageText(from message: Message?) { composer.setEditMessageText(from: message) }
     func updateDraft() async { await composer.updateDraft() }
@@ -148,7 +157,7 @@ extension ChatVM {
     func stopTimer() { voiceRecorder.stopTimer() }
     func mediaStartRecordingVoice() async { await voiceRecorder.mediaStartRecordingVoice() }
     func cancelRecordingVoice() { voiceRecorder.cancelRecordingVoice() }
-    func mediaStopRecordingVoice(duration: Int, wave: [Float]) {
+    func mediaStopRecordingVoice(duration: Int, wave: [Float], schedulingState: MessageSchedulingState? = nil) {
         guard let artifact = voiceRecorder.mediaStopRecordingVoice(duration: duration, wave: wave) else { return }
         Task.background {
             do {
@@ -156,6 +165,7 @@ extension ChatVM {
                     url: artifact.url,
                     duration: artifact.duration,
                     waveform: artifact.waveform,
+                    schedulingState: schedulingState,
                 )
             } catch {
                 guard !Task.isCancelled else { return }

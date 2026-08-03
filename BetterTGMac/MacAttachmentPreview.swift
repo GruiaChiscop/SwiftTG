@@ -20,6 +20,14 @@ struct MacAttachmentPreview: View {
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
+                Button("Add", systemImage: "plus") {
+                    if isPhotos {
+                        model.addPhotos()
+                    } else {
+                        model.addDocuments()
+                    }
+                }
+                .labelStyle(.iconOnly)
                 if itemCount > 1 {
                     Button("Remove", systemImage: "trash", role: .destructive, action: removeSelectedItem)
                         .labelStyle(.iconOnly)
@@ -48,6 +56,9 @@ struct MacAttachmentPreview: View {
                 Button("Send", systemImage: "paperplane.fill", action: send)
                     .labelStyle(.iconOnly)
                     .keyboardShortcut(.return, modifiers: [.command])
+                    .contextMenu {
+                        Button("Send Later…", systemImage: "clock") { showsScheduleSendPicker = true }
+                    }
             }
         }
         .padding(16)
@@ -56,6 +67,11 @@ struct MacAttachmentPreview: View {
             selectedIndex = min(selectedIndex, max(0, newValue - 1))
         }
         .disabled(model.isSubmittingMessage)
+        .sheet(isPresented: $showsScheduleSendPicker) {
+            MacScheduleSendView(allowsSendWhenOnline: model.openedChat?.kind == .privateChat) { schedulingState in
+                model.submitComposer(schedulingState: schedulingState)
+            }
+        }
         .alert(
             "Send Failed",
             isPresented: Binding(
@@ -76,6 +92,7 @@ struct MacAttachmentPreview: View {
     // MARK: Private
 
     @State private var selectedIndex = 0
+    @State private var showsScheduleSendPicker = false
 
     private var isPhotos: Bool { !model.selectedPhotoURLs.isEmpty }
     private var currentURLs: [URL] { isPhotos ? model.selectedPhotoURLs : model.selectedDocumentURLs }

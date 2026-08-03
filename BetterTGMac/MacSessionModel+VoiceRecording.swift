@@ -70,7 +70,7 @@ extension MacSessionModel {
         }
     }
 
-    func sendVoiceRecording() {
+    func sendVoiceRecording(schedulingState: MessageSchedulingState? = nil) {
         guard !isSubmittingMessage,
               let recorder = voiceRecorder,
               let url = voiceRecordingURL,
@@ -108,6 +108,7 @@ extension MacSessionModel {
                     duration: duration,
                     waveform: waveform,
                     replyTo: replyTo,
+                    schedulingState: schedulingState,
                 )
                 clearDraft(chatId: chatId)
                 guard openedChatId == chatId, replyingToMessage?.id == replyMessageId else { return }

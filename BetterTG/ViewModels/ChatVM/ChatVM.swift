@@ -72,6 +72,9 @@ import TDLibKit
     var pinnedMessages = [Message]()
     var isLoadingPinnedMessages = false
     var pinnedMessagesError: String?
+    var scheduledMessages = [Message]()
+    var isLoadingScheduledMessages = false
+    var scheduledMessagesError: String?
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
@@ -101,6 +104,8 @@ import TDLibKit
     @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
     @ObservationIgnored var pinnedMessagesTask: Task<Void, Never>?
     @ObservationIgnored var pinnedMessagesGeneration = 0
+    @ObservationIgnored var scheduledMessagesTask: Task<Void, Never>?
+    @ObservationIgnored var scheduledMessagesGeneration = 0
     /// Bumped every time a new history-loading task starts, so a superseded task's completion
     /// can tell it's stale and avoid clobbering `loadingMessagesTask`/`pendingNavigationMessageId`
     /// out from under a newer one (cancellation doesn't stop a network call already in flight).

@@ -76,6 +76,12 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getBasicGroupFullInfo(basicGroupId: Int64?) async throws -> BasicGroupFullInfo
     func getChat(chatId: Int64?) async throws -> Chat
     func getChatFolder(chatFolderId: Int?) async throws -> ChatFolder
+    func getChatScheduledMessages(chatId: Int64?) async throws -> Messages
+    func editMessageSchedulingState(
+        chatId: Int64?,
+        messageId: Int64?,
+        schedulingState: MessageSchedulingState?,
+    ) async throws -> Ok
     func getChatHistory(
         chatId: Int64?,
         fromMessageId: Int64?,
@@ -540,6 +546,22 @@ extension TelegramSession: TelegramService {
 
     func getChatFolder(chatFolderId: Int?) async throws -> ChatFolder {
         try await client.getChatFolder(chatFolderId: chatFolderId)
+    }
+
+    func getChatScheduledMessages(chatId: Int64?) async throws -> Messages {
+        try await client.getChatScheduledMessages(chatId: chatId)
+    }
+
+    func editMessageSchedulingState(
+        chatId: Int64?,
+        messageId: Int64?,
+        schedulingState: MessageSchedulingState?,
+    ) async throws -> Ok {
+        try await client.editMessageSchedulingState(
+            chatId: chatId,
+            messageId: messageId,
+            schedulingState: schedulingState,
+        )
     }
 
     /// Deliberately bypasses TDLibKit's typed `client.getChatHistory(...)`, which decodes the
