@@ -4,48 +4,6 @@ import AppKit
 import SwiftUI
 import TDLibKit
 
-// MARK: - MacChatInfoMember
-
-struct MacChatInfoMember: Identifiable, Equatable {
-    let id: MessageSender
-    let name: String
-    let role: String?
-    let presence: String?
-}
-
-// MARK: - MacChatInfoData
-
-struct MacChatInfoData: Equatable {
-    let chatId: Int64
-    let title: String
-    var kind: String
-    let photoFileId: Int?
-    var about: FormattedText?
-    var usernames: [String]
-    var phoneNumber: String?
-    var birthdate: String?
-    var memberCount: Int?
-    var administratorCount: Int?
-    var restrictedCount: Int?
-    var bannedCount: Int?
-    var commonGroupCount: Int?
-    var commonGroupsUserId: Int64?
-    var isBlocked = false
-    var defaultMuteFor = 0
-    var usesUnofficialApp = false
-    var privacyPolicyURL: String?
-    var usesPrivacyCommand = false
-    var members = [MacChatInfoMember]()
-    var memberTotalCount = 0
-    var canBrowseMembers = false
-    var canManageMembers = false
-    var canRestrictMembers = false
-    var canLeave = false
-    var canDeleteCommunity = false
-    var isBot = false
-    var blockableUserId: Int64?
-}
-
 // MARK: - MacChatInfoView
 
 struct MacChatInfoView: View {
@@ -189,9 +147,9 @@ struct MacChatInfoView: View {
     @State private var avatarPath: String?
     @State private var confirmBlock = false
     @State private var confirmLeave = false
-    @State private var info: MacChatInfoData?
+    @State private var info: TelegramChatInfoData?
     @State private var isLoading = true
-    @State private var memberListFilter: MacChatMemberListFilter?
+    @State private var memberListFilter: TelegramChatInfoMemberFilter?
     @State private var showClearHistoryOptions = false
     @State private var showDeleteOptions = false
     @State private var showMuteOptions = false
@@ -229,7 +187,7 @@ struct MacChatInfoView: View {
         "\(currentChat.actionPolicy.deleteActionTitle) \(chat.title)?"
     }
 
-    private func sharedMediaSection(_ info: MacChatInfoData) -> some View {
+    private func sharedMediaSection(_ info: TelegramChatInfoData) -> some View {
         Section {
             Button("Shared Media", systemImage: "photo.on.rectangle") {
                 showsSharedMedia = true
@@ -248,7 +206,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    private func identitySection(_ info: MacChatInfoData) -> some View {
+    private func identitySection(_ info: TelegramChatInfoData) -> some View {
         Section {
             VStack(spacing: 10) {
                 avatar(info)
@@ -280,7 +238,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func avatar(_: MacChatInfoData) -> some View {
+    @ViewBuilder private func avatar(_: TelegramChatInfoData) -> some View {
         if let avatarPath, let image = NSImage(contentsOfFile: avatarPath) {
             Image(nsImage: image)
                 .resizable()
@@ -297,7 +255,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func detailsSections(_ info: MacChatInfoData) -> some View {
+    @ViewBuilder private func detailsSections(_ info: TelegramChatInfoData) -> some View {
         if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil {
             Section {
                 if let phoneNumber = info.phoneNumber {
@@ -362,7 +320,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func unofficialAppWarningSection(_ info: MacChatInfoData) -> some View {
+    @ViewBuilder private func unofficialAppWarningSection(_ info: TelegramChatInfoData) -> some View {
         if info.usesUnofficialApp {
             Section {
                 Label(
@@ -377,7 +335,7 @@ struct MacChatInfoView: View {
     @ViewBuilder private func chatMemberCountRow(
         title: String,
         count: Int,
-        filter: MacChatMemberListFilter,
+        filter: TelegramChatInfoMemberFilter,
         enabled: Bool,
     ) -> some View {
         if enabled {
@@ -435,7 +393,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func membersSection(_ info: MacChatInfoData) -> some View {
+    @ViewBuilder private func membersSection(_ info: TelegramChatInfoData) -> some View {
         if info.memberTotalCount > 0, info.memberTotalCount <= 5, !info.members.isEmpty {
             Section(chat.kind == .channel ? "Subscribers" : "Members") {
                 ForEach(info.members) { member in
@@ -460,7 +418,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func actionsSection(_ info: MacChatInfoData) -> some View {
+    @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         if hasActions(info) {
             Section {
                 if info.blockableUserId != nil {
@@ -500,7 +458,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    private func profileInformationLabel(_ info: MacChatInfoData) -> String {
+    private func profileInformationLabel(_ info: TelegramChatInfoData) -> String {
         if info.isBot {
             return "Bot Info"
         }
@@ -515,7 +473,7 @@ struct MacChatInfoView: View {
         }
     }
 
-    private func hasActions(_ info: MacChatInfoData) -> Bool {
+    private func hasActions(_ info: TelegramChatInfoData) -> Bool {
         info.blockableUserId != nil
             || info.usesPrivacyCommand
             || info.privacyPolicyURL != nil
@@ -524,7 +482,7 @@ struct MacChatInfoView: View {
             || shouldShowDeleteAction(info)
     }
 
-    private func shouldShowDeleteAction(_ info: MacChatInfoData) -> Bool {
+    private func shouldShowDeleteAction(_ info: TelegramChatInfoData) -> Bool {
         switch chat.kind {
         case .privateChat, .secretChat:
             currentChat.canBeDeletedOnlyForSelf || currentChat.canBeDeletedForAllUsers
@@ -572,78 +530,8 @@ struct MacChatInfoView: View {
 // MARK: - MacSessionModel Chat Info
 
 extension MacSessionModel {
-    func loadChatInfo(for state: ChatListItemState) async -> MacChatInfoData? {
-        guard let chat = try? await service.getChat(chatId: state.chatId) else { return nil }
-        var info = MacChatInfoData(
-            chatId: chat.id,
-            title: chat.title,
-            kind: ChatListItemKind(chat.type).accessibilityTitle ?? "Private chat",
-            photoFileId: chat.photo?.small.id,
-            usernames: [],
-        )
-        let scope = macNotificationScope(for: chat.type)
-        info.defaultMuteFor = await (try? service.getScopeNotificationSettings(scope: scope))?.muteFor ?? 0
-
-        switch chat.type {
-        case .chatTypePrivate(let value):
-            await populateUserInfo(&info, userId: value.userId)
-        case .chatTypeSecret(let value):
-            info.kind = "Secret chat"
-            await populateUserInfo(&info, userId: value.userId)
-        case .chatTypeBasicGroup(let value):
-            guard let group = try? await service.getBasicGroup(basicGroupId: value.basicGroupId) else { break }
-            info.memberCount = group.memberCount
-            info.canLeave = macCanLeaveChat(group.status)
-            info.canDeleteCommunity = macIsCreator(group.status)
-            info.canManageMembers = macCanManageMembers(group.status)
-            info.canRestrictMembers = macCanRestrictMembers(group.status)
-            info.canBrowseMembers = true
-            if let full = try? await service.getBasicGroupFullInfo(basicGroupId: value.basicGroupId) {
-                info.about = full.description.nilIfEmpty.map { FormattedText(entities: [], text: $0) }
-                info.memberCount = max(group.memberCount, full.members.count)
-                info.memberTotalCount = full.members.count
-                if info.canManageMembers {
-                    info.administratorCount = full.members.filter { macIsAdministrator($0.status) }.count
-                }
-                if full.members.count <= 5 {
-                    info.members = await resolveChatInfoMembers(full.members)
-                }
-            }
-        case .chatTypeSupergroup(let value):
-            guard let group = try? await service.getSupergroup(supergroupId: value.supergroupId) else { break }
-            info.usernames = group.usernames?.activeUsernames ?? []
-            info.memberCount = group.memberCount > 0 ? group.memberCount : nil
-            info.canLeave = macCanLeaveChat(group.status)
-            info.canDeleteCommunity = macIsCreator(group.status)
-            info.canManageMembers = macCanManageMembers(group.status)
-            info.canRestrictMembers = macCanRestrictMembers(group.status)
-            if let full = try? await service.getSupergroupFullInfo(supergroupId: value.supergroupId) {
-                info.about = full.description.nilIfEmpty.map { FormattedText(entities: [], text: $0) }
-                info.memberCount = max(group.memberCount, full.memberCount)
-                info.memberTotalCount = full.memberCount
-                info.canBrowseMembers = full.canGetMembers
-                if info.canManageMembers {
-                    info.administratorCount = full.administratorCount
-                    if info.canRestrictMembers {
-                        info.restrictedCount = full.restrictedCount
-                        info.bannedCount = full.bannedCount
-                    }
-                }
-                if full.canGetMembers,
-                   full.memberCount <= 5,
-                   let result = try? await service.getSupergroupMembers(
-                       filter: .supergroupMembersFilterRecent,
-                       limit: 5,
-                       offset: 0,
-                       supergroupId: value.supergroupId,
-                   )
-                {
-                    info.memberTotalCount = result.totalCount
-                    info.members = await resolveChatInfoMembers(result.members)
-                }
-            }
-        }
-        return info
+    func loadChatInfo(for state: ChatListItemState) async -> TelegramChatInfoData? {
+        try? await TelegramChatInfoLoader(service: service).load(chatId: state.chatId)
     }
 
     func setChatInfoBlocked(_ blocked: Bool, userId: Int64) async -> Bool {
@@ -711,45 +599,6 @@ extension MacSessionModel {
         }
     }
 
-    private func populateUserInfo(_ info: inout MacChatInfoData, userId: Int64) async {
-        guard let user = try? await service.getUser(userId: userId) else { return }
-        info.usernames = user.usernames?.activeUsernames ?? []
-        info.phoneNumber = user.phoneNumber.isEmpty ? nil : "+\(user.phoneNumber)"
-        let currentUserId = await (try? service.getMe())?.id
-        let canBlock: Bool =
-            switch user.type {
-            case .userTypeBot, .userTypeRegular:
-                userId != currentUserId
-            case .userTypeDeleted, .userTypeUnknown:
-                false
-            }
-        info.blockableUserId = canBlock ? userId : nil
-        if case .userTypeBot = user.type {
-            info.isBot = true
-        }
-        if let full = try? await service.getUserFullInfo(userId: userId) {
-            if let shortDescription = full.botInfo?.shortDescription.nilIfEmpty {
-                info.about = FormattedText(entities: [], text: shortDescription)
-            } else if let bio = full.bio, !bio.text.isEmpty {
-                info.about = bio
-            }
-            info.birthdate = full.birthdate.map(macBirthdateDescription)
-            info.commonGroupCount = full.groupInCommonCount
-            info.commonGroupsUserId = full.groupInCommonCount > 0 ? userId : nil
-            info.isBlocked = full.blockList == .blockListMain
-            info.usesUnofficialApp = full.usesUnofficialApp
-            if let botInfo = full.botInfo {
-                if let privacyPolicyURL = botInfo.privacyPolicyUrl.nilIfEmpty {
-                    info.privacyPolicyURL = privacyPolicyURL
-                } else if botInfo.commands.contains(where: { $0.command == "privacy" }) {
-                    info.usesPrivacyCommand = true
-                } else {
-                    info.privacyPolicyURL = "https://telegram.org/privacy-tpa"
-                }
-            }
-        }
-    }
-
     func requestBotPrivacyPolicy(chatId: Int64) {
         performMessageAction {
             _ = try await self.service.sendMessage(
@@ -766,101 +615,4 @@ extension MacSessionModel {
             )
         }
     }
-
-    func resolveChatInfoMembers(_ members: [ChatMember]) async -> [MacChatInfoMember] {
-        let service = service
-        let resolved = await withTaskGroup(of: (Int, MacChatInfoMember?).self) { group in
-            for (index, member) in members.enumerated() {
-                group.addTask {
-                    guard !Task.isCancelled else { return (index, nil) }
-                    switch member.memberId {
-                    case .messageSenderUser(let value):
-                        guard let user = try? await service.getUser(userId: value.userId) else { return (index, nil) }
-                        return (index, MacChatInfoMember(
-                            id: member.memberId,
-                            name: telegramUserDisplayName(user),
-                            role: macMemberRole(member.status, customTitle: member.tag),
-                            presence: macConversationUserStatus(user),
-                        ))
-                    case .messageSenderChat(let value):
-                        guard let chat = try? await service.getChat(chatId: value.chatId) else { return (index, nil) }
-                        return (index, MacChatInfoMember(
-                            id: member.memberId,
-                            name: chat.title,
-                            role: macMemberRole(member.status, customTitle: member.tag),
-                            presence: nil,
-                        ))
-                    }
-                }
-            }
-            var collected = [(index: Int, member: MacChatInfoMember)]()
-            for await (index, member) in group {
-                guard let member else { continue }
-                collected.append((index, member))
-            }
-            return collected
-        }
-        return resolved.sorted { $0.index < $1.index }.map(\.member)
-    }
-}
-
-private func macBirthdateDescription(_ birthdate: Birthdate) -> String {
-    let calendar = Calendar.autoupdatingCurrent
-    let now = Foundation.Date()
-    var components = DateComponents()
-    components.calendar = calendar
-    components.day = birthdate.day
-    components.month = birthdate.month
-    components.year = birthdate.year == 0 ? 2000 : birthdate.year
-    guard let date = components.date else { return "\(birthdate.day)/\(birthdate.month)" }
-    var description = date.formatted(
-        Foundation.Date.FormatStyle()
-            .month(.wide)
-            .day()
-            .year(birthdate.year == 0 ? .omitted : .defaultDigits),
-    )
-    if birthdate.year > 0 {
-        let age = calendar.dateComponents([.year], from: date, to: now).year ?? 0
-        if age >= 0 {
-            description += ", \(age) years old"
-        }
-    }
-    let today = calendar.dateComponents([.day, .month], from: now)
-    if today.day == birthdate.day, today.month == birthdate.month {
-        description += ", birthday today"
-    }
-    return description
-}
-
-private func macNotificationScope(for type: ChatType) -> NotificationSettingsScope {
-    switch type {
-    case .chatTypePrivate, .chatTypeSecret:
-        .notificationSettingsScopePrivateChats
-    case .chatTypeBasicGroup:
-        .notificationSettingsScopeGroupChats
-    case .chatTypeSupergroup(let value):
-        value.isChannel ? .notificationSettingsScopeChannelChats : .notificationSettingsScopeGroupChats
-    }
-}
-
-private func macMemberRole(_ status: ChatMemberStatus, customTitle: String = "") -> String? {
-    if !customTitle.isEmpty {
-        return customTitle
-    }
-    switch status {
-    case .chatMemberStatusCreator:
-        return "Owner"
-    case .chatMemberStatusAdministrator:
-        return "Administrator"
-    case .chatMemberStatusRestricted:
-        return "Restricted"
-    case .chatMemberStatusBanned:
-        return "Banned"
-    case .chatMemberStatusLeft, .chatMemberStatusMember:
-        return nil
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

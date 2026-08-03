@@ -23,6 +23,12 @@ import TDLibKit
         }
     }
 
+    deinit {
+        for url in displayedDocuments {
+            TelegramOutgoingFileStaging.shared.discard(fileURL: url)
+        }
+    }
+
     // MARK: Internal
 
     var editCustomMessage: CustomMessage?
@@ -104,31 +110,39 @@ import TDLibKit
         stagedURLs.reserveCapacity(urls.count)
         do {
             for sourceURL in urls {
-                let stagedURL = try await TelegramDocumentExport.stagedURL(
+                let stagedURL = try await TelegramOutgoingFileStaging.shared.stageDocument(
                     sourceURL: sourceURL,
                     suggestedFileName: sourceURL.lastPathComponent,
                     identifier: UUID().uuidString,
-                    forceCopy: true,
                 )
                 stagedURLs.append(stagedURL)
             }
         } catch {
             for stagedURL in stagedURLs {
-                try? FileManager.default.removeItem(at: stagedURL.deletingLastPathComponent())
+                TelegramOutgoingFileStaging.shared.discard(fileURL: stagedURL)
             }
             throw error
         }
+        discardDisplayedDocuments()
         displayedImages.removeAll()
         displayedDocuments = stagedURLs
         setShowSendButton()
     }
 
+    func discardDisplayedDocuments() {
+        for url in displayedDocuments {
+            TelegramOutgoingFileStaging.shared.discard(fileURL: url)
+        }
+        displayedDocuments.removeAll()
+    }
+
     func sendMessageDocuments() async throws {
+        let documentURLs = displayedDocuments
         let caption = await TelegramTextFormatting.addingAutomaticEntities(
             service: service,
             to: FormattedText(entities: getEntities(from: text), text: text.string),
         )
-        let contents = displayedDocuments.map { url in
+        let contents = documentURLs.map { url in
             TelegramMessageSending.documentContent(url: url, caption: caption)
         }
         try await TelegramMessageSending.send(
@@ -137,6 +151,13 @@ import TDLibKit
             contents: contents,
             replyTo: getMessageReplyTo(from: replyMessage),
             uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
+            onAccepted: { messages in
+                TelegramOutgoingFileStaging.shared.register(
+                    fileURLs: documentURLs,
+                    chatId: self.chatId,
+                    temporaryMessageIds: messages.map(\.id),
+                )
+            },
         )
     }
 

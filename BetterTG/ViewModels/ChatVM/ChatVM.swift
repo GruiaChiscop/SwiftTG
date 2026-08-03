@@ -28,6 +28,7 @@ import UniformTypeIdentifiers
             draftMessage: customChat.draftMessage,
         )
         self.voiceRecorder = VoiceRecordingController(chatId: customChat.chat.id, service: service)
+        self.conversationSearch = TelegramConversationSearchStore(service: service)
         self.onlineStatus =
             if let user = customChat.user {
                 getOnlineStatus(from: user.status)
@@ -38,7 +39,6 @@ import UniformTypeIdentifiers
 
     deinit {
         conversationStatusTask?.cancel()
-        conversationSearchTask?.cancel()
         pinnedMessagesTask?.cancel()
         guard hasStarted else { return }
         let chatId = customChat.chat.id
@@ -62,6 +62,7 @@ import UniformTypeIdentifiers
 
     let composer: MessageComposer
     let voiceRecorder: VoiceRecordingController
+    let conversationSearch: TelegramConversationSearchStore
 
     var actionStatus = ""
     var onlineStatus = ""
@@ -73,13 +74,6 @@ import UniformTypeIdentifiers
     var messagePendingForward: CustomMessage?
     var messages = [CustomMessage]()
     var initialMessagesLoaded = false
-    var isConversationSearchActive = false
-    var isSearchingConversation = false
-    var conversationSearchQuery = ""
-    var conversationSearchResultIds = [Int64]()
-    var conversationSearchSelectedIndex: Int?
-    var conversationSearchTotalCount = 0
-    var conversationSearchError: String?
     var pinnedMessages = [Message]()
     var isLoadingPinnedMessages = false
     var pinnedMessagesError: String?
@@ -110,11 +104,6 @@ import UniformTypeIdentifiers
     @ObservationIgnored var pendingViewedMessageIds = Set<Int64>()
     @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
     @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
-    @ObservationIgnored var conversationSearchTask: Task<Void, Never>?
-    @ObservationIgnored var conversationSearchGeneration = 0
-    @ObservationIgnored var conversationSearchNextFromMessageId: Int64 = 0
-    @ObservationIgnored var conversationSearchNextOffset = ""
-    @ObservationIgnored var conversationSearchUsesSecretMessages = false
     @ObservationIgnored var pinnedMessagesTask: Task<Void, Never>?
     @ObservationIgnored var pinnedMessagesGeneration = 0
     // Scroll
@@ -162,7 +151,13 @@ import UniformTypeIdentifiers
 
     var displayedDocuments: [URL] {
         get { composer.displayedDocuments }
-        set { composer.displayedDocuments = newValue }
+        set {
+            let retainedURLs = Set(newValue)
+            for removedURL in composer.displayedDocuments where !retainedURLs.contains(removedURL) {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: removedURL)
+            }
+            composer.displayedDocuments = newValue
+        }
     }
 
     var showCameraView: Bool {
@@ -554,7 +549,7 @@ import UniformTypeIdentifiers
     func edit(_ message: CustomMessage?) {
         if message != nil {
             displayedImages.removeAll()
-            displayedDocuments.removeAll()
+            composer.discardDisplayedDocuments()
         }
         setEditMessageText(from: message?.message)
         withAnimation { editCustomMessage = message }
@@ -673,7 +668,8 @@ import UniformTypeIdentifiers
         guard viewMessagesTask == nil else { return }
 
         viewMessagesTask = Task { @MainActor [weak self] in
-            try? await Task<Never, Never>.sleep(for: .milliseconds(50))
+            // Collect every row made visible by the current layout pass, then send one TDLib call.
+            await Task.yield()
             guard let self, !Task.isCancelled else { return }
 
             let messageIds = Array(pendingViewedMessageIds)
@@ -770,7 +766,7 @@ import UniformTypeIdentifiers
             replyUser: replyUser,
             replySenderName: replySenderName,
             replyToMessage: replyToMessage,
-            album: message.mediaAlbumId == 0 ? [] : [message],
+            album: message.mediaAlbumId != 0 && telegramMessageSupportsVisualAlbum(message) ? [message] : [],
             forwardedFrom: forwardedFrom,
             serviceMessageText: serviceMessageText,
             formattedText: formattedText,

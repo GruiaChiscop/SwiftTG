@@ -187,7 +187,7 @@ extension ChatVM {
 
     private func initialCustomMessage(from message: Message) -> CustomMessage {
         let customMessage = CustomMessage(message: message, properties: .default)
-        if message.mediaAlbumId != 0 {
+        if message.mediaAlbumId != 0, telegramMessageSupportsVisualAlbum(message) {
             customMessage.album.append(message)
         }
         customMessage.formattedText =
@@ -207,7 +207,9 @@ extension ChatVM {
     @MainActor private func scheduleDisplayedMessagesRebuild() {
         guard displayedMessagesRebuildTask == nil else { return }
         displayedMessagesRebuildTask = Task { @MainActor [weak self] in
-            try? await Task<Never, Never>.sleep(for: .milliseconds(40))
+            // Render completions already arrive on the main actor. Yielding once coalesces all
+            // completions queued by the current render pass without relying on a timing constant.
+            await Task.yield()
             guard let self, !Task.isCancelled else { return }
             displayedMessagesRebuildTask = nil
             guard let snapshot = latestMessageSnapshot else { return }
@@ -218,40 +220,33 @@ extension ChatVM {
 
     @MainActor private func rebuildDisplayedMessages(from snapshot: TelegramMessageSnapshot) {
         var displayedMessages = [CustomMessage]()
-        var processedAlbums = Set<TdInt64>()
-        var albumMessageIds = [TdInt64: [Int64]]()
         // The shared store retains up to 500 messages per chat, while this ChatVM intentionally
         // displays only its paged window. Scanning the whole retained history here runs on the
         // main actor and made reopening heavily visited/media-rich chats noticeably stall.
         let orderedLoadedMessageIds = snapshot.orderedMessageIds.filter(loadedMessageIds.contains)
+        let groups = telegramVisualMessageAlbumGroups(
+            orderedMessageIds: orderedLoadedMessageIds,
+            messages: snapshot.messages,
+        )
 
-        for messageId in orderedLoadedMessageIds {
-            guard let albumId = snapshot.messages[messageId]?.mediaAlbumId, albumId != 0 else { continue }
-            albumMessageIds[albumId, default: []].append(messageId)
-        }
-
-        for messageId in orderedLoadedMessageIds {
-            guard let rawMessage = snapshot.messages[messageId] else { continue }
-            if rawMessage.mediaAlbumId == 0 {
-                if let rendered = renderedMessages[messageId] {
-                    if !rendered.album.isEmpty {
-                        rendered.album = []
-                    }
-                    displayedMessages.append(rendered)
-                }
-                continue
-            }
-
-            let albumId = rawMessage.mediaAlbumId
-            guard processedAlbums.insert(albumId).inserted else { continue }
-            guard let messageIds = albumMessageIds[albumId],
-                  messageIds.allSatisfy({ renderedMessages[$0] != nil }),
-                  let representativeId = messageIds.first,
-                  let representative = renderedMessages[representativeId]
+        for group in groups {
+            guard group.messageIds.allSatisfy({ renderedMessages[$0] != nil }),
+                  let representative = renderedMessages[group.representativeMessageId]
             else { continue }
-            let album = messageIds.compactMap { snapshot.messages[$0] }
-            if representative.album.map(\.id) != album.map(\.id) {
-                representative.album = album
+
+            if group.isAlbum {
+                let album = group.messageIds.compactMap { snapshot.messages[$0] }
+                if representative.album.map(\.id) != album.map(\.id) {
+                    representative.album = album
+                }
+                if let caption = album.lazy
+                    .compactMap(telegramMessageFormattedText)
+                    .first(where: { !$0.text.isEmpty })
+                {
+                    representative.formattedText = caption
+                }
+            } else if !representative.album.isEmpty {
+                representative.album = []
             }
             displayedMessages.append(representative)
         }

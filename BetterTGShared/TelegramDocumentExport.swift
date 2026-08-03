@@ -8,21 +8,13 @@ enum TelegramDocumentExport {
     // MARK: Internal
 
     static func fileName(_ suggestedName: String) -> String {
-        let trimmedName = suggestedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return "Document" }
-
-        let lastComponent = URL(fileURLWithPath: trimmedName).lastPathComponent
-        guard !lastComponent.isEmpty, lastComponent != ".", lastComponent != ".." else {
-            return "Document"
-        }
-        return lastComponent
+        TelegramFileName.sanitized(suggestedName)
     }
 
-    static func stagedURL(
+    static func exportURL(
         sourceURL: URL,
         suggestedFileName: String,
         identifier: String,
-        forceCopy: Bool = false,
     ) async throws -> URL {
         try await Task.detached(priority: .userInitiated) {
             let accessedSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
@@ -45,7 +37,6 @@ enum TelegramDocumentExport {
                         sourceURL: coordinatedURL,
                         suggestedFileName: suggestedFileName,
                         identifier: identifier,
-                        forceCopy: forceCopy,
                     )
                 }
             }
@@ -54,7 +45,7 @@ enum TelegramDocumentExport {
                 throw coordinationError
             }
             guard let stagingResult else {
-                throw TelegramDocumentExportError.sourceUnavailable
+                throw TelegramFileTransferError.sourceUnavailable
             }
             return try stagingResult.get()
         }.value
@@ -64,7 +55,7 @@ enum TelegramDocumentExport {
         try await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
             guard fileManager.fileExists(atPath: sourceURL.path) else {
-                throw TelegramDocumentExportError.sourceUnavailable
+                throw TelegramFileTransferError.sourceUnavailable
             }
 
             let temporaryURL = destinationURL
@@ -90,16 +81,19 @@ enum TelegramDocumentExport {
         sourceURL: URL,
         suggestedFileName: String,
         identifier: String,
-        forceCopy: Bool,
     ) throws -> URL {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: sourceURL.path) else {
-            throw TelegramDocumentExportError.sourceUnavailable
+            throw TelegramFileTransferError.sourceUnavailable
         }
 
         let exportDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("BetterTGExports", isDirectory: true)
             .appendingPathComponent(identifier, isDirectory: true)
+        TelegramTemporaryFileCleanup.removeStaleItems(
+            in: exportDirectory.deletingLastPathComponent(),
+            fileManager: fileManager,
+        )
         try fileManager.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
 
         let destinationURL = exportDirectory.appendingPathComponent(fileName(suggestedFileName))
@@ -107,27 +101,23 @@ enum TelegramDocumentExport {
             try fileManager.removeItem(at: destinationURL)
         }
 
-        if forceCopy {
+        do {
+            try fileManager.linkItem(at: sourceURL, to: destinationURL)
+        } catch {
             try fileManager.copyItem(at: sourceURL, to: destinationURL)
-        } else {
-            do {
-                try fileManager.linkItem(at: sourceURL, to: destinationURL)
-            } catch {
-                try fileManager.copyItem(at: sourceURL, to: destinationURL)
-            }
         }
         return destinationURL
     }
 }
 
-// MARK: - TelegramDocumentExportError
+// MARK: - TelegramFileTransferError
 
-enum TelegramDocumentExportError: LocalizedError {
+enum TelegramFileTransferError: LocalizedError {
     case sourceUnavailable
 
     // MARK: Internal
 
     var errorDescription: String? {
-        "The downloaded file is no longer available."
+        "The file is no longer available."
     }
 }

@@ -3,61 +3,6 @@
 import SwiftUI
 import TDLibKit
 
-// MARK: - MacChatMemberListFilter
-
-enum MacChatMemberListFilter: String, Identifiable {
-    case members
-    case administrators
-    case restricted
-    case banned
-
-    // MARK: Internal
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .members: "Members"
-        case .administrators: "Administrators"
-        case .restricted: "Restricted"
-        case .banned: "Banned"
-        }
-    }
-
-    var chatFilter: ChatMembersFilter {
-        switch self {
-        case .members: .chatMembersFilterMembers
-        case .administrators: .chatMembersFilterAdministrators
-        case .restricted: .chatMembersFilterRestricted
-        case .banned: .chatMembersFilterBanned
-        }
-    }
-
-    func supergroupFilter(query: String) -> SupergroupMembersFilter {
-        switch self {
-        case .members:
-            query.isEmpty
-                ? .supergroupMembersFilterRecent
-                : .supergroupMembersFilterSearch(.init(query: query))
-        case .administrators:
-            .supergroupMembersFilterAdministrators
-        case .restricted:
-            .supergroupMembersFilterRestricted(.init(query: query))
-        case .banned:
-            .supergroupMembersFilterBanned(.init(query: query))
-        }
-    }
-}
-
-// MARK: - MacChatMembersPage
-
-struct MacChatMembersPage {
-    let members: [MacChatInfoMember]
-    let totalCount: Int
-    let hasMore: Bool
-    let nextOffset: Int
-}
-
 // MARK: - MacChatMembersView
 
 struct MacChatMembersView: View {
@@ -66,7 +11,7 @@ struct MacChatMembersView: View {
     @Bindable var model: MacSessionModel
 
     let chat: ChatListItemState
-    let filter: MacChatMemberListFilter
+    let filter: TelegramChatInfoMemberFilter
     let onSelect: (MessageSender) -> Void
 
     var body: some View {
@@ -126,7 +71,7 @@ struct MacChatMembersView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var members = [MacChatInfoMember]()
+    @State private var members = [TelegramChatInfoMember]()
     @State private var totalCount = 0
     @State private var hasMore = true
     @State private var isLoading = false
@@ -146,8 +91,8 @@ struct MacChatMembersView: View {
         loadGeneration &+= 1
         let generation = loadGeneration
         isLoading = true
-        let page = await model.loadChatInfoMembers(
-            for: chat,
+        let page = await TelegramChatInfoLoader(service: model.service).loadMembers(
+            chatId: chat.chatId,
             filter: filter,
             query: requestedQuery,
             offset: 0,
@@ -166,8 +111,8 @@ struct MacChatMembersView: View {
         let requestedQuery = query
         isLoading = true
         let offset = reset ? 0 : nextOffset
-        let page = await model.loadChatInfoMembers(
-            for: chat,
+        let page = await TelegramChatInfoLoader(service: model.service).loadMembers(
+            chatId: chat.chatId,
             filter: filter,
             query: requestedQuery,
             offset: offset,
@@ -183,63 +128,5 @@ struct MacChatMembersView: View {
         hasMore = page?.hasMore ?? false
         nextOffset = page?.nextOffset ?? nextOffset
         isLoading = false
-    }
-}
-
-extension MacSessionModel {
-    func loadChatInfoMembers(
-        for state: ChatListItemState,
-        filter: MacChatMemberListFilter,
-        query: String,
-        offset: Int,
-    ) async -> MacChatMembersPage? {
-        guard let chat = try? await service.getChat(chatId: state.chatId) else { return nil }
-        let result: ChatMembers
-        let supportsPagination: Bool
-        switch chat.type {
-        case .chatTypeSupergroup(let value):
-            if filter == .administrators, !query.isEmpty {
-                guard offset == 0,
-                      let searched = try? await service.searchChatMembers(
-                          chatId: chat.id,
-                          filter: filter.chatFilter,
-                          limit: 50,
-                          query: query,
-                      )
-                else { return MacChatMembersPage(members: [], totalCount: 0, hasMore: false, nextOffset: 0) }
-                result = searched
-                supportsPagination = false
-            } else {
-                guard let page = try? await service.getSupergroupMembers(
-                    filter: filter.supergroupFilter(query: query),
-                    limit: 50,
-                    offset: offset,
-                    supergroupId: value.supergroupId,
-                ) else { return nil }
-                result = page
-                supportsPagination = true
-            }
-        case .chatTypeBasicGroup:
-            guard offset == 0,
-                  let searched = try? await service.searchChatMembers(
-                      chatId: chat.id,
-                      filter: filter.chatFilter,
-                      limit: 200,
-                      query: query,
-                  )
-            else { return MacChatMembersPage(members: [], totalCount: 0, hasMore: false, nextOffset: 0) }
-            result = searched
-            supportsPagination = false
-        case .chatTypePrivate, .chatTypeSecret:
-            return nil
-        }
-
-        let resolved = await resolveChatInfoMembers(result.members)
-        return MacChatMembersPage(
-            members: resolved,
-            totalCount: result.totalCount,
-            hasMore: supportsPagination && !result.members.isEmpty && offset + result.members.count < result.totalCount,
-            nextOffset: offset + result.members.count,
-        )
     }
 }

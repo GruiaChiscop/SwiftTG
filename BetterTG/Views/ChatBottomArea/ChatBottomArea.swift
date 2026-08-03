@@ -447,22 +447,6 @@ struct ChatBottomArea: View {
         .padding(.horizontal, 5)
         .background(Color.gray6)
         .clipShape(.rect(cornerRadius: 15))
-//        .onReceive(
-//            Just(text)
-//                .throttle(
-//                    for: 2,
-//                    scheduler: DispatchQueue.global(qos: .background),
-//                    latest: true
-//                )
-//        ) { text in
-//            Task.background {
-//                if !text.characters.isEmpty {
-//                    await tdSendChatAction(.chatActionTyping)
-//                } else {
-//                    await tdSendChatAction(.chatActionCancel)
-//                }
-//            }
-//        }
     }
     
     /// Cancel is always tappable (needed for VoiceOver, which never drives the slide gesture);

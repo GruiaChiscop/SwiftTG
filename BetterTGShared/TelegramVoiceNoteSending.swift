@@ -13,7 +13,7 @@ enum TelegramVoiceNoteSending {
         if let directory {
             return directory.appending(path: "voice_\(identifier.uuidString).ogg")
         }
-        return TelegramVoiceNoteStaging.shared.fileURL(identifier: identifier)
+        return TelegramOutgoingFileStaging.shared.voiceNoteFileURL(identifier: identifier)
     }
 
     static func waveform(from peakPowers: [Float]) -> Data {
@@ -68,7 +68,7 @@ enum TelegramVoiceNoteSending {
                 uploadAction: .chatActionUploadingVoiceNote(.init(progress: 0)),
                 onAccepted: { messages in
                     guard let message = messages.first else { return }
-                    TelegramVoiceNoteStaging.shared.register(
+                    TelegramOutgoingFileStaging.shared.register(
                         fileURL: url,
                         chatId: chatId,
                         temporaryMessageId: message.id,
@@ -76,11 +76,11 @@ enum TelegramVoiceNoteSending {
                 },
             )
             guard !messages.isEmpty else {
-                TelegramVoiceNoteStaging.shared.discard(fileURL: url)
+                TelegramOutgoingFileStaging.shared.discard(fileURL: url)
                 return
             }
         } catch {
-            TelegramVoiceNoteStaging.shared.discard(fileURL: url)
+            TelegramOutgoingFileStaging.shared.discard(fileURL: url)
             throw error
         }
     }

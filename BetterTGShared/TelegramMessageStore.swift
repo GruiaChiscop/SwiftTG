@@ -205,7 +205,7 @@ final class TelegramMessageStore: @unchecked Sendable {
 
     func reduce(_ update: Update) {
         if case .updateMessageSendFailed(let value) = update {
-            TelegramVoiceNoteStaging.shared.messageSendFailed(
+            TelegramOutgoingFileStaging.shared.messageSendFailed(
                 chatId: value.message.chatId,
                 oldMessageId: value.oldMessageId,
                 failedMessageId: value.message.id,
@@ -229,7 +229,7 @@ final class TelegramMessageStore: @unchecked Sendable {
             case .deleteMessages(let value):
                 guard !value.fromCache, value.isPermanent else { return }
                 let deletedIds = Set(value.messageIds)
-                TelegramVoiceNoteStaging.shared.messagesDeleted(
+                TelegramOutgoingFileStaging.shared.messagesDeleted(
                     chatId: chatId,
                     messageIds: value.messageIds,
                 )
@@ -239,7 +239,7 @@ final class TelegramMessageStore: @unchecked Sendable {
                 }
                 orderedIds.removeAll { deletedIds.contains($0) }
             case .messageSendSucceeded(let value):
-                TelegramVoiceNoteStaging.shared.messageSendSucceeded(
+                TelegramOutgoingFileStaging.shared.messageSendSucceeded(
                     chatId: chatId,
                     oldMessageId: value.oldMessageId,
                 )

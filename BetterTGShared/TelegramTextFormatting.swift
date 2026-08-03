@@ -75,6 +75,19 @@ enum TelegramTextFormatting {
         }
     }
 
+    static func accessibilityDestination(for link: TelegramTextLink) -> String? {
+        guard let scheme = link.url.scheme?.lowercased() else { return nil }
+        switch scheme {
+        case "http", "https":
+            guard let host = link.url.host,
+                  !link.displayedText.localizedCaseInsensitiveContains(host)
+            else { return nil }
+            return host
+        default:
+            return nil
+        }
+    }
+
     // MARK: Private
 
     private static func rangesOverlap(_ lhs: TextEntity, _ rhs: TextEntity) -> Bool {

@@ -187,9 +187,9 @@ extension MessageView {
                     synchronous: true,
                 )
                 guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else {
-                    throw TelegramDocumentExportError.sourceUnavailable
+                    throw TelegramFileTransferError.sourceUnavailable
                 }
-                let exportURL = try await TelegramDocumentExport.stagedURL(
+                let exportURL = try await TelegramDocumentExport.exportURL(
                     sourceURL: URL(filePath: file.local.path),
                     suggestedFileName: messageDocument.document.fileName,
                     identifier: String(customMessage.id),

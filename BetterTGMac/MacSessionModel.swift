@@ -60,6 +60,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         self.service = session
         self.linkPreviewComposer = TelegramLinkPreviewComposer(service: session)
         self.editLinkPreviewComposer = TelegramLinkPreviewComposer(service: session)
+        self.conversationSearch = TelegramConversationSearchStore(service: session)
         self.pushNotifications = TelegramApplePushRegistration(
             service: session,
             isAppSandbox: Self.isAppSandbox,
@@ -109,13 +110,6 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var messageSearchResults = [MacMessageSearchResult]()
     var focusedSearchResult: MacSearchResultID?
     var isSearching = false
-    var isConversationSearchActive = false
-    var isSearchingConversation = false
-    var conversationSearchQuery = ""
-    var conversationSearchResultIds = [Int64]()
-    var conversationSearchSelectedIndex: Int?
-    var conversationSearchTotalCount = 0
-    var conversationSearchError: String?
     var pinnedMessages = [Message]()
     var isLoadingPinnedMessages = false
     var pinnedMessagesError: String?
@@ -128,16 +122,12 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
     let linkPreviewComposer: TelegramLinkPreviewComposer
     let editLinkPreviewComposer: TelegramLinkPreviewComposer
+    let conversationSearch: TelegramConversationSearchStore
 
     @ObservationIgnored var bootstrapTask: Task<Void, Never>?
     @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
     @ObservationIgnored var searchTask: Task<Void, Never>?
     @ObservationIgnored var searchGeneration: UInt64 = 0
-    @ObservationIgnored var conversationSearchTask: Task<Void, Never>?
-    @ObservationIgnored var conversationSearchGeneration: UInt64 = 0
-    @ObservationIgnored var conversationSearchNextFromMessageId: Int64 = 0
-    @ObservationIgnored var conversationSearchNextOffset = ""
-    @ObservationIgnored var conversationSearchUsesSecretMessages = false
     @ObservationIgnored var pinnedMessagesTask: Task<Void, Never>?
     @ObservationIgnored var pinnedMessagesGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
@@ -239,6 +229,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         let replacementSession = TelegramSession()
         session = replacementSession
         service = replacementSession
+        conversationSearch.replaceService(replacementSession)
         pushNotifications.replaceService(replacementSession)
         observeSession()
 
@@ -537,7 +528,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         voiceRecorder?.cancel()
         resetVoiceRecordingState()
         if let url {
-            TelegramVoiceNoteStaging.shared.discard(fileURL: url)
+            TelegramOutgoingFileStaging.shared.discard(fileURL: url)
         }
         if let chatId {
             Task {
@@ -601,67 +592,19 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     }
 
     func localPhotoPath(fileId: Int) async -> String? {
-        if let cachedPath = photoPaths[fileId] {
-            return cachedPath
-        }
-        guard let file = try? await service.downloadFile(
-            fileId: fileId,
-            limit: 0,
-            offset: 0,
-            priority: 24,
-            synchronous: true,
-        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
-        else { return nil }
-        photoPaths[fileId] = file.local.path
-        return file.local.path
+        await downloadedLocalPath(fileId: fileId, priority: 24)
     }
 
     func localDocumentPath(fileId: Int) async -> String? {
-        if let cachedPath = documentPaths[fileId] {
-            return cachedPath
-        }
-        guard let file = try? await service.downloadFile(
-            fileId: fileId,
-            limit: 0,
-            offset: 0,
-            priority: 24,
-            synchronous: true,
-        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
-        else { return nil }
-        documentPaths[fileId] = file.local.path
-        return file.local.path
+        await downloadedLocalPath(fileId: fileId, priority: 24)
     }
 
     func localVideoPath(fileId: Int) async -> String? {
-        if let cachedPath = videoPaths[fileId] {
-            return cachedPath
-        }
-        guard let file = try? await service.downloadFile(
-            fileId: fileId,
-            limit: 0,
-            offset: 0,
-            priority: 32,
-            synchronous: true,
-        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
-        else { return nil }
-        videoPaths[fileId] = file.local.path
-        return file.local.path
+        await downloadedLocalPath(fileId: fileId, priority: 32)
     }
 
     func localStickerPath(fileId: Int) async -> String? {
-        if let cachedPath = stickerPaths[fileId] {
-            return cachedPath
-        }
-        guard let file = try? await service.downloadFile(
-            fileId: fileId,
-            limit: 0,
-            offset: 0,
-            priority: 24,
-            synchronous: true,
-        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
-        else { return nil }
-        stickerPaths[fileId] = file.local.path
-        return file.local.path
+        await downloadedLocalPath(fileId: fileId, priority: 24)
     }
 
     func beginReply(to message: Message) {
@@ -1047,19 +990,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     }
 
     func localVoiceNotePath(fileId: Int) async -> String? {
-        if let cachedPath = voiceNotePaths[fileId] {
-            return cachedPath
-        }
-        guard let file = try? await service.downloadFile(
-            fileId: fileId,
-            limit: 0,
-            offset: 0,
-            priority: 32,
-            synchronous: true,
-        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
-        else { return nil }
-        voiceNotePaths[fileId] = file.local.path
-        return file.local.path
+        await downloadedLocalPath(fileId: fileId, priority: 32)
     }
 
     func activateResolvedChat(_ chat: Chat, messageId: Int64?) async {
@@ -1139,18 +1070,14 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored private var senderNameRequests = [MacMessageSenderKey: Task<String?, Never>]()
     @ObservationIgnored private var senderNamesByKey = [MacMessageSenderKey: String]()
     @ObservationIgnored private var openTask: Task<Void, Never>?
-    @ObservationIgnored private var documentPaths = [Int: String]()
-    @ObservationIgnored private var photoPaths = [Int: String]()
-    @ObservationIgnored private var stickerPaths = [Int: String]()
+    @ObservationIgnored private var localFilePaths = [Int: String]()
     @ObservationIgnored private var preferredCountryId: String?
-    @ObservationIgnored private var videoPaths = [Int: String]()
     @ObservationIgnored private var recordingTimer: Task<Void, Never>?
     @ObservationIgnored private let notifications = MacLocalNotifications()
     @ObservationIgnored private var pushNotifications: TelegramApplePushRegistration
     @ObservationIgnored private var session: TelegramSession
     @ObservationIgnored private var isStopping = false
     @ObservationIgnored private var started = false
-    @ObservationIgnored private var voiceNotePaths = [Int: String]()
     @ObservationIgnored private var voiceRecorder: VoiceNoteRecorder?
     @ObservationIgnored private var voiceRecordingChatId: Int64?
     @ObservationIgnored private var voiceRecordingStartedAt: Foundation.Date?
@@ -1169,6 +1096,22 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         case .authorizationStateLoggingOut: "Logging out…"
         default: "Additional authorization required"
         }
+    }
+
+    private func downloadedLocalPath(fileId: Int, priority: Int) async -> String? {
+        if let cachedPath = localFilePaths[fileId] {
+            return cachedPath
+        }
+        guard let file = try? await service.downloadFile(
+            fileId: fileId,
+            limit: 0,
+            offset: 0,
+            priority: priority,
+            synchronous: true,
+        ), file.local.isDownloadingCompleted, !file.local.path.isEmpty
+        else { return nil }
+        localFilePaths[fileId] = file.local.path
+        return file.local.path
     }
 
     private func senderKey(for message: Message) -> MacMessageSenderKey {
@@ -1319,19 +1262,18 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         isSubmittingMessage = true
         Task {
             defer { isSubmittingMessage = false }
+            var stagedURLs = [URL]()
             do {
                 let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
                     service: service,
                     to: caption,
                 )
-                var stagedURLs = [URL]()
                 stagedURLs.reserveCapacity(urls.count)
                 for url in urls {
-                    let stagedURL = try await TelegramDocumentExport.stagedURL(
+                    let stagedURL = try await TelegramOutgoingFileStaging.shared.stageDocument(
                         sourceURL: url,
                         suggestedFileName: url.lastPathComponent,
                         identifier: UUID().uuidString,
-                        forceCopy: true,
                     )
                     stagedURLs.append(stagedURL)
                 }
@@ -1344,6 +1286,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     contents: contents,
                     replyTo: replyTo,
                     uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
+                    onAccepted: { messages in
+                        TelegramOutgoingFileStaging.shared.register(
+                            fileURLs: stagedURLs,
+                            chatId: chatId,
+                            temporaryMessageIds: messages.map(\.id),
+                        )
+                    },
                 )
                 clearDraft(chatId: chatId)
                 guard openedChatId == chatId else { return }
@@ -1353,6 +1302,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     replyingToMessage = nil
                 }
             } catch {
+                for stagedURL in stagedURLs {
+                    TelegramOutgoingFileStaging.shared.discard(fileURL: stagedURL)
+                }
                 guard !Task.isCancelled else { return }
                 messageActionError = "Message couldn't be sent: \(telegramErrorDescription(error))"
             }
@@ -1660,7 +1612,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             do {
                 _ = try await operation()
             } catch {
-                loginError = error.localizedDescription
+                loginError = TelegramLoginGuidance.errorDescription(error)
             }
         }
     }

@@ -78,7 +78,7 @@ import TDLibKit
     func cancelRecordingVoice() {
         audioRecorder?.cancel()
         audioRecorder = nil
-        TelegramVoiceNoteStaging.shared.discard(fileURL: savedVoiceNoteUrl)
+        TelegramOutgoingFileStaging.shared.discard(fileURL: savedVoiceNoteUrl)
         withAnimation {
             recordingVoiceNote = false
             recordingLocked = false

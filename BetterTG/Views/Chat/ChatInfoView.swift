@@ -3,27 +3,6 @@
 import SwiftUI
 import TDLibKit
 
-// MARK: - ChatInfoData
-
-private struct ChatInfoData {
-    var about: FormattedText?
-    var usernames = [String]()
-    var phoneNumber: String?
-    var birthdate: String?
-    var memberCount: Int?
-    var administratorCount: Int?
-    var restrictedCount: Int?
-    var bannedCount: Int?
-    var commonGroupCount: Int?
-    var commonGroupsUserId: Int64?
-    var isBlocked = false
-    var defaultMuteFor = 0
-    var usesUnofficialApp = false
-    var isBot = false
-    var blockableUserId: Int64?
-    var canBrowseMembers = false
-}
-
 // MARK: - ChatInfoView
 
 struct ChatInfoView: View {
@@ -127,7 +106,7 @@ struct ChatInfoView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var errorMessage: String?
-    @State private var info: ChatInfoData?
+    @State private var info: TelegramChatInfoData?
     @State private var isLoading = true
     @State private var muteOverride: Bool?
     @State private var showDeleteConfirmation = false
@@ -140,7 +119,7 @@ struct ChatInfoView: View {
         !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
     }
 
-    private func identitySection(_ info: ChatInfoData?) -> some View {
+    private func identitySection(_ info: TelegramChatInfoData?) -> some View {
         Section {
             VStack(spacing: 12) {
                 VStack(spacing: 12) {
@@ -203,7 +182,7 @@ struct ChatInfoView: View {
         .listRowSeparator(.hidden)
     }
 
-    private func sharedContentSection(_ info: ChatInfoData) -> some View {
+    private func sharedContentSection(_ info: TelegramChatInfoData) -> some View {
         Section {
             Button {
                 showsSharedMedia = true
@@ -223,7 +202,7 @@ struct ChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func profileInformationSection(_ info: ChatInfoData) -> some View {
+    @ViewBuilder private func profileInformationSection(_ info: TelegramChatInfoData) -> some View {
         if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil {
             Section {
                 if let phoneNumber = info.phoneNumber {
@@ -254,7 +233,7 @@ struct ChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func memberDetailsSection(_ info: ChatInfoData) -> some View {
+    @ViewBuilder private func memberDetailsSection(_ info: TelegramChatInfoData) -> some View {
         if info.memberCount != nil
             || info.administratorCount != nil
             || info.restrictedCount != nil
@@ -293,7 +272,7 @@ struct ChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func unofficialAppWarningSection(_ info: ChatInfoData) -> some View {
+    @ViewBuilder private func unofficialAppWarningSection(_ info: TelegramChatInfoData) -> some View {
         if info.usesUnofficialApp {
             Section {
                 Label(
@@ -370,7 +349,7 @@ struct ChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func actionsSection(_ info: ChatInfoData) -> some View {
+    @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         let policy = chat.actionPolicy
         if info.blockableUserId != nil
             || policy.canLeave
@@ -408,7 +387,7 @@ struct ChatInfoView: View {
         }
     }
 
-    private func isMuted(_ info: ChatInfoData) -> Bool {
+    private func isMuted(_ info: TelegramChatInfoData) -> Bool {
         if let muteOverride {
             return muteOverride
         }
@@ -444,14 +423,14 @@ struct ChatInfoView: View {
         }
     }
 
-    private func blockActionTitle(_ info: ChatInfoData) -> String {
+    private func blockActionTitle(_ info: TelegramChatInfoData) -> String {
         if info.isBot {
             return info.isBlocked ? "Restart Bot" : "Stop Bot"
         }
         return info.isBlocked ? "Unblock User" : "Block User"
     }
 
-    private func profileInformationLabel(_ info: ChatInfoData) -> String {
+    private func profileInformationLabel(_ info: TelegramChatInfoData) -> String {
         if info.isBot {
             return "Bot Info"
         }
@@ -494,110 +473,13 @@ struct ChatInfoView: View {
         defer { isLoading = false }
 
         do {
-            let resolvedChat = try await chatVM.service.getChat(chatId: chat.id)
-            var loaded = ChatInfoData()
-            let scopeSettings = try? await chatVM.service.getScopeNotificationSettings(
-                scope: notificationScope(for: resolvedChat.type),
-            )
-            loaded.defaultMuteFor = scopeSettings?.muteFor ?? 0
-
-            switch resolvedChat.type {
-            case .chatTypePrivate(let value):
-                await populateUserInfo(&loaded, userId: value.userId)
-            case .chatTypeSecret(let value):
-                await populateUserInfo(&loaded, userId: value.userId)
-            case .chatTypeBasicGroup(let value):
-                await populateBasicGroupInfo(&loaded, groupId: value.basicGroupId)
-            case .chatTypeSupergroup(let value):
-                await populateSupergroupInfo(&loaded, groupId: value.supergroupId)
-            }
-
+            let loaded = try await TelegramChatInfoLoader(service: chatVM.service).load(chatId: chat.id)
             guard !Task.isCancelled else { return }
             info = loaded
         } catch {
             guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
             info = nil
-        }
-    }
-
-    private func populateUserInfo(_ info: inout ChatInfoData, userId: Int64) async {
-        guard let user = try? await chatVM.service.getUser(userId: userId) else { return }
-        info.usernames = user.usernames?.activeUsernames ?? []
-        info.phoneNumber = user.phoneNumber.isEmpty ? nil : "+\(user.phoneNumber)"
-
-        let currentUserId = await (try? chatVM.service.getMe())?.id
-        switch user.type {
-        case .userTypeBot:
-            info.isBot = true
-            info.blockableUserId = userId == currentUserId ? nil : userId
-        case .userTypeRegular:
-            info.blockableUserId = userId == currentUserId ? nil : userId
-        case .userTypeDeleted, .userTypeUnknown:
-            break
-        }
-
-        guard let full = try? await chatVM.service.getUserFullInfo(userId: userId) else { return }
-        if let shortDescription = full.botInfo?.shortDescription.nilIfEmpty {
-            info.about = FormattedText(entities: [], text: shortDescription)
-        } else if let bio = full.bio, !bio.text.isEmpty {
-            info.about = bio
-        }
-        info.birthdate = full.birthdate.map(chatInfoBirthdateDescription)
-        info.commonGroupCount = full.groupInCommonCount
-        info.commonGroupsUserId = full.groupInCommonCount > 0 ? userId : nil
-        info.isBlocked = full.blockList == .blockListMain
-        info.usesUnofficialApp = full.usesUnofficialApp
-    }
-
-    private func populateBasicGroupInfo(_ info: inout ChatInfoData, groupId: Int64) async {
-        guard let group = try? await chatVM.service.getBasicGroup(basicGroupId: groupId) else { return }
-        info.memberCount = group.memberCount
-        info.canBrowseMembers = true
-
-        guard let full = try? await chatVM.service.getBasicGroupFullInfo(basicGroupId: groupId) else { return }
-        info.about = full.description.nilIfEmpty.map { FormattedText(entities: [], text: $0) }
-        info.memberCount = max(group.memberCount, full.members.count)
-        if chatInfoCanManageMembers(group.status) {
-            info.administratorCount = full.members.filter { chatInfoIsAdministrator($0.status) }.count
-        }
-        if chatInfoCanRestrictMembers(group.status) {
-            info.restrictedCount = full.members
-                .filter {
-                    if case .chatMemberStatusRestricted = $0.status {
-                        true
-                    } else {
-                        false
-                    }
-                }
-                .count
-            info.bannedCount = full.members
-                .filter {
-                    if case .chatMemberStatusBanned = $0.status {
-                        true
-                    } else {
-                        false
-                    }
-                }
-                .count
-        }
-    }
-
-    private func populateSupergroupInfo(_ info: inout ChatInfoData, groupId: Int64) async {
-        guard let group = try? await chatVM.service.getSupergroup(supergroupId: groupId) else { return }
-        info.usernames = group.usernames?.activeUsernames ?? []
-        info.memberCount = group.memberCount > 0 ? group.memberCount : nil
-
-        guard let full = try? await chatVM.service.getSupergroupFullInfo(supergroupId: groupId) else { return }
-        info.about = full.description.nilIfEmpty.map { FormattedText(entities: [], text: $0) }
-        info.memberCount = max(group.memberCount, full.memberCount)
-        info.canBrowseMembers = full.canGetMembers
-        if chatInfoCanManageMembers(group.status) {
-            info.administratorCount = full.administratorCount
-        }
-        if chatInfoCanRestrictMembers(group.status) {
-            info.restrictedCount = full.restrictedCount
-            info.bannedCount = full.bannedCount
         }
     }
 
@@ -630,80 +512,4 @@ struct ChatInfoView: View {
         await Task.yield()
         RootVM.shared.navigate(to: .customChat(customChat, messageId: nil))
     }
-}
-
-private func notificationScope(for type: ChatType) -> NotificationSettingsScope {
-    switch type {
-    case .chatTypePrivate, .chatTypeSecret:
-        .notificationSettingsScopePrivateChats
-    case .chatTypeBasicGroup:
-        .notificationSettingsScopeGroupChats
-    case .chatTypeSupergroup(let value):
-        value.isChannel ? .notificationSettingsScopeChannelChats : .notificationSettingsScopeGroupChats
-    }
-}
-
-private func chatInfoCanManageMembers(_ status: ChatMemberStatus) -> Bool {
-    switch status {
-    case .chatMemberStatusAdministrator, .chatMemberStatusCreator:
-        true
-    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember,
-         .chatMemberStatusRestricted:
-        false
-    }
-}
-
-private func chatInfoCanRestrictMembers(_ status: ChatMemberStatus) -> Bool {
-    switch status {
-    case .chatMemberStatusCreator:
-        true
-    case .chatMemberStatusAdministrator(let value):
-        value.rights.canRestrictMembers
-    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember,
-         .chatMemberStatusRestricted:
-        false
-    }
-}
-
-private func chatInfoIsAdministrator(_ status: ChatMemberStatus) -> Bool {
-    switch status {
-    case .chatMemberStatusAdministrator, .chatMemberStatusCreator:
-        true
-    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember,
-         .chatMemberStatusRestricted:
-        false
-    }
-}
-
-private func chatInfoBirthdateDescription(_ birthdate: Birthdate) -> String {
-    let calendar = Calendar.autoupdatingCurrent
-    let now = Date()
-    var components = DateComponents()
-    components.calendar = calendar
-    components.day = birthdate.day
-    components.month = birthdate.month
-    components.year = birthdate.year == 0 ? 2000 : birthdate.year
-    guard let date = components.date else { return "\(birthdate.day)/\(birthdate.month)" }
-
-    var description = date.formatted(
-        Date.FormatStyle()
-            .month(.wide)
-            .day()
-            .year(birthdate.year == 0 ? .omitted : .defaultDigits),
-    )
-    if birthdate.year > 0 {
-        let age = calendar.dateComponents([.year], from: date, to: now).year ?? 0
-        if age >= 0 {
-            description += ", \(age) years old"
-        }
-    }
-    let today = calendar.dateComponents([.day, .month], from: now)
-    if today.day == birthdate.day, today.month == birthdate.month {
-        description += ", birthday today"
-    }
-    return description
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

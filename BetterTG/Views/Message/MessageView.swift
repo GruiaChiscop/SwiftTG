@@ -448,7 +448,7 @@ struct MessageView: View {
                         .accessibilityRemoveTraits(.isButton)
                         .accessibilityAddTraits(.isLink)
                         .modify {
-                            if let destination = linkAccessibilityDestination(link) {
+                            if let destination = TelegramTextFormatting.accessibilityDestination(for: link) {
                                 $0.accessibilityValue(destination)
                             } else {
                                 $0
@@ -516,19 +516,6 @@ struct MessageView: View {
             .accessibilityActions {
                 messageAccessibilityActions
             }
-    }
-
-    private func linkAccessibilityDestination(_ link: TelegramTextLink) -> String? {
-        guard let scheme = link.url.scheme?.lowercased() else { return nil }
-        switch scheme {
-        case "http", "https":
-            guard let host = link.url.host,
-                  !link.displayedText.localizedCaseInsensitiveContains(host)
-            else { return nil }
-            return host
-        default:
-            return nil
-        }
     }
 
     private func toggleAudioMessage(_ messageAudio: MessageAudio) {

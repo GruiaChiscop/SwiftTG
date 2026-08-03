@@ -24,8 +24,8 @@ struct TelegramMessageAlbumTests {
     }
 
     @Test func `nonvisual batches remain individual rows`() {
-        let first = message(id: 1, albumId: 60)
-        let second = message(id: 2, albumId: 60)
+        let first = message(id: 1, albumId: 60, content: documentContent(fileId: 1))
+        let second = message(id: 2, albumId: 60, content: documentContent(fileId: 2))
         let messages = [first.id: first, second.id: second]
 
         let groups = telegramVisualMessageAlbumGroups(
@@ -90,6 +90,19 @@ struct TelegramMessageAlbumTests {
             photo: .init(hasStickers: false, minithumbnail: nil, sizes: []),
             showCaptionAboveMedia: false,
             video: nil,
+        ))
+    }
+
+    private func documentContent(fileId: Int) -> MessageContent {
+        .messageDocument(.init(
+            caption: .init(entities: [], text: ""),
+            document: .init(
+                document: TDLibFixtures.file(id: fileId, downloadedSize: 0),
+                fileName: "document-\(fileId).pdf",
+                mimeType: "application/pdf",
+                minithumbnail: nil,
+                thumbnail: nil,
+            ),
         ))
     }
 }

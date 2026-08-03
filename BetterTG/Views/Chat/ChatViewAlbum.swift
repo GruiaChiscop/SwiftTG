@@ -10,7 +10,7 @@ import UIKit
 struct ChatViewAlbum: View {
     let album: [Message]
     let selection: Int64
-    
+
     var body: some View {
         NavigationStack {
             ChatViewAlbumRootView(album: album, selection: selection)

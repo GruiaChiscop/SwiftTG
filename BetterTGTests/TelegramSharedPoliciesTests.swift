@@ -166,8 +166,8 @@ struct TelegramSharedPoliciesTests {
             .temporaryDirectory
             .appending(path: "BetterTGVoiceNoteStagingTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let staging = TelegramVoiceNoteStaging(directory: directory)
-        let fileURL = staging.fileURL()
+        let staging = TelegramOutgoingFileStaging(directory: directory)
+        let fileURL = staging.voiceNoteFileURL()
         try Data([1, 2, 3]).write(to: fileURL)
 
         staging.register(fileURL: fileURL, chatId: 10, temporaryMessageId: -20)
@@ -181,8 +181,8 @@ struct TelegramSharedPoliciesTests {
             .temporaryDirectory
             .appending(path: "BetterTGVoiceNoteStagingTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let staging = TelegramVoiceNoteStaging(directory: directory)
-        let fileURL = staging.fileURL()
+        let staging = TelegramOutgoingFileStaging(directory: directory)
+        let fileURL = staging.voiceNoteFileURL()
         try Data([1, 2, 3]).write(to: fileURL)
 
         staging.register(fileURL: fileURL, chatId: 10, temporaryMessageId: -20)
@@ -198,8 +198,8 @@ struct TelegramSharedPoliciesTests {
             .temporaryDirectory
             .appending(path: "BetterTGVoiceNoteStagingTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let staging = TelegramVoiceNoteStaging(directory: directory)
-        let fileURL = staging.fileURL()
+        let staging = TelegramOutgoingFileStaging(directory: directory)
+        let fileURL = staging.voiceNoteFileURL()
         try Data([1]).write(to: fileURL)
         let now = Date(timeIntervalSince1970: 200_000)
         try FileManager.default.setAttributes(
@@ -207,7 +207,7 @@ struct TelegramSharedPoliciesTests {
             ofItemAtPath: fileURL.path(),
         )
 
-        _ = TelegramVoiceNoteStaging(directory: directory, now: now)
+        _ = TelegramOutgoingFileStaging(directory: directory, now: now)
 
         #expect(!FileManager.default.fileExists(atPath: fileURL.path()))
     }

@@ -1,0 +1,218 @@
+// TelegramOutgoingFileStaging.swift
+
+import Foundation
+
+// MARK: - TelegramFileName
+
+enum TelegramFileName {
+    static func sanitized(_ suggestedName: String, fallback: String = "Document") -> String {
+        let trimmedName = suggestedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return fallback }
+
+        let lastComponent = URL(fileURLWithPath: trimmedName).lastPathComponent
+        guard !lastComponent.isEmpty,
+              lastComponent != ".",
+              lastComponent != "..",
+              lastComponent != "/"
+        else {
+            return fallback
+        }
+        return lastComponent
+    }
+}
+
+// MARK: - TelegramTemporaryFileCleanup
+
+enum TelegramTemporaryFileCleanup {
+    static func removeStaleItems(
+        in directory: URL,
+        olderThan staleAge: TimeInterval = 24 * 60 * 60,
+        now: Date = Date(),
+        fileManager: FileManager = .default,
+    ) {
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles],
+        ) else { return }
+
+        var directories = [URL]()
+        for case let itemURL as URL in enumerator {
+            guard let values = try? itemURL.resourceValues(forKeys: [.contentModificationDateKey, .isDirectoryKey])
+            else { continue }
+            if values.isDirectory == true {
+                directories.append(itemURL)
+                continue
+            }
+            guard let modificationDate = values.contentModificationDate,
+                  now.timeIntervalSince(modificationDate) >= staleAge
+            else { continue }
+            try? fileManager.removeItem(at: itemURL)
+        }
+
+        for directoryURL in directories.reversed() {
+            guard (try? fileManager.contentsOfDirectory(atPath: directoryURL.path).isEmpty) == true else { continue }
+            try? fileManager.removeItem(at: directoryURL)
+        }
+    }
+}
+
+// MARK: - TelegramOutgoingFileStaging
+
+/// Keeps local upload sources alive until TDLib reports that their temporary messages were sent.
+/// This is shared by voice notes and security-scoped documents, whose original provider URLs may
+/// become unavailable immediately after their picker closes.
+final class TelegramOutgoingFileStaging: @unchecked Sendable {
+    // MARK: Lifecycle
+
+    init(
+        directory: URL,
+        fileManager: FileManager = .default,
+        staleFileAge: TimeInterval = 24 * 60 * 60,
+        now: Date = Date(),
+    ) {
+        self.directory = directory
+        self.fileManager = fileManager
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        TelegramTemporaryFileCleanup.removeStaleItems(
+            in: directory,
+            olderThan: staleFileAge,
+            now: now,
+            fileManager: fileManager,
+        )
+    }
+
+    // MARK: Internal
+
+    static let shared = TelegramOutgoingFileStaging(
+        directory: FileManager.default.temporaryDirectory.appending(path: "BetterTGOutgoingFiles"),
+    )
+
+    func voiceNoteFileURL(identifier: UUID = UUID()) -> URL {
+        let voiceDirectory = directory.appending(path: "VoiceNotes", directoryHint: .isDirectory)
+        try? fileManager.createDirectory(at: voiceDirectory, withIntermediateDirectories: true)
+        return voiceDirectory.appending(path: "voice_\(identifier.uuidString).ogg")
+    }
+
+    func stageDocument(
+        sourceURL: URL,
+        suggestedFileName: String,
+        identifier: String = UUID().uuidString,
+    ) async throws -> URL {
+        let destinationRoot = directory
+        let fileManager = fileManager
+        return try await Task.detached(priority: .userInitiated) {
+            let accessedSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
+            defer {
+                if accessedSecurityScopedResource {
+                    sourceURL.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            let coordinator = NSFileCoordinator(filePresenter: nil)
+            var coordinationError: NSError?
+            var stagingResult: Result<URL, Error>?
+            coordinator.coordinate(
+                readingItemAt: sourceURL,
+                options: [.withoutChanges],
+                error: &coordinationError,
+            ) { coordinatedURL in
+                stagingResult = Result {
+                    let itemDirectory = destinationRoot
+                        .appending(path: "Documents", directoryHint: .isDirectory)
+                        .appending(path: identifier, directoryHint: .isDirectory)
+                    try fileManager.createDirectory(at: itemDirectory, withIntermediateDirectories: true)
+                    let destinationURL = itemDirectory.appending(
+                        path: TelegramFileName.sanitized(suggestedFileName),
+                    )
+                    if fileManager.fileExists(atPath: destinationURL.path) {
+                        try fileManager.removeItem(at: destinationURL)
+                    }
+                    try fileManager.copyItem(at: coordinatedURL, to: destinationURL)
+                    try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: destinationURL.path)
+                    return destinationURL
+                }
+            }
+
+            if let coordinationError {
+                throw coordinationError
+            }
+            guard let stagingResult else {
+                throw TelegramFileTransferError.sourceUnavailable
+            }
+            return try stagingResult.get()
+        }.value
+    }
+
+    func register(fileURLs: [URL], chatId: Int64, temporaryMessageIds: [Int64]) {
+        for (fileURL, messageId) in zip(fileURLs, temporaryMessageIds) {
+            register(fileURL: fileURL, chatId: chatId, temporaryMessageId: messageId)
+        }
+    }
+
+    func register(fileURL: URL, chatId: Int64, temporaryMessageId: Int64) {
+        let previousURL = lock.withLock {
+            stagedFiles.updateValue(fileURL, forKey: Key(chatId: chatId, messageId: temporaryMessageId))
+        }
+        if let previousURL, previousURL != fileURL {
+            removeStagedItem(at: previousURL)
+        }
+    }
+
+    func messageSendSucceeded(chatId: Int64, oldMessageId: Int64) {
+        let fileURL = lock.withLock {
+            stagedFiles.removeValue(forKey: Key(chatId: chatId, messageId: oldMessageId))
+        }
+        if let fileURL {
+            removeStagedItem(at: fileURL)
+        }
+    }
+
+    func messageSendFailed(chatId: Int64, oldMessageId: Int64, failedMessageId: Int64) {
+        lock.withLock {
+            let oldKey = Key(chatId: chatId, messageId: oldMessageId)
+            guard let fileURL = stagedFiles.removeValue(forKey: oldKey) else { return }
+            stagedFiles[Key(chatId: chatId, messageId: failedMessageId)] = fileURL
+        }
+    }
+
+    func messagesDeleted(chatId: Int64, messageIds: [Int64]) {
+        let fileURLs = lock.withLock {
+            messageIds.compactMap { messageId in
+                stagedFiles.removeValue(forKey: Key(chatId: chatId, messageId: messageId))
+            }
+        }
+        for fileURL in fileURLs {
+            removeStagedItem(at: fileURL)
+        }
+    }
+
+    func discard(fileURL: URL) {
+        lock.withLock {
+            stagedFiles = stagedFiles.filter { $0.value != fileURL }
+        }
+        removeStagedItem(at: fileURL)
+    }
+
+    // MARK: Private
+
+    private struct Key: Hashable {
+        let chatId: Int64
+        let messageId: Int64
+    }
+
+    private let directory: URL
+    private let fileManager: FileManager
+    private let lock = NSLock()
+    private var stagedFiles = [Key: URL]()
+
+    private func removeStagedItem(at fileURL: URL) {
+        try? fileManager.removeItem(at: fileURL)
+        var parent = fileURL.deletingLastPathComponent()
+        while parent.path.hasPrefix(directory.path), parent != directory {
+            guard (try? fileManager.contentsOfDirectory(atPath: parent.path).isEmpty) == true else { break }
+            try? fileManager.removeItem(at: parent)
+            parent.deleteLastPathComponent()
+        }
+    }
+}

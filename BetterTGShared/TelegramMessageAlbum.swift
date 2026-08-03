@@ -66,7 +66,7 @@ func telegramVisualMessageAlbumRepresentativeId(
     .representativeMessageId ?? messageId
 }
 
-private func telegramMessageSupportsVisualAlbum(_ message: Message) -> Bool {
+func telegramMessageSupportsVisualAlbum(_ message: Message) -> Bool {
     switch message.content {
     case .messagePhoto, .messageVideo:
         true
