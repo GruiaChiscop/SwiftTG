@@ -72,7 +72,7 @@ extension ChatVM {
                 }
             }
 
-        return CustomMessage(
+        let customMessage = CustomMessage(
             message: message,
             senderUser: senderUser,
             senderChatTitle: senderChatTitle,
@@ -86,6 +86,8 @@ extension ChatVM {
             properties: properties,
             availableReactions: availableReactions,
         )
+        customMessage.canBeTranslated = telegramMessageCanBeTranslated(message, chatType: customChat.chat.type)
+        return customMessage
     }
 
     func resolvedSenderUser(for senderId: MessageSender) async -> User? {

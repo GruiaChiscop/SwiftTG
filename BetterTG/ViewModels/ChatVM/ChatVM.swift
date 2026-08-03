@@ -75,6 +75,8 @@ import TDLibKit
     var scheduledMessages = [Message]()
     var isLoadingScheduledMessages = false
     var scheduledMessagesError: String?
+    var detectedChatLanguage: String?
+    var isChatTranslationEnabled = false
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
@@ -126,6 +128,7 @@ import TDLibKit
         hasStarted = true
 
         let chatId = customChat.chat.id
+        isChatTranslationEnabled = TelegramChatTranslationPreferences.isEnabled(chatId: chatId)
         Task { _ = try? await service.openChat(chatId: chatId) }
         setPublishers()
         refreshConversationStatus()

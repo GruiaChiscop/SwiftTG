@@ -24,6 +24,9 @@ struct MacConversationView: View {
             if model.isConversationSearchActive {
                 conversationSearchField
                 Divider()
+            } else if model.showsChatTranslationBanner || model.isChatTranslationEnabled {
+                chatTranslationBanner
+                Divider()
             } else if model.currentPinnedMessage != nil {
                 pinnedMessageBanner
                 Divider()
@@ -156,6 +159,11 @@ struct MacConversationView: View {
         return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
     }
 
+    private var detectedChatLanguageName: String {
+        guard let code = model.detectedChatLanguage else { return "" }
+        return Locale.current.localizedString(forLanguageCode: code) ?? code
+    }
+
     private var conversationSearchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
@@ -175,6 +183,34 @@ struct MacConversationView: View {
                 model.endConversationSearch()
             }
             .keyboardShortcut(.cancelAction)
+        }
+        .padding(10)
+        .background(.bar)
+    }
+
+    private var chatTranslationBanner: some View {
+        HStack(spacing: 8) {
+            if model.isChatTranslationEnabled {
+                Text("Translated from \(detectedChatLanguageName)")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Show Original") {
+                    model.disableChatTranslation()
+                }
+            } else {
+                Text("Translate from \(detectedChatLanguageName)?")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Dismiss") {
+                    model.dismissChatTranslationSuggestion()
+                }
+                Button("Translate") {
+                    model.enableChatTranslation()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(10)
         .background(.bar)

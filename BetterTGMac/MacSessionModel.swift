@@ -65,6 +65,15 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var messageForwardedFrom = [Int64: String]()
     var messageSenderNames = [Int64: String]()
     var messageServiceDescriptions = [Int64: String]()
+    var messageTranslations = [Int64: FormattedText]()
+    var translationShownMessageIds = Set<Int64>()
+    var translatingMessageIds = Set<Int64>()
+    /// Cached once per message via `loadTranslationEligibility(for:)`, not recomputed on every
+    /// render - language detection runs an on-device ML model (`NLLanguageRecognizer`), too
+    /// expensive to call from a plain computed property SwiftUI might re-evaluate per re-render.
+    var messageTranslationEligibility = [Int64: Bool]()
+    var detectedChatLanguage: String?
+    var isChatTranslationEnabled = false
     var messageActionError: String?
     var isSubmittingMessage = false
     var selectedDocumentURLs = [URL]()
@@ -419,6 +428,12 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         messageForwardedFrom = [:]
         messageSenderNames = [:]
         messageServiceDescriptions = [:]
+        messageTranslations = [:]
+        translationShownMessageIds = []
+        translatingMessageIds = []
+        messageTranslationEligibility = [:]
+        detectedChatLanguage = nil
+        isChatTranslationEnabled = false
         selectedDocumentURLs = []
         selectedPhotoURLs = []
         phoneNumber = ""

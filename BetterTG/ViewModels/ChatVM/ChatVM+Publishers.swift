@@ -178,6 +178,9 @@ extension ChatVM {
                 if self.replyMessage?.message.id == message.id {
                     self.replyMessage = customMessage
                 }
+                if self.isChatTranslationEnabled {
+                    self.ensureMessageTranslated(customMessage)
+                }
                 if !replacedProvisionalMessage || self.provisionalMessageIds.isEmpty {
                     self.scheduleDisplayedMessagesRebuild()
                 }
@@ -308,6 +311,7 @@ extension ChatVM {
         let allMessagesRendered = relevantIds.allSatisfy { renderedMessages[$0] != nil }
         guard allMessagesRendered else { return }
         withAnimation { initialMessagesLoaded = true }
+        refreshDetectedChatLanguage()
     }
 
     @MainActor private func invalidateMessageAndReplies(messageId: Int64, version: UInt64) {

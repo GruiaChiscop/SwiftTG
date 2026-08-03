@@ -133,6 +133,12 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getSupergroupFullInfo(supergroupId: Int64?) async throws -> SupergroupFullInfo
     func getTextEntities(text: String?) async throws -> TextEntities
     func getUser(userId: Int64?) async throws -> User
+    func translateMessageText(
+        chatId: Int64?,
+        messageId: Int64?,
+        toLanguageCode: String?,
+        tone: String?,
+    ) async throws -> FormattedText
     func importContacts(contacts: [ImportedContact]?) async throws -> ImportedContacts
     func getUserFullInfo(userId: Int64?) async throws -> UserFullInfo
     func getSupergroupMembers(
@@ -706,6 +712,20 @@ extension TelegramSession: TelegramService {
 
     func getUser(userId: Int64?) async throws -> User {
         try await client.getUser(userId: userId)
+    }
+
+    func translateMessageText(
+        chatId: Int64?,
+        messageId: Int64?,
+        toLanguageCode: String?,
+        tone: String?,
+    ) async throws -> FormattedText {
+        try await client.translateMessageText(
+            chatId: chatId,
+            messageId: messageId,
+            toLanguageCode: toLanguageCode,
+            tone: tone,
+        )
     }
 
     func getUserFullInfo(userId: Int64?) async throws -> UserFullInfo {

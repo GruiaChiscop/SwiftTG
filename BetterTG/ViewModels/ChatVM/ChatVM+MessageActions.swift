@@ -75,6 +75,14 @@ extension ChatVM {
         return succeededCount == chats.count
     }
 
+    @MainActor func toggleTranslation(_ customMessage: CustomMessage) {
+        if customMessage.showsTranslation {
+            withAnimation { customMessage.showsTranslation = false }
+            return
+        }
+        ensureMessageTranslated(customMessage)
+    }
+
     func toggleReaction(_ reaction: ReactionType, on message: Message) {
         performMessageAction(failureMessage: "Reaction couldn't be updated") {
             try await TelegramMessageActions.toggleReaction(

@@ -134,7 +134,13 @@ struct MacMessageRow: View {
                             MacLinkPreviewView(model: model, preview: linkPreview)
                         }
                         if !content.text.text.isEmpty {
-                            MacFormattedTextView(formattedText: content.text)
+                            MacFormattedTextView(formattedText: displayedFormattedText ?? content.text)
+                            if showsTranslation {
+                                Text("Translated")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
+                            }
                         }
                         if let linkPreview = content.linkPreview, !linkPreview.showAboveText {
                             MacLinkPreviewView(model: model, preview: linkPreview)
@@ -243,6 +249,9 @@ struct MacMessageRow: View {
         }
         .task(id: presentationTaskID) {
             await model.loadServiceDescription(for: message)
+        }
+        .task(id: presentationTaskID) {
+            model.loadTranslationEligibility(for: message)
         }
         .onReceive(model.service.filePublisher(fileId: documentFileId ?? 0)) { file in
             guard file.id == documentFileId else { return }
@@ -392,6 +401,23 @@ struct MacMessageRow: View {
 
     private var canCopy: Bool {
         capabilities?.properties.canBeCopied == true && copyableMessageText(message) != nil
+    }
+
+    /// Unlike iOS - where every content type's caption funnels through one shared text render
+    /// site - captions here are rendered inside each `Mac*MessageContent` view individually, so
+    /// swapping in a translation cleanly only works for plain text messages for now. Backed by
+    /// `model.messageTranslationEligibility`, loaded once via `loadTranslationEligibility(for:)`
+    /// rather than computed live here (see that function's doc comment for why).
+    private var canTranslate: Bool {
+        model.messageTranslationEligibility[message.id] ?? false
+    }
+
+    private var showsTranslation: Bool {
+        model.translationShownMessageIds.contains(message.id)
+    }
+
+    private var displayedFormattedText: FormattedText? {
+        showsTranslation ? model.messageTranslations[message.id] : nil
     }
 
     private var canDelete: Bool {
@@ -599,6 +625,12 @@ struct MacMessageRow: View {
         }
         if canCopy {
             items.append(.button(title: "Copy", systemImage: "doc.on.doc") { copyMessageText() })
+        }
+        if canTranslate {
+            items.append(.button(
+                title: model.translationShownMessageIds.contains(message.id) ? "Show Original" : "Translate",
+                systemImage: "character.bubble",
+            ) { model.toggleTranslation(for: message) })
         }
         if documentFileId != nil {
             items.append(.button(title: "Save As…", systemImage: "square.and.arrow.down") {
@@ -975,8 +1007,13 @@ struct MacMessageRow: View {
         parts.append("Replying to \(replyContext.senderName)")
     }
 
-    let displayedText = model.messageServiceDescriptions[message.id]
-        ?? telegramMessageContentDescription(message)
+    let translatedText = model.translationShownMessageIds.contains(message.id)
+        ? model.messageTranslations[message.id]?.text
+        : nil
+    let contentDescription = translatedText?.isEmpty == false
+        ? translatedText!
+        : telegramMessageContentDescription(message)
+    let displayedText = model.messageServiceDescriptions[message.id] ?? contentDescription
     if TelegramServiceMessage.isServiceMessage(message.content) {
         parts.append(displayedText)
     } else {
@@ -990,6 +1027,9 @@ struct MacMessageRow: View {
 
     if let editStatus = telegramMessageEditStatus(message) {
         parts.append(editStatus)
+    }
+    if translatedText?.isEmpty == false {
+        parts.append("Translated")
     }
     parts.append(telegramMessageDateDescription(message.date))
     if let status = telegramMessageDeliveryStatus(

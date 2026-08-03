@@ -76,6 +76,12 @@ extension MacSessionModel {
         messageForwardedFrom = [:]
         messageSenderNames = [:]
         messageServiceDescriptions = [:]
+        messageTranslations = [:]
+        translationShownMessageIds = []
+        translatingMessageIds = []
+        messageTranslationEligibility = [:]
+        detectedChatLanguage = nil
+        isChatTranslationEnabled = TelegramChatTranslationPreferences.isEnabled(chatId: chatId)
         isLoadingMessages = true
         isLoadingOlderMessages = false
         isLoadingLatestMessages = false
@@ -120,6 +126,7 @@ extension MacSessionModel {
                 )
             }
             isLoadingMessages = false
+            refreshDetectedChatLanguage()
         }
     }
 
@@ -203,6 +210,9 @@ extension MacSessionModel {
         case .newMessage(let update) where !update.message.isOutgoing:
             let isMuted = (chatList.items[snapshot.chatId]?.notificationSettings?.muteFor ?? 0) > 0
             MacServiceSoundManager.shared.playIncomingMessageIfAppropriate(isMuted: isMuted)
+            if isChatTranslationEnabled {
+                ensureTranslation(for: update.message)
+            }
         case .messageSendSucceeded(let update) where update.message.isOutgoing:
             MacServiceSoundManager.shared.playMessageDelivered()
         case .messageSendFailed(let update):

@@ -77,6 +77,21 @@ extension MacSessionModel {
         messageServiceDescriptions[message.id] = description
     }
 
+    /// Computed once and cached, not on every render - language detection runs an on-device ML
+    /// model (`NLLanguageRecognizer`), too expensive to call from `canTranslate` directly, which
+    /// SwiftUI re-evaluates on every re-render of the row.
+    func loadTranslationEligibility(for message: Message) {
+        guard messageTranslationEligibility[message.id] == nil else { return }
+        guard case .messageText = message.content else {
+            messageTranslationEligibility[message.id] = false
+            return
+        }
+        messageTranslationEligibility[message.id] = telegramMessageCanBeTranslated(
+            message,
+            chatType: openedChatType,
+        )
+    }
+
     func loadReplyContext(for message: Message) async {
         guard messageReplyContexts[message.id] == nil,
               !loadingReplyContextMessageIds.contains(message.id),
@@ -193,6 +208,92 @@ extension MacSessionModel {
 
     func cachedSenderName(for message: Message) -> String? {
         messageSenderNames[message.id] ?? senderNamesByKey[senderKey(for: message)]
+    }
+
+    func toggleTranslation(for message: Message) {
+        if translationShownMessageIds.contains(message.id) {
+            translationShownMessageIds.remove(message.id)
+            return
+        }
+        ensureTranslation(for: message)
+    }
+
+    /// The shared "fetch, cache, show" primitive behind both the per-message Translate action and
+    /// whole-chat translation - a no-op if already showing or already in flight.
+    func ensureTranslation(for message: Message) {
+        guard !translatingMessageIds.contains(message.id), !translationShownMessageIds.contains(message.id)
+        else { return }
+        if messageTranslations[message.id] != nil {
+            translationShownMessageIds.insert(message.id)
+            return
+        }
+        guard telegramMessageFormattedText(message) != nil else { return }
+
+        translatingMessageIds.insert(message.id)
+        let chatId = message.chatId
+        let messageId = message.id
+        let targetLanguageCode = telegramTranslationTargetLanguageCode()
+        Task {
+            defer { translatingMessageIds.remove(messageId) }
+            do {
+                let translatedText = try await service.translateMessageText(
+                    chatId: chatId,
+                    messageId: messageId,
+                    toLanguageCode: targetLanguageCode,
+                    tone: nil,
+                )
+                guard openedChatId == chatId else { return }
+                messageTranslations[messageId] = translatedText
+                translationShownMessageIds.insert(messageId)
+            } catch {
+                guard !Task.isCancelled, openedChatId == chatId else { return }
+                messageActionError = "Message couldn't be translated: \(telegramErrorDescription(error))"
+            }
+        }
+    }
+
+    var showsChatTranslationBanner: Bool {
+        guard let chatId = openedChatId else { return false }
+        return !isChatTranslationEnabled
+            && detectedChatLanguage != nil
+            && !TelegramChatTranslationPreferences.isDismissed(chatId: chatId)
+    }
+
+    /// Called once a chat's initial history has loaded, so there's an actual sample to detect
+    /// from - mirrors Telegram-iOS's own chat-language detection running against recently loaded
+    /// history rather than a single message.
+    func refreshDetectedChatLanguage() {
+        guard let chatId = openedChatId else { return }
+        let sample = messages.orderedMessageIds.compactMap { messages.messages[$0] }
+        let targetLanguageCode = telegramTranslationTargetLanguageCode()
+        Task {
+            guard let detected = telegramDetectedChatLanguage(from: sample), detected != targetLanguageCode,
+                  openedChatId == chatId
+            else { return }
+            detectedChatLanguage = detected
+        }
+    }
+
+    func enableChatTranslation() {
+        guard let chatId = openedChatId else { return }
+        isChatTranslationEnabled = true
+        TelegramChatTranslationPreferences.setEnabled(true, chatId: chatId)
+        for message in messages.orderedMessageIds.compactMap({ messages.messages[$0] }) {
+            ensureTranslation(for: message)
+        }
+    }
+
+    func disableChatTranslation() {
+        guard let chatId = openedChatId else { return }
+        isChatTranslationEnabled = false
+        TelegramChatTranslationPreferences.setEnabled(false, chatId: chatId)
+        translationShownMessageIds.removeAll()
+    }
+
+    func dismissChatTranslationSuggestion() {
+        guard let chatId = openedChatId else { return }
+        TelegramChatTranslationPreferences.dismiss(chatId: chatId)
+        detectedChatLanguage = nil
     }
 
     // MARK: Private

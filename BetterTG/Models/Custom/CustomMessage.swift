@@ -57,6 +57,13 @@ import TDLibKit
     var formattedText: FormattedText?
     var properties: MessageProperties
     var availableReactions: [AvailableReaction]
+    var translatedText: FormattedText?
+    var showsTranslation = false
+    var isTranslating = false
+    /// Computed once, off the render path, when this message is built - language detection runs
+    /// an on-device ML model (`NLLanguageRecognizer`), too expensive to call from a plain computed
+    /// property that SwiftUI might re-evaluate on every re-render of the row.
+    var canBeTranslated = false
     
     var date: Foundation.Date { Date(timeIntervalSince1970: TimeInterval(message.date)) }
     

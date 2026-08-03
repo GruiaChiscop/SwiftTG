@@ -59,6 +59,9 @@ extension MessageView {
         {
             Button("Copy", action: copyMessageText)
         }
+        if canTranslate {
+            Button(customMessage.showsTranslation ? "Show Original" : "Translate", action: toggleTranslation)
+        }
         if customMessage.messageDocument != nil {
             Button("Save to Files", action: saveDocument)
         }
@@ -107,6 +110,15 @@ extension MessageView {
                 Label("Copy", systemImage: "rectangle.portrait.on.rectangle.portrait")
             }
         }
+        if canTranslate {
+            Button(action: toggleTranslation) {
+                Label(
+                    customMessage.showsTranslation ? "Show Original" : "Translate",
+                    systemImage: "character.bubble",
+                )
+            }
+            .disabled(customMessage.isTranslating)
+        }
         if customMessage.messageDocument != nil {
             Button(action: saveDocument) {
                 Label("Save to Files", systemImage: "folder")
@@ -144,6 +156,14 @@ extension MessageView {
 
     var reactionChoices: [ReactionType] {
         telegramReactionChoices(existing: messageReactions, available: customMessage.availableReactions)
+    }
+
+    var canTranslate: Bool {
+        customMessage.canBeTranslated
+    }
+
+    func toggleTranslation() {
+        chatVM.toggleTranslation(customMessage)
     }
 
     func toggleReaction(_ reaction: ReactionType) {

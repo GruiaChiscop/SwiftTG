@@ -31,24 +31,32 @@ struct MessageView: View {
         if case .messageReplyToMessage = customMessage.message.replyTo {
             parts.append("Replying to \(customMessage.replySenderName ?? "message")")
         }
+        let translatedText = customMessage.showsTranslation ? customMessage.translatedText?.text : nil
         if let serviceMessageText = customMessage.serviceMessageText {
             parts.append(serviceMessageText)
         } else {
             let sender = customMessage.message.isOutgoing ? "You" : channelOrGroupAwareSenderName
             if customMessage.album.isEmpty {
-                parts.append("\(sender): \(telegramMessageContentDescription(customMessage.message))")
+                let content = translatedText?.isEmpty == false
+                    ? translatedText!
+                    : telegramMessageContentDescription(customMessage.message)
+                parts.append("\(sender): \(content)")
             } else {
                 let albumDescription = telegramMediaAlbumAccessibilityDescription(
                     itemCount: customMessage.album.count,
                 )
                 parts.append("\(sender): \(albumDescription)")
-                if let caption = customMessage.formattedText?.text, !caption.isEmpty {
+                let caption = translatedText?.isEmpty == false ? translatedText : customMessage.formattedText?.text
+                if let caption, !caption.isEmpty {
                     parts.append(caption)
                 }
             }
         }
         if let editStatus = telegramMessageEditStatus(customMessage.message) {
             parts.append(editStatus)
+        }
+        if translatedText?.isEmpty == false {
+            parts.append("Translated")
         }
         parts.append(telegramMessageDateDescription(customMessage.message.date))
         if let status = telegramMessageDeliveryStatus(
@@ -155,11 +163,19 @@ struct MessageView: View {
                             .padding(.top, 8)
                     }
 
-                    if let formattedText = customMessage.formattedText, !formattedText.text.isEmpty {
-                        MessageTextView(
-                            formattedText: formattedText,
-                            trailingText: visualMessageMetadataText,
-                        )
+                    if let formattedText = displayedFormattedText, !formattedText.text.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            MessageTextView(
+                                formattedText: formattedText,
+                                trailingText: visualMessageMetadataText,
+                            )
+                            if customMessage.showsTranslation {
+                                Text("Translated")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                         .padding(8)
                         .padding(
                             .top,
@@ -289,6 +305,12 @@ struct MessageView: View {
     private var hasInlineVisualMetadata: Bool {
         guard let formattedText = customMessage.formattedText else { return false }
         return !formattedText.text.isEmpty
+    }
+
+    private var displayedFormattedText: FormattedText? {
+        customMessage.showsTranslation
+            ? (customMessage.translatedText ?? customMessage.formattedText)
+            : customMessage.formattedText
     }
 
     private var messageBubbleColor: Color {

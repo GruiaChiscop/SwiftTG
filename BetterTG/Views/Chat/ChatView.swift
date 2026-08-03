@@ -53,6 +53,9 @@ struct ChatView: View {
             if chatVM.isConversationSearchActive {
                 conversationSearchField
                 Divider()
+            } else if chatVM.showsChatTranslationBanner || chatVM.isChatTranslationEnabled {
+                chatTranslationBanner
+                Divider()
             } else if chatVM.currentPinnedMessage != nil {
                 pinnedMessageBanner
                 Divider()
@@ -334,6 +337,11 @@ struct ChatView: View {
         return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
     }
 
+    private var detectedChatLanguageName: String {
+        guard let code = chatVM.detectedChatLanguage else { return "" }
+        return Locale.current.localizedString(forLanguageCode: code) ?? code
+    }
+
     private var initialUnreadMessageId: Int64? {
         guard chatVM.initialUnreadCount > 0 else { return nil }
         return chatVM.messages
@@ -366,6 +374,37 @@ struct ChatView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private var chatTranslationBanner: some View {
+        HStack(spacing: 8) {
+            if chatVM.isChatTranslationEnabled {
+                Text("Translated from \(detectedChatLanguageName)")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Show Original") {
+                    chatVM.disableChatTranslation()
+                }
+                .font(.subheadline)
+            } else {
+                Text("Translate from \(detectedChatLanguageName)?")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Dismiss", systemImage: "xmark") {
+                    chatVM.dismissChatTranslationSuggestion()
+                }
+                .labelStyle(.iconOnly)
+                Button("Translate") {
+                    chatVM.enableChatTranslation()
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .background(.bar)
     }
 
