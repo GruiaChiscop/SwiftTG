@@ -9,6 +9,14 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            NavigationStack {
+                ContactsView(service: rootVM.service)
+            }
+            .tabItem {
+                Label("Contacts", systemImage: "person.2.fill")
+            }
+            .tag(MainTab.contacts)
+
             NavigationStack(path: $rootVM.path) {
                 MainNavigationRootView()
                     .navigationDestination(for: Route.self) { route in
@@ -54,6 +62,7 @@ struct MainView: View {
     // MARK: Private
 
     private enum MainTab: Hashable {
+        case contacts
         case chats
         case you
     }

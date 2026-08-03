@@ -84,6 +84,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         onlyLocal: Bool?,
     ) async throws -> Messages
     func getChats(chatList: ChatList?, limit: Int?) async throws -> Chats
+    func getContacts() async throws -> Users
     func getAuthorizationState() async throws -> AuthorizationState
     func getCountries() async throws -> Countries
     func getCountryCode() async throws -> Text
@@ -126,6 +127,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getSupergroupFullInfo(supergroupId: Int64?) async throws -> SupergroupFullInfo
     func getTextEntities(text: String?) async throws -> TextEntities
     func getUser(userId: Int64?) async throws -> User
+    func importContacts(contacts: [ImportedContact]?) async throws -> ImportedContacts
     func getUserFullInfo(userId: Int64?) async throws -> UserFullInfo
     func getSupergroupMembers(
         filter: SupergroupMembersFilter?,
@@ -273,6 +275,14 @@ extension TelegramSession: TelegramService {
 
     func changeImportedContacts(contacts: [ImportedContact]?) async throws -> ImportedContacts {
         try await client.changeImportedContacts(contacts: contacts)
+    }
+
+    func getContacts() async throws -> Users {
+        try await client.getContacts()
+    }
+
+    func importContacts(contacts: [ImportedContact]?) async throws -> ImportedContacts {
+        try await client.importContacts(contacts: contacts)
     }
 
     func createBasicGroupChat(basicGroupId: Int64?, force: Bool?) async throws -> Chat {
