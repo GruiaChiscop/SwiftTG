@@ -137,6 +137,20 @@ struct MessageView: View {
                                     messageAccessibilityActions
                                 }
                         }
+                    } else if let messageChecklist = customMessage.messageChecklist {
+                        TelegramChecklistView(
+                            content: messageChecklist,
+                            message: customMessage.message,
+                            canMarkTasksAsDone: customMessage.properties.canMarkTasksAsDone,
+                            service: chatVM.service,
+                        ) {
+                            Text(messageChecklist.list.title.text)
+                                .accessibilityIdentifier("message-\(customMessage.id)")
+                                .accessibilityLabel(checklistAccessibilityContextDescription)
+                                .accessibilityActions {
+                                    messageAccessibilityActions
+                                }
+                        }
                     } else if customMessage.messageDocument != nil
                         || customMessage.messagePhoto != nil
                         || customMessage.messageVideo != nil
@@ -205,7 +219,7 @@ struct MessageView: View {
                 messageContextMenu
             }
             .modify {
-                if isPollMessage {
+                if isPollMessage || isChecklistMessage {
                     $0
                 } else {
                     messageAccessibilityElement($0)
@@ -302,6 +316,10 @@ struct MessageView: View {
         customMessage.messagePoll != nil
     }
 
+    private var isChecklistMessage: Bool {
+        customMessage.messageChecklist != nil
+    }
+
     private var hasInlineVisualMetadata: Bool {
         guard let formattedText = customMessage.formattedText else { return false }
         return !formattedText.text.isEmpty
@@ -344,7 +362,7 @@ struct MessageView: View {
     }
 
     private var hasAccessibilityGroup: Bool {
-        !isPollMessage && (!textLinks.isEmpty || separatePreviewAccessibilityLink != nil)
+        !isPollMessage && !isChecklistMessage && (!textLinks.isEmpty || separatePreviewAccessibilityLink != nil)
     }
 
     private var audioPlaylist: [Audio] {
@@ -406,6 +424,21 @@ struct MessageView: View {
         if let poll = customMessage.messagePoll?.poll {
             parts.append(poll.type.isQuiz ? "Quiz" : "Poll")
             parts.append(poll.question.text)
+        }
+        parts.append(telegramMessageDateDescription(customMessage.message.date))
+        if let status = telegramMessageDeliveryStatus(
+            customMessage.message,
+            lastReadOutboxMessageId: chatVM.customChat.lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var checklistAccessibilityContextDescription: String {
+        var parts = [customMessage.message.isOutgoing ? "You" : channelOrGroupAwareSenderName]
+        if let messageChecklist = customMessage.messageChecklist {
+            parts.append(TelegramChecklistPresentation(messageChecklist).contentDescription)
         }
         parts.append(telegramMessageDateDescription(customMessage.message.date))
         if let status = telegramMessageDeliveryStatus(

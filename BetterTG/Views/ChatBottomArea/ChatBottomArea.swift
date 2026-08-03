@@ -156,6 +156,18 @@ struct ChatBottomArea: View {
                 await chatVM.updateDraft()
             }
         }
+        .sheet(isPresented: $showsChecklistComposer) {
+            TelegramChecklistComposerView { draft in
+                try await TelegramChecklistSending.send(
+                    draft: draft,
+                    service: chatVM.service,
+                    chatId: chatVM.customChat.chat.id,
+                    replyToMessageId: chatVM.replyMessage?.id,
+                )
+                chatVM.replyMessage = nil
+                await chatVM.updateDraft()
+            }
+        }
         .sheet(isPresented: $showsStickerPicker) {
             TelegramStickerPickerView(
                 service: chatVM.service,
@@ -230,6 +242,14 @@ struct ChatBottomArea: View {
                 chatId: chatVM.customChat.chat.id,
             )
         }
+        .task {
+            checklistIsAvailable = await TelegramChecklistSending.isAvailable(service: chatVM.service)
+        }
+        .alert("Premium Required", isPresented: $showsChecklistPremiumAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Checklists are a Telegram Premium feature.")
+        }
         .onReceive(nc.publisher(for: .localOnSelectedImagesDrop)) { notification in
             guard let selectedImages = notification.object as? [SelectedImage] else { return }
             withAnimation {
@@ -274,6 +294,19 @@ struct ChatBottomArea: View {
                     } label: {
                         Label("Poll", systemImage: "chart.bar")
                     }
+                }
+                Button {
+                    guard checklistIsAvailable else {
+                        showsChecklistPremiumAlert = true
+                        return
+                    }
+                    withAnimation {
+                        chatVM.displayedImages.removeAll()
+                        chatVM.displayedDocuments.removeAll()
+                    }
+                    showsChecklistComposer = true
+                } label: {
+                    Label("Checklist", systemImage: "checklist")
                 }
             } label: {
                 Label("Attach", systemImage: "paperclip")
@@ -581,6 +614,9 @@ struct ChatBottomArea: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var showsPollComposer = false
+    @State private var showsChecklistComposer = false
+    @State private var showsChecklistPremiumAlert = false
+    @State private var checklistIsAvailable = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
     @State private var showsStickerPicker = false

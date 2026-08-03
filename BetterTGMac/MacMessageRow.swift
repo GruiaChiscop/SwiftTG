@@ -129,6 +129,18 @@ struct MacMessageRow: View {
                                 .accessibilityLabel(pollAccessibilityContextDescription)
                                 .accessibilityActions { messageAccessibilityActions }
                         }
+                    } else if case .messageChecklist(let content) = message.content {
+                        TelegramChecklistView(
+                            content: content,
+                            message: message,
+                            canMarkTasksAsDone: capabilities?.properties.canMarkTasksAsDone ?? false,
+                            service: model.service,
+                        ) {
+                            Text(content.list.title.text)
+                                .accessibilityIdentifier("message-\(message.id)")
+                                .accessibilityLabel(checklistAccessibilityContextDescription)
+                                .accessibilityActions { messageAccessibilityActions }
+                        }
                     } else if case .messageText(let content) = message.content {
                         if let linkPreview = content.linkPreview, linkPreview.showAboveText {
                             MacLinkPreviewView(model: model, preview: linkPreview)
@@ -182,7 +194,7 @@ struct MacMessageRow: View {
                     }
                 }
                 .macModified {
-                    if isPollMessage {
+                    if isPollMessage || isChecklistMessage {
                         $0
                     } else if isVisualAlbum {
                         albumAccessibilityRepresentation($0)
@@ -577,6 +589,14 @@ struct MacMessageRow: View {
         }
     }
 
+    private var isChecklistMessage: Bool {
+        if case .messageChecklist = message.content {
+            true
+        } else {
+            false
+        }
+    }
+
     private var messageLinks: [TelegramTextLink] {
         guard let formattedText = isVisualAlbum ? albumCaption : telegramMessageFormattedText(message) else {
             return []
@@ -594,7 +614,7 @@ struct MacMessageRow: View {
     }
 
     private var hasAccessibilityGroup: Bool {
-        !isPollMessage &&
+        !isPollMessage && !isChecklistMessage &&
             (!messageReactions.isEmpty || !messageLinks.isEmpty || separatePreviewAccessibilityLink != nil)
     }
 
@@ -671,6 +691,21 @@ struct MacMessageRow: View {
         return parts.joined(separator: ", ")
     }
 
+    private var checklistAccessibilityContextDescription: String {
+        var parts = [message.isOutgoing ? "You" : model.cachedSenderName(for: message) ?? "Unknown sender"]
+        if case .messageChecklist(let content) = message.content {
+            parts.append(TelegramChecklistPresentation(content).contentDescription)
+        }
+        parts.append(telegramMessageDateDescription(message.date))
+        if let status = telegramMessageDeliveryStatus(
+            message,
+            lastReadOutboxMessageId: lastReadOutboxMessageId,
+        ) {
+            parts.append(status)
+        }
+        return parts.joined(separator: ", ")
+    }
+
     private var albumAccessibilityDescription: String {
         var parts = [message.isOutgoing ? "You" : model.cachedSenderName(for: message) ?? "Unknown sender"]
         parts.append(telegramMediaAlbumAccessibilityDescription(itemCount: albumMessages.count))
@@ -731,7 +766,7 @@ struct MacMessageRow: View {
         TelegramMessageReactionsView(reactions: messageReactions) {
             showReactionDetails = true
         }
-        .accessibilityHidden(!isPollMessage)
+        .accessibilityHidden(!isPollMessage && !isChecklistMessage)
         .fixedSize(horizontal: true, vertical: false)
         .layoutPriority(2)
         .contextMenu { messageActions }

@@ -217,6 +217,12 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
     func setOption(name: String?, value: OptionValue?) async throws -> Ok
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok
+    func markChecklistTasksAsDone(
+        chatId: Int64?,
+        markedAsDoneTaskIds: [Int]?,
+        markedAsNotDoneTaskIds: [Int]?,
+        messageId: Int64?,
+    ) async throws -> Ok
     func toggleChatIsMarkedAsUnread(chatId: Int64?, isMarkedAsUnread: Bool?) async throws -> Ok
     func toggleChatIsPinned(chatId: Int64?, chatList: ChatList?, isPinned: Bool?) async throws -> Ok
     func unpinChatMessage(chatId: Int64?, messageId: Int64?) async throws -> Ok
@@ -832,6 +838,20 @@ extension TelegramSession: TelegramService {
 
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok {
         try await client.setPollAnswer(chatId: chatId, messageId: messageId, optionIds: optionIds)
+    }
+
+    func markChecklistTasksAsDone(
+        chatId: Int64?,
+        markedAsDoneTaskIds: [Int]?,
+        markedAsNotDoneTaskIds: [Int]?,
+        messageId: Int64?,
+    ) async throws -> Ok {
+        try await client.markChecklistTasksAsDone(
+            chatId: chatId,
+            markedAsDoneTaskIds: markedAsDoneTaskIds,
+            markedAsNotDoneTaskIds: markedAsNotDoneTaskIds,
+            messageId: messageId,
+        )
     }
 
     func setChatDraftMessage(chatId: Int64?, draftMessage: DraftMessage?, topicId: MessageTopic?) async throws -> Ok {

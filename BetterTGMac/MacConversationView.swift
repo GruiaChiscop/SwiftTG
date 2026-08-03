@@ -74,6 +74,19 @@ struct MacConversationView: View {
                 model.saveCurrentDraft()
             }
         }
+        .sheet(isPresented: $showsChecklistComposer) {
+            TelegramChecklistComposerView { draft in
+                guard let chatId = model.openedChatId else { return }
+                try await TelegramChecklistSending.send(
+                    draft: draft,
+                    service: model.service,
+                    chatId: chatId,
+                    replyToMessageId: model.replyingToMessage?.id,
+                )
+                model.replyingToMessage = nil
+                model.saveCurrentDraft()
+            }
+        }
         .sheet(isPresented: $showsStickerPicker) {
             TelegramStickerPickerView(
                 service: model.service,
@@ -115,6 +128,14 @@ struct MacConversationView: View {
                 chatId: chat.chatId,
             )
         }
+        .task {
+            checklistIsAvailable = await TelegramChecklistSending.isAvailable(service: model.service)
+        }
+        .alert("Premium Required", isPresented: $showsChecklistPremiumAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Checklists are a Telegram Premium feature.")
+        }
     }
 
     // MARK: Private
@@ -124,6 +145,9 @@ struct MacConversationView: View {
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
     @State private var showsPollComposer = false
+    @State private var showsChecklistComposer = false
+    @State private var showsChecklistPremiumAlert = false
+    @State private var checklistIsAvailable = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
     @State private var showsStickerPicker = false
@@ -378,6 +402,14 @@ struct MacConversationView: View {
                             Button("Poll", systemImage: "chart.bar") { showsPollComposer = true }
                                 .disabled(model.editingMessage != nil)
                         }
+                        Button("Checklist", systemImage: "checklist") {
+                            guard checklistIsAvailable else {
+                                showsChecklistPremiumAlert = true
+                                return
+                            }
+                            showsChecklistComposer = true
+                        }
+                        .disabled(model.editingMessage != nil)
                     }
                     .labelStyle(.iconOnly)
                     .help("Attach photos or files")

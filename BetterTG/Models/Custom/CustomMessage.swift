@@ -115,6 +115,13 @@ import TDLibKit
         }
         return nil
     }
+
+    var messageChecklist: MessageChecklist? {
+        if case .messageChecklist(let messageChecklist) = message.content {
+            return messageChecklist
+        }
+        return nil
+    }
 }
 
 // MARK: Hashable

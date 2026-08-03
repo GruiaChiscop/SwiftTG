@@ -56,6 +56,8 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
             : "File: \(content.document.fileName), \(content.caption.text)"
     case .messagePoll(let content):
         TelegramPollPresentation(content).contentDescription
+    case .messageChecklist(let content):
+        TelegramChecklistPresentation(content).contentDescription
     case .messageSticker(let content):
         content.sticker.emoji.isEmpty ? "Sticker" : "Sticker \(content.sticker.emoji)"
     case .messageCall:
