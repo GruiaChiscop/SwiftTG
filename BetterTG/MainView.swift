@@ -133,6 +133,12 @@ private struct MainNavigationRootView: View {
                     .labelStyle(.iconOnly)
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Settings", systemImage: "gearshape") {
+                    showsSettings = true
+                }
+                .labelStyle(.iconOnly)
+            }
             #if DEBUG
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Preview Login", systemImage: "person.crop.circle.badge.questionmark") {
@@ -140,6 +146,16 @@ private struct MainNavigationRootView: View {
                 }
             }
             #endif
+        }
+        .sheet(isPresented: $showsSettings) {
+            NavigationStack {
+                TelegramStorageSettingsView(service: rootVM.service)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showsSettings = false }
+                        }
+                    }
+            }
         }
         #if DEBUG
         .sheet(isPresented: $showsLoginPreview) {
@@ -205,6 +221,7 @@ private struct MainNavigationRootView: View {
     // MARK: Private
 
     @Bindable private var rootVM = RootVM.shared
+    @State private var showsSettings = false
     #if DEBUG
     @State private var showsLoginPreview = false
     #endif

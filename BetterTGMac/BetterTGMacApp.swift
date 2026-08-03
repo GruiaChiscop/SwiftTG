@@ -29,6 +29,11 @@ import UserNotifications
             }
         }
 
+        Settings {
+            TelegramStorageSettingsView(service: model.service)
+                .frame(width: 480, height: 340)
+        }
+
         MenuBarExtra("BetterTG", systemImage: "paperplane.fill") {
             MacMenuBarView(model: model, appDelegate: appDelegate)
         }

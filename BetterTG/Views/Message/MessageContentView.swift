@@ -10,6 +10,8 @@ struct MessageContentView: View {
     let onMediaTap: (Message?) -> Void
     var onVoiceNoteLocalPathResolved: (String) -> Void = { _ in }
     var onDocumentTransferStatusChange: (String?) -> Void = { _ in }
+    var documentDownloadIsPaused = false
+    var onDocumentDownloadToggle: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -18,6 +20,9 @@ struct MessageContentView: View {
                 case .messageDocument(let messageDocument):
                     MessageDocumentView(
                         document: messageDocument.document,
+                        service: service,
+                        downloadIsPaused: documentDownloadIsPaused,
+                        onDownloadToggle: onDocumentDownloadToggle,
                         onTransferStatusChange: onDocumentTransferStatusChange,
                     )
                 case .messagePhoto(let messagePhoto):

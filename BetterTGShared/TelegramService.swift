@@ -88,6 +88,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getCountries() async throws -> Countries
     func getCountryCode() async throws -> Text
     func getGroupsInCommon(limit: Int?, offsetChatId: Int64?, userId: Int64?) async throws -> Chats
+    func getStorageStatisticsFast() async throws -> StorageStatisticsFast
     func getInstalledStickerSets(stickerType: StickerType?) async throws -> StickerSets
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message
     func getMessageAvailableReactions(
@@ -200,16 +201,60 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         settings: PhoneNumberAuthenticationSettings?,
     ) async throws -> Ok
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
+    func setOption(name: String?, value: OptionValue?) async throws -> Ok
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok
     func toggleChatIsMarkedAsUnread(chatId: Int64?, isMarkedAsUnread: Bool?) async throws -> Ok
     func toggleChatIsPinned(chatId: Int64?, chatList: ChatList?, isPinned: Bool?) async throws -> Ok
     func unpinChatMessage(chatId: Int64?, messageId: Int64?) async throws -> Ok
     func viewMessages(chatId: Int64?, forceRead: Bool?, messageIds: [Int64]?, source: MessageSource?) async throws -> Ok
+    func optimizeStorage(
+        chatIds: [Int64]?,
+        chatLimit: Int?,
+        count: Int?,
+        excludeChatIds: [Int64]?,
+        fileTypes: [FileType]?,
+        immunityDelay: Int?,
+        returnDeletedFileStatistics: Bool?,
+        size: Int64?,
+        ttl: Int?,
+    ) async throws -> StorageStatistics
 }
 
 // MARK: - TelegramSession + TelegramService
 
 extension TelegramSession: TelegramService {
+    func getStorageStatisticsFast() async throws -> StorageStatisticsFast {
+        try await client.getStorageStatisticsFast()
+    }
+
+    func setOption(name: String?, value: OptionValue?) async throws -> Ok {
+        try await client.setOption(name: name, value: value)
+    }
+
+    func optimizeStorage(
+        chatIds: [Int64]?,
+        chatLimit: Int?,
+        count: Int?,
+        excludeChatIds: [Int64]?,
+        fileTypes: [FileType]?,
+        immunityDelay: Int?,
+        returnDeletedFileStatistics: Bool?,
+        size: Int64?,
+        ttl: Int?,
+    ) async throws -> StorageStatistics {
+        try await client.optimizeStorage(
+            chatIds: chatIds,
+            chatLimit: chatLimit,
+            count: count,
+            excludeChatIds: excludeChatIds,
+            fileTypes: fileTypes,
+            immunityDelay: immunityDelay,
+            returnDeletedFileStatistics: returnDeletedFileStatistics,
+            size: size,
+            ttl: ttl,
+        )
+    }
+
     func getTextEntities(text: String?) async throws -> TextEntities {
         try await client.getTextEntities(text: text)
     }

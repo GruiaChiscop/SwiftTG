@@ -18,6 +18,8 @@ struct MessageView: View {
     @State var showReactionDetails = false
     @State var isSavingDocument = false
     @State var documentTransferStatus: String?
+    @State var documentDownloadIsPaused = false
+    @State var documentDownloadCancellationTask: Task<Void, Never>?
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -142,6 +144,8 @@ struct MessageView: View {
                             onMediaTap: openAlbum,
                             onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
                             onDocumentTransferStatusChange: { documentTransferStatus = $0 },
+                            documentDownloadIsPaused: documentDownloadIsPaused,
+                            onDocumentDownloadToggle: toggleDocumentDownload,
                         )
                     }
 
@@ -493,6 +497,13 @@ struct MessageView: View {
                 }
             }
             .modify {
+                if customMessage.messageDocument != nil, documentTransferStatus != nil {
+                    $0.accessibilityAction { toggleDocumentDownload() }
+                } else {
+                    $0
+                }
+            }
+            .modify {
                 if hasNavigableReply {
                     $0.accessibilityAction(named: "Go to Replied Message") {
                         chatVM.navigateToRepliedMessage(from: customMessage.message)
@@ -519,6 +530,27 @@ struct MessageView: View {
             .accessibilityActions {
                 messageAccessibilityActions
             }
+    }
+
+    private func toggleDocumentDownload() {
+        guard let fileId = customMessage.messageDocument?.document.document.id else { return }
+        if documentDownloadIsPaused {
+            let cancellationTask = documentDownloadCancellationTask
+            documentDownloadCancellationTask = nil
+            Task { @MainActor in
+                await cancellationTask?.value
+                documentDownloadIsPaused = false
+            }
+        } else {
+            documentDownloadIsPaused = true
+            let service = chatVM.service
+            documentDownloadCancellationTask = Task {
+                _ = try? await service.cancelDownloadFile(
+                    fileId: fileId,
+                    onlyIfPending: false,
+                )
+            }
+        }
     }
 
     private func toggleAudioMessage(_ messageAudio: MessageAudio) {

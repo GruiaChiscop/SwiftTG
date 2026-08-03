@@ -19,6 +19,7 @@ struct RootView: View {
         .transition(.opacity)
         .task(id: rootVM.loggedIn) {
             guard rootVM.loggedIn else { return }
+            await TelegramKeepMediaPolicy.applyStoredPolicy(service: TDLib.shared.service)
             await PushNotificationsManager.shared.requestAuthorization()
             await PermissionsManager.shared.requestPostLoginPermissions()
         }

@@ -17,6 +17,9 @@ struct MacRootView: View {
             }
         } else if case .authorizationStateReady = model.authorizationState {
             MacChatWorkspace(model: model)
+                .task {
+                    await TelegramKeepMediaPolicy.applyStoredPolicy(service: model.service)
+                }
                 #if DEBUG
                 .toolbar {
                     ToolbarItem {

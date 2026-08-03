@@ -83,6 +83,8 @@ struct MacMessageRow: View {
                             content: content,
                             isDownloaded: documentPath != nil,
                             isLoading: isLoadingDocument,
+                            isPaused: documentTransferPhase == .paused,
+                            interactionIsDisabled: documentTransferPhase == .preparingPreview,
                             transferProgress: documentTransferProgress,
                             transferStatus: documentTransferLabel,
                             onOpen: openDocument,
@@ -319,6 +321,7 @@ struct MacMessageRow: View {
 
     private enum DocumentTransferPhase: Equatable {
         case downloading
+        case paused
         case preparingPreview
     }
 
@@ -328,6 +331,8 @@ struct MacMessageRow: View {
     @State private var documentPreviewURL: URL?
     @State private var documentDownloadFile: File?
     @State private var documentTransferPhase: DocumentTransferPhase?
+    @State private var documentTransferID: UUID?
+    @State private var documentDownloadCancellationTask: Task<Void, Never>?
     @State private var isLoadingDocument = false
     @State private var photoImage: NSImage?
     @State private var photoPath: String?
@@ -414,6 +419,12 @@ struct MacMessageRow: View {
             return "Press to play or pause"
         }
         if documentFileId != nil {
+            if documentTransferPhase == .downloading {
+                return "Press to pause download"
+            }
+            if documentTransferPhase == .paused {
+                return "Press to resume download"
+            }
             return "Press to open document"
         }
         if photoFileId != nil {
@@ -433,6 +444,8 @@ struct MacMessageRow: View {
                 fileName: content.document.fileName,
                 file: documentDownloadFile,
             )
+        case .paused:
+            "Download paused, \(content.document.fileName)"
         case .preparingPreview:
             "Preparing preview for \(content.document.fileName)"
         case nil:
@@ -449,6 +462,8 @@ struct MacMessageRow: View {
         switch documentTransferPhase {
         case .downloading:
             TelegramFileTransferProgress.downloadLabel(file: documentDownloadFile)
+        case .paused:
+            "Download paused"
         case .preparingPreview:
             "Preparing preview"
         case nil:
@@ -794,27 +809,47 @@ struct MacMessageRow: View {
     }
 
     private func openDocument() {
-        guard !isLoadingDocument,
-              let documentFileId,
+        guard let documentFileId,
               case .messageDocument(let content) = message.content
         else { return }
+
+        if documentTransferPhase == .downloading {
+            pauseDocumentDownload(fileId: documentFileId)
+            return
+        }
+        guard documentTransferPhase != .preparingPreview else { return }
+
+        let transferID = UUID()
+        let pendingCancellation = documentDownloadCancellationTask
+        documentDownloadCancellationTask = nil
+        documentTransferID = transferID
         isLoadingDocument = true
         model.messageActionError = nil
         documentTransferPhase = documentPath == nil ? .downloading : .preparingPreview
         announceDocumentTransferStatus()
         Task { @MainActor in
             defer {
-                isLoadingDocument = false
-                documentTransferPhase = nil
+                if documentTransferID == transferID {
+                    documentTransferID = nil
+                    isLoadingDocument = false
+                    documentTransferPhase = nil
+                }
             }
             do {
+                await pendingCancellation?.value
+                guard documentTransferID == transferID else { return }
                 let resolvedPath: String
                 if let documentPath {
                     resolvedPath = documentPath
-                } else if let path = await model.localDocumentPath(fileId: documentFileId) {
+                } else if let path = await model.localDocumentPath(
+                    file: content.document.document,
+                    suggestedFileName: content.document.fileName,
+                ) {
+                    guard documentTransferID == transferID else { return }
                     resolvedPath = path
                     documentPath = path
                 } else {
+                    guard documentTransferID == transferID else { return }
                     throw TelegramFileTransferError.sourceUnavailable
                 }
                 if documentTransferPhase != .preparingPreview {
@@ -828,9 +863,23 @@ struct MacMessageRow: View {
                     identifier: String(documentFileId),
                 )
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, documentTransferID == transferID else { return }
                 model.messageActionError = "File couldn't be previewed: \(telegramErrorDescription(error))"
             }
+        }
+    }
+
+    private func pauseDocumentDownload(fileId: Int) {
+        documentTransferID = nil
+        isLoadingDocument = false
+        documentTransferPhase = .paused
+        announceDocumentTransferStatus()
+        let service = model.service
+        documentDownloadCancellationTask = Task {
+            _ = try? await service.cancelDownloadFile(
+                fileId: fileId,
+                onlyIfPending: false,
+            )
         }
     }
 
@@ -850,9 +899,15 @@ struct MacMessageRow: View {
 
     private func saveDocument() {
         guard !isLoadingDocument,
-              case .messageDocument(let content) = message.content,
-              let documentFileId
+              case .messageDocument(let content) = message.content
         else { return }
+
+        let panel = NSSavePanel()
+        panel.title = "Save File"
+        panel.prompt = "Save"
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = TelegramDocumentExport.fileName(content.document.fileName)
+        guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
 
         isLoadingDocument = true
         model.messageActionError = nil
@@ -862,20 +917,12 @@ struct MacMessageRow: View {
                 if let documentPath {
                     documentPath
                 } else {
-                    await model.localDocumentPath(fileId: documentFileId)
+                    await model.localDocumentCachePath(fileId: content.document.document.id)
                 }
             guard let path = resolvedPath else {
                 model.messageActionError = "File couldn't be downloaded."
                 return
             }
-            documentPath = path
-
-            let panel = NSSavePanel()
-            panel.title = "Save File"
-            panel.prompt = "Save"
-            panel.canCreateDirectories = true
-            panel.nameFieldStringValue = TelegramDocumentExport.fileName(content.document.fileName)
-            guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
 
             do {
                 try await TelegramDocumentExport.copyFile(

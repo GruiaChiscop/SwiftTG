@@ -9,10 +9,17 @@ struct MessageDocumentView: View {
     // MARK: Internal
 
     let document: Document
+    let service: any TelegramService
+    let downloadIsPaused: Bool
+    let onDownloadToggle: () -> Void
     var onTransferStatusChange: (String?) -> Void = { _ in }
 
     var body: some View {
-        AsyncTdFile(id: document.document.id) { file in
+        AsyncTdFile(
+            id: document.document.id,
+            service: service,
+            isPaused: downloadIsPaused,
+        ) { file in
             Button {
                 preparePreview(for: file)
             } label: {
@@ -49,33 +56,49 @@ struct MessageDocumentView: View {
                 }
             }
         } placeholder: { file in
-            let status = TelegramFileTransferProgress.downloadStatus(
-                fileName: document.fileName,
-                file: file,
-            )
-            HStack(spacing: 10) {
-                if let progress = TelegramFileTransferProgress.fraction(file) {
-                    ProgressView(value: progress)
-                        .progressViewStyle(.circular)
-                        .frame(width: 28, height: 28)
-                } else {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .frame(width: 28, height: 28)
+            let status = downloadIsPaused
+                ? "Download paused, \(document.fileName)"
+                : TelegramFileTransferProgress.downloadStatus(
+                    fileName: document.fileName,
+                    file: file,
+                )
+            Button(action: onDownloadToggle) {
+                HStack(spacing: 10) {
+                    if downloadIsPaused {
+                        Image(systemName: "arrow.down.circle")
+                            .frame(width: 28, height: 28)
+                    } else if let progress = TelegramFileTransferProgress.fraction(file) {
+                        ProgressView(value: progress)
+                            .progressViewStyle(.circular)
+                            .frame(width: 28, height: 28)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .frame(width: 28, height: 28)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(document.fileName)
+                            .lineLimit(2)
+                        Text(downloadIsPaused
+                            ? "Download paused"
+                            : TelegramFileTransferProgress.downloadLabel(file: file))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(document.fileName)
-                        .lineLimit(2)
-                    Text(TelegramFileTransferProgress.downloadLabel(file: file))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
             }
-            .padding(10)
+            .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(status)
-            .accessibilityAddTraits(.updatesFrequently)
+            .modify {
+                if downloadIsPaused {
+                    $0
+                } else {
+                    $0.accessibilityAddTraits(.updatesFrequently)
+                }
+            }
             .onAppear { onTransferStatusChange(status) }
             .onChange(of: status) { _, newStatus in
                 onTransferStatusChange(newStatus)
