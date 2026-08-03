@@ -2,6 +2,7 @@
 
 import AppKit
 import AVKit
+import QuickLook
 import SwiftUI
 import TDLibKit
 
@@ -296,6 +297,7 @@ struct MacMessageRow: View {
         .sheet(isPresented: $showForwardPicker) {
             MacForwardChatPicker(model: model, message: message)
         }
+        .quickLookPreview($documentPreviewURL)
     }
 
     // MARK: Private
@@ -312,6 +314,7 @@ struct MacMessageRow: View {
     @State private var player = MacVoicePlayer.shared
     @State private var audioPlayer = TelegramAudioPlayer.shared
     @State private var documentPath: String?
+    @State private var documentPreviewURL: URL?
     @State private var isLoadingDocument = false
     @State private var photoImage: NSImage?
     @State private var photoPath: String?
@@ -746,17 +749,34 @@ struct MacMessageRow: View {
     }
 
     private func openDocument() {
-        if let documentPath {
-            NSWorkspace.shared.open(URL(filePath: documentPath))
-            return
-        }
-        guard !isLoadingDocument, let documentFileId else { return }
+        guard !isLoadingDocument,
+              let documentFileId,
+              case .messageDocument(let content) = message.content
+        else { return }
         isLoadingDocument = true
-        Task {
+        model.messageActionError = nil
+        Task { @MainActor in
             defer { isLoadingDocument = false }
-            guard let path = await model.localDocumentPath(fileId: documentFileId) else { return }
-            documentPath = path
-            NSWorkspace.shared.open(URL(filePath: path))
+            do {
+                let resolvedPath: String
+                if let documentPath {
+                    resolvedPath = documentPath
+                } else if let path = await model.localDocumentPath(fileId: documentFileId) {
+                    resolvedPath = path
+                    documentPath = path
+                } else {
+                    throw TelegramFileTransferError.sourceUnavailable
+                }
+                documentPreviewURL = try await TelegramDocumentExport.previewURL(
+                    sourceURL: URL(filePath: resolvedPath),
+                    suggestedFileName: content.document.fileName,
+                    mimeType: content.document.mimeType,
+                    identifier: String(documentFileId),
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                model.messageActionError = "File couldn't be previewed: \(telegramErrorDescription(error))"
+            }
         }
     }
 

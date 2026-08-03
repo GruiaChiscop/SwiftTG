@@ -33,6 +33,21 @@ struct TelegramDocumentExportTests {
         #expect(try Data(contentsOf: stagedURL) == contents)
     }
 
+    @Test func `preview name keeps an extension or derives it from the MIME type`() {
+        #expect(TelegramDocumentExport.previewFileName(
+            "report.docx",
+            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ) == "report.docx")
+        #expect(TelegramDocumentExport.previewFileName(
+            "legacy-report",
+            mimeType: "application/msword",
+        ) == "legacy-report.doc")
+        #expect(TelegramDocumentExport.previewFileName(
+            "spreadsheet",
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=binary",
+        ) == "spreadsheet.xlsx")
+    }
+
     @Test func `copy replaces an existing destination`() async throws {
         let temporaryDirectory = FileManager.default
             .temporaryDirectory

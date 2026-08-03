@@ -1,6 +1,7 @@
 // TelegramDocumentExport.swift
 
 import Foundation
+import UniformTypeIdentifiers
 
 // MARK: - TelegramDocumentExport
 
@@ -49,6 +50,30 @@ enum TelegramDocumentExport {
             }
             return try stagingResult.get()
         }.value
+    }
+
+    static func previewURL(
+        sourceURL: URL,
+        suggestedFileName: String,
+        mimeType: String,
+        identifier: String,
+    ) async throws -> URL {
+        try await exportURL(
+            sourceURL: sourceURL,
+            suggestedFileName: previewFileName(suggestedFileName, mimeType: mimeType),
+            identifier: "Preview-\(identifier)",
+        )
+    }
+
+    static func previewFileName(_ suggestedName: String, mimeType: String) -> String {
+        let sanitizedName = fileName(suggestedName)
+        guard URL(filePath: sanitizedName).pathExtension.isEmpty,
+              let normalizedMimeType = mimeType.split(separator: ";").first,
+              let type = UTType(mimeType: String(normalizedMimeType)),
+              let fileExtension = type.preferredFilenameExtension,
+              !fileExtension.isEmpty
+        else { return sanitizedName }
+        return "\(sanitizedName).\(fileExtension)"
     }
 
     static func copyFile(from sourceURL: URL, to destinationURL: URL) async throws {
