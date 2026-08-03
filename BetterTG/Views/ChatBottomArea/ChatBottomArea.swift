@@ -103,13 +103,12 @@ struct ChatBottomArea: View {
                     .font(.system(size: 22))
                     .foregroundStyle(.white)
                     .frame(width: 40, height: 40)
-                    .disabled(chatVM.editCustomMessage != nil)
+                    .disabled(chatVM.editCustomMessage != nil || chatVM.isSubmittingMessage)
                 }
 
                 rightSide
             }
         }
-        .disabled(chatVM.isSubmittingMessage)
         .onDisappear { Task.background { [chatVM] in await chatVM.updateDraft() } }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase != .active else { return }
@@ -315,6 +314,7 @@ struct ChatBottomArea: View {
         }
         .font(.system(size: 22))
         .foregroundStyle(.white)
+        .disabled(chatVM.isSubmittingMessage)
         .onChange(of: chatVM.text) { withAnimation { chatVM.showDetail = false } }
         .onChange(of: chatVM.editMessageText) { withAnimation { chatVM.showDetail = false } }
         .onChange(of: chatVM.replyMessage) {
@@ -442,7 +442,6 @@ struct ChatBottomArea: View {
                 },
         )
         .focused(focused)
-        .disabled(chatVM.isSubmittingMessage)
         .lineLimit(10)
         .padding(.horizontal, 5)
         .background(Color.gray6)
