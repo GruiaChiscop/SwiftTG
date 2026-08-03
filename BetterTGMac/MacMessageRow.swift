@@ -83,6 +83,8 @@ struct MacMessageRow: View {
                             content: content,
                             isDownloaded: documentPath != nil,
                             isLoading: isLoadingDocument,
+                            transferProgress: documentTransferProgress,
+                            transferStatus: documentTransferLabel,
                             onOpen: openDocument,
                         )
                     } else if case .messagePhoto(let content) = message.content {
@@ -240,6 +242,10 @@ struct MacMessageRow: View {
         .task(id: presentationTaskID) {
             await model.loadServiceDescription(for: message)
         }
+        .onReceive(model.service.filePublisher(fileId: documentFileId ?? 0)) { file in
+            guard file.id == documentFileId else { return }
+            documentDownloadFile = file
+        }
         .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
             if capabilities?.properties.canBeDeletedOnlyForSelf == true {
                 Button("Delete only for me", role: .destructive) {
@@ -311,10 +317,17 @@ struct MacMessageRow: View {
         case reactions
     }
 
+    private enum DocumentTransferPhase: Equatable {
+        case downloading
+        case preparingPreview
+    }
+
     @State private var player = MacVoicePlayer.shared
     @State private var audioPlayer = TelegramAudioPlayer.shared
     @State private var documentPath: String?
     @State private var documentPreviewURL: URL?
+    @State private var documentDownloadFile: File?
+    @State private var documentTransferPhase: DocumentTransferPhase?
     @State private var isLoadingDocument = false
     @State private var photoImage: NSImage?
     @State private var photoPath: String?
@@ -410,6 +423,37 @@ struct MacMessageRow: View {
             return "Press to play video"
         }
         return ""
+    }
+
+    private var documentTransferStatus: String? {
+        guard case .messageDocument(let content) = message.content else { return nil }
+        return switch documentTransferPhase {
+        case .downloading:
+            TelegramFileTransferProgress.downloadStatus(
+                fileName: content.document.fileName,
+                file: documentDownloadFile,
+            )
+        case .preparingPreview:
+            "Preparing preview for \(content.document.fileName)"
+        case nil:
+            nil
+        }
+    }
+
+    private var documentTransferProgress: Double? {
+        guard documentTransferPhase == .downloading else { return nil }
+        return TelegramFileTransferProgress.fraction(documentDownloadFile)
+    }
+
+    private var documentTransferLabel: String? {
+        switch documentTransferPhase {
+        case .downloading:
+            TelegramFileTransferProgress.downloadLabel(file: documentDownloadFile)
+        case .preparingPreview:
+            "Preparing preview"
+        case nil:
+            nil
+        }
     }
 
     private var hasDefaultActivation: Bool {
@@ -720,6 +764,7 @@ struct MacMessageRow: View {
             .accessibilityIdentifier("message-\(message.id)")
             .accessibilityLabel(accessibilityDescription)
             .accessibilityHint(activationHint)
+            .accessibilityValue(documentTransferStatus ?? "")
             .modifier(OptionalAccessibilityActivation(
                 isEnabled: hasDefaultActivation,
                 action: activateMessage,
@@ -755,8 +800,13 @@ struct MacMessageRow: View {
         else { return }
         isLoadingDocument = true
         model.messageActionError = nil
+        documentTransferPhase = documentPath == nil ? .downloading : .preparingPreview
+        announceDocumentTransferStatus()
         Task { @MainActor in
-            defer { isLoadingDocument = false }
+            defer {
+                isLoadingDocument = false
+                documentTransferPhase = nil
+            }
             do {
                 let resolvedPath: String
                 if let documentPath {
@@ -766,6 +816,10 @@ struct MacMessageRow: View {
                     documentPath = path
                 } else {
                     throw TelegramFileTransferError.sourceUnavailable
+                }
+                if documentTransferPhase != .preparingPreview {
+                    documentTransferPhase = .preparingPreview
+                    announceDocumentTransferStatus(prefix: "Download complete. ")
                 }
                 documentPreviewURL = try await TelegramDocumentExport.previewURL(
                     sourceURL: URL(filePath: resolvedPath),
@@ -778,6 +832,20 @@ struct MacMessageRow: View {
                 model.messageActionError = "File couldn't be previewed: \(telegramErrorDescription(error))"
             }
         }
+    }
+
+    private func announceDocumentTransferStatus(prefix: String = "") {
+        guard let documentTransferStatus,
+              let window = NSApp.keyWindow ?? NSApp.mainWindow
+        else { return }
+        NSAccessibility.post(
+            element: window,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: prefix + documentTransferStatus,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ],
+        )
     }
 
     private func saveDocument() {

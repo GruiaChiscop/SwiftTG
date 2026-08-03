@@ -17,6 +17,7 @@ struct MessageView: View {
     @State var showReactionOptions = false
     @State var showReactionDetails = false
     @State var isSavingDocument = false
+    @State var documentTransferStatus: String?
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -140,6 +141,7 @@ struct MessageView: View {
                             service: chatVM.service,
                             onMediaTap: openAlbum,
                             onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
+                            onDocumentTransferStatusChange: { documentTransferStatus = $0 },
                         )
                     }
 
@@ -473,6 +475,7 @@ struct MessageView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("message-\(customMessage.id)")
             .accessibilityLabel(accessibilityDescription)
+            .accessibilityValue(documentTransferStatus ?? "")
             .modify {
                 if let messageVoiceNote = customMessage.messageVoiceNote {
                     $0

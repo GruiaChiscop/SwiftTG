@@ -9,13 +9,17 @@ struct MessageContentView: View {
     let service: any TelegramService
     let onMediaTap: (Message?) -> Void
     var onVoiceNoteLocalPathResolved: (String) -> Void = { _ in }
+    var onDocumentTransferStatusChange: (String?) -> Void = { _ in }
 
     var body: some View {
         ZStack {
             if customMessage.album.isEmpty {
                 switch customMessage.message.content {
                 case .messageDocument(let messageDocument):
-                    MessageDocumentView(document: messageDocument.document)
+                    MessageDocumentView(
+                        document: messageDocument.document,
+                        onTransferStatusChange: onDocumentTransferStatusChange,
+                    )
                 case .messagePhoto(let messagePhoto):
                     makeMessagePhoto(from: messagePhoto)
                         .scaledToFit()
