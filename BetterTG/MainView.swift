@@ -8,33 +8,58 @@ struct MainView: View {
     // MARK: Internal
 
     var body: some View {
-        NavigationStack(path: $rootVM.path) {
-            MainNavigationRootView()
-                .navigationDestination(for: Route.self) { route in
-                    switch route {
-                    case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
-                        ChatView(
-                            customChat: customChat,
-                            initialMessageId: messageId,
-                            movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
-                        )
-                    case .archive(let customFolder):
-                        FolderView(folder: customFolder)
-                            .navigationTitle(customFolder.name)
-                            .navigationBarTitleDisplayMode(.inline)
-                            .searchable(
-                                text: $rootVM.query,
-                                placement: .navigationBarDrawer(displayMode: .always),
-                                prompt: "Search archive...",
+        TabView(selection: $selectedTab) {
+            NavigationStack(path: $rootVM.path) {
+                MainNavigationRootView()
+                    .navigationDestination(for: Route.self) { route in
+                        switch route {
+                        case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
+                            ChatView(
+                                customChat: customChat,
+                                initialMessageId: messageId,
+                                movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
                             )
+                        case .archive(let customFolder):
+                            FolderView(folder: customFolder)
+                                .navigationTitle(customFolder.name)
+                                .navigationBarTitleDisplayMode(.inline)
+                                .searchable(
+                                    text: $rootVM.query,
+                                    placement: .navigationBarDrawer(displayMode: .always),
+                                    prompt: "Search archive...",
+                                )
+                        }
                     }
-                }
+            }
+            .tabItem {
+                Label("Chats", systemImage: "bubble.left.and.bubble.right.fill")
+            }
+            .tag(MainTab.chats)
+
+            NavigationStack {
+                YouView(service: rootVM.service)
+            }
+            .tabItem {
+                Label("You", systemImage: "person.crop.circle")
+            }
+            .tag(MainTab.you)
+        }
+        .onChange(of: rootVM.path) { _, path in
+            if !path.isEmpty {
+                selectedTab = .chats
+            }
         }
     }
 
     // MARK: Private
 
+    private enum MainTab: Hashable {
+        case chats
+        case you
+    }
+
     @Bindable private var rootVM = RootVM.shared
+    @State private var selectedTab = MainTab.chats
 }
 
 // MARK: - MainNavigationRootView
@@ -133,12 +158,6 @@ private struct MainNavigationRootView: View {
                     .labelStyle(.iconOnly)
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Settings", systemImage: "gearshape") {
-                    showsSettings = true
-                }
-                .labelStyle(.iconOnly)
-            }
             #if DEBUG
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Preview Login", systemImage: "person.crop.circle.badge.questionmark") {
@@ -146,16 +165,6 @@ private struct MainNavigationRootView: View {
                 }
             }
             #endif
-        }
-        .sheet(isPresented: $showsSettings) {
-            NavigationStack {
-                TelegramStorageSettingsView(service: rootVM.service)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showsSettings = false }
-                        }
-                    }
-            }
         }
         #if DEBUG
         .sheet(isPresented: $showsLoginPreview) {
@@ -221,7 +230,6 @@ private struct MainNavigationRootView: View {
     // MARK: Private
 
     @Bindable private var rootVM = RootVM.shared
-    @State private var showsSettings = false
     #if DEBUG
     @State private var showsLoginPreview = false
     #endif

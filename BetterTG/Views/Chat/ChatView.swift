@@ -127,6 +127,7 @@ struct ChatView: View {
             return true
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .navigationBarHeight($navigationBarHeight)
         .onChange(of: chatVM.isConversationSearchActive) { _, isActive in
             if isActive {

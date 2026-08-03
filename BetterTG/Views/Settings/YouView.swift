@@ -1,0 +1,104 @@
+// YouView.swift
+
+import SwiftUI
+import TDLibKit
+
+struct YouView: View {
+    // MARK: Lifecycle
+
+    init(service: any TelegramService) {
+        self.service = service
+    }
+
+    // MARK: Internal
+
+    var body: some View {
+        List {
+            Section {
+                if let user {
+                    profileHeader(user)
+                } else if isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView("Loading profile…")
+                        Spacer()
+                    }
+                }
+            }
+
+            Section("Settings") {
+                NavigationLink {
+                    TelegramStorageSettingsView(service: service)
+                } label: {
+                    Label("Storage Usage", systemImage: "internaldrive")
+                }
+            }
+        }
+        .navigationTitle("You")
+        .task { await loadProfile() }
+        .refreshable { await loadProfile() }
+        .alert("Profile couldn't be loaded", isPresented: errorIsPresented) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    // MARK: Private
+
+    @State private var errorMessage: String?
+    @State private var isLoading = false
+    @State private var user: User?
+
+    private let service: any TelegramService
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    errorMessage = nil
+                }
+            },
+        )
+    }
+
+    private func profileHeader(_ user: User) -> some View {
+        let displayName = telegramUserDisplayName(user)
+        return HStack(spacing: 14) {
+            ProfileImageView(
+                photo: user.profilePhoto?.small,
+                minithumbnail: user.profilePhoto?.minithumbnail,
+                title: displayName,
+                userId: user.id,
+                fontSize: 30,
+            )
+            .frame(width: 72, height: 72)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(displayName)
+                    .font(.title2.bold())
+                if let username = user.usernames?.activeUsernames.first {
+                    Text("@\(username)")
+                        .foregroundStyle(.secondary)
+                }
+                if !user.phoneNumber.isEmpty {
+                    Text("+\(user.phoneNumber)")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    @MainActor private func loadProfile() async {
+        isLoading = user == nil
+        defer { isLoading = false }
+        do {
+            user = try await service.getMe()
+        } catch {
+            errorMessage = telegramErrorDescription(error)
+        }
+    }
+}
