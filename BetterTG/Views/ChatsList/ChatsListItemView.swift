@@ -9,9 +9,9 @@ struct ChatsListItemView: View {
     // MARK: Internal
 
     @State var customChat: CustomChat
-    
+
     var accessibilityDescription: String {
-        customChat.accessibilityDescription
+        customChat.accessibilityDescription(identityBadge: identityBadge)
     }
 
     var body: some View {
@@ -41,6 +41,13 @@ struct ChatsListItemView: View {
                         .fontWeight(customChat.hasUnreadMessages ? .semibold : .regular)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+
+                    if let identityBadge {
+                        Image(systemName: identityBadge.systemImage)
+                            .font(.caption)
+                            .foregroundStyle(identityBadge.tint)
+                            .accessibilityHidden(true)
+                    }
 
                     Spacer(minLength: 8)
 
@@ -98,9 +105,19 @@ struct ChatsListItemView: View {
         .padding(.horizontal, 12)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
+        .task {
+            currentUserId = await TelegramCurrentUserCache.shared.userId(service: RootVM.shared.service)
+        }
     }
 
     // MARK: Private
+
+    @State private var currentUserId: Int64?
+
+    private var identityBadge: TelegramIdentityBadge? {
+        guard let user = customChat.user, user.id != currentUserId else { return nil }
+        return user.identityBadge
+    }
 
     private func chatListTimestamp(_ timestamp: Int) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
@@ -112,13 +129,17 @@ struct ChatsListItemView: View {
 }
 
 extension CustomChat {
-    var accessibilityDescription: String {
+    func accessibilityDescription(identityBadge: TelegramIdentityBadge?) -> String {
         var parts: [String] =
             if case .privateChat = kind {
                 [chat.title]
             } else {
                 [kind.title, chat.title]
             }
+
+        if let identityBadge {
+            parts.append(identityBadge.accessibilityLabel)
+        }
 
         if unreadCount != 0 {
             parts.append("\(unreadCount) unread")

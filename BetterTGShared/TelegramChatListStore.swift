@@ -139,6 +139,8 @@ struct ChatListItemState: Sendable, Equatable {
     var community: ChatListCommunity?
     var membership: ChatListMembership?
     var canPostMessages: Bool?
+    /// The other person's user id, for private and secret chats only - `nil` for groups/channels.
+    var userId: Int64?
 
     var hasUnreadMessages: Bool {
         unreadCount > 0 || isMarkedAsUnread
@@ -163,6 +165,13 @@ extension ChatListItemState {
     /// link or search). `membership` should come from `TelegramService.resolveMembership(for:)`
     /// rather than being left `nil`, or Leave/Delete actions gated on membership won't show up.
     init(_ chat: Chat, membership: ChatListMembership?, canPostMessages: Bool? = nil) {
+        let userId: Int64? =
+            switch chat.type {
+            case .chatTypePrivate(let value): value.userId
+            case .chatTypeSecret(let value): value.userId
+            case .chatTypeBasicGroup, .chatTypeSupergroup: nil
+            }
+
         self.init(
             chatId: chat.id,
             title: chat.title,
@@ -180,6 +189,7 @@ extension ChatListItemState {
             community: ChatListCommunity(chat.type),
             membership: membership,
             canPostMessages: canPostMessages,
+            userId: userId,
         )
     }
 }

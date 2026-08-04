@@ -21,6 +21,11 @@ struct MacChatRow: View {
                         .font(.body)
                         .fontWeight(chat.hasUnreadMessages ? .semibold : .regular)
                         .lineLimit(1)
+                    if let identityBadge = model.chatIdentityBadges[chat.chatId] ?? nil {
+                        Image(systemName: identityBadge.systemImage)
+                            .font(.caption)
+                            .foregroundStyle(identityBadge.tint)
+                    }
                     Spacer()
                     if let previewDate {
                         Text(
@@ -79,6 +84,9 @@ struct MacChatRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityActions { chatAccessibilityActions }
+        .task(id: chat.chatId) {
+            await model.loadIdentityBadge(for: chat)
+        }
         .contextMenu { chatActions }
         .confirmationDialog("Mute \(chat.title)", isPresented: $showMuteOptions) {
             ForEach(TelegramMutePreset.allCases) { preset in
@@ -154,6 +162,9 @@ struct MacChatRow: View {
             parts.append(kind)
         }
         parts.append(chat.title)
+        if let identityBadge = model.chatIdentityBadges[chat.chatId] ?? nil {
+            parts.append(identityBadge.accessibilityLabel)
+        }
         if chat.unreadCount > 0 {
             parts.append("\(chat.unreadCount) unread")
         }

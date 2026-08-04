@@ -53,6 +53,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var sessionEnded = false
     var canReauthenticate = false
     var chatList = ChatListSnapshot.empty
+    /// Cached once per chat via `loadIdentityBadge(for:)`, keyed by `chatId` - the inner `Optional`
+    /// distinguishes "not loaded yet" (key absent) from "loaded, no badge" (`nil` value present).
+    var chatIdentityBadges = [Int64: TelegramIdentityBadge?]()
     var selectedChatFolderId = MacChatFolderID.main
     var focusedChatId: Int64?
     var openedChatId: Int64?
