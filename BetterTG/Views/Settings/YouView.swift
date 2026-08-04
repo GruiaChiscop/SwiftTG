@@ -27,6 +27,19 @@ struct YouView: View {
             }
 
             Section("Settings") {
+                Button {
+                    showsEditProfile = true
+                } label: {
+                    Label("Edit Profile", systemImage: "person.crop.circle")
+                }
+                .foregroundStyle(.primary)
+
+                NavigationLink {
+                    BlockedUsersView(service: service)
+                } label: {
+                    Label("Blocked Users", systemImage: "hand.raised.slash")
+                }
+
                 NavigationLink {
                     TelegramStorageSettingsView(service: service)
                 } label: {
@@ -37,6 +50,9 @@ struct YouView: View {
         .navigationTitle("You")
         .task { await loadProfile() }
         .refreshable { await loadProfile() }
+        .sheet(isPresented: $showsEditProfile, onDismiss: { Task { await loadProfile() } }) {
+            EditProfileView(service: service, showsCancelButton: true)
+        }
         .alert("Profile couldn't be loaded", isPresented: errorIsPresented) {
             Button("OK") {}
         } message: {
@@ -48,6 +64,7 @@ struct YouView: View {
 
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @State private var showsEditProfile = false
     @State private var user: User?
 
     private let service: any TelegramService

@@ -126,6 +126,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         query: String?,
         stickerType: StickerType?,
     ) async throws -> Stickers
+    func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview
     func getMe() async throws -> User
     func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings
@@ -215,6 +216,10 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         settings: PhoneNumberAuthenticationSettings?,
     ) async throws -> Ok
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
+    func setName(firstName: String?, lastName: String?) async throws -> Ok
+    func setBio(bio: String?) async throws -> Ok
+    func setUsername(username: String?) async throws -> Ok
+    func setProfilePhoto(isPublic: Bool?, photo: InputChatPhoto?) async throws -> Ok
     func setOption(name: String?, value: OptionValue?) async throws -> Ok
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok
     func markChecklistTasksAsDone(
@@ -696,6 +701,10 @@ extension TelegramSession: TelegramService {
         )
     }
 
+    func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders {
+        try await client.getBlockedMessageSenders(blockList: blockList, limit: limit, offset: offset)
+    }
+
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview {
         try await client.getLinkPreview(linkPreviewOptions: linkPreviewOptions, text: text)
     }
@@ -834,6 +843,22 @@ extension TelegramSession: TelegramService {
 
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok {
         try await client.setMessageSenderBlockList(blockList: blockList, senderId: senderId)
+    }
+
+    func setName(firstName: String?, lastName: String?) async throws -> Ok {
+        try await client.setName(firstName: firstName, lastName: lastName)
+    }
+
+    func setBio(bio: String?) async throws -> Ok {
+        try await client.setBio(bio: bio)
+    }
+
+    func setUsername(username: String?) async throws -> Ok {
+        try await client.setUsername(username: username)
+    }
+
+    func setProfilePhoto(isPublic: Bool?, photo: InputChatPhoto?) async throws -> Ok {
+        try await client.setProfilePhoto(isPublic: isPublic, photo: photo)
     }
 
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok {
