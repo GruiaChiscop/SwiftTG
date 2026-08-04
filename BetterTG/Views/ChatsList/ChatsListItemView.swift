@@ -56,7 +56,7 @@ struct ChatsListItemView: View {
                         draft: customChat.draftMessage,
                         lastMessage: customChat.lastMessage,
                     ) {
-                        Text(chatListTimestamp(previewDate))
+                        Text(telegramChatListTimestamp(previewDate))
                             .font(.caption)
                             .foregroundStyle(
                                 customChat.hasUnreadMessages
@@ -118,14 +118,6 @@ struct ChatsListItemView: View {
     private var identityBadge: TelegramIdentityBadge? {
         guard let user = customChat.user, user.id != currentUserId else { return nil }
         return user.identityBadge
-    }
-
-    private func chatListTimestamp(_ timestamp: Int) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
-        if Calendar.autoupdatingCurrent.isDateInToday(date) {
-            return date.formatted(date: .omitted, time: .shortened)
-        }
-        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }
 

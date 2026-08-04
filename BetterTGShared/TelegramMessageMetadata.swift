@@ -109,6 +109,20 @@ func telegramMessageDateDescription(_ timestamp: Int) -> String {
     Date(timeIntervalSince1970: TimeInterval(timestamp)).formatted(date: .abbreviated, time: .shortened)
 }
 
+/// Short label for a chat list row's preview date: just the time for today, otherwise the date -
+/// showing a bare time for an old message would misread as "sent today".
+func telegramChatListTimestamp(
+    _ timestamp: Int,
+    relativeTo now: Foundation.Date = Foundation.Date(),
+    calendar: Calendar = .autoupdatingCurrent,
+) -> String {
+    let date = Foundation.Date(timeIntervalSince1970: TimeInterval(timestamp))
+    if calendar.isDate(date, inSameDayAs: now) {
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+    return date.formatted(.dateTime.month(.abbreviated).day())
+}
+
 func telegramMessageDayHeading(
     _ timestamp: Int,
     relativeTo now: Foundation.Date = Foundation.Date(),

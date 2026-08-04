@@ -64,7 +64,7 @@ struct MacForwardChatPicker: View {
         Circle()
             .fill(chat.isSavedMessages
                 ? AnyShapeStyle(Color.accentColor.gradient)
-                : AnyShapeStyle(avatarColor(for: chat.chatId)))
+                : AnyShapeStyle(Color(telegramAvatarId: chat.chatId)))
                 .overlay {
                     if chat.isSavedMessages {
                         Image(systemName: "bookmark.fill")
@@ -78,11 +78,6 @@ struct MacForwardChatPicker: View {
                 }
                 .frame(width: 32, height: 32)
                 .accessibilityHidden(true)
-    }
-
-    private func avatarColor(for chatId: Int64) -> Color {
-        let palette: [Color] = [.blue, .indigo, .purple, .pink, .orange, .teal]
-        return palette[Int(chatId.magnitude % UInt64(palette.count))]
     }
 
     private func toggle(_ chat: ChatListItemState) {

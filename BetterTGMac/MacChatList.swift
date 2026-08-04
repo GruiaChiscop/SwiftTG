@@ -28,12 +28,9 @@ struct MacChatRow: View {
                     }
                     Spacer()
                     if let previewDate {
-                        Text(
-                            Date(timeIntervalSince1970: TimeInterval(previewDate)),
-                            format: .dateTime.hour().minute(),
-                        )
-                        .font(.caption)
-                        .foregroundStyle(chat.hasUnreadMessages ? Color.accentColor : .secondary)
+                        Text(telegramChatListTimestamp(previewDate))
+                            .font(.caption)
+                            .foregroundStyle(chat.hasUnreadMessages ? Color.accentColor : .secondary)
                     }
                 }
 
@@ -150,11 +147,6 @@ struct MacChatRow: View {
     @State private var showDeleteOptions = false
     @State private var showLeaveConfirmation = false
     @State private var showMuteOptions = false
-
-    private var avatarColor: Color {
-        let palette: [Color] = [.blue, .indigo, .purple, .pink, .orange, .teal]
-        return palette[Int(chat.chatId.magnitude % UInt64(palette.count))]
-    }
 
     private var accessibilityLabel: String {
         var parts = [String]()
@@ -276,7 +268,7 @@ struct MacChatRow: View {
                     }
             } else {
                 Circle()
-                    .fill(avatarColor)
+                    .fill(Color(telegramAvatarId: chat.chatId))
                     .overlay {
                         Text(String(chat.title.prefix(1)).uppercased())
                             .font(.headline.weight(.semibold))

@@ -12,10 +12,4 @@ extension Color {
     init(red: Int, green: Int, blue: Int, opacity: Double) {
         self.init(.sRGB, red: Double(red) / 255, green: Double(green) / 255, blue: Double(blue) / 255, opacity: opacity)
     }
-
-    init(userId: Int64) {
-        let colors: [Color] = [.red, .green, .yellow, .blue, .purple, .pink, .blue, .orange]
-        let id = abs(Int(String(userId).replacing("-100", with: "")) ?? 0)
-        self.init(uiColor: UIColor(colors[[0, 7, 4, 1, 6, 3, 5][id % 7]]))
-    }
 }

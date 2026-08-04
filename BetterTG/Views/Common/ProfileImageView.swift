@@ -78,6 +78,6 @@ struct PlaceholderView: View {
             .font(.system(size: fontSize, design: .rounded))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(userId: id).gradient)
+            .background(Color(telegramAvatarId: id).gradient)
     }
 }
