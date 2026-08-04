@@ -129,12 +129,11 @@ import TDLibKit
     /// literally your own name/photo. Every real Telegram client detects and overrides this
     /// client-side; mirrors that using the same cache the identity-badge self-exclusion uses.
     @MainActor var isSavedMessages: Bool {
-        guard let userId = user?.id, let currentUserId = TelegramCurrentUserCache.shared.userId else { return false }
-        return userId == currentUserId
+        telegramIsSavedMessages(entityUserId: user?.id, currentUserId: TelegramCurrentUserCache.shared.userId)
     }
 
     @MainActor var displayTitle: String {
-        isSavedMessages ? "Saved Messages" : chat.title
+        telegramDisplayTitle(title: chat.title, isSavedMessages: isSavedMessages)
     }
 
     var supergroup: Supergroup? {

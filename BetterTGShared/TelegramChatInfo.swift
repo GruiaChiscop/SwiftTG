@@ -125,15 +125,16 @@ struct TelegramChatInfoLoader {
 
     func load(chatId: Int64) async throws -> TelegramChatInfoData {
         let chat = try await service.getChat(chatId: chatId)
+        let currentUserId = await TelegramCurrentUserCache.shared.userId(service: service)
         let isSavedMessages: Bool =
             if case .chatTypePrivate(let value) = chat.type {
-                await value.userId == TelegramCurrentUserCache.shared.userId(service: service)
+                telegramIsSavedMessages(entityUserId: value.userId, currentUserId: currentUserId)
             } else {
                 false
             }
         var info = TelegramChatInfoData(
             chatId: chat.id,
-            title: isSavedMessages ? "Saved Messages" : chat.title,
+            title: telegramDisplayTitle(title: chat.title, isSavedMessages: isSavedMessages),
             kind: ChatListItemKind(chat.type).accessibilityTitle ?? "Private chat",
             photoFileId: isSavedMessages ? nil : chat.photo?.small.id,
             isSavedMessages: isSavedMessages,
