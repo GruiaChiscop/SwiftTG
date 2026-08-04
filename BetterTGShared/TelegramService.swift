@@ -120,6 +120,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         optionId: Int?,
     ) async throws -> PollVoters
     func getRecentStickers(isAttached: Bool?) async throws -> Stickers
+    func getActiveSessions() async throws -> Sessions
+    func terminateSession(sessionId: TdInt64?) async throws -> Ok
+    func terminateAllOtherSessions() async throws -> Ok
     func getStickerSet(setId: TdInt64?) async throws -> StickerSet
     func getStickers(
         chatId: Int64?,
@@ -689,6 +692,18 @@ extension TelegramSession: TelegramService {
 
     func getRecentStickers(isAttached: Bool?) async throws -> Stickers {
         try await client.getRecentStickers(isAttached: isAttached)
+    }
+
+    func getActiveSessions() async throws -> Sessions {
+        try await client.getActiveSessions()
+    }
+
+    func terminateSession(sessionId: TdInt64?) async throws -> Ok {
+        try await client.terminateSession(sessionId: sessionId)
+    }
+
+    func terminateAllOtherSessions() async throws -> Ok {
+        try await client.terminateAllOtherSessions()
     }
 
     func getStickerSet(setId: TdInt64?) async throws -> StickerSet {

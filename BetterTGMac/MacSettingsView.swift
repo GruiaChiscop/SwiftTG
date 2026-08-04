@@ -7,6 +7,7 @@ import SwiftUI
 private enum MacSettingsSection: String, CaseIterable, Identifiable {
     case profile
     case blockedUsers
+    case activeSessions
     case storage
 
     // MARK: Internal
@@ -17,6 +18,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .profile: "Profile"
         case .blockedUsers: "Blocked Users"
+        case .activeSessions: "Active Sessions"
         case .storage: "Storage"
         }
     }
@@ -25,6 +27,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .profile: "person.crop.circle"
         case .blockedUsers: "hand.raised.slash"
+        case .activeSessions: "checkmark.shield"
         case .storage: "internaldrive"
         }
     }
@@ -51,6 +54,8 @@ struct MacSettingsView: View {
                 EditProfileView(service: service)
             case .blockedUsers:
                 BlockedUsersView(service: service)
+            case .activeSessions:
+                ActiveSessionsView(service: service)
             case .storage:
                 TelegramStorageSettingsView(service: service)
             }
