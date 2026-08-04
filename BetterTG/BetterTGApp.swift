@@ -49,12 +49,15 @@ import UserNotifications
 // MARK: - AppDelegate
 
 @MainActor final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    // MARK: Internal
+
     func application(
         _: UIApplication,
         didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil,
     ) -> Bool {
         guard !Utils.isRunningTests else { return true }
         UNUserNotificationCenter.current().delegate = self
+        Self.registerNotificationCategories()
         PushNotificationsManager.shared.start()
         return true
     }
@@ -78,7 +81,7 @@ import UserNotifications
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void,
     ) {
-        Task {
+        Task { @MainActor in
             let result = await PushNotificationsManager.shared.process(userInfo: userInfo)
             completionHandler(result)
         }
@@ -110,6 +113,11 @@ import UserNotifications
             _ = await PushNotificationsManager.shared.process(userInfo: userInfo)
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 await RootVM.shared.openChatFromNotification(userInfo: userInfo)
+            } else if response.actionIdentifier == Self.replyActionIdentifier,
+                      let textResponse = response as? UNTextInputNotificationResponse,
+                      !textResponse.userText.isEmpty
+            {
+                await Self.sendReply(text: textResponse.userText, userInfo: userInfo)
             }
             completionHandler()
         }
@@ -123,6 +131,65 @@ import UserNotifications
         let sceneConfig = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
         sceneConfig.delegateClass = SceneDelegate.self
         return sceneConfig
+    }
+
+    // MARK: Private
+
+    /// The action identifier within each repliable category below - Telegram's own push payload
+    /// already stamps `aps.category` with one of `repliableCategoryIdentifiers` directly (confirmed
+    /// by inspecting a real payload), matching the exact identifiers Telegram-iOS itself registers
+    /// in its own `AppDelegate.swift`. No Notification Service Extension is needed: we just need to
+    /// register actions under the same category identifiers Telegram already sends.
+    private static let replyActionIdentifier = "reply"
+
+    /// "r" - private text message, "m" - private media, "gr" - group text, "gm" - group media.
+    /// Telegram-iOS also has "c" (channel) and "t" (reaction), left unregistered here since those
+    /// aren't repliable and an unregistered category identifier just shows a plain notification.
+    private static let repliableCategoryIdentifiers = ["r", "m", "gr", "gm"]
+
+    private static func registerNotificationCategories() {
+        let reply = UNTextInputNotificationAction(
+            identifier: replyActionIdentifier,
+            title: "Reply",
+            options: [],
+            textInputButtonTitle: "Send",
+            textInputPlaceholder: "Message",
+        )
+        let categories = repliableCategoryIdentifiers.map { identifier in
+            UNNotificationCategory(
+                identifier: identifier,
+                actions: [reply],
+                intentIdentifiers: [],
+                options: [],
+            )
+        }
+        UNUserNotificationCenter.current().setNotificationCategories(Set(categories))
+    }
+
+    /// Mirrors Telegram-iOS's own reply-from-notification flow: mark the message read as a side
+    /// effect of replying (there's no separate "Mark as Read" action, matching the real app), then
+    /// send the typed text as a plain message.
+    @MainActor private static func sendReply(text: String, userInfo: [AnyHashable: Any]) async {
+        guard let target = TelegramNotificationPayload.target(from: userInfo),
+              let customChat = await RootVM.shared.customChat(for: target)
+        else { return }
+
+        let service = RootVM.shared.service
+        if let messageId = target.messageId {
+            _ = try? await service.viewMessages(
+                chatId: customChat.chat.id,
+                forceRead: true,
+                messageIds: [messageId],
+                source: .messageSourceChatHistory,
+            )
+        }
+
+        _ = try? await TelegramMessageSending.send(
+            service: service,
+            chatId: customChat.chat.id,
+            contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: text))],
+            replyTo: nil,
+        )
     }
 }
 

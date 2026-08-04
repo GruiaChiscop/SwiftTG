@@ -22,23 +22,9 @@ extension RootVM {
         pendingNotificationTarget = nil
     }
 
-    // MARK: Private
-
-    @MainActor private func openPendingNotificationIfReady(generation: UInt64) async {
-        guard generation == notificationOpenGeneration,
-              let target = pendingNotificationTarget,
-              let state = try? await service.getAuthorizationState(),
-              case .authorizationStateReady = state,
-              let customChat = await customChat(for: target),
-              generation == notificationOpenGeneration,
-              pendingNotificationTarget == target
-        else { return }
-
-        pendingNotificationTarget = nil
-        navigate(to: .customChat(customChat, messageId: nil))
-    }
-
-    private func customChat(for target: TelegramNotificationTarget) async -> CustomChat? {
+    /// Also used by `AppDelegate`'s notification-reply handling in `BetterTGApp.swift` to resolve
+    /// which chat a "reply" action's push payload targets.
+    func customChat(for target: TelegramNotificationTarget) async -> CustomChat? {
         for chatId in target.chatIds {
             if let customChat = await getCustomChat(from: chatId) {
                 return customChat
@@ -74,6 +60,22 @@ extension RootVM {
         }
 
         return nil
+    }
+
+    // MARK: Private
+
+    @MainActor private func openPendingNotificationIfReady(generation: UInt64) async {
+        guard generation == notificationOpenGeneration,
+              let target = pendingNotificationTarget,
+              let state = try? await service.getAuthorizationState(),
+              case .authorizationStateReady = state,
+              let customChat = await customChat(for: target),
+              generation == notificationOpenGeneration,
+              pendingNotificationTarget == target
+        else { return }
+
+        pendingNotificationTarget = nil
+        navigate(to: .customChat(customChat, messageId: nil))
     }
 
     private func customChat(forBasicGroupId basicGroupId: Int64) async -> CustomChat? {
