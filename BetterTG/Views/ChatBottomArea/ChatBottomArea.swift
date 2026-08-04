@@ -168,6 +168,26 @@ struct ChatBottomArea: View {
                 await chatVM.updateDraft()
             }
         }
+        .sheet(isPresented: $showsContactComposer) {
+            TelegramContactComposerView(
+                service: chatVM.service,
+                deviceContactsAccessIsDenied: PermissionsManager.shared.contactsAuthorizationStatus == .denied,
+                onOpenSettings: {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                },
+                loadDeviceContacts: { await PermissionsManager.shared.fetchDeviceContactsIfAuthorized() },
+            ) { draft in
+                try await TelegramContactSending.send(
+                    draft: draft,
+                    service: chatVM.service,
+                    chatId: chatVM.customChat.chat.id,
+                    replyToMessageId: chatVM.replyMessage?.id,
+                )
+                chatVM.replyMessage = nil
+                await chatVM.updateDraft()
+            }
+        }
         .sheet(isPresented: $showsStickerPicker) {
             TelegramStickerPickerView(
                 service: chatVM.service,
@@ -307,6 +327,15 @@ struct ChatBottomArea: View {
                     showsChecklistComposer = true
                 } label: {
                     Label("Checklist", systemImage: "checklist")
+                }
+                Button {
+                    withAnimation {
+                        chatVM.displayedImages.removeAll()
+                        chatVM.displayedDocuments.removeAll()
+                    }
+                    showsContactComposer = true
+                } label: {
+                    Label("Contact", systemImage: "person.crop.circle")
                 }
             } label: {
                 Label("Attach", systemImage: "paperclip")
@@ -617,6 +646,7 @@ struct ChatBottomArea: View {
     @State private var showsChecklistComposer = false
     @State private var showsChecklistPremiumAlert = false
     @State private var checklistIsAvailable = false
+    @State private var showsContactComposer = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
     @State private var showsStickerPicker = false

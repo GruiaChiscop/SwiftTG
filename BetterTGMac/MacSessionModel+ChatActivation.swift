@@ -1,5 +1,6 @@
 // MacSessionModel+ChatActivation.swift
 
+import AppKit
 import Foundation
 import TDLibKit
 
@@ -152,6 +153,53 @@ extension MacSessionModel {
                 return
             }
             await activateResolvedChat(chat, messageId: messageId)
+        }
+    }
+
+    func navigateToContact(userId: Int64) {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let chat = try? await service.createPrivateChat(force: false, userId: userId) else {
+                messageActionError = "This contact can't be opened."
+                return
+            }
+            await activateResolvedChat(chat, messageId: nil)
+        }
+    }
+
+    func addContact(_ presentation: TelegramContactPresentation) {
+        guard !isAddingContact else { return }
+        isAddingContact = true
+        messageActionError = nil
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isAddingContact = false }
+            do {
+                let imported = ImportedContact(
+                    firstName: presentation.firstName,
+                    lastName: presentation.lastName,
+                    note: nil,
+                    phoneNumber: presentation.phoneNumber,
+                )
+                let result = try await service.importContacts(contacts: [imported])
+                guard result.userIds.first.map({ $0 != 0 }) == true else {
+                    messageActionError = "No Telegram account was found for this phone number."
+                    return
+                }
+                if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                    NSAccessibility.post(
+                        element: window,
+                        notification: .announcementRequested,
+                        userInfo: [
+                            .announcement: "Added to Contacts",
+                            .priority: NSAccessibilityPriorityLevel.high.rawValue,
+                        ],
+                    )
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                messageActionError = "Contact couldn't be added: \(telegramErrorDescription(error))"
+            }
         }
     }
 

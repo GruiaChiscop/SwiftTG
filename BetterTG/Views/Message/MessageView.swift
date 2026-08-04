@@ -17,6 +17,7 @@ struct MessageView: View {
     @State var showReactionOptions = false
     @State var showReactionDetails = false
     @State var isSavingDocument = false
+    @State var isAddingContact = false
     @State var documentTransferStatus: String?
     @State var documentDownloadIsPaused = false
     @State var documentDownloadCancellationTask: Task<Void, Never>?
@@ -157,6 +158,7 @@ struct MessageView: View {
                         || customMessage.messageVoiceNote != nil
                         || customMessage.messageAudio != nil
                         || customMessage.messageSticker != nil
+                        || customMessage.messageContact != nil
                         || !customMessage.album.isEmpty
                     {
                         MessageContentView(
@@ -164,6 +166,7 @@ struct MessageView: View {
                             audioPlaylist: audioPlaylist,
                             service: chatVM.service,
                             onMediaTap: openAlbum,
+                            onContactTap: activateContact,
                             onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
                             onDocumentTransferStatusChange: { documentTransferStatus = $0 },
                             documentDownloadIsPaused: documentDownloadIsPaused,
@@ -580,6 +583,15 @@ struct MessageView: View {
                     $0.accessibilityAction(named: mediaAccessibilityActionName) {
                         openAlbum(albumMessage: nil)
                     }
+                }
+            }
+            .modify {
+                if customMessage.messageContact != nil {
+                    $0.accessibilityAction(named: contactActionTitle) {
+                        activateContact()
+                    }
+                } else {
+                    $0
                 }
             }
             .accessibilityActions {

@@ -16,6 +16,11 @@ struct ContactsView: View {
 
     var body: some View {
         List {
+            if deviceContactsAccessIsDenied {
+                Section {
+                    contactsAccessDeniedNotice
+                }
+            }
             ForEach(sortedContacts) { user in
                 Button {
                     Task { await openChat(with: user) }
@@ -83,6 +88,11 @@ struct ContactsView: View {
         .onReceive(service.updatePublisher) { update in
             handle(update)
         }
+        .onAppear { refreshContactsAccessStatus() }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            refreshContactsAccessStatus()
+        }
         .alert("Contacts Error", isPresented: errorIsPresented) {
             Button("OK") {}
         } message: {
@@ -99,7 +109,9 @@ struct ContactsView: View {
 
     @AppStorage("contactsSortOrder") private var storedSortOrder = ContactsSortOrder.presence.rawValue
     @Bindable private var rootVM = RootVM.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var contacts = [User]()
+    @State private var deviceContactsAccessIsDenied = false
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var openingUserId: Int64?
@@ -157,6 +169,25 @@ struct ContactsView: View {
             return telegramUserDisplayName(lhs)
                 .localizedStandardCompare(telegramUserDisplayName(rhs)) == .orderedAscending
         }
+    }
+
+    private var contactsAccessDeniedNotice: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Contacts Access Is Off")
+                .font(.subheadline.weight(.semibold))
+            Text("Turn on Contacts access in Settings to find more people from your phone on Telegram.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Open Settings") {
+                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                UIApplication.shared.open(url)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func refreshContactsAccessStatus() {
+        deviceContactsAccessIsDenied = PermissionsManager.shared.contactsAuthorizationStatus == .denied
     }
 
     @MainActor private func loadContacts(showsProgress: Bool) async {

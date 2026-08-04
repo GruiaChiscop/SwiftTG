@@ -11,14 +11,6 @@ enum ContactsAuthorizationStatus: Sendable {
     case notDetermined
 }
 
-// MARK: - DeviceContactRecord
-
-struct DeviceContactRecord: Equatable, Sendable {
-    let firstName: String
-    let lastName: String
-    let phoneNumbers: [String]
-}
-
 // MARK: - ContactsAccess
 
 protocol ContactsAccess: Sendable {
@@ -89,6 +81,12 @@ final class PermissionsManager: Sendable {
 
     static let shared = PermissionsManager()
 
+    /// Safe to read on every render - `CNContactStore.authorizationStatus(for:)` is a cheap,
+    /// synchronous system call, unlike expensive on-device work such as `NLLanguageRecognizer`.
+    var contactsAuthorizationStatus: ContactsAuthorizationStatus {
+        contactsAccess.authorizationStatus()
+    }
+
     static func importedContacts(from records: [DeviceContactRecord]) -> [ImportedContact] {
         records.flatMap { record -> [ImportedContact] in
             let firstName = String(record.firstName.prefix(64))
@@ -103,6 +101,17 @@ final class PermissionsManager: Sendable {
                 )
             }
         }
+    }
+
+    /// Used by the contact-sharing composer's "My Contacts" tab to also offer people from the
+    /// phone's address book who aren't on Telegram. Returns nothing when access isn't currently
+    /// authorized - this never itself prompts, unlike `requestPostLoginPermissions()`.
+    func fetchDeviceContactsIfAuthorized() async -> [DeviceContactRecord] {
+        guard contactsAuthorizationStatus == .authorized else { return [] }
+        let access = contactsAccess
+        return await Task.detached(priority: .utility) {
+            (try? access.fetchContacts()) ?? []
+        }.value
     }
 
     func requestPostLoginPermissions() async {

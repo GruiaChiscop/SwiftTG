@@ -74,6 +74,19 @@ struct MacConversationView: View {
                 model.saveCurrentDraft()
             }
         }
+        .sheet(isPresented: $showsContactComposer) {
+            TelegramContactComposerView(service: model.service) { draft in
+                guard let chatId = model.openedChatId else { return }
+                try await TelegramContactSending.send(
+                    draft: draft,
+                    service: model.service,
+                    chatId: chatId,
+                    replyToMessageId: model.replyingToMessage?.id,
+                )
+                model.replyingToMessage = nil
+                model.saveCurrentDraft()
+            }
+        }
         .sheet(isPresented: $showsChecklistComposer) {
             TelegramChecklistComposerView { draft in
                 guard let chatId = model.openedChatId else { return }
@@ -146,6 +159,7 @@ struct MacConversationView: View {
     @State private var showsPinnedMessages = false
     @State private var showsPollComposer = false
     @State private var showsChecklistComposer = false
+    @State private var showsContactComposer = false
     @State private var showsChecklistPremiumAlert = false
     @State private var checklistIsAvailable = false
     @State private var showsScheduleSendPicker = false
@@ -408,6 +422,10 @@ struct MacConversationView: View {
                                 return
                             }
                             showsChecklistComposer = true
+                        }
+                        .disabled(model.editingMessage != nil)
+                        Button("Contact", systemImage: "person.crop.circle") {
+                            showsContactComposer = true
                         }
                         .disabled(model.editingMessage != nil)
                     }

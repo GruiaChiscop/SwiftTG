@@ -88,6 +88,16 @@ extension ChatVM {
         openChat(chatId: chatId, messageId: reply.messageId, movesAccessibilityFocus: true)
     }
 
+    func navigateToContact(userId: Int64) {
+        Task { @MainActor [weak self] in
+            guard let chat = await RootVM.shared.getPrivateCustomChat(userId: userId) else {
+                self?.navigationError = "This contact can't be opened."
+                return
+            }
+            RootVM.shared.navigate(to: .customChat(chat, messageId: nil))
+        }
+    }
+
     func navigateToForwardOrigin(from message: Message) {
         guard let origin = message.forwardInfo?.origin else { return }
         switch origin {

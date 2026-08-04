@@ -8,6 +8,7 @@ struct MessageContentView: View {
     let audioPlaylist: [Audio]
     let service: any TelegramService
     let onMediaTap: (Message?) -> Void
+    var onContactTap: () -> Void = {}
     var onVoiceNoteLocalPathResolved: (String) -> Void = { _ in }
     var onDocumentTransferStatusChange: (String?) -> Void = { _ in }
     var documentDownloadIsPaused = false
@@ -43,6 +44,8 @@ struct MessageContentView: View {
                         service: service,
                         playsAnimation: customMessage.message.sendingState == nil,
                     )
+                case .messageContact(let messageContact):
+                    MessageContactView(content: messageContact, onTap: onContactTap)
                 default:
                     EmptyView()
                 }

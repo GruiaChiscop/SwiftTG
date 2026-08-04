@@ -75,6 +75,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var detectedChatLanguage: String?
     var isChatTranslationEnabled = false
     var messageActionError: String?
+    var isAddingContact = false
     var isSubmittingMessage = false
     var selectedDocumentURLs = [URL]()
     var selectedPhotoURLs = [URL]()

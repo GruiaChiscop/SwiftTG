@@ -122,6 +122,13 @@ import TDLibKit
         }
         return nil
     }
+
+    var messageContact: MessageContact? {
+        if case .messageContact(let messageContact) = message.content {
+            return messageContact
+        }
+        return nil
+    }
 }
 
 // MARK: Hashable

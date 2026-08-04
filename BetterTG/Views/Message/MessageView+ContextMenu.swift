@@ -125,6 +125,12 @@ extension MessageView {
             }
             .disabled(isSavingDocument)
         }
+        if customMessage.messageContact != nil {
+            Button(action: activateContact) {
+                Label(contactActionTitle, systemImage: contactActionSystemImage)
+            }
+            .disabled(isAddingContact)
+        }
         if customMessage.properties.canBeEdited {
             Button(action: edit) {
                 Label("Edit", systemImage: "square.and.pencil")
@@ -162,6 +168,18 @@ extension MessageView {
         customMessage.canBeTranslated
     }
 
+    var contactActionTitle: String {
+        guard let messageContact = customMessage.messageContact else { return "" }
+        return TelegramContactPresentation(messageContact).hasTelegramAccount ? "Message" : "Add to Contacts"
+    }
+
+    var contactActionSystemImage: String {
+        guard let messageContact = customMessage.messageContact else { return "" }
+        return TelegramContactPresentation(messageContact).hasTelegramAccount
+            ? "message"
+            : "person.crop.circle.badge.plus"
+    }
+
     func toggleTranslation() {
         chatVM.toggleTranslation(customMessage)
     }
@@ -189,6 +207,43 @@ extension MessageView {
     func copyMessageText() {
         guard let formattedText = telegramMessageFormattedText(customMessage.message) else { return }
         UIPasteboard.setFormattedText(formattedText)
+    }
+
+    func activateContact() {
+        guard let messageContact = customMessage.messageContact else { return }
+        let presentation = TelegramContactPresentation(messageContact)
+        if presentation.hasTelegramAccount {
+            chatVM.navigateToContact(userId: presentation.userId)
+        } else {
+            addSharedContact(presentation)
+        }
+    }
+
+    func addSharedContact(_ presentation: TelegramContactPresentation) {
+        guard !isAddingContact else { return }
+        isAddingContact = true
+        chatVM.messageActionError = nil
+
+        Task { @MainActor in
+            defer { isAddingContact = false }
+            do {
+                let imported = ImportedContact(
+                    firstName: presentation.firstName,
+                    lastName: presentation.lastName,
+                    note: nil,
+                    phoneNumber: presentation.phoneNumber,
+                )
+                let result = try await chatVM.service.importContacts(contacts: [imported])
+                guard result.userIds.first.map({ $0 != 0 }) == true else {
+                    chatVM.messageActionError = "No Telegram account was found for this phone number."
+                    return
+                }
+                UIAccessibility.post(notification: .announcement, argument: "Added to Contacts")
+            } catch {
+                guard !Task.isCancelled else { return }
+                chatVM.messageActionError = "Contact couldn't be added: \(telegramErrorDescription(error))"
+            }
+        }
     }
 
     func saveDocument() {

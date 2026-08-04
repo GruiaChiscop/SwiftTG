@@ -122,6 +122,8 @@ struct MacMessageRow: View {
                             content: content,
                             playsAnimation: message.sendingState == nil,
                         )
+                    } else if case .messageContact(let content) = message.content {
+                        MacContactMessageContent(content: content, onOpen: activateMessage)
                     } else if case .messagePoll(let content) = message.content {
                         TelegramPollView(content: content, message: message, service: model.service) {
                             Text(content.poll.question.text)
@@ -452,6 +454,11 @@ struct MacMessageRow: View {
         return content.document.document.id
     }
 
+    private var messageContact: MessageContact? {
+        guard case .messageContact(let content) = message.content else { return nil }
+        return content
+    }
+
     private var activationHint: String {
         if voiceFileId != nil || audioFileId != nil {
             return "Press to play or pause"
@@ -470,6 +477,9 @@ struct MacMessageRow: View {
         }
         if videoFileId != nil {
             return "Press to play video"
+        }
+        if let messageContact {
+            return "Press to \(TelegramContactPresentation(messageContact).hasTelegramAccount ? "message" : "add to contacts")"
         }
         return ""
     }
@@ -510,7 +520,8 @@ struct MacMessageRow: View {
     }
 
     private var hasDefaultActivation: Bool {
-        voiceFileId != nil || audioFileId != nil || documentFileId != nil || photoFileId != nil || videoFileId != nil
+        voiceFileId != nil || audioFileId != nil || documentFileId != nil || photoFileId != nil
+            || videoFileId != nil || messageContact != nil
     }
 
     private var photoFileId: Int? {
@@ -662,6 +673,13 @@ struct MacMessageRow: View {
         }
         if !isVisualAlbum, videoFileId != nil {
             items.append(.button(title: "Play Video", systemImage: "play.rectangle") { showVideoPreview = true })
+        }
+        if let messageContact {
+            let presentation = TelegramContactPresentation(messageContact)
+            items.append(.button(
+                title: presentation.hasTelegramAccount ? "Message" : "Add to Contacts",
+                systemImage: presentation.hasTelegramAccount ? "message" : "person.crop.circle.badge.plus",
+            ) { activateMessage() })
         }
         if capabilities?.properties.canBeEdited == true, editableMessageText(message) != nil {
             items.append(.button(title: "Edit", systemImage: "square.and.pencil") { model.beginEditing(message) })
@@ -1023,6 +1041,13 @@ struct MacMessageRow: View {
             showPhotoPreview = true
         } else if case .messageVideo = message.content {
             showVideoPreview = true
+        } else if let messageContact {
+            let presentation = TelegramContactPresentation(messageContact)
+            if presentation.hasTelegramAccount {
+                model.navigateToContact(userId: presentation.userId)
+            } else {
+                model.addContact(presentation)
+            }
         }
     }
 }
