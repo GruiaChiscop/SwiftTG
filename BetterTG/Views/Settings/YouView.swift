@@ -47,6 +47,12 @@ struct YouView: View {
                 }
 
                 NavigationLink {
+                    TelegramPrivacyView(service: service)
+                } label: {
+                    Label("Privacy", systemImage: "hand.raised")
+                }
+
+                NavigationLink {
                     TelegramStorageSettingsView(service: service)
                 } label: {
                     Label("Storage Usage", systemImage: "internaldrive")

@@ -223,6 +223,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func registerUser(disableNotification: Bool?, firstName: String?, lastName: String?) async throws -> Ok
     func requestQrCodeAuthentication(otherUserIds: [Int64]?) async throws -> Ok
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
+    func getUserPrivacySettingRules(setting: UserPrivacySetting?) async throws -> UserPrivacySettingRules
+    func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok
     func setName(firstName: String?, lastName: String?) async throws -> Ok
     func setBio(bio: String?) async throws -> Ok
     func setUsername(username: String?) async throws -> Ok
@@ -866,6 +868,14 @@ extension TelegramSession: TelegramService {
 
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok {
         try await client.setMessageSenderBlockList(blockList: blockList, senderId: senderId)
+    }
+
+    func getUserPrivacySettingRules(setting: UserPrivacySetting?) async throws -> UserPrivacySettingRules {
+        try await client.getUserPrivacySettingRules(setting: setting)
+    }
+
+    func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok {
+        try await client.setUserPrivacySettingRules(rules: rules, setting: setting)
     }
 
     func setName(firstName: String?, lastName: String?) async throws -> Ok {

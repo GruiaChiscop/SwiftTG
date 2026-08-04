@@ -8,6 +8,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
     case profile
     case blockedUsers
     case activeSessions
+    case privacy
     case storage
 
     // MARK: Internal
@@ -19,6 +20,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
         case .profile: "Profile"
         case .blockedUsers: "Blocked Users"
         case .activeSessions: "Active Sessions"
+        case .privacy: "Privacy"
         case .storage: "Storage"
         }
     }
@@ -28,6 +30,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
         case .profile: "person.crop.circle"
         case .blockedUsers: "hand.raised.slash"
         case .activeSessions: "checkmark.shield"
+        case .privacy: "hand.raised"
         case .storage: "internaldrive"
         }
     }
@@ -56,6 +59,8 @@ struct MacSettingsView: View {
                 BlockedUsersView(service: service)
             case .activeSessions:
                 ActiveSessionsView(service: service)
+            case .privacy:
+                TelegramPrivacyView(service: service)
             case .storage:
                 TelegramStorageSettingsView(service: service)
             }
