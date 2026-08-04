@@ -60,7 +60,7 @@ struct MacChatRow: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
-                    if isPinned, !chat.isSavedMessages {
+                    if isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -191,7 +191,7 @@ struct MacChatRow: View {
         if isMuted {
             parts.append("Muted")
         }
-        if isPinned, !chat.isSavedMessages {
+        if isPinned {
             parts.append("Pinned")
         }
         if isArchived {

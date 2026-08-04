@@ -77,7 +77,7 @@ struct ChatsListItemView: View {
                             .foregroundStyle(.tertiary)
                             .accessibilityHidden(true)
                     }
-                    if customChat.position.isPinned, !customChat.isSavedMessages {
+                    if customChat.position.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -145,7 +145,7 @@ extension CustomChat {
         if unreadCount != 0 {
             parts.append("\(unreadCount) unread")
         }
-        if position.isPinned, !isSavedMessages {
+        if position.isPinned {
             parts.append("Pinned")
         }
         if let draftMessage,
