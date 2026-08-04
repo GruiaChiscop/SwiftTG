@@ -21,14 +21,24 @@ import TDLibKit
 
     var callingCode = ""
     var code = ""
+    var emailAddress = ""
+    var emailAddressPattern = ""
+    var emailCode = ""
     var expectedCodeLength: Int?
+    var expectedEmailCodeLength: Int?
     var countryNums = [PhoneNumberInfo]()
     var errorMessage: String?
+    var hasAcceptedTerms = false
     var hint = ""
     var loginState = LoginState.phoneNumber
     var phoneNumber = ""
+    var registrationFirstName = ""
+    var registrationLastName = ""
+    var registrationPhotoData: Data?
     var selectedCountryNum: PhoneNumberInfo?
     var showPhoneConfirmation = false
+    var showsTermsConfirmation = false
+    var termsOfService: TermsOfService?
     var twoFactor = ""
     var waitPremiumErrorShown = false
 
@@ -93,7 +103,68 @@ import TDLibKit
                     errorMessage = TelegramLoginGuidance.errorDescription(error)
                 }
             }
+        case .emailAddress:
+            let trimmed = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            errorMessage = nil
+            Task {
+                do {
+                    _ = try await service.setAuthenticationEmailAddress(emailAddress: trimmed)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = TelegramLoginGuidance.errorDescription(error)
+                }
+            }
+        case .emailCode:
+            errorMessage = nil
+            Task {
+                do {
+                    _ = try await service.checkAuthenticationEmailCode(
+                        code: .emailAddressAuthenticationCode(.init(code: emailCode)),
+                    )
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = TelegramLoginGuidance.errorDescription(error)
+                }
+            }
+        case .registration:
+            let trimmedFirstName = registrationFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedFirstName.isEmpty else { return }
+            if let termsOfService, termsOfService.showPopup, !hasAcceptedTerms {
+                showsTermsConfirmation = true
+                return
+            }
+            errorMessage = nil
+            let trimmedLastName = registrationLastName.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task {
+                do {
+                    _ = try await service.registerUser(
+                        disableNotification: nil,
+                        firstName: trimmedFirstName,
+                        lastName: trimmedLastName,
+                    )
+                    if let registrationPhotoData {
+                        let fileURL = FileManager.default
+                            .temporaryDirectory
+                            .appending(path: "\(UUID().uuidString).jpeg")
+                        try? registrationPhotoData.write(to: fileURL)
+                        _ = try? await service.setProfilePhoto(
+                            isPublic: true,
+                            photo: .inputChatPhotoStatic(.init(photo: .inputFileLocal(.init(path: fileURL.path)))),
+                        )
+                        try? FileManager.default.removeItem(at: fileURL)
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = TelegramLoginGuidance.errorDescription(error)
+                }
+            }
         }
+    }
+
+    func acceptTermsAndContinue() {
+        hasAcceptedTerms = true
+        continueLogin()
     }
 
     func submitPhoneNumber() {
@@ -160,6 +231,16 @@ import TDLibKit
             expectedCodeLength = details.codeInfo.type.expectedLength
         case .authorizationStateWaitPhoneNumber:
             loginState = .phoneNumber
+        case .authorizationStateWaitEmailAddress:
+            loginState = .emailAddress
+        case .authorizationStateWaitEmailCode(let details):
+            loginState = .emailCode
+            emailAddressPattern = details.codeInfo.emailAddressPattern
+            expectedEmailCodeLength = details.codeInfo.length > 0 ? details.codeInfo.length : nil
+        case .authorizationStateWaitRegistration(let details):
+            loginState = .registration
+            termsOfService = details.termsOfService
+            hasAcceptedTerms = false
         case .authorizationStateClosed, .authorizationStateClosing, .authorizationStateLoggingOut:
             loginState = .phoneNumber
             errorMessage = "The Telegram authorization session ended. Please try again."
@@ -200,7 +281,7 @@ import TDLibKit
             guard !code.isEmpty else { return }
             hint = AuthenticationPreviewData.passwordHint
             loginState = .twoFactor
-        case .twoFactor:
+        case .emailAddress, .emailCode, .registration, .twoFactor:
             break
         }
     }

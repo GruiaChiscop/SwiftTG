@@ -1,5 +1,6 @@
 // LoginView.swift
 
+import PhotosUI
 import SwiftUI
 
 struct LoginView: View {
@@ -107,6 +108,73 @@ struct LoginView: View {
                             .background(Color.gray6)
                             .clipShape(.rect(cornerRadius: 10))
                     }
+                case .emailAddress:
+                    loginStateView {
+                        VStack(spacing: 12) {
+                            TextField("Enter your email", text: $model.emailAddress)
+                                .focused($focused, equals: .emailAddress)
+                                .keyboardType(.emailAddress)
+                                .textContentType(.emailAddress)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            Text("Please enter your valid email address to protect your account.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
+                case .emailCode:
+                    loginStateView {
+                        VStack(spacing: 12) {
+                            TextField("Code", text: $model.emailCode)
+                                .onChange(of: model.emailCode) { _, code in
+                                    if let expected = model.expectedEmailCodeLength, code.count == expected {
+                                        model.continueLogin()
+                                    }
+                                }
+                                .focused($focused, equals: .emailCode)
+                                .keyboardType(.numberPad)
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            if !model.emailAddressPattern.isEmpty {
+                                Text("Please enter the code we have sent to your email \(model.emailAddressPattern).")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                    }
+                case .registration:
+                    loginStateView {
+                        VStack(spacing: 12) {
+                            registrationPhoto
+
+                            TextField("First Name", text: $model.registrationFirstName)
+                                .focused($focused, equals: .firstName)
+                                .textContentType(.givenName)
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            TextField("Last Name", text: $model.registrationLastName)
+                                .focused($focused, equals: .lastName)
+                                .textContentType(.familyName)
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            Text("Enter your name and add a profile photo.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
                 }
             }
             .transition(
@@ -170,6 +238,14 @@ struct LoginView: View {
             } message: {
                 Text("Is this the correct number?")
             }
+            .alert("Terms of Service", isPresented: $model.showsTermsConfirmation) {
+                Button("Decline", role: .cancel) {}
+                Button("Agree") {
+                    model.acceptTermsAndContinue()
+                }
+            } message: {
+                Text(model.termsOfService?.text.text ?? "")
+            }
             .task { await model.start() }
     }
 
@@ -190,6 +266,10 @@ struct LoginView: View {
     private enum FocusedField: Hashable {
         case callingCode
         case code
+        case emailAddress
+        case emailCode
+        case firstName
+        case lastName
         case phoneNumber
         case twoFactor
     }
@@ -198,4 +278,39 @@ struct LoginView: View {
 
     @State private var focusesPhoneNumberAfterCountrySelection = false
     @State private var model: LoginViewModel
+    @State private var pickedRegistrationPhotoItem: PhotosPickerItem?
+
+    private var registrationPhoto: some View {
+        let hasPhoto = model.registrationPhotoData != nil
+        return VStack(spacing: 10) {
+            ZStack {
+                if let data = model.registrationPhotoData, let image = Image(data: data) {
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Circle()
+                        .fill(.quaternary)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.secondary)
+                        }
+                }
+            }
+            .frame(width: 84, height: 84)
+            .clipShape(Circle())
+            .accessibilityHidden(true)
+
+            PhotosPicker(selection: $pickedRegistrationPhotoItem, matching: .images) {
+                Text(hasPhoto ? "Change Photo" : "Add Photo")
+            }
+        }
+        .onChange(of: pickedRegistrationPhotoItem) { _, newValue in
+            Task { @MainActor in
+                guard let newValue, let data = try? await newValue.loadTransferable(type: Data.self) else { return }
+                model.registrationPhotoData = data
+            }
+        }
+    }
 }

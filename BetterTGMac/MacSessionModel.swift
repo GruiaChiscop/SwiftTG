@@ -89,6 +89,14 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var loginCode = ""
     var password = ""
     var loginError: String?
+    var emailAddress = ""
+    var emailCode = ""
+    var registrationFirstName = ""
+    var registrationLastName = ""
+    var registrationPhotoData: Data?
+    var hasAcceptedRegistrationTerms = false
+    var showsRegistrationTermsConfirmation = false
+    var qrCodeLink: String?
     var isLoadingChats = false
     var isLoadingMessages = false
     var isLoadingOlderMessages = false
@@ -174,6 +182,21 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         return details.codeInfo.type.expectedLength
     }
 
+    var expectedEmailCodeLength: Int? {
+        guard case .authorizationStateWaitEmailCode(let details) = authorizationState else { return nil }
+        return details.codeInfo.length > 0 ? details.codeInfo.length : nil
+    }
+
+    var emailAddressPattern: String {
+        guard case .authorizationStateWaitEmailCode(let details) = authorizationState else { return "" }
+        return details.codeInfo.emailAddressPattern
+    }
+
+    var registrationTermsOfService: TermsOfService? {
+        guard case .authorizationStateWaitRegistration(let details) = authorizationState else { return nil }
+        return details.termsOfService
+    }
+
     func start() {
         guard !started else { return }
         started = true
@@ -224,6 +247,15 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             return
         }
 
+        recreateSession()
+    }
+
+    /// Closes the current TDLib session and starts a fresh one, guaranteed to land on a clean
+    /// `authorizationStateWaitPhoneNumber` regardless of the state being left behind - used by
+    /// `reauthenticate()` above, and by `cancelQrCodeLogin()` (`MacSessionModel+Login.swift`) to
+    /// back out of `authorizationStateWaitOtherDeviceConfirmation`, which has no direct "cancel"
+    /// TDLib call of its own.
+    func recreateSession() {
         cancelWorkForSessionReplacement()
         let previousSession = session
         let replacementSession = TelegramSession()
@@ -380,6 +412,14 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             canReuseSessionForReauthentication = false
             sessionEnded = true
             canReauthenticate = true
+        case .authorizationStateWaitEmailAddress:
+            break
+        case .authorizationStateWaitEmailCode:
+            break
+        case .authorizationStateWaitRegistration:
+            hasAcceptedRegistrationTerms = false
+        case .authorizationStateWaitOtherDeviceConfirmation(let details):
+            qrCodeLink = details.link
         default:
             break
         }

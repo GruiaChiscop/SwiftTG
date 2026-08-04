@@ -40,6 +40,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func addChatToList(chatId: Int64?, chatList: ChatList?) async throws -> Ok
     func cancelDownloadFile(fileId: Int?, onlyIfPending: Bool?) async throws -> Ok
     func checkAuthenticationCode(code: String?) async throws -> Ok
+    func checkAuthenticationEmailCode(code: EmailAddressAuthentication?) async throws -> Ok
     func checkAuthenticationPassword(password: String?) async throws -> Ok
     func closeChat(chatId: Int64?) async throws -> Ok
     func createBasicGroupChat(basicGroupId: Int64?, force: Bool?) async throws -> Chat
@@ -215,6 +216,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         phoneNumber: String?,
         settings: PhoneNumberAuthenticationSettings?,
     ) async throws -> Ok
+    func setAuthenticationEmailAddress(emailAddress: String?) async throws -> Ok
+    func registerUser(disableNotification: Bool?, firstName: String?, lastName: String?) async throws -> Ok
+    func requestQrCodeAuthentication(otherUserIds: [Int64]?) async throws -> Ok
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
     func setName(firstName: String?, lastName: String?) async throws -> Ok
     func setBio(bio: String?) async throws -> Ok
@@ -455,6 +459,10 @@ extension TelegramSession: TelegramService {
 
     func checkAuthenticationCode(code: String?) async throws -> Ok {
         try await client.checkAuthenticationCode(code: code)
+    }
+
+    func checkAuthenticationEmailCode(code: EmailAddressAuthentication?) async throws -> Ok {
+        try await client.checkAuthenticationEmailCode(code: code)
     }
 
     func checkAuthenticationPassword(password: String?) async throws -> Ok {
@@ -888,6 +896,22 @@ extension TelegramSession: TelegramService {
         settings: PhoneNumberAuthenticationSettings?,
     ) async throws -> Ok {
         try await client.setAuthenticationPhoneNumber(phoneNumber: phoneNumber, settings: settings)
+    }
+
+    func setAuthenticationEmailAddress(emailAddress: String?) async throws -> Ok {
+        try await client.setAuthenticationEmailAddress(emailAddress: emailAddress)
+    }
+
+    func registerUser(disableNotification: Bool?, firstName: String?, lastName: String?) async throws -> Ok {
+        try await client.registerUser(
+            disableNotification: disableNotification,
+            firstName: firstName,
+            lastName: lastName,
+        )
+    }
+
+    func requestQrCodeAuthentication(otherUserIds: [Int64]?) async throws -> Ok {
+        try await client.requestQrCodeAuthentication(otherUserIds: otherUserIds)
     }
 
     func toggleChatIsMarkedAsUnread(chatId: Int64?, isMarkedAsUnread: Bool?) async throws -> Ok {

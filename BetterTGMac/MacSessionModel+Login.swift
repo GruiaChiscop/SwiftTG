@@ -1,5 +1,6 @@
 // MacSessionModel+Login.swift
 
+import Foundation
 import TDLibKit
 
 extension MacSessionModel {
@@ -25,6 +26,68 @@ extension MacSessionModel {
         runLoginRequest {
             try await self.service.checkAuthenticationPassword(password: self.password)
         }
+    }
+
+    func submitEmailAddress() {
+        let trimmed = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        runLoginRequest {
+            try await self.service.setAuthenticationEmailAddress(emailAddress: trimmed)
+        }
+    }
+
+    func submitEmailCode() {
+        guard !emailCode.isEmpty else { return }
+        runLoginRequest {
+            try await self.service.checkAuthenticationEmailCode(
+                code: .emailAddressAuthenticationCode(.init(code: self.emailCode)),
+            )
+        }
+    }
+
+    func submitRegistration() {
+        let trimmedFirstName = registrationFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedFirstName.isEmpty else { return }
+        if let registrationTermsOfService, registrationTermsOfService.showPopup, !hasAcceptedRegistrationTerms {
+            showsRegistrationTermsConfirmation = true
+            return
+        }
+        let trimmedLastName = registrationLastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        runLoginRequest {
+            let result = try await self.service.registerUser(
+                disableNotification: nil,
+                firstName: trimmedFirstName,
+                lastName: trimmedLastName,
+            )
+            if let registrationPhotoData = self.registrationPhotoData {
+                let fileURL = FileManager.default
+                    .temporaryDirectory
+                    .appending(path: "\(UUID().uuidString).jpeg")
+                try? registrationPhotoData.write(to: fileURL)
+                _ = try? await self.service.setProfilePhoto(
+                    isPublic: true,
+                    photo: .inputChatPhotoStatic(.init(photo: .inputFileLocal(.init(path: fileURL.path)))),
+                )
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            return result
+        }
+    }
+
+    func acceptRegistrationTermsAndContinue() {
+        hasAcceptedRegistrationTerms = true
+        submitRegistration()
+    }
+
+    func requestQrCodeLogin() {
+        runLoginRequest {
+            try await self.service.requestQrCodeAuthentication(otherUserIds: [])
+        }
+    }
+
+    func cancelQrCodeLogin() {
+        qrCodeLink = nil
+        recreateSession()
     }
 
     func selectCountry(_ country: PhoneNumberInfo) {

@@ -1,5 +1,6 @@
 // MacRootView.swift
 
+import PhotosUI
 import SwiftUI
 import TDLibKit
 
@@ -85,6 +86,13 @@ private struct MacAuthorizationView: View {
                         confirmsPhoneNumber = !phoneNumber.wrappedValue.isEmpty
                     }
                     .keyboardShortcut(.defaultAction)
+                    if !isPreview {
+                        Button("Quick log in using QR code") {
+                            model.requestQrCodeLogin()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tint)
+                    }
                 case .code:
                     Text("Enter the code sent by Telegram.")
                     TextField("Login code", text: loginCode)
@@ -107,6 +115,50 @@ private struct MacAuthorizationView: View {
                         .onSubmit { submitPassword() }
                     Button("Sign In") { submitPassword() }
                         .keyboardShortcut(.defaultAction)
+                case .emailAddress:
+                    Text("Please enter your valid email address to protect your account.")
+                    TextField("Enter your email", text: $model.emailAddress)
+                        .textContentType(.emailAddress)
+                        .onSubmit { model.submitEmailAddress() }
+                    Button("Continue") { model.submitEmailAddress() }
+                        .keyboardShortcut(.defaultAction)
+                case .emailCode:
+                    if !model.emailAddressPattern.isEmpty {
+                        Text("Please enter the code we have sent to your email \(model.emailAddressPattern).")
+                    }
+                    TextField("Code", text: $model.emailCode)
+                        .onSubmit { model.submitEmailCode() }
+                        .onChange(of: model.emailCode) { _, code in
+                            if let expected = model.expectedEmailCodeLength, code.count == expected {
+                                model.submitEmailCode()
+                            }
+                        }
+                    Button("Continue") { model.submitEmailCode() }
+                        .keyboardShortcut(.defaultAction)
+                case .registration:
+                    registrationPhoto
+                    TextField("First Name", text: $model.registrationFirstName)
+                        .textContentType(.givenName)
+                    TextField("Last Name", text: $model.registrationLastName)
+                        .textContentType(.familyName)
+                    Text("Enter your name and add a profile photo.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                    Button("Continue") { model.submitRegistration() }
+                        .keyboardShortcut(.defaultAction)
+                case .qrCode:
+                    qrCodeView
+                    Text("Scan From Mobile Telegram")
+                        .font(.headline)
+                    Text("Open Telegram on your phone")
+                    Text("Go to Settings > Devices > Link Desktop Device")
+                    Text("Scan this image to Log In")
+                    Button("Log in with phone number") {
+                        model.cancelQrCodeLogin()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
                 case nil:
                     ProgressView()
                     Text(model.authorizationStatus)
@@ -149,6 +201,23 @@ private struct MacAuthorizationView: View {
                 Text("Telegram will send the login code to \(formattedPhoneNumber).")
             }
         }
+        .confirmationDialog(
+            "Terms of Service",
+            isPresented: Binding(
+                get: { !isPreview && model.showsRegistrationTermsConfirmation },
+                set: {
+                    if !$0 {
+                        model.showsRegistrationTermsConfirmation = false
+                    }
+                },
+            ),
+            titleVisibility: .visible,
+        ) {
+            Button("Agree") { model.acceptRegistrationTermsAndContinue() }
+            Button("Decline", role: .cancel) {}
+        } message: {
+            Text(model.registrationTermsOfService?.text.text ?? "")
+        }
     }
 
     // MARK: Private
@@ -162,6 +231,10 @@ private struct MacAuthorizationView: View {
         case phoneNumber
         case code
         case password
+        case emailAddress
+        case emailCode
+        case registration
+        case qrCode
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -175,6 +248,7 @@ private struct MacAuthorizationView: View {
     @State private var previewStep = Step.phoneNumber
     @State private var focusesPhoneNumberAfterCountrySelection = false
     @State private var showsCountryPicker = false
+    @State private var pickedRegistrationPhotoItem: PhotosPickerItem?
 
     private var callingCode: Binding<String> {
         Binding(
@@ -269,8 +343,63 @@ private struct MacAuthorizationView: View {
             return .code
         case .authorizationStateWaitPassword:
             return .password
+        case .authorizationStateWaitEmailAddress:
+            return .emailAddress
+        case .authorizationStateWaitEmailCode:
+            return .emailCode
+        case .authorizationStateWaitRegistration:
+            return .registration
+        case .authorizationStateWaitOtherDeviceConfirmation:
+            return .qrCode
         default:
             return nil
+        }
+    }
+
+    private var registrationPhoto: some View {
+        let hasPhoto = model.registrationPhotoData != nil
+        return VStack(spacing: 10) {
+            ZStack {
+                if let data = model.registrationPhotoData, let nsImage = NSImage(data: data) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Circle()
+                        .fill(.quaternary)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.secondary)
+                        }
+                }
+            }
+            .frame(width: 84, height: 84)
+            .clipShape(Circle())
+            .accessibilityHidden(true)
+
+            PhotosPicker(selection: $pickedRegistrationPhotoItem, matching: .images) {
+                Text(hasPhoto ? "Change Photo" : "Add Photo")
+            }
+        }
+        .onChange(of: pickedRegistrationPhotoItem) { _, newValue in
+            Task { @MainActor in
+                guard let newValue, let data = try? await newValue.loadTransferable(type: Data.self) else { return }
+                model.registrationPhotoData = data
+            }
+        }
+    }
+
+    @ViewBuilder private var qrCodeView: some View {
+        if let qrCodeLink = model.qrCodeLink, let cgImage = telegramQrCodeImage(for: qrCodeLink) {
+            Image(nsImage: NSImage(cgImage: cgImage, size: NSSize(width: 200, height: 200)))
+                .resizable()
+                .interpolation(.none)
+                .frame(width: 200, height: 200)
+                .accessibilityLabel("QR code to scan with your phone's Telegram app")
+        } else {
+            ProgressView()
+                .frame(width: 200, height: 200)
         }
     }
 
