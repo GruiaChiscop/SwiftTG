@@ -97,12 +97,13 @@ extension MacSessionModel {
                 let title: String
                 if let cached = titles[message.chatId] {
                     title = cached
-                } else if let known = self?.chatList.items[message.chatId]?.title {
+                } else if let known = self?.chatList.items[message.chatId]?.displayTitle {
                     title = known
                     titles[message.chatId] = known
                 } else if let chat = try? await service.getChat(chatId: message.chatId) {
-                    title = chat.title
-                    titles[message.chatId] = chat.title
+                    let resolvedTitle = ChatListItemState(chat, membership: nil).displayTitle
+                    title = resolvedTitle
+                    titles[message.chatId] = resolvedTitle
                 } else {
                     title = "Chat"
                 }

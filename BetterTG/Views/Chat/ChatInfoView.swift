@@ -45,7 +45,7 @@ struct ChatInfoView: View {
         .sheet(isPresented: $showsSharedMedia) {
             SharedMediaView(
                 chatId: chat.id,
-                chatTitle: chat.chat.title,
+                chatTitle: chat.displayTitle,
                 service: chatVM.service,
             ) { messageId in
                 openSharedMediaMessage(messageId)
@@ -54,7 +54,7 @@ struct ChatInfoView: View {
         .sheet(isPresented: $showsScheduledMessages) {
             ScheduledMessagesView()
         }
-        .confirmationDialog("Mute \(chat.chat.title)", isPresented: $showMuteOptions) {
+        .confirmationDialog("Mute \(chat.displayTitle)", isPresented: $showMuteOptions) {
             ForEach(TelegramMutePreset.allCases) { preset in
                 Button(preset.title) { setMuteDuration(preset.duration) }
             }
@@ -63,7 +63,7 @@ struct ChatInfoView: View {
             }
         }
         .alert(
-            "Delete \(chat.chat.title)?",
+            "Delete \(chat.displayTitle)?",
             isPresented: $showDeleteConfirmation,
         ) {
             if chat.actionPolicy.canDeleteCommunity {
@@ -130,13 +130,14 @@ struct ChatInfoView: View {
                     ProfileImageView(
                         photo: chat.chat.photo?.big,
                         minithumbnail: chat.chat.photo?.minithumbnail,
-                        title: chat.chat.title,
+                        title: chat.displayTitle,
                         userId: chat.chat.id,
                         fontSize: 36,
+                        isSavedMessages: chat.isSavedMessages,
                     )
                     .frame(width: 96, height: 96)
 
-                    Text(chat.chat.title)
+                    Text(chat.displayTitle)
                         .font(.title2.bold())
                         .multilineTextAlignment(.center)
 

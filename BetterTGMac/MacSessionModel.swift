@@ -362,6 +362,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             sessionEnded = false
             canReauthenticate = false
             bootstrapChats()
+            // Resolved eagerly so `TelegramCurrentUserCache`'s synchronous `userId` is already
+            // populated by the time chat rows render, avoiding a visible name-then-"Saved
+            // Messages" flash.
+            Task { await TelegramCurrentUserCache.shared.userId(service: service) }
             Task {
                 guard await notifications.requestAuthorization() else { return }
                 NSApplication.shared.registerForRemoteNotifications()

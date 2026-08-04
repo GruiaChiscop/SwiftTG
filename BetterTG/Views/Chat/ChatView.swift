@@ -123,7 +123,7 @@ struct ChatView: View {
         }
         .background(.black)
         .ignoresSafeArea(.container, edges: .top)
-        .navigationTitle(chatVM.isConversationSearchActive ? "" : chatVM.customChat.chat.title)
+        .navigationTitle(chatVM.isConversationSearchActive ? "" : chatVM.customChat.displayTitle)
         .navigationBarBackButtonHidden(true)
         .dropDestination(for: SelectedImage.self) { items, _ in
             nc.post(name: .localOnSelectedImagesDrop, object: Array(items.prefix(10)))
@@ -314,7 +314,7 @@ struct ChatView: View {
         guard rootVM.path.count > 1,
               case .customChat(let chat, _, _) = rootVM.path[rootVM.path.count - 2]
         else { return nil }
-        return chat.chat.title
+        return chat.displayTitle
     }
 
     private var backButtonTitle: String {
@@ -475,7 +475,7 @@ struct ChatView: View {
             showsChatInfo = true
         } label: {
             VStack(spacing: 0) {
-                Text(chatVM.customChat.chat.title)
+                Text(chatVM.customChat.displayTitle)
 
                 Group {
                     if !chatVM.actionStatus.isEmpty {

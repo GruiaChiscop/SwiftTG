@@ -75,7 +75,7 @@ struct MacChatInfoView: View {
         .sheet(isPresented: $showsScheduledMessages) {
             MacScheduledMessagesView(model: model)
         }
-        .confirmationDialog("Mute \(chat.title)", isPresented: $showMuteOptions) {
+        .confirmationDialog("Mute \(chat.displayTitle)", isPresented: $showMuteOptions) {
             ForEach(TelegramMutePreset.allCases) { preset in
                 Button(preset.title) { model.setMuteDuration(preset.duration, for: currentChat) }
             }
@@ -127,7 +127,7 @@ struct MacChatInfoView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Clear history in \(chat.title)?", isPresented: $showClearHistoryOptions) {
+        .confirmationDialog("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryOptions) {
             if currentChat.canBeDeletedOnlyForSelf {
                 Button("Clear only for me", role: .destructive) {
                     model.clearChatHistory(currentChat, forEveryone: false)
@@ -188,7 +188,7 @@ struct MacChatInfoView: View {
     }
 
     private var deleteDialogTitle: String {
-        "\(currentChat.actionPolicy.deleteActionTitle) \(chat.title)?"
+        "\(currentChat.actionPolicy.deleteActionTitle) \(chat.displayTitle)?"
     }
 
     private func sharedMediaSection(_ info: TelegramChatInfoData) -> some View {
@@ -247,8 +247,15 @@ struct MacChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func avatar(_: TelegramChatInfoData) -> some View {
-        if let avatarPath, let image = NSImage(contentsOfFile: avatarPath) {
+    @ViewBuilder private func avatar(_ info: TelegramChatInfoData) -> some View {
+        if info.isSavedMessages {
+            Image(systemName: "bookmark.fill")
+                .font(.system(size: 42))
+                .foregroundStyle(.white)
+                .frame(width: 96, height: 96)
+                .background(Color.accentColor.gradient, in: Circle())
+                .accessibilityHidden(true)
+        } else if let avatarPath, let image = NSImage(contentsOfFile: avatarPath) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()

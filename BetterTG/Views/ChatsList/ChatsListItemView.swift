@@ -20,9 +20,10 @@ struct ChatsListItemView: View {
             ProfileImageView(
                 photo: chat.photo?.big,
                 minithumbnail: chat.photo?.minithumbnail,
-                title: chat.title,
+                title: customChat.displayTitle,
                 userId: chat.id,
                 fontSize: 30,
+                isSavedMessages: customChat.isSavedMessages,
             )
             .frame(width: 54, height: 54)
             .accessibilityHidden(true)
@@ -36,7 +37,7 @@ struct ChatsListItemView: View {
                             .accessibilityHidden(true)
                     }
 
-                    Text(customChat.chat.title)
+                    Text(customChat.displayTitle)
                         .font(.headline)
                         .fontWeight(customChat.hasUnreadMessages ? .semibold : .regular)
                         .foregroundStyle(.primary)
@@ -76,7 +77,7 @@ struct ChatsListItemView: View {
                             .foregroundStyle(.tertiary)
                             .accessibilityHidden(true)
                     }
-                    if customChat.position.isPinned {
+                    if customChat.position.isPinned, !customChat.isSavedMessages {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -129,12 +130,12 @@ struct ChatsListItemView: View {
 }
 
 extension CustomChat {
-    func accessibilityDescription(identityBadge: TelegramIdentityBadge?) -> String {
+    @MainActor func accessibilityDescription(identityBadge: TelegramIdentityBadge?) -> String {
         var parts: [String] =
             if case .privateChat = kind {
-                [chat.title]
+                [displayTitle]
             } else {
-                [kind.title, chat.title]
+                [kind.title, displayTitle]
             }
 
         if let identityBadge {
@@ -144,7 +145,7 @@ extension CustomChat {
         if unreadCount != 0 {
             parts.append("\(unreadCount) unread")
         }
-        if position.isPinned {
+        if position.isPinned, !isSavedMessages {
             parts.append("Pinned")
         }
         if let draftMessage,

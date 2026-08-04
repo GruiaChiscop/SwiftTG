@@ -8,9 +8,9 @@ xcshareddata/
 
 Secret.swift
 
-BetterTG.app
-BetterTG.dmg
-BetterTG.ipa
+*.app
+*.dmg
+*.ipa
 
 # Xcode archives and distribution exports
 *.xcarchive/

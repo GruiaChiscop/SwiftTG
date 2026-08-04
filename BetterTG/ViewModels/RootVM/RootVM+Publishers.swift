@@ -47,6 +47,10 @@ extension RootVM {
     func bootstrapChatListsIfReady() {
         guard !didBootstrapChatLists, chatListBootstrapTask == nil else { return }
         let service = service
+        // Resolved eagerly (not lazily on first chat-list row) so `TelegramCurrentUserCache`'s
+        // synchronous `userId` is already populated by the time rows render, avoiding a visible
+        // name-then-"Saved Messages" flash.
+        Task { await TelegramCurrentUserCache.shared.userId(service: service) }
         chatListBootstrapTask = Task.background {
             guard let state = try? await service.getAuthorizationState(),
                   case .authorizationStateReady = state

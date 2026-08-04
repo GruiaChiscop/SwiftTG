@@ -18,7 +18,7 @@ struct MacForwardChatPicker: View {
                 } label: {
                     HStack(spacing: 10) {
                         avatar(for: chat)
-                        Text(chat.title)
+                        Text(chat.displayTitle)
                             .lineLimit(1)
                         Spacer()
                         Image(systemName: selectedChatIds.contains(chat.chatId) ? "checkmark.circle.fill" : "circle")
@@ -57,19 +57,27 @@ struct MacForwardChatPicker: View {
     private var chats: [ChatListItemState] {
         let all = model.allChatItems
         guard !query.isEmpty else { return all }
-        return all.filter { $0.title.localizedCaseInsensitiveContains(query) }
+        return all.filter { $0.displayTitle.localizedCaseInsensitiveContains(query) }
     }
 
     private func avatar(for chat: ChatListItemState) -> some View {
         Circle()
-            .fill(avatarColor(for: chat.chatId))
-            .overlay {
-                Text(String(chat.title.prefix(1)).uppercased())
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 32, height: 32)
-            .accessibilityHidden(true)
+            .fill(chat.isSavedMessages
+                ? AnyShapeStyle(Color.accentColor.gradient)
+                : AnyShapeStyle(avatarColor(for: chat.chatId)))
+                .overlay {
+                    if chat.isSavedMessages {
+                        Image(systemName: "bookmark.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    } else {
+                        Text(String(chat.title.prefix(1)).uppercased())
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 32, height: 32)
+                .accessibilityHidden(true)
     }
 
     private func avatarColor(for chatId: Int64) -> Color {

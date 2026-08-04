@@ -11,10 +11,13 @@ struct ProfileImageView: View {
     let title: String
     let userId: Int64
     var fontSize: CGFloat = 20
-    
+    var isSavedMessages = false
+
     var body: some View {
         ZStack {
-            if let photo {
+            if isSavedMessages {
+                SavedMessagesIconView(fontSize: fontSize)
+            } else if let photo {
                 AsyncTdImage(id: photo.id, maxPixelSize: 256) { image, _ in
                     image
                         .resizable()
@@ -46,6 +49,20 @@ struct ProfileImageView: View {
             }
         }
         .clipShape(.circle)
+    }
+}
+
+// MARK: - SavedMessagesIconView
+
+struct SavedMessagesIconView: View {
+    var fontSize: CGFloat = 20
+
+    var body: some View {
+        Image(systemName: "bookmark.fill")
+            .font(.system(size: fontSize * 0.9))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.accentColor.gradient)
     }
 }
 

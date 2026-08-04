@@ -15,7 +15,7 @@ extension MacSessionModel {
         )
 
         guard openedChatId != group.chatId || !NSApplication.shared.isActive else { return }
-        let title = chatList.items[group.chatId]?.title ?? "BetterTG"
+        let title = chatList.items[group.chatId]?.displayTitle ?? "SwiftTG"
         for notification in group.addedNotifications {
             guard Date().timeIntervalSince1970 - TimeInterval(notification.date) < 3600,
                   let body = notificationBody(notification)

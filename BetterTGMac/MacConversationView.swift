@@ -16,7 +16,7 @@ struct MacConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             MacConversationHeader(
-                title: chat.title,
+                title: chat.displayTitle,
                 status: model.conversationHeaderStatus,
                 onOpenInfo: { showsChatInfo = true },
             )

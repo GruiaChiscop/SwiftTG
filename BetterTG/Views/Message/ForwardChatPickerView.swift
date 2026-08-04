@@ -66,8 +66,8 @@ struct ForwardChatPickerView: View {
 
     private var searchResults: [CustomChat] {
         allChats
-            .filter { $0.chat.title.localizedCaseInsensitiveContains(normalizedQuery) }
-            .sorted { $0.chat.title.localizedCaseInsensitiveCompare($1.chat.title) == .orderedAscending }
+            .filter { $0.displayTitle.localizedCaseInsensitiveContains(normalizedQuery) }
+            .sorted { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
     }
 
     private var allChats: [CustomChat] {
@@ -82,14 +82,15 @@ struct ForwardChatPickerView: View {
                 ProfileImageView(
                     photo: chat.chat.photo?.small,
                     minithumbnail: chat.chat.photo?.minithumbnail,
-                    title: chat.chat.title,
+                    title: chat.displayTitle,
                     userId: chat.chat.id,
                     fontSize: 18,
+                    isSavedMessages: chat.isSavedMessages,
                 )
                 .frame(width: 40, height: 40)
                 .accessibilityHidden(true)
 
-                Text(chat.chat.title)
+                Text(chat.displayTitle)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 

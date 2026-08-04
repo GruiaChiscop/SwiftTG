@@ -17,7 +17,7 @@ struct MacChatRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(chat.title)
+                    Text(chat.displayTitle)
                         .font(.body)
                         .fontWeight(chat.hasUnreadMessages ? .semibold : .regular)
                         .lineLimit(1)
@@ -60,7 +60,7 @@ struct MacChatRow: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
-                    if isPinned {
+                    if isPinned, !chat.isSavedMessages {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -88,13 +88,13 @@ struct MacChatRow: View {
             await model.loadIdentityBadge(for: chat)
         }
         .contextMenu { chatActions }
-        .confirmationDialog("Mute \(chat.title)", isPresented: $showMuteOptions) {
+        .confirmationDialog("Mute \(chat.displayTitle)", isPresented: $showMuteOptions) {
             ForEach(TelegramMutePreset.allCases) { preset in
                 Button(preset.title) { model.setMuteDuration(preset.duration, for: chat) }
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Delete \(chat.title)?", isPresented: $showDeleteOptions) {
+        .confirmationDialog("Delete \(chat.displayTitle)?", isPresented: $showDeleteOptions) {
             if chat.actionPolicy.canDeleteCommunity {
                 Button("Delete for everyone", role: .destructive) {
                     Task { _ = await model.deleteCommunityFromInfo(chat) }
@@ -111,7 +111,7 @@ struct MacChatRow: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Clear history in \(chat.title)?", isPresented: $showClearHistoryOptions) {
+        .confirmationDialog("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryOptions) {
             if chat.canBeDeletedOnlyForSelf {
                 Button("Clear only for me", role: .destructive) {
                     model.clearChatHistory(chat, forEveryone: false)
@@ -161,7 +161,7 @@ struct MacChatRow: View {
         if let kind = chat.kind.accessibilityTitle {
             parts.append(kind)
         }
-        parts.append(chat.title)
+        parts.append(chat.displayTitle)
         if let identityBadge = model.chatIdentityBadges[chat.chatId] ?? nil {
             parts.append(identityBadge.accessibilityLabel)
         }
@@ -191,7 +191,7 @@ struct MacChatRow: View {
         if isMuted {
             parts.append("Muted")
         }
-        if isPinned {
+        if isPinned, !chat.isSavedMessages {
             parts.append("Pinned")
         }
         if isArchived {
@@ -266,13 +266,23 @@ struct MacChatRow: View {
 
     private var chatAvatar: some View {
         ZStack(alignment: .bottomTrailing) {
-            Circle()
-                .fill(avatarColor)
-                .overlay {
-                    Text(String(chat.title.prefix(1)).uppercased())
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
+            if chat.isSavedMessages {
+                Circle()
+                    .fill(Color.accentColor.gradient)
+                    .overlay {
+                        Image(systemName: "bookmark.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+            } else {
+                Circle()
+                    .fill(avatarColor)
+                    .overlay {
+                        Text(String(chat.title.prefix(1)).uppercased())
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+            }
 
             if chat.kind != .privateChat {
                 Image(systemName: chat.kind.systemImage)

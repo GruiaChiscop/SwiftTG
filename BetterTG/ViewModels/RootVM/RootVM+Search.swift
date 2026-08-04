@@ -44,7 +44,10 @@ extension RootVM {
             let searchedChatIds = chatResponse?.chatIds ?? []
             let messages = messageResponse?.messages ?? []
             var resolvedChats = knownChats
-            var titles = Dictionary(uniqueKeysWithValues: knownChats.map { ($0.key, $0.value.chat.title) })
+            var titles = [Int64: String]()
+            for (chatId, chat) in knownChats {
+                titles[chatId] = await chat.displayTitle
+            }
             var idsToResolve = searchedChatIds
             for message in messages where !idsToResolve.contains(message.chatId) {
                 idsToResolve.append(message.chatId)
@@ -57,7 +60,7 @@ extension RootVM {
                       let customChat = await self.getCustomChat(from: chatId, for: list)
                 else { continue }
                 resolvedChats[chatId] = customChat
-                titles[chatId] = chat.title
+                titles[chatId] = await customChat.displayTitle
             }
 
             let chatResults = searchedChatIds.compactMap { resolvedChats[$0] }

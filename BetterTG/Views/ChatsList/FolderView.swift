@@ -113,7 +113,7 @@ struct FolderView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .scrollIndicators(.visible)
         .confirmationDialog(
-            "Mute \(chatToMute?.chat.title ?? "chat")",
+            "Mute \(chatToMute?.displayTitle ?? "chat")",
             isPresented: Binding(
                 get: { chatToMute != nil },
                 set: {
@@ -207,7 +207,7 @@ struct FolderView: View {
                         NavigationLink(value: Route.customChat(customChat, messageId: message.id)) {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text(rootVM.searchMessageChatTitles[message.chatId] ?? customChat.chat.title)
+                                    Text(rootVM.searchMessageChatTitles[message.chatId] ?? customChat.displayTitle)
                                         .fontWeight(.semibold)
                                     Spacer()
                                     Text(
