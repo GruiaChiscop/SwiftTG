@@ -6,7 +6,8 @@ import SwiftUI
 ///
 /// Matches Telegram's own crop tool (`TGPhotoCropController`): pinch/pan to reposition and zoom,
 /// an aspect-ratio choice (Square or Original, matching its Square/Original presets), plus
-/// Rotate/Mirror/Reset. The rendered output follows Telegram's actual documented requirement
+/// Rotate/Mirror/Reset, and a Remove Background action (`TelegramStickerBackgroundRemoval`),
+/// matching its "Cut Out an Object" tool. The rendered output follows Telegram's actual documented requirement
 /// (core.telegram.org/stickers) - "one side must be exactly 512 pixels, the other side can be 512
 /// pixels or less" - so a sticker is not forced to be square unless the Square ratio is chosen.
 /// Also offers a set of discrete VoiceOver-adjustable controls alongside the gestures, since
@@ -37,6 +38,8 @@ struct TelegramStickerCropView: View {
 
             transformControls
 
+            backgroundRemovalControl
+
             accessibleControls
 
             VStack(spacing: 12) {
@@ -66,6 +69,8 @@ struct TelegramStickerCropView: View {
     @State private var offset = CGSize.zero
     @State private var gestureStartZoom: CGFloat = 1
     @State private var gestureStartOffset = CGSize.zero
+    @State private var isRemovingBackground = false
+    @State private var backgroundRemovalErrorMessage: String?
 
     private let sourceImage: CGImage
 
@@ -136,6 +141,17 @@ struct TelegramStickerCropView: View {
             }
     }
 
+    private var backgroundRemovalErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { backgroundRemovalErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    backgroundRemovalErrorMessage = nil
+                }
+            },
+        )
+    }
+
     private var cropSurface: some View {
         let rect = cropRect
         let size = previewSize
@@ -188,6 +204,24 @@ struct TelegramStickerCropView: View {
         }
     }
 
+    private var backgroundRemovalControl: some View {
+        HStack {
+            if isRemovingBackground {
+                ProgressView()
+            } else {
+                Button("Remove Background") { removeBackground() }
+            }
+        }
+        .alert(
+            "Couldn't Remove Background",
+            isPresented: backgroundRemovalErrorIsPresented,
+        ) {
+            Button("OK") {}
+        } message: {
+            Text(backgroundRemovalErrorMessage ?? "")
+        }
+    }
+
     private var accessibleControls: some View {
         VStack(spacing: 12) {
             HStack {
@@ -224,6 +258,21 @@ struct TelegramStickerCropView: View {
 
     private func clampedOffset(_ value: CGFloat) -> CGFloat {
         min(max(value, -1), 1)
+    }
+
+    private func removeBackground() {
+        let imageToProcess = currentImage
+        isRemovingBackground = true
+        Task {
+            defer { isRemovingBackground = false }
+            do {
+                currentImage = try await Task.detached(priority: .userInitiated) {
+                    try TelegramStickerBackgroundRemoval.removingBackground(from: imageToProcess)
+                }.value
+            } catch {
+                backgroundRemovalErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func rotate() {
