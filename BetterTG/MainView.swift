@@ -52,6 +52,7 @@ struct MainView: View {
             }
             .tag(MainTab.you)
         }
+        .toolbar(rootVM.path.isEmpty ? .visible : .hidden, for: .tabBar)
         .onChange(of: rootVM.path) { _, path in
             if !path.isEmpty {
                 selectedTab = .chats

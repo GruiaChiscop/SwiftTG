@@ -139,7 +139,7 @@ import TDLibKit
         Task.background {
             guard let draftMessage = self.customChat.draftMessage else { return }
             let replyMessage = await self.getInputReplyToMessage(draftMessage.replyTo)
-            withAnimation { self.composer.replyMessage = replyMessage }
+            await main { withAnimation { self.composer.replyMessage = replyMessage } }
         }
     }
 

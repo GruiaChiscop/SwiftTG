@@ -90,188 +90,17 @@ struct MessageView: View {
         return prefix + parts.joined(separator: ", ")
     }
 
+    /// Type-erased because `body`'s real underlying type - the deeply nested chain of
+    /// conditionals below (poll/checklist/document/photo/etc., each an independent `if`) -
+    /// compiles to an enormous nested `_ConditionalContent<A, B>` generic type. Instruments
+    /// (Time Profiler) showed the *first* evaluation of that type in a process spending over a
+    /// second in `swift_buildDemanglingForMetadata`/`NodePrinter`/generic-requirement-checking
+    /// machinery just resolving its metadata - a known Swift/SwiftUI cost that scales with how
+    /// many conditional branches a view's body has. `AnyView` caps that: the runtime only ever
+    /// needs metadata for `AnyView` itself (common, already resolved everywhere), not for this
+    /// view's actual sprawling generic shape.
     var body: some View {
-        HStack(alignment: .bottom, spacing: 5) {
-            if customMessage.message.isOutgoing, !messageReactions.isEmpty {
-                reactionsButton
-            }
-
-            VStack(alignment: .trailing, spacing: 1) {
-                VStack(alignment: .leading, spacing: 1) {
-                    if showsVisualSenderName, let visualSenderName {
-                        Text(visualSenderName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tint)
-                            .lineLimit(1)
-                            .padding(.horizontal, 8)
-                            .padding(.top, 6)
-                            .accessibilityHidden(true)
-                    }
-
-                    if let forwardedFrom = customMessage.forwardedFrom {
-                        ForwardedFromView(
-                            name: forwardedFrom,
-                            onTap: canNavigateToForwardOrigin
-                                ? { chatVM.navigateToForwardOrigin(from: customMessage.message) }
-                                : nil,
-                        )
-                    }
-
-                    if customMessage.replySenderName != nil, customMessage.replyToMessage != nil {
-                        ReplyMessageView(
-                            customMessage: customMessage,
-                            type: .replied,
-                            onTap: { chatVM.navigateToRepliedMessage(from: customMessage.message) },
-                        )
-                    }
-
-                    if let messagePoll = customMessage.messagePoll {
-                        TelegramPollView(
-                            content: messagePoll,
-                            message: customMessage.message,
-                            service: chatVM.service,
-                        ) {
-                            Text(messagePoll.poll.question.text)
-                                .accessibilityIdentifier("message-\(customMessage.id)")
-                                .accessibilityLabel(pollAccessibilityContextDescription)
-                                .accessibilityActions {
-                                    messageAccessibilityActions
-                                }
-                        }
-                    } else if let messageChecklist = customMessage.messageChecklist {
-                        TelegramChecklistView(
-                            content: messageChecklist,
-                            message: customMessage.message,
-                            canMarkTasksAsDone: customMessage.properties.canMarkTasksAsDone,
-                            service: chatVM.service,
-                        ) {
-                            Text(messageChecklist.list.title.text)
-                                .accessibilityIdentifier("message-\(customMessage.id)")
-                                .accessibilityLabel(checklistAccessibilityContextDescription)
-                                .accessibilityActions {
-                                    messageAccessibilityActions
-                                }
-                        }
-                    } else if customMessage.messageDocument != nil
-                        || customMessage.messagePhoto != nil
-                        || customMessage.messageVideo != nil
-                        || customMessage.messageVoiceNote != nil
-                        || customMessage.messageAudio != nil
-                        || customMessage.messageSticker != nil
-                        || customMessage.messageContact != nil
-                        || !customMessage.album.isEmpty
-                    {
-                        MessageContentView(
-                            customMessage: customMessage,
-                            audioPlaylist: audioPlaylist,
-                            service: chatVM.service,
-                            onMediaTap: openAlbum,
-                            onContactTap: activateContact,
-                            onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
-                            onDocumentTransferStatusChange: { documentTransferStatus = $0 },
-                            documentDownloadIsPaused: documentDownloadIsPaused,
-                            onDocumentDownloadToggle: toggleDocumentDownload,
-                        )
-                    }
-
-                    if let linkPreview, linkPreview.showAboveText {
-                        TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
-                            .padding(.horizontal, 8)
-                            .padding(.top, 8)
-                    }
-
-                    if let formattedText = displayedFormattedText, !formattedText.text.isEmpty {
-                        VStack(alignment: .leading, spacing: 2) {
-                            MessageTextView(
-                                formattedText: formattedText,
-                                trailingText: visualMessageMetadataText,
-                            )
-                            if customMessage.showsTranslation {
-                                Text("Translated")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .padding(8)
-                        .padding(
-                            .top,
-                            customMessage.replySenderName != nil && customMessage.replyToMessage != nil
-                                || customMessage.forwardedFrom != nil ? -8 : 0,
-                        )
-                    }
-
-                    if let linkPreview, !linkPreview.showAboveText {
-                        TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 8)
-                    }
-                }
-
-                if !hasInlineVisualMetadata {
-                    standaloneVisualMessageMetadata
-                }
-            }
-            .background {
-                if !isStickerMessage {
-                    messageBubbleColor
-                }
-            }
-            .clipShape(.rect(cornerRadius: 20))
-            .contextMenu {
-                messageContextMenu
-            }
-            .modify {
-                if isPollMessage || isChecklistMessage {
-                    $0
-                } else {
-                    messageAccessibilityElement($0)
-                }
-            }
-            .accessibilityHidden(hasAccessibilityGroup)
-
-            if !customMessage.message.isOutgoing, !messageReactions.isEmpty {
-                reactionsButton
-            }
-        }
-        .modify {
-            if !hasAccessibilityGroup {
-                $0
-            } else {
-                linkAccessibilityGroup($0)
-            }
-        }
-        .sheet(item: $shownAlbum) { album in
-            ChatViewAlbum(album: album.photos, selection: album.selection)
-        }
-        .sheet(isPresented: $showReactionDetails) {
-            TelegramReactionDetailsView(
-                service: chatVM.service,
-                chatId: customMessage.message.chatId,
-                messageId: customMessage.id,
-            )
-        }
-        .alert("Delete message?", isPresented: $showDeleteOptions) {
-            if customMessage.properties.canBeDeletedOnlyForSelf {
-                Button("Delete only for me", role: .destructive) {
-                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: false)
-                }
-            }
-            if customMessage.properties.canBeDeletedForAllUsers {
-                Button("Delete for everyone", role: .destructive) {
-                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: true)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .popover(
-            isPresented: $showReactionOptions,
-            attachmentAnchor: .rect(.bounds),
-            arrowEdge: .bottom,
-        ) {
-            reactionPicker
-                .presentationCompactAdaptation(.popover)
-        }
+        AnyView(messageBody)
     }
 
     func openAlbum(albumMessage: Message?) {
@@ -483,6 +312,247 @@ struct MessageView: View {
         }
     }
 
+    private var leadingReactionsSlot: AnyView {
+        guard customMessage.message.isOutgoing, !messageReactions.isEmpty else {
+            return AnyView(EmptyView())
+        }
+        return AnyView(reactionsButton)
+    }
+
+    private var trailingReactionsSlot: AnyView {
+        guard !customMessage.message.isOutgoing, !messageReactions.isEmpty else {
+            return AnyView(EmptyView())
+        }
+        return AnyView(reactionsButton)
+    }
+
+    /// One pre-erased `AnyView` per piece of the message's leading content column, combined via
+    /// `ForEach` in `messageBody` instead of a chain of `if`/`else if` statements - see that
+    /// property's doc comment for why.
+    private var contentColumnPieces: [AnyView] {
+        var pieces = [AnyView]()
+
+        if showsVisualSenderName, let visualSenderName {
+            pieces.append(AnyView(
+                Text(visualSenderName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+                    .accessibilityHidden(true),
+            ))
+        }
+
+        if let forwardedFrom = customMessage.forwardedFrom {
+            pieces.append(AnyView(
+                ForwardedFromView(
+                    name: forwardedFrom,
+                    onTap: canNavigateToForwardOrigin
+                        ? { chatVM.navigateToForwardOrigin(from: customMessage.message) }
+                        : nil,
+                ),
+            ))
+        }
+
+        if customMessage.replySenderName != nil, customMessage.replyToMessage != nil {
+            pieces.append(AnyView(
+                ReplyMessageView(
+                    customMessage: customMessage,
+                    type: .replied,
+                    onTap: { chatVM.navigateToRepliedMessage(from: customMessage.message) },
+                ),
+            ))
+        }
+
+        pieces.append(contentSection)
+
+        if let linkPreview, linkPreview.showAboveText {
+            pieces.append(AnyView(
+                TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8),
+            ))
+        }
+
+        if let formattedText = displayedFormattedText, !formattedText.text.isEmpty {
+            pieces.append(AnyView(
+                VStack(alignment: .leading, spacing: 2) {
+                    MessageTextView(
+                        formattedText: formattedText,
+                        trailingText: visualMessageMetadataText,
+                    )
+                    if customMessage.showsTranslation {
+                        Text("Translated")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .padding(8)
+                .padding(
+                    .top,
+                    customMessage.replySenderName != nil && customMessage.replyToMessage != nil
+                        || customMessage.forwardedFrom != nil ? -8 : 0,
+                ),
+            ))
+        }
+
+        if let linkPreview, !linkPreview.showAboveText {
+            pieces.append(AnyView(
+                TelegramLinkPreviewView(preview: linkPreview, service: chatVM.service)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8),
+            ))
+        }
+
+        return pieces
+    }
+
+    /// The poll/checklist/media-or-document switch, pre-erased - see `contentColumnPieces`.
+    private var contentSection: AnyView {
+        if let messagePoll = customMessage.messagePoll {
+            return AnyView(
+                TelegramPollView(
+                    content: messagePoll,
+                    message: customMessage.message,
+                    service: chatVM.service,
+                ) {
+                    Text(messagePoll.poll.question.text)
+                        .accessibilityIdentifier("message-\(customMessage.id)")
+                        .accessibilityLabel(pollAccessibilityContextDescription)
+                        .accessibilityActions {
+                            messageAccessibilityActions
+                        }
+                },
+            )
+        }
+        if let messageChecklist = customMessage.messageChecklist {
+            return AnyView(
+                TelegramChecklistView(
+                    content: messageChecklist,
+                    message: customMessage.message,
+                    canMarkTasksAsDone: customMessage.properties.canMarkTasksAsDone,
+                    service: chatVM.service,
+                ) {
+                    Text(messageChecklist.list.title.text)
+                        .accessibilityIdentifier("message-\(customMessage.id)")
+                        .accessibilityLabel(checklistAccessibilityContextDescription)
+                        .accessibilityActions {
+                            messageAccessibilityActions
+                        }
+                },
+            )
+        }
+        if customMessage.messageDocument != nil
+            || customMessage.messagePhoto != nil
+            || customMessage.messageVideo != nil
+            || customMessage.messageVoiceNote != nil
+            || customMessage.messageAudio != nil
+            || customMessage.messageSticker != nil
+            || customMessage.messageContact != nil
+            || customMessage.messageLocation != nil
+            || !customMessage.album.isEmpty
+        {
+            return AnyView(
+                MessageContentView(
+                    customMessage: customMessage,
+                    audioPlaylist: audioPlaylist,
+                    service: chatVM.service,
+                    onMediaTap: openAlbum,
+                    onContactTap: activateContact,
+                    onLocationTap: activateLocation,
+                    onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
+                    onDocumentTransferStatusChange: { documentTransferStatus = $0 },
+                    documentDownloadIsPaused: documentDownloadIsPaused,
+                    onDocumentDownloadToggle: toggleDocumentDownload,
+                ),
+            )
+        }
+        return AnyView(EmptyView())
+    }
+
+    /// Each top-level piece below is individually type-erased into `AnyView` and combined via
+    /// `ForEach` over a plain array, instead of a chain of `if`/`else if` statements. A sequential
+    /// `if`/`else` chain here would still hit the same demangling cost `body` does (see its doc
+    /// comment) - `@ViewBuilder` nests each conditional's continuation into the combined type, so
+    /// wrapping only the *outer* result in `AnyView` doesn't help (that value still has to be
+    /// constructed, in full, before it can be erased). Pre-erasing each branch individually, then
+    /// combining already-simple `AnyView`s through `ForEach`/`Array`, means the runtime never needs
+    /// to build the sprawling combined type at all.
+    private var messageBody: some View {
+        HStack(alignment: .bottom, spacing: 5) {
+            leadingReactionsSlot
+
+            VStack(alignment: .trailing, spacing: 1) {
+                ForEach(Array(contentColumnPieces.enumerated()), id: \.offset) { _, piece in
+                    piece
+                }
+
+                if !hasInlineVisualMetadata {
+                    standaloneVisualMessageMetadata
+                }
+            }
+            .background {
+                if !isStickerMessage {
+                    messageBubbleColor
+                }
+            }
+            .clipShape(.rect(cornerRadius: 20))
+            .contextMenu {
+                messageContextMenu
+            }
+            .modify {
+                if isPollMessage || isChecklistMessage {
+                    $0
+                } else {
+                    messageAccessibilityElement($0)
+                }
+            }
+            .accessibilityHidden(hasAccessibilityGroup)
+
+            trailingReactionsSlot
+        }
+        .modify {
+            if !hasAccessibilityGroup {
+                $0
+            } else {
+                linkAccessibilityGroup($0)
+            }
+        }
+        .sheet(item: $shownAlbum) { album in
+            ChatViewAlbum(album: album.photos, selection: album.selection)
+        }
+        .sheet(isPresented: $showReactionDetails) {
+            TelegramReactionDetailsView(
+                service: chatVM.service,
+                chatId: customMessage.message.chatId,
+                messageId: customMessage.id,
+            )
+        }
+        .alert("Delete message?", isPresented: $showDeleteOptions) {
+            if customMessage.properties.canBeDeletedOnlyForSelf {
+                Button("Delete only for me", role: .destructive) {
+                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: false)
+                }
+            }
+            if customMessage.properties.canBeDeletedForAllUsers {
+                Button("Delete for everyone", role: .destructive) {
+                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: true)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .popover(
+            isPresented: $showReactionOptions,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom,
+        ) {
+            reactionPicker
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
     private var standaloneVisualMessageMetadata: some View {
         Text(visualMessageMetadataText)
             .padding(3)
@@ -542,7 +612,6 @@ struct MessageView: View {
                 if let messageVoiceNote = customMessage.messageVoiceNote {
                     $0
                         .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
-                        .accessibilityHint("Double tap to play or pause")
                         .accessibilityAddTraits(.startsMediaSession)
                 }
             }
@@ -550,7 +619,6 @@ struct MessageView: View {
                 if let messageAudio = customMessage.messageAudio {
                     $0
                         .onTapGesture { toggleAudioMessage(messageAudio) }
-                        .accessibilityHint("Double tap to play or pause")
                         .accessibilityAddTraits(.startsMediaSession)
                 }
             }
