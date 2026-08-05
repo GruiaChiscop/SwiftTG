@@ -188,6 +188,24 @@ struct ChatBottomArea: View {
                 await chatVM.updateDraft()
             }
         }
+        .sheet(isPresented: $showsLocationComposer) {
+            TelegramLocationComposerView(
+                requestCurrentLocation: { try await PermissionsManager.shared.requestCurrentLocation() },
+                onOpenSettings: {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                },
+            ) { draft in
+                try await TelegramLocationSending.send(
+                    draft: draft,
+                    service: chatVM.service,
+                    chatId: chatVM.customChat.chat.id,
+                    replyToMessageId: chatVM.replyMessage?.id,
+                )
+                chatVM.replyMessage = nil
+                await chatVM.updateDraft()
+            }
+        }
         .sheet(isPresented: $showsStickerPicker) {
             TelegramStickerPickerView(
                 service: chatVM.service,
@@ -337,6 +355,15 @@ struct ChatBottomArea: View {
                 } label: {
                     Label("Contact", systemImage: "person.crop.circle")
                 }
+                Button {
+                    withAnimation {
+                        chatVM.displayedImages.removeAll()
+                        chatVM.displayedDocuments.removeAll()
+                    }
+                    showsLocationComposer = true
+                } label: {
+                    Label("Location", systemImage: "location")
+                }
             } label: {
                 Label("Attach", systemImage: "paperclip")
                     .labelStyle(.iconOnly)
@@ -476,13 +503,6 @@ struct ChatBottomArea: View {
         // placeholder, but offering "Record Voice Message" here would be redundant/confusing
         // alongside the recording indicator's Cancel action and the lock circle's Send action.
         .accessibilityHidden(chatVM.recordingVoiceNote && !chatVM.recordingLocked)
-        .modify {
-            if !chatVM.recordingLocked, !chatVM.showSendButton {
-                $0.accessibilityHint("Double-tap and hold to record a voice message")
-            } else {
-                $0
-            }
-        }
         .accessibilityAction {
             if chatVM.recordingLocked {
                 chatVM.mediaStopRecordingVoice(duration: Int(chatVM.timerCount), wave: chatVM.wave)
@@ -647,6 +667,7 @@ struct ChatBottomArea: View {
     @State private var showsChecklistPremiumAlert = false
     @State private var checklistIsAvailable = false
     @State private var showsContactComposer = false
+    @State private var showsLocationComposer = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
     @State private var showsStickerPicker = false

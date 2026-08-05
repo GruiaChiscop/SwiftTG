@@ -32,7 +32,6 @@ struct MacConversationHeader: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens chat information")
     }
 }
 

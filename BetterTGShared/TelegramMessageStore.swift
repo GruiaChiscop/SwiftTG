@@ -367,36 +367,82 @@ final class TelegramMessageStore: @unchecked Sendable {
         )
     }
 
+    /// Standard sorted-merge (the merge step of merge-sort): both inputs are already sorted by
+    /// `isOrderedBefore`, so this produces a fully sorted result in one linear pass rather than
+    /// re-sorting everything.
+    private static func mergeSortedIds(
+        _ existing: [Int64],
+        _ newSorted: [Int64],
+        messages: [Int64: Message],
+    ) -> [Int64] {
+        guard !existing.isEmpty else { return newSorted }
+        guard !newSorted.isEmpty else { return existing }
+
+        var result = [Int64]()
+        result.reserveCapacity(existing.count + newSorted.count)
+        var i = 0
+        var j = 0
+        while i < existing.count, j < newSorted.count {
+            let lhsId = existing[i]
+            let rhsId = newSorted[j]
+            guard let lhsMessage = messages[lhsId], let rhsMessage = messages[rhsId] else {
+                result.append(lhsId)
+                i += 1
+                continue
+            }
+            if isOrderedBefore(rhsMessage, lhsMessage) {
+                result.append(rhsId)
+                j += 1
+            } else {
+                result.append(lhsId)
+                i += 1
+            }
+        }
+        result.append(contentsOf: existing[i...])
+        result.append(contentsOf: newSorted[j...])
+        return result
+    }
+
     private func merge(chatId: Int64, messages: [Message], marksHistoryLoaded: Bool) {
         queue.async {
             var snapshot = self.snapshots[chatId] ?? .empty(chatId: chatId)
             var storedMessages = snapshot.messages
-            var orderedIds = snapshot.orderedMessageIds
+            let orderedIds = snapshot.orderedMessageIds
             var knownMessageIds = Set(orderedIds)
             let deletedIds = self.deletedMessageIds[chatId] ?? []
 
+            // Only ever the *newly inserted* ids need positioning - everything already in
+            // `orderedIds` keeps its relative order (an edit/content update overwrites
+            // `storedMessages[id]` in place above but never changes its date/id sort key). Sorting
+            // just the small new batch and merging it into the already-sorted existing list is
+            // O(existing + new) instead of re-sorting the whole accumulated history - chat history
+            // for a long-lived chat can be thousands of messages, and this merge runs on every
+            // paginated history load and every incoming message, so a full re-sort here was the
+            // actual cause of chats feeling slower to open the more local history they'd built up.
+            var newIds = [Int64]()
             for message in messages {
                 guard !deletedIds.contains(message.id) else { continue }
                 storedMessages[message.id] = message
                 if knownMessageIds.insert(message.id).inserted {
-                    orderedIds.append(message.id)
+                    newIds.append(message.id)
                 }
             }
-            orderedIds.sort { lhs, rhs in
-                guard let lhsMessage = storedMessages[lhs], let rhsMessage = storedMessages[rhs] else {
-                    return lhs < rhs
+
+            let mergedIds: [Int64]
+            if newIds.isEmpty {
+                mergedIds = orderedIds
+            } else {
+                newIds.sort { lhs, rhs in
+                    Self.isOrderedBefore(storedMessages[lhs]!, storedMessages[rhs]!)
                 }
-                if lhsMessage.date == rhsMessage.date {
-                    return lhsMessage.id < rhsMessage.id
-                }
-                return lhsMessage.date < rhsMessage.date
+                mergedIds = Self.mergeSortedIds(orderedIds, newIds, messages: storedMessages)
             }
 
             snapshot = TelegramMessageSnapshot(
                 chatId: chatId,
                 version: snapshot.version + 1,
                 messages: storedMessages,
-                orderedMessageIds: orderedIds,
+                orderedMessageIds: mergedIds,
                 unreadCount: snapshot.unreadCount,
                 hasMergedHistory: snapshot.hasMergedHistory || marksHistoryLoaded,
                 change: .historyMerged,

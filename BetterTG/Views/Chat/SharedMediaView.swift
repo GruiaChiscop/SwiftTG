@@ -208,6 +208,5 @@ private struct SharedMediaListLabel: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens this message in the conversation")
     }
 }

@@ -87,6 +87,21 @@ struct MacConversationView: View {
                 model.saveCurrentDraft()
             }
         }
+        .sheet(isPresented: $showsLocationComposer) {
+            TelegramLocationComposerView(
+                requestCurrentLocation: { try await PermissionsManager.shared.requestCurrentLocation() },
+            ) { draft in
+                guard let chatId = model.openedChatId else { return }
+                try await TelegramLocationSending.send(
+                    draft: draft,
+                    service: model.service,
+                    chatId: chatId,
+                    replyToMessageId: model.replyingToMessage?.id,
+                )
+                model.replyingToMessage = nil
+                model.saveCurrentDraft()
+            }
+        }
         .sheet(isPresented: $showsChecklistComposer) {
             TelegramChecklistComposerView { draft in
                 guard let chatId = model.openedChatId else { return }
@@ -160,6 +175,7 @@ struct MacConversationView: View {
     @State private var showsPollComposer = false
     @State private var showsChecklistComposer = false
     @State private var showsContactComposer = false
+    @State private var showsLocationComposer = false
     @State private var showsChecklistPremiumAlert = false
     @State private var checklistIsAvailable = false
     @State private var showsScheduleSendPicker = false
@@ -426,6 +442,10 @@ struct MacConversationView: View {
                         .disabled(model.editingMessage != nil)
                         Button("Contact", systemImage: "person.crop.circle") {
                             showsContactComposer = true
+                        }
+                        .disabled(model.editingMessage != nil)
+                        Button("Location", systemImage: "location") {
+                            showsLocationComposer = true
                         }
                         .disabled(model.editingMessage != nil)
                     }

@@ -17,6 +17,8 @@
 	</array>
 	<key>NSContactsUsageDescription</key>
 	<string>BetterTG uses your contacts to help you find people you know on Telegram.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BetterTG uses your location to share it in a chat when you choose to.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

@@ -22,6 +22,7 @@ import TDLibKit
         formattedText: FormattedText? = nil,
         properties: MessageProperties,
         availableReactions: [AvailableReaction] = [],
+        canBeTranslated: Bool = false,
     ) {
         self.message = message
         self.senderUser = senderUser
@@ -36,6 +37,7 @@ import TDLibKit
         self.formattedText = formattedText
         self.properties = properties
         self.availableReactions = availableReactions
+        self.canBeTranslated = canBeTranslated
     }
     
     // MARK: Internal
@@ -126,6 +128,13 @@ import TDLibKit
     var messageContact: MessageContact? {
         if case .messageContact(let messageContact) = message.content {
             return messageContact
+        }
+        return nil
+    }
+
+    var messageLocation: MessageLocation? {
+        if case .messageLocation(let messageLocation) = message.content {
+            return messageLocation
         }
         return nil
     }

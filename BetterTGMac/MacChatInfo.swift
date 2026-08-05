@@ -196,12 +196,10 @@ struct MacChatInfoView: View {
             Button("Shared Media", systemImage: "photo.on.rectangle") {
                 showsSharedMedia = true
             }
-            .accessibilityHint("Shows media, files, links, music, and voice messages")
 
             Button("Scheduled Messages", systemImage: "clock") {
                 showsScheduledMessages = true
             }
-            .accessibilityHint("Shows messages scheduled to be sent later")
 
             if let commonGroupCount = info.commonGroupCount, commonGroupCount > 0 {
                 Button {

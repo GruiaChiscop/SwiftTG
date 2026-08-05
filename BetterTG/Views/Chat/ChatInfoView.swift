@@ -194,14 +194,12 @@ struct ChatInfoView: View {
             } label: {
                 Label("Shared Media", systemImage: "photo.on.rectangle")
             }
-            .accessibilityHint("Shows media, files, links, music, and voice messages")
 
             Button {
                 showsScheduledMessages = true
             } label: {
                 Label("Scheduled Messages", systemImage: "clock")
             }
-            .accessibilityHint("Shows messages scheduled to be sent later")
 
             if let commonGroupCount = info.commonGroupCount,
                commonGroupCount > 0,

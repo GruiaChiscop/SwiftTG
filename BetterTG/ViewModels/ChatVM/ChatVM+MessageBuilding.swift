@@ -14,11 +14,6 @@ extension ChatVM {
         async let propertiesTask = service.getMessageProperties(
             chatId: customChat.chat.id, messageId: message.id,
         )
-        async let reactionsTask = service.getMessageAvailableReactions(
-            chatId: customChat.chat.id,
-            messageId: message.id,
-            rowSize: 8,
-        )
         async let senderUserTask = resolvedSenderUser(for: message.senderId)
         async let serviceMessageTextTask = TelegramServiceMessage.description(service: service, message: message)
 
@@ -36,12 +31,6 @@ extension ChatVM {
                 nil
             }
         let serviceMessageText = await serviceMessageTextTask
-        let availableReactions: [AvailableReaction] =
-            if let reactions = try? await reactionsTask {
-                telegramAvailableReactions(reactions)
-            } else {
-                []
-            }
 
         let replyUser: User?
         let replySenderName: String?
@@ -84,10 +73,48 @@ extension ChatVM {
             serviceMessageText: serviceMessageText,
             formattedText: formattedText,
             properties: properties,
-            availableReactions: availableReactions,
         )
-        customMessage.canBeTranslated = telegramMessageCanBeTranslated(message, chatType: customChat.chat.type)
+        loadAvailableReactions(for: customMessage)
+        loadTranslationEligibility(for: customMessage)
         return customMessage
+    }
+
+    /// `telegramMessageCanBeTranslated` runs `NLLanguageRecognizer` (on-device ML inference) -
+    /// real CPU work, not just an RPC wait. Computing it synchronously for every message while
+    /// building a chat's initial batch (up to 45 messages, several concurrently per
+    /// `messageRenderLimiter`) pegs the CPU right when a chat opens, for a value only the
+    /// context menu's Translate action ever reads - never the render path. Off the batch's
+    /// critical path, same as `loadAvailableReactions` above.
+    @discardableResult func loadTranslationEligibility(for customMessage: CustomMessage) -> Task<Void, Never> {
+        let message = customMessage.message
+        let chatType = customChat.chat.type
+        return Task.background {
+            let canBeTranslated = telegramMessageCanBeTranslated(message, chatType: chatType)
+            await main {
+                customMessage.canBeTranslated = canBeTranslated
+            }
+        }
+    }
+
+    /// Fetching a message's available reactions can require a server round trip (the reaction
+    /// set depends on chat/boost/premium state TDLib doesn't always have cached), and it's only
+    /// ever read from the reaction picker/quick-react row - never from the render path itself.
+    /// Doing this off the critical path that gates a chat's initial "loaded" state (unlike the
+    /// other fields above) keeps that gate from waiting on a call nothing shows during load.
+    @discardableResult func loadAvailableReactions(for customMessage: CustomMessage) -> Task<Void, Never> {
+        let chatId = customChat.chat.id
+        let messageId = customMessage.id
+        return Task.background {
+            guard let reactions = try? await self.service.getMessageAvailableReactions(
+                chatId: chatId,
+                messageId: messageId,
+                rowSize: 8,
+            ) else { return }
+            let choices = telegramAvailableReactions(reactions)
+            await main {
+                customMessage.availableReactions = choices
+            }
+        }
     }
 
     func resolvedSenderUser(for senderId: MessageSender) async -> User? {

@@ -60,6 +60,8 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
         TelegramChecklistPresentation(content).contentDescription
     case .messageContact(let content):
         TelegramContactPresentation(content).contentDescription
+    case .messageLocation:
+        "Location"
     case .messageSticker(let content):
         content.sticker.emoji.isEmpty ? "Sticker" : "Sticker \(content.sticker.emoji)"
     case .messageCall:

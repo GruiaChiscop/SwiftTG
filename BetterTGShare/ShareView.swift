@@ -52,7 +52,7 @@ struct ShareView: View {
                 }
 
                 Section {
-                    TextField("Add a comment", text: $comment, axis: .vertical)
+//                    TextField("Add a Caption", text: $comment, axis: .vertical)
                 } footer: {
                     // The main app doesn't send this on its own the instant you tap Send here (see
                     // `ShareViewController.send` / `RootVM.processPendingShareRequests`) - a Share
@@ -144,13 +144,11 @@ struct ShareView: View {
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                    .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isSending)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
     private func attachmentRow(_ attachment: ShareAttachmentPreview) -> some View {
