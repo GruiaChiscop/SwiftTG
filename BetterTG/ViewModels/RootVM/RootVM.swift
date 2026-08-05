@@ -110,6 +110,8 @@ struct ChatListLoadKey: Hashable, Sendable {
     @ObservationIgnored var searchGeneration: UInt64 = 0
     @ObservationIgnored var pendingNotificationTarget: TelegramNotificationTarget?
     @ObservationIgnored var notificationOpenGeneration: UInt64 = 0
+    @ObservationIgnored var shareChatCacheWriteTask: Task<Void, Never>?
+    @ObservationIgnored var shareRequestProcessingTask: Task<Void, Never>?
     
     var loggedIn: Bool {
         get {

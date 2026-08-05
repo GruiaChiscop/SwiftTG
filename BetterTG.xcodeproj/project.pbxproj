@@ -16,6 +16,10 @@
 		D20000000000000000000001 /* TelegramWebM in Frameworks */ = {isa = PBXBuildFile; productRef = D20000000000000000000005 /* TelegramWebM */; };
 		D20000000000000000000003 /* TelegramWebM in Frameworks */ = {isa = PBXBuildFile; productRef = D20000000000000000000005 /* TelegramWebM */; };
 		DF9C5CC1292698BC00ED1CA8 /* TDLibKit in Frameworks */ = {isa = PBXBuildFile; productRef = DF9C5CC0292698BC00ED1CA8 /* TDLibKit */; };
+		E1000000000000000000000B /* BetterTGShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* BetterTGShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E10000000000000000000010 /* TelegramShareExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000000000000000000000E /* TelegramShareExtension.swift */; };
+		E10000000000000000000011 /* TelegramAvatarColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000000000000000000000F /* TelegramAvatarColor.swift */; };
+		E10000000000000000000013 /* AttachmentStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000012 /* AttachmentStaging.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,6 +30,13 @@
 			remoteGlobalIDString = DF4B997D28C3F3F50087C1B9;
 			remoteInfo = BetterTG;
 		};
+		E1000000000000000000000C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DF4B997628C3F3F50087C1B9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E10000000000000000000003;
+			remoteInfo = BetterTGShare;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -35,6 +46,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
+				E1000000000000000000000B /* BetterTGShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -65,6 +77,10 @@
 		A10000000000000000000002 /* BetterTGMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BetterTGMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B30000000000000000000001 /* BetterTGTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BetterTGTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DF4B997E28C3F3F50087C1B9 /* BetterTG.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BetterTG.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E10000000000000000000001 /* BetterTGShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BetterTGShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E1000000000000000000000E /* TelegramShareExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/TelegramShareExtension.swift; sourceTree = "<group>"; };
+		E1000000000000000000000F /* TelegramAvatarColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/TelegramAvatarColor.swift; sourceTree = "<group>"; };
+		E10000000000000000000012 /* AttachmentStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/AttachmentStaging.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -75,6 +91,13 @@
 			);
 			target = DF4B997D28C3F3F50087C1B9 /* BetterTG */;
 		};
+		E1000000000000000000000A /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E10000000000000000000003 /* BetterTGShare */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -83,6 +106,7 @@
 		A20000000000000000000002 /* BetterTG/Secret */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BetterTG/Secret; sourceTree = "<group>"; };
 		B30000000000000000000002 /* BetterTGTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BetterTGTests; sourceTree = "<group>"; };
 		DFD75B1C2D3DA0D8004E7CA6 /* BetterTG */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (DFD75B772D3DA0D8004E7CA6 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BetterTG; sourceTree = "<group>"; };
+		E10000000000000000000002 /* BetterTGShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E1000000000000000000000A /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BetterTGShare; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -116,6 +140,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -124,9 +155,13 @@
 			children = (
 				DFD75B1C2D3DA0D8004E7CA6 /* BetterTG */,
 				A10000000000000000000003 /* BetterTGMac */,
+				E10000000000000000000002 /* BetterTGShare */,
 				A20000000000000000000001 /* BetterTGShared */,
 				A20000000000000000000002 /* BetterTG/Secret */,
 				B30000000000000000000002 /* BetterTGTests */,
+				E1000000000000000000000E /* TelegramShareExtension.swift */,
+				E1000000000000000000000F /* TelegramAvatarColor.swift */,
+				E10000000000000000000012 /* AttachmentStaging.swift */,
 				DF4B997F28C3F3F50087C1B9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -136,6 +171,7 @@
 			children = (
 				DF4B997E28C3F3F50087C1B9 /* BetterTG.app */,
 				A10000000000000000000002 /* BetterTGMac.app */,
+				E10000000000000000000001 /* BetterTGShare.appex */,
 				B30000000000000000000001 /* BetterTGTests.xctest */,
 			);
 			name = Products;
@@ -211,6 +247,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				E1000000000000000000000D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A20000000000000000000001 /* BetterTGShared */,
@@ -226,6 +263,26 @@
 			productName = BetterTG;
 			productReference = DF4B997E28C3F3F50087C1B9 /* BetterTG.app */;
 			productType = "com.apple.product-type.application";
+		};
+		E10000000000000000000003 /* BetterTGShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E10000000000000000000007 /* Build configuration list for PBXNativeTarget "BetterTGShare" */;
+			buildPhases = (
+				E10000000000000000000004 /* Sources */,
+				E10000000000000000000005 /* Frameworks */,
+				E10000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E10000000000000000000002 /* BetterTGShare */,
+			);
+			name = BetterTGShare;
+			productName = BetterTGShare;
+			productReference = E10000000000000000000001 /* BetterTGShare.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -252,6 +309,9 @@
 					DF4B997D28C3F3F50087C1B9 = {
 						CreatedOnToolsVersion = 14.0;
 					};
+					E10000000000000000000003 = {
+						CreatedOnToolsVersion = 26.0;
+					};
 				};
 			};
 			buildConfigurationList = DF4B997928C3F3F50087C1B9 /* Build configuration list for PBXProject "BetterTG" */;
@@ -277,6 +337,7 @@
 				DF4B997D28C3F3F50087C1B9 /* BetterTG */,
 				A10000000000000000000005 /* BetterTGMac */,
 				B30000000000000000000003 /* BetterTGTests */,
+				E10000000000000000000003 /* BetterTGShare */,
 			);
 		};
 /* End PBXProject section */
@@ -297,6 +358,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DF4B997C28C3F3F50087C1B9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E10000000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -349,6 +417,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E10000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E10000000000000000000010 /* TelegramShareExtension.swift in Sources */,
+				E10000000000000000000011 /* TelegramAvatarColor.swift in Sources */,
+				E10000000000000000000013 /* AttachmentStaging.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -356,6 +434,11 @@
 			isa = PBXTargetDependency;
 			target = DF4B997D28C3F3F50087C1B9 /* BetterTG */;
 			targetProxy = B3000000000000000000000A /* PBXContainerItemProxy */;
+		};
+		E1000000000000000000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E10000000000000000000003 /* BetterTGShare */;
+			targetProxy = E1000000000000000000000C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -683,6 +766,66 @@
 			};
 			name = Release;
 		};
+		E10000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = BetterTGShare/BetterTGShare.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y7J75349M6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BetterTGShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gruiachiscop.BetterTG.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E10000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = BetterTGShare/BetterTGShare.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y7J75349M6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BetterTGShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gruiachiscop.BetterTG.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -718,6 +861,15 @@
 			buildConfigurations = (
 				DF4B998D28C3F3F60087C1B9 /* Debug */,
 				DF4B998E28C3F3F60087C1B9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E10000000000000000000007 /* Build configuration list for PBXNativeTarget "BetterTGShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E10000000000000000000008 /* Debug */,
+				E10000000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

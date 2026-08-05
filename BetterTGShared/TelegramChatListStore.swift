@@ -6,7 +6,7 @@ import Foundation
 
 // MARK: - ChatListItemKind
 
-enum ChatListItemKind: Sendable, Equatable {
+enum ChatListItemKind: String, Sendable, Equatable, Codable {
     case privateChat
     case group
     case channel

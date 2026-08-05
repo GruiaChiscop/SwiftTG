@@ -16,6 +16,9 @@ extension RootVM {
                     Task { @MainActor [weak self] in
                         await self?.resumePendingNotificationOpen()
                     }
+                    Task { @MainActor [weak self] in
+                        await self?.processPendingShareRequests()
+                    }
                 case .authorizationStateClosed,
                      .authorizationStateClosing,
                      .authorizationStateLoggingOut,
@@ -89,6 +92,43 @@ extension RootVM {
         appliedChatListVersion = snapshot.version
         latestChatListSnapshot = snapshot
         applyFolders(snapshot)
+        scheduleShareChatCacheUpdate()
+    }
+
+    /// Debounced (not written on every single snapshot delta, which can fire many times in a
+    /// burst during initial sync) mirror of the top chats into the App Group's `ShareChatCache`,
+    /// so the Share Extension - which has no TDLib access of its own - has something to show as
+    /// its chat picker.
+    private func scheduleShareChatCacheUpdate() {
+        shareChatCacheWriteTask?.cancel()
+        shareChatCacheWriteTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await self?.writeShareChatCache()
+        }
+    }
+
+    @MainActor private func writeShareChatCache() {
+        let topChats = allChats
+            .sorted { ($0.lastMessage?.date ?? 0) > ($1.lastMessage?.date ?? 0) }
+            .prefix(60)
+            .map { chat in
+                ShareTargetChat(
+                    id: chat.chat.id,
+                    title: chat.displayTitle,
+                    isSavedMessages: chat.isSavedMessages,
+                    kind: Self.shareChatKind(chat.kind),
+                )
+            }
+        ShareChatCache.save(Array(topChats))
+    }
+
+    private static func shareChatKind(_ kind: CustomChat.ChatKind) -> ShareChatKind {
+        switch kind {
+        case .bot, .privateChat: .privateChat
+        case .group: .group
+        case .channel: .channel
+        }
     }
 
     private func applyFolders(_ snapshot: ChatListSnapshot) {
