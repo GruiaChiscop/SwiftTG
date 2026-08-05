@@ -124,12 +124,27 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func terminateSession(sessionId: TdInt64?) async throws -> Ok
     func terminateAllOtherSessions() async throws -> Ok
     func getStickerSet(setId: TdInt64?) async throws -> StickerSet
+    func searchStickerSet(ignoreCache: Bool?, name: String?) async throws -> StickerSet
     func getStickers(
         chatId: Int64?,
         limit: Int?,
         query: String?,
         stickerType: StickerType?,
     ) async throws -> Stickers
+    func uploadStickerFile(sticker: InputFile?, stickerFormat: StickerFormat?, userId: Int64?) async throws -> File
+    func getSuggestedStickerSetName(title: String?) async throws -> Text
+    func checkStickerSetName(name: String?) async throws -> CheckStickerSetNameResult
+    func createNewStickerSet(
+        name: String?,
+        needsRepainting: Bool?,
+        source: String?,
+        stickerType: StickerType?,
+        stickers: [NewSticker]?,
+        title: String?,
+        userId: Int64?,
+    ) async throws -> StickerSet
+    func addStickerToSet(name: String?, sticker: NewSticker?, userId: Int64?) async throws -> Ok
+    func changeStickerSet(isArchived: Bool?, isInstalled: Bool?, setId: TdInt64?) async throws -> Ok
     func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview
     func getMe() async throws -> User
@@ -712,6 +727,10 @@ extension TelegramSession: TelegramService {
         try await client.getStickerSet(setId: setId)
     }
 
+    func searchStickerSet(ignoreCache: Bool?, name: String?) async throws -> StickerSet {
+        try await client.searchStickerSet(ignoreCache: ignoreCache, name: name)
+    }
+
     func getStickers(
         chatId: Int64?,
         limit: Int?,
@@ -724,6 +743,46 @@ extension TelegramSession: TelegramService {
             query: query,
             stickerType: stickerType,
         )
+    }
+
+    func uploadStickerFile(sticker: InputFile?, stickerFormat: StickerFormat?, userId: Int64?) async throws -> File {
+        try await client.uploadStickerFile(sticker: sticker, stickerFormat: stickerFormat, userId: userId)
+    }
+
+    func getSuggestedStickerSetName(title: String?) async throws -> Text {
+        try await client.getSuggestedStickerSetName(title: title)
+    }
+
+    func checkStickerSetName(name: String?) async throws -> CheckStickerSetNameResult {
+        try await client.checkStickerSetName(name: name)
+    }
+
+    func createNewStickerSet(
+        name: String?,
+        needsRepainting: Bool?,
+        source: String?,
+        stickerType: StickerType?,
+        stickers: [NewSticker]?,
+        title: String?,
+        userId: Int64?,
+    ) async throws -> StickerSet {
+        try await client.createNewStickerSet(
+            name: name,
+            needsRepainting: needsRepainting,
+            source: source,
+            stickerType: stickerType,
+            stickers: stickers,
+            title: title,
+            userId: userId,
+        )
+    }
+
+    func addStickerToSet(name: String?, sticker: NewSticker?, userId: Int64?) async throws -> Ok {
+        try await client.addStickerToSet(name: name, sticker: sticker, userId: userId)
+    }
+
+    func changeStickerSet(isArchived: Bool?, isInstalled: Bool?, setId: TdInt64?) async throws -> Ok {
+        try await client.changeStickerSet(isArchived: isArchived, isInstalled: isInstalled, setId: setId)
     }
 
     func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders {

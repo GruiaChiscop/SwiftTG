@@ -17,9 +17,9 @@
 		D20000000000000000000003 /* TelegramWebM in Frameworks */ = {isa = PBXBuildFile; productRef = D20000000000000000000005 /* TelegramWebM */; };
 		DF9C5CC1292698BC00ED1CA8 /* TDLibKit in Frameworks */ = {isa = PBXBuildFile; productRef = DF9C5CC0292698BC00ED1CA8 /* TDLibKit */; };
 		E1000000000000000000000B /* BetterTGShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* BetterTGShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		E10000000000000000000010 /* TelegramShareExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000000000000000000000E /* TelegramShareExtension.swift */; };
-		E10000000000000000000011 /* TelegramAvatarColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000000000000000000000F /* TelegramAvatarColor.swift */; };
-		E10000000000000000000013 /* AttachmentStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000012 /* AttachmentStaging.swift */; };
+		E10000000000000000000010 /* BetterTGShared/TelegramShareExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000000000000000000000E /* BetterTGShared/TelegramShareExtension.swift */; };
+		E10000000000000000000011 /* BetterTGShared/TelegramAvatarColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000000000000000000000F /* BetterTGShared/TelegramAvatarColor.swift */; };
+		E10000000000000000000013 /* BetterTGShared/AttachmentStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000012 /* BetterTGShared/AttachmentStaging.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,9 +78,9 @@
 		B30000000000000000000001 /* BetterTGTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BetterTGTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DF4B997E28C3F3F50087C1B9 /* BetterTG.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BetterTG.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E10000000000000000000001 /* BetterTGShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BetterTGShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		E1000000000000000000000E /* TelegramShareExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/TelegramShareExtension.swift; sourceTree = "<group>"; };
-		E1000000000000000000000F /* TelegramAvatarColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/TelegramAvatarColor.swift; sourceTree = "<group>"; };
-		E10000000000000000000012 /* AttachmentStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/AttachmentStaging.swift; sourceTree = "<group>"; };
+		E1000000000000000000000E /* BetterTGShared/TelegramShareExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/TelegramShareExtension.swift; sourceTree = "<group>"; };
+		E1000000000000000000000F /* BetterTGShared/TelegramAvatarColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/TelegramAvatarColor.swift; sourceTree = "<group>"; };
+		E10000000000000000000012 /* BetterTGShared/AttachmentStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetterTGShared/AttachmentStaging.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -159,9 +159,9 @@
 				A20000000000000000000001 /* BetterTGShared */,
 				A20000000000000000000002 /* BetterTG/Secret */,
 				B30000000000000000000002 /* BetterTGTests */,
-				E1000000000000000000000E /* TelegramShareExtension.swift */,
-				E1000000000000000000000F /* TelegramAvatarColor.swift */,
-				E10000000000000000000012 /* AttachmentStaging.swift */,
+				E1000000000000000000000E /* BetterTGShared/TelegramShareExtension.swift */,
+				E1000000000000000000000F /* BetterTGShared/TelegramAvatarColor.swift */,
+				E10000000000000000000012 /* BetterTGShared/AttachmentStaging.swift */,
 				DF4B997F28C3F3F50087C1B9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -421,9 +421,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E10000000000000000000010 /* TelegramShareExtension.swift in Sources */,
-				E10000000000000000000011 /* TelegramAvatarColor.swift in Sources */,
-				E10000000000000000000013 /* AttachmentStaging.swift in Sources */,
+				E10000000000000000000010 /* BetterTGShared/TelegramShareExtension.swift in Sources */,
+				E10000000000000000000011 /* BetterTGShared/TelegramAvatarColor.swift in Sources */,
+				E10000000000000000000013 /* BetterTGShared/AttachmentStaging.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -89,6 +89,9 @@ struct TelegramStickerPickerView<Preview: View>: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { dismiss() }
                     }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Create Sticker") { showsCreationComposer = true }
+                    }
                 }
                 .task { await loadLibraryIfNeeded() }
                 .task(id: normalizedQuery) { await search() }
@@ -97,6 +100,11 @@ struct TelegramStickerPickerView<Preview: View>: View {
                     Button("OK", role: .cancel) {}
                 } message: {
                     Text("Telegram Premium is required to send this sticker.")
+                }
+                .sheet(isPresented: $showsCreationComposer) {
+                    TelegramStickerCreationComposerView(service: service) { _ in
+                        await loadLibrary(force: true)
+                    }
                 }
         }
     }
@@ -116,6 +124,7 @@ struct TelegramStickerPickerView<Preview: View>: View {
     @State private var feedbackMessage: String?
     @State private var hasPremium: Bool?
     @State private var showsPremiumRequiredAlert = false
+    @State private var showsCreationComposer = false
 
     private let service: any TelegramService
     private let chatId: Int64
