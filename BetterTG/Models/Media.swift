@@ -7,7 +7,7 @@ import Observation
 /// Thin iOS wrapper around the shared `VoiceMessagePlaybackEngine`, adding audio session setup
 /// and Now Playing/remote-command-center integration around it. macOS's `MacVoicePlayer` wraps
 /// the same engine without either, since neither applies there.
-@Observable final class Media {
+@Observable final class Media: @unchecked Sendable {
     // MARK: Lifecycle
 
     init() {
