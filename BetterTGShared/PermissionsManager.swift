@@ -129,14 +129,19 @@ final class SystemLocationAccess: NSObject, LocationAccess, CLLocationManagerDel
     }
 
     /// No-ops (returning the current status) if the system already asked the user once - iOS/macOS
-    /// only ever show the system permission prompt while status is `.notDetermined`.
+    /// only ever show the system permission prompt while status is `.notDetermined`. Queues the
+    /// continuation rather than storing a single one, so a second caller racing the first (two UI
+    /// actions both needing location around the same time) doesn't silently overwrite - and orphan
+    /// forever - the first one's continuation.
     func requestAccess() async -> Bool {
         guard manager.authorizationStatus == .notDetermined else {
             return authorizationStatus() == .authorized
         }
         return await withCheckedContinuation { continuation in
-            authorizationContinuation = continuation
-            manager.requestWhenInUseAuthorization()
+            authorizationContinuations.append(continuation)
+            if authorizationContinuations.count == 1 {
+                manager.requestWhenInUseAuthorization()
+            }
         }
     }
 
@@ -169,28 +174,34 @@ final class SystemLocationAccess: NSObject, LocationAccess, CLLocationManagerDel
         #endif
         guard canPrompt else { return false }
         return await withCheckedContinuation { continuation in
-            alwaysAuthorizationContinuation = continuation
-            manager.requestAlwaysAuthorization()
+            alwaysAuthorizationContinuations.append(continuation)
+            if alwaysAuthorizationContinuations.count == 1 {
+                manager.requestAlwaysAuthorization()
+            }
         }
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         guard manager.authorizationStatus != .notDetermined else { return }
-        if let continuation = authorizationContinuation {
-            authorizationContinuation = nil
-            continuation.resume(returning: authorizationStatus() == .authorized)
+        let pendingAuthorization = authorizationContinuations
+        authorizationContinuations.removeAll()
+        let isAuthorized = authorizationStatus() == .authorized
+        for continuation in pendingAuthorization {
+            continuation.resume(returning: isAuthorized)
         }
-        if let continuation = alwaysAuthorizationContinuation {
-            alwaysAuthorizationContinuation = nil
-            continuation.resume(returning: hasAlwaysAuthorization())
+        let pendingAlwaysAuthorization = alwaysAuthorizationContinuations
+        alwaysAuthorizationContinuations.removeAll()
+        let hasAlways = hasAlwaysAuthorization()
+        for continuation in pendingAlwaysAuthorization {
+            continuation.resume(returning: hasAlways)
         }
     }
 
     // MARK: Private
 
     private let manager = CLLocationManager()
-    private var authorizationContinuation: CheckedContinuation<Bool, Never>?
-    private var alwaysAuthorizationContinuation: CheckedContinuation<Bool, Never>?
+    private var authorizationContinuations = [CheckedContinuation<Bool, Never>]()
+    private var alwaysAuthorizationContinuations = [CheckedContinuation<Bool, Never>]()
 }
 
 // MARK: - PermissionsManager

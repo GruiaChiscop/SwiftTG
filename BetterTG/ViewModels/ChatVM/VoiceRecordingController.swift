@@ -31,7 +31,7 @@ import TDLibKit
     func startTimer() {
         let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] timer in
             guard let self, let audioRecorder else { return }
-            wave.append(audioRecorder.peakPower)
+            wave.append(audioRecorder.currentPeakPower())
             timerCount += timer.timeInterval
         }
         self.timer = timer

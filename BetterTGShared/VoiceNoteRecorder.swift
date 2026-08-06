@@ -7,7 +7,14 @@ import SwiftOGG
 final class VoiceNoteRecorder {
     // MARK: Internal
 
-    private(set) var peakPower: Float = -160
+    /// Reads across `encodingQueue`, the same way `stopAndWrite`/`cancel` already do - `peakPower`
+    /// is written from `updatePeak(from:count:)` on `encodingQueue` (the audio tap's callback) and
+    /// was previously exposed as a plain stored property read directly by a main-thread `Timer`
+    /// (`VoiceRecordingController.startTimer()`), an unsynchronized cross-thread read/write on
+    /// every tick while recording.
+    func currentPeakPower() -> Float {
+        encodingQueue.sync { peakPower }
+    }
 
     func start() throws {
         let input = engine.inputNode
@@ -77,6 +84,7 @@ final class VoiceNoteRecorder {
     private var encoder: OGGEncoder?
     private var compressedData = Data()
     private var encodedFrameCount: Int64 = 0
+    private var peakPower: Float = -160
 
     private func encode(_ inputBuffer: AVAudioPCMBuffer, outputFormat: AVAudioFormat) {
         guard let converter, let encoder else { return }

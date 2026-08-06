@@ -37,7 +37,7 @@ extension MacSessionModel {
                 try? await Task.sleep(for: .milliseconds(50))
                 guard let self, isRecordingVoice, let startedAt = voiceRecordingStartedAt else { return }
                 voiceRecordingDuration = Foundation.Date().timeIntervalSince(startedAt)
-                voiceRecordingWave.append(voiceRecorder?.peakPower ?? -160)
+                voiceRecordingWave.append(voiceRecorder?.currentPeakPower() ?? -160)
             }
         }
 
