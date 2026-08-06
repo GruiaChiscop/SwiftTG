@@ -1,7 +1,7 @@
 // TelegramPrivacySettings.swift
 
 import SwiftUI
-import TDLibKit
+@preconcurrency import TDLibKit
 
 // MARK: - TelegramPrivacyOption
 

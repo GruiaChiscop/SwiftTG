@@ -1,7 +1,7 @@
 // ChatVM+MessageActions.swift
 
 import SwiftUI
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension ChatVM {
     func deleteMessage(id: Int64, deleteForBoth: Bool) {

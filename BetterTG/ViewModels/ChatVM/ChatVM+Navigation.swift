@@ -1,7 +1,7 @@
 // ChatVM+Navigation.swift
 
 import SwiftUI
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension ChatVM {
     func updateBottomVisibility(isLastMessageVisible: Bool) {

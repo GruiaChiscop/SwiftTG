@@ -1,6 +1,6 @@
 // ChatVM+History.swift
 
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension ChatVM {
     func loadMessages() {

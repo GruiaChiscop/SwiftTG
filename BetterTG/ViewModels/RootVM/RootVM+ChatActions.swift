@@ -1,6 +1,6 @@
 // RootVM+ChatActions.swift
 
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension RootVM {
     func toggleRead(for chat: CustomChat) {

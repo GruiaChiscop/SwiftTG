@@ -1,7 +1,7 @@
 // ChatVM+ScheduledMessages.swift
 
 import Foundation
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension ChatVM {
     func refreshScheduledMessages() {

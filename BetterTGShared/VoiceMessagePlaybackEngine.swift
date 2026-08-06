@@ -1,6 +1,6 @@
 // VoiceMessagePlaybackEngine.swift
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import Observation
 import SwiftOGG
 

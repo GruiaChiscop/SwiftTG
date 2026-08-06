@@ -1,7 +1,7 @@
 // ChatVM+ChatTranslation.swift
 
 import SwiftUI
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension ChatVM {
     var showsChatTranslationBanner: Bool {

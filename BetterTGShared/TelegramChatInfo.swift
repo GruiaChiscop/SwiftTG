@@ -1,7 +1,7 @@
 // TelegramChatInfo.swift
 
 import Foundation
-import TDLibKit
+@preconcurrency import TDLibKit
 
 // MARK: - TelegramChatInfoMember
 

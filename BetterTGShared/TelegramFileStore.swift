@@ -2,7 +2,7 @@
 
 import Combine
 import Foundation
-import TDLibKit
+@preconcurrency import TDLibKit
 
 final class TelegramFileStore: @unchecked Sendable {
     // MARK: Internal

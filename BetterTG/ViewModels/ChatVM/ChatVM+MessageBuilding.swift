@@ -1,6 +1,6 @@
 // ChatVM+MessageBuilding.swift
 
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension ChatVM {
     func getCustomMessage(fromId id: Int64) async -> CustomMessage? {

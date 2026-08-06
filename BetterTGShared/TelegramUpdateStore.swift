@@ -1,8 +1,8 @@
 // TelegramUpdateStore.swift
 
-import Combine
+@preconcurrency import Combine
 import Foundation
-import TDLibKit
+@preconcurrency import TDLibKit
 
 final class TelegramUpdateStore: @unchecked Sendable {
     // MARK: Internal

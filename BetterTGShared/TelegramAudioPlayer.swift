@@ -1,9 +1,9 @@
 // TelegramAudioPlayer.swift
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import Observation
 import SwiftUI
-import TDLibKit
+@preconcurrency import TDLibKit
 
 // MARK: - TelegramAudioPlayer
 

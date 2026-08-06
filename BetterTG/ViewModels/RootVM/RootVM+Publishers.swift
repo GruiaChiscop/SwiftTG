@@ -1,7 +1,7 @@
 // RootVM+Publishers.swift
 
 import SwiftUI
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension RootVM {
     func setPublishers() {

@@ -1,7 +1,7 @@
 // RootVM+Search.swift
 
 import Foundation
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension RootVM {
     func search(_ query: String, in chatList: ChatList) {

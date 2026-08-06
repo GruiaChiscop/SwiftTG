@@ -2,7 +2,7 @@
 
 import Combine
 import SwiftUI
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension ChatVM {
     func setPublishers() {

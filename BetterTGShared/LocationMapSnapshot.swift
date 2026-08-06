@@ -1,7 +1,7 @@
 // LocationMapSnapshot.swift
 
 import CoreLocation
-import MapKit
+@preconcurrency import MapKit
 
 #if os(iOS)
 import UIKit
