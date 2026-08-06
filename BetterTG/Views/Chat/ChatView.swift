@@ -130,6 +130,7 @@ struct ChatView: View {
             return true
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .navigationBarHeight($navigationBarHeight)
         .onChange(of: chatVM.isConversationSearchActive) { _, isActive in
             if isActive {
@@ -507,19 +508,6 @@ struct ChatView: View {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
         positionedInitialMessages = true
 
-        let focusMessageId: Int64?
-        let highlightsFocusMessage: Bool
-        if let initialMessageId = chatVM.initialMessageId {
-            focusMessageId = initialMessageId
-            highlightsFocusMessage = true
-        } else if let initialUnreadMessageId {
-            focusMessageId = initialUnreadMessageId
-            highlightsFocusMessage = true
-        } else {
-            focusMessageId = chatVM.messages.last?.id
-            highlightsFocusMessage = false
-        }
-
         var transaction = Transaction()
         transaction.animation = nil
         withTransaction(transaction) {
@@ -529,23 +517,6 @@ struct ChatView: View {
                 initialScrollPosition.scrollTo(id: initialUnreadMessageId, anchor: .top)
             } else {
                 initialScrollPosition.scrollTo(edge: .bottom)
-            }
-        }
-        // Opening a chat leaves VoiceOver's cursor wherever it was before the push (usually the
-        // navigation bar) - the scroll position change above doesn't move it. Explicit jumps
-        // (reply/forward origin) already opt into moving focus via `movesAccessibilityFocusToInitialMessage`;
-        // for a plain chat open there's no such flag to check, so always move focus to wherever we
-        // just scrolled, the same way a sighted user is visually dropped there.
-        guard let focusMessageId, chatVM.initialMessageId == nil || chatVM.movesAccessibilityFocusToInitialMessage
-        else { return }
-        Task { @MainActor in
-            await Task.yield()
-            if highlightsFocusMessage {
-                chatVM.highlightedMessageId = focusMessageId
-            }
-            accessibilityFocusedMessageId = focusMessageId
-            if highlightsFocusMessage {
-                Task.main(delay: 0.8) { chatVM.highlightedMessageId = nil }
             }
         }
     }

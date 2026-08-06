@@ -4,7 +4,14 @@ import Foundation
 import TDLibKit
 
 func telegramMessageContentDescription(_ message: Message) -> String {
-    telegramMessageContentDescription(message.content)
+    // `MessageSupergroupChatCreate` covers both supergroups and channels (TDLib doesn't
+    // distinguish at the content level - a channel is a supergroup with no visible member
+    // list) - `isChannelPost` is set on every message posted in a channel, so it's the only
+    // way to tell them apart here.
+    if case .messageSupergroupChatCreate = message.content, message.isChannelPost {
+        return "Channel created"
+    }
+    return telegramMessageContentDescription(message.content)
 }
 
 /// The chat list only receives TDLib's last message, not every member of its media album.

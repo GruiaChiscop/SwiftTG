@@ -579,8 +579,6 @@ struct MessageView: View {
                 messageAccessibilityElement(Text(accessibilityDescription))
                 ForEach(textLinks) { link in
                     Link(link.displayedText, destination: link.url)
-                        .accessibilityRemoveTraits(.isButton)
-                        .accessibilityAddTraits(.isLink)
                         .modify {
                             if let destination = TelegramTextFormatting.accessibilityDestination(for: link) {
                                 $0.accessibilityValue(destination)
