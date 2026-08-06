@@ -2,7 +2,7 @@
 
 @testable import BetterTG
 import Foundation
-import TDLibKit
+@preconcurrency import TDLibKit
 import Testing
 
 // MARK: - PermissionsManagerTests

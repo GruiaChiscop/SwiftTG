@@ -1,6 +1,6 @@
 // TDLibFixtures.swift
 
-import TDLibKit
+@preconcurrency import TDLibKit
 
 enum TDLibFixtures {
     // MARK: Internal

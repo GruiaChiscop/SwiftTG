@@ -52,3 +52,5 @@ extension FileType: @retroactive @unchecked Sendable {}
 extension ReactionType: @retroactive @unchecked Sendable {}
 extension File: @retroactive @unchecked Sendable {}
 extension MessageProperties: @retroactive @unchecked Sendable {}
+extension ImportedContact: @retroactive @unchecked Sendable {}
+extension ImportedContacts: @retroactive @unchecked Sendable {}

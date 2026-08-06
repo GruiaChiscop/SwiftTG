@@ -47,7 +47,7 @@ import TDLibKit
             || (options?.forceSmallMedia != true && preview.showLargeMedia)
     }
 
-    static func firstWebURL(in text: FormattedText) -> URL? {
+    nonisolated static func firstWebURL(in text: FormattedText) -> URL? {
         let range = NSRange(text.text.startIndex..., in: text.text)
         let entityCandidates = TelegramTextFormatting.links(in: text).compactMap { link -> URLCandidate? in
             guard isWebURL(link.url) else { return nil }
@@ -173,7 +173,7 @@ import TDLibKit
         let url: URL
     }
 
-    private static let linkDetector = try? NSDataDetector(
+    private nonisolated static let linkDetector = try? NSDataDetector(
         types: NSTextCheckingResult.CheckingType.link.rawValue,
     )
 
@@ -185,7 +185,7 @@ import TDLibKit
     @ObservationIgnored private var currentText: FormattedText?
     @ObservationIgnored private var currentURL: String?
 
-    private static func isWebURL(_ url: URL) -> Bool {
+    private nonisolated static func isWebURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
     }
