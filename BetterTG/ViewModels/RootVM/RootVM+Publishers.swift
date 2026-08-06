@@ -107,7 +107,7 @@ extension RootVM {
         shareChatCacheWriteTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
-            await self?.writeShareChatCache()
+            self?.writeShareChatCache()
         }
     }
 
@@ -237,21 +237,19 @@ extension RootVM {
         for chatId in addedIds {
             let key = ChatListLoadKey(chatId: chatId, list: list)
             guard loadingChatKeys.insert(key).inserted else { continue }
-            Task.background {
+            Task.main {
                 let chat = await self.getCustomChat(from: chatId, for: list)
-                await main {
-                    self.loadingChatKeys.remove(key)
-                    guard self.isActive(folder),
-                          self.latestChatListSnapshot.items[chatId]?.position(in: list) != nil,
-                          !folder.chats.contains(where: { $0.id == chatId }),
-                          let chat
-                    else { return }
-                    withAnimation { folder.chats.append(chat) }
-                    if let item = self.latestChatListSnapshot.items[chatId],
-                       let position = item.position(in: list)
-                    {
-                        self.applyChatChanges(item, position: position, to: chat)
-                    }
+                self.loadingChatKeys.remove(key)
+                guard self.isActive(folder),
+                      self.latestChatListSnapshot.items[chatId]?.position(in: list) != nil,
+                      !folder.chats.contains(where: { $0.id == chatId }),
+                      let chat
+                else { return }
+                withAnimation { folder.chats.append(chat) }
+                if let item = self.latestChatListSnapshot.items[chatId],
+                   let position = item.position(in: list)
+                {
+                    self.applyChatChanges(item, position: position, to: chat)
                 }
             }
         }
@@ -294,16 +292,14 @@ extension RootVM {
 
         let chatIdentifier = ObjectIdentifier(chat)
         senderLoadVersions[chatIdentifier] = messageId
-        Task.background {
+        Task.main {
             let senderName = await self.getSenderName(for: item.lastMessage)
-            await main {
-                guard self.senderLoadVersions[chatIdentifier] == messageId else { return }
-                self.senderLoadVersions.removeValue(forKey: chatIdentifier)
-                guard chat.lastMessage?.id == messageId,
-                      self.isActive(chat)
-                else { return }
-                chat.lastMessageSenderName = senderName
-            }
+            guard self.senderLoadVersions[chatIdentifier] == messageId else { return }
+            self.senderLoadVersions.removeValue(forKey: chatIdentifier)
+            guard chat.lastMessage?.id == messageId,
+                  self.isActive(chat)
+            else { return }
+            chat.lastMessageSenderName = senderName
         }
     }
 

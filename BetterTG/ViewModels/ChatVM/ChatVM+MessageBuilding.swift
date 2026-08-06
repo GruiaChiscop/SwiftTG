@@ -90,7 +90,7 @@ extension ChatVM {
         let chatType = customChat.chat.type
         return Task.background {
             let canBeTranslated = telegramMessageCanBeTranslated(message, chatType: chatType)
-            await main {
+            Task { @MainActor in
                 customMessage.canBeTranslated = canBeTranslated
             }
         }
@@ -104,16 +104,13 @@ extension ChatVM {
     @discardableResult func loadAvailableReactions(for customMessage: CustomMessage) -> Task<Void, Never> {
         let chatId = customChat.chat.id
         let messageId = customMessage.id
-        return Task.background {
+        return Task.main {
             guard let reactions = try? await self.service.getMessageAvailableReactions(
                 chatId: chatId,
                 messageId: messageId,
                 rowSize: 8,
             ) else { return }
-            let choices = telegramAvailableReactions(reactions)
-            await main {
-                customMessage.availableReactions = choices
-            }
+            customMessage.availableReactions = telegramAvailableReactions(reactions)
         }
     }
 

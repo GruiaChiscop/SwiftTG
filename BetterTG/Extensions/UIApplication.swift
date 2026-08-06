@@ -17,7 +17,7 @@ extension UIApplication {
     }
 }
 
-func showShareSheet(_ items: [Any]) {
+@MainActor func showShareSheet(_ items: [Any]) {
     guard let rootVC = UIApplication.currentKeyWindow?.rootViewController else { return }
     let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
     vc.isModalInPresentation = false

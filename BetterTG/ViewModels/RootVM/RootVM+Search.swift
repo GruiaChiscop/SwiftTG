@@ -18,17 +18,16 @@ extension RootVM {
 
         searchGeneration &+= 1
         let generation = searchGeneration
-        let service = service
         let knownChats = Dictionary(uniqueKeysWithValues: allChats.map { ($0.id, $0) })
         let messageChatList = TelegramSearchPolicy.messageChatListScope(for: chatList)
         isSearching = true
 
-        searchTask = Task.background {
+        searchTask = Task.main {
             try? await Task<Never, Never>.sleep(for: TelegramSearchPolicy.globalQueryDebounce)
             guard !Task.isCancelled else { return }
 
-            async let foundChats = try? service.searchChats(limit: 50, query: normalized, typeFilter: nil)
-            async let foundMessages = try? service.searchMessages(
+            async let foundChats = try? self.service.searchChats(limit: 50, query: normalized, typeFilter: nil)
+            async let foundMessages = try? self.service.searchMessages(
                 chatList: messageChatList,
                 chatTypeFilter: nil,
                 filter: nil,
@@ -46,7 +45,7 @@ extension RootVM {
             var resolvedChats = knownChats
             var titles = [Int64: String]()
             for (chatId, chat) in knownChats {
-                titles[chatId] = await chat.displayTitle
+                titles[chatId] = chat.displayTitle
             }
             var idsToResolve = searchedChatIds
             for message in messages where !idsToResolve.contains(message.chatId) {
@@ -55,26 +54,22 @@ extension RootVM {
 
             for chatId in idsToResolve where resolvedChats[chatId] == nil {
                 guard !Task.isCancelled,
-                      let chat = try? await service.getChat(chatId: chatId),
+                      let chat = try? await self.service.getChat(chatId: chatId),
                       let list = chat.positions.first?.list,
                       let customChat = await self.getCustomChat(from: chatId, for: list)
                 else { continue }
                 resolvedChats[chatId] = customChat
-                titles[chatId] = await customChat.displayTitle
+                titles[chatId] = customChat.displayTitle
             }
 
             let chatResults = searchedChatIds.compactMap { resolvedChats[$0] }
             let messageResults = messages.filter { resolvedChats[$0.chatId] != nil }
-            let finalTitles = titles
-            let finalResolvedChats = resolvedChats
-            await main {
-                guard generation == self.searchGeneration, self.query == query else { return }
-                self.searchChatResults = chatResults
-                self.searchMessageResults = messageResults
-                self.searchMessageChatTitles = finalTitles
-                self.searchResultChatsById = finalResolvedChats
-                self.isSearching = false
-            }
+            guard generation == self.searchGeneration, self.query == query else { return }
+            self.searchChatResults = chatResults
+            self.searchMessageResults = messageResults
+            self.searchMessageChatTitles = titles
+            self.searchResultChatsById = resolvedChats
+            self.isSearching = false
         }
     }
 }
