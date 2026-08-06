@@ -5,7 +5,7 @@ import TDLibKit
 
 // MARK: - CustomChat
 
-@Observable final class CustomChat {
+@MainActor @Observable final class CustomChat {
     // MARK: Lifecycle
 
     init(
@@ -18,6 +18,7 @@ import TDLibKit
         draftMessage: DraftMessage? = nil,
     ) {
         self.chat = chat
+        self.chatId = chat.id
         self.notificationSettings = chat.notificationSettings
         self.lastReadInboxMessageId = chat.lastReadInboxMessageId
         self.lastReadOutboxMessageId = chat.lastReadOutboxMessageId
@@ -67,6 +68,7 @@ import TDLibKit
     }
 
     var chat: Chat
+    let chatId: Int64
     var notificationSettings: ChatNotificationSettings
     var position: ChatPosition
     var unreadCount: Int
@@ -192,7 +194,7 @@ extension CustomChat: Hashable {
     /// `lastMessage`, etc.) was measured costing ~561ms during chat-list bootstrap via an
     /// xctrace Time Profiler capture, since each incrementally-appended chat re-triggers a full
     /// rehash of every chat already in its folder.
-    func hash(into hasher: inout Hasher) {
+    nonisolated func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(self))
     }
 }
@@ -200,18 +202,22 @@ extension CustomChat: Hashable {
 // MARK: Identifiable
 
 extension CustomChat: Identifiable {
-    var id: Int64 { chat.id }
+    /// Mirrors `chat.id` as a plain immutable `Int64` set once at init, so callers that can't
+    /// touch main-actor-isolated state (like `Route`'s `Hashable` conformance in `RootVM.swift`,
+    /// itself nonisolated) can still read a chat's id - `chat` itself is a mutable, non-`Sendable`
+    /// property and can't be read from there.
+    nonisolated var id: Int64 { chatId }
 }
 
 // MARK: Equatable
 
 extension CustomChat: Equatable {
-    static func == (lhs: CustomChat, rhs: CustomChat) -> Bool {
+    nonisolated static func == (lhs: CustomChat, rhs: CustomChat) -> Bool {
         lhs === rhs
     }
 }
 
-func conversationCommunityStatus(for chat: CustomChat) -> String {
+@MainActor func conversationCommunityStatus(for chat: CustomChat) -> String {
     switch chat.type {
     case .bot, .user:
         ""

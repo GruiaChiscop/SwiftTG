@@ -6,7 +6,7 @@ import TDLibKit
 /// Staging, editing, and sending of a chat's outgoing text/photo/document/voice-note content.
 /// Split out of `ChatVM`, which composes this alongside `VoiceRecordingController` and keeps its
 /// own scope to history loading, rendering, and navigation.
-@Observable final class MessageComposer {
+@MainActor @Observable final class MessageComposer {
     // MARK: Lifecycle
 
     init(chatId: Int64, service: any TelegramService, draftMessage: DraftMessage?) {
@@ -24,11 +24,13 @@ import TDLibKit
     }
 
     deinit {
-        for url in displayedDocuments {
-            TelegramOutgoingFileStaging.shared.discard(fileURL: url)
-        }
-        for image in displayedImages {
-            TelegramOutgoingFileStaging.shared.discard(fileURL: image.url)
+        MainActor.assumeIsolated {
+            for url in displayedDocuments {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: url)
+            }
+            for image in displayedImages {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: image.url)
+            }
         }
     }
 

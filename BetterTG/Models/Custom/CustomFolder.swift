@@ -5,12 +5,13 @@ import TDLibKit
 
 // MARK: - CustomFolder
 
-@Observable final class CustomFolder {
+@MainActor @Observable final class CustomFolder {
     // MARK: Lifecycle
 
     init(chats: [CustomChat], type: CustomFolderType) {
         self.chats = chats
         self.type = type
+        self.folderId = Self.folderId(for: type)
     }
     
     // MARK: Internal
@@ -23,6 +24,11 @@ import TDLibKit
 
     var chats: [CustomChat]
     var type: CustomFolderType
+    /// Mirrors `id` as a plain immutable `Int` set once at init, so callers that can't touch
+    /// main-actor-isolated state (like `Route`'s `Hashable` conformance in `RootVM.swift`, itself
+    /// nonisolated) can still read a folder's id - `type` itself is a mutable, non-`Sendable`
+    /// property and can't be read from there.
+    let folderId: Int
     var rect = CGRect.zero
     var scrollViewProxy: ScrollViewProxy?
     
@@ -55,6 +61,16 @@ import TDLibKit
         default: nil
         }
     }
+
+    // MARK: Private
+
+    private static func folderId(for type: CustomFolderType) -> Int {
+        switch type {
+        case .main: 0
+        case .archive: -1
+        case .folder(let info, _): info.id
+        }
+    }
 }
 
 // MARK: Hashable
@@ -64,7 +80,7 @@ extension CustomFolder: Hashable {
     /// `CustomChat` in the folder (each of which hashed its own nested TDLib structs), which is
     /// exactly the O(n^2) cost the xctrace capture found during chat-list bootstrap. `.onChange(of:
     /// rootVM.folders)` (MainView.swift) only needs identity, not content, equality.
-    func hash(into hasher: inout Hasher) {
+    nonisolated func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(self))
     }
 }
@@ -72,19 +88,13 @@ extension CustomFolder: Hashable {
 // MARK: Identifiable
 
 extension CustomFolder: Identifiable {
-    var id: Int {
-        switch type {
-        case .main: 0
-        case .archive: -1
-        case .folder(let info, _): info.id
-        }
-    }
+    nonisolated var id: Int { folderId }
 }
 
 // MARK: Equatable
 
 extension CustomFolder: Equatable {
-    static func == (lhs: CustomFolder, rhs: CustomFolder) -> Bool {
+    nonisolated static func == (lhs: CustomFolder, rhs: CustomFolder) -> Bool {
         lhs === rhs
     }
 }

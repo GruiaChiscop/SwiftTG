@@ -5,7 +5,7 @@ import TDLibKit
 
 // MARK: - CustomMessage
 
-@Observable final class CustomMessage {
+@MainActor @Observable final class CustomMessage {
     // MARK: Lifecycle
 
     init(
