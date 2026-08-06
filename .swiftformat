@@ -126,4 +126,4 @@
 --xctest-symbols 
 --yoda-swap always
 --enable blockComments,isEmpty,markTypes,noExplicitOwnership,noGuardInTests,organizeDeclarations,preferFinalClasses,preferSwiftTesting,propertyTypes,sortSwitchCases,unusedPrivateDeclarations,urlMacro,validateTestCases,wrapEnumCases,wrapMultilineConditionalAssignment,wrapMultilineFunctionChains
---disable wrapPropertyBodies,wrapFunctionBodies
+--disable wrapPropertyBodies,wrapFunctionBodies,redundantAsync

@@ -105,54 +105,55 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
         return imagesDirectory.appending(path: "\(identifier.uuidString).\(fileExtension)")
     }
 
-    func stageDocument(
+    /// `@concurrent` (Swift 6.2) offloads this off the caller's context directly, without the
+    /// manual `let destinationRoot = directory; let fileManager = fileManager` re-capture
+    /// `Task.detached` needed to avoid pulling in `self` - and unlike `Task.detached`, cancelling
+    /// the caller's own task now actually propagates into the file-coordination work below instead
+    /// of only discarding its result afterward.
+    @concurrent func stageDocument(
         sourceURL: URL,
         suggestedFileName: String,
         identifier: String = UUID().uuidString,
     ) async throws -> URL {
-        let destinationRoot = directory
-        let fileManager = fileManager
-        return try await Task.detached(priority: .userInitiated) {
-            let accessedSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
-            defer {
-                if accessedSecurityScopedResource {
-                    sourceURL.stopAccessingSecurityScopedResource()
-                }
+        let accessedSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessedSecurityScopedResource {
+                sourceURL.stopAccessingSecurityScopedResource()
             }
+        }
 
-            let coordinator = NSFileCoordinator(filePresenter: nil)
-            var coordinationError: NSError?
-            var stagingResult: Result<URL, Error>?
-            coordinator.coordinate(
-                readingItemAt: sourceURL,
-                options: [.withoutChanges],
-                error: &coordinationError,
-            ) { coordinatedURL in
-                stagingResult = Result {
-                    let itemDirectory = destinationRoot
-                        .appending(path: "Documents", directoryHint: .isDirectory)
-                        .appending(path: identifier, directoryHint: .isDirectory)
-                    try fileManager.createDirectory(at: itemDirectory, withIntermediateDirectories: true)
-                    let destinationURL = itemDirectory.appending(
-                        path: TelegramFileName.sanitized(suggestedFileName),
-                    )
-                    if fileManager.fileExists(atPath: destinationURL.path) {
-                        try fileManager.removeItem(at: destinationURL)
-                    }
-                    try fileManager.copyItem(at: coordinatedURL, to: destinationURL)
-                    try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: destinationURL.path)
-                    return destinationURL
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationError: NSError?
+        var stagingResult: Result<URL, Error>?
+        coordinator.coordinate(
+            readingItemAt: sourceURL,
+            options: [.withoutChanges],
+            error: &coordinationError,
+        ) { coordinatedURL in
+            stagingResult = Result {
+                let itemDirectory = directory
+                    .appending(path: "Documents", directoryHint: .isDirectory)
+                    .appending(path: identifier, directoryHint: .isDirectory)
+                try fileManager.createDirectory(at: itemDirectory, withIntermediateDirectories: true)
+                let destinationURL = itemDirectory.appending(
+                    path: TelegramFileName.sanitized(suggestedFileName),
+                )
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
                 }
+                try fileManager.copyItem(at: coordinatedURL, to: destinationURL)
+                try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: destinationURL.path)
+                return destinationURL
             }
+        }
 
-            if let coordinationError {
-                throw coordinationError
-            }
-            guard let stagingResult else {
-                throw TelegramFileTransferError.sourceUnavailable
-            }
-            return try stagingResult.get()
-        }.value
+        if let coordinationError {
+            throw coordinationError
+        }
+        guard let stagingResult else {
+            throw TelegramFileTransferError.sourceUnavailable
+        }
+        return try stagingResult.get()
     }
 
     func register(fileURLs: [URL], chatId: Int64, temporaryMessageIds: [Int64]) {

@@ -242,6 +242,13 @@ struct TelegramStickerCropView: View {
         }
     }
 
+    /// `@concurrent` (Swift 6.2) offloads this off the caller's actor while staying a structured
+    /// child of `removeBackground()`'s `Task` - unlike `Task.detached`, cancelling that `Task`
+    /// actually propagates here instead of only discarding the result after the work finishes.
+    @concurrent private static func removingBackgroundConcurrently(from image: CGImage) async throws -> CGImage {
+        try TelegramStickerBackgroundRemoval.removingBackground(from: image)
+    }
+
     private func adjustZoom(by delta: CGFloat) {
         zoom = clampedZoom(zoom + delta)
         gestureStartZoom = zoom
@@ -266,9 +273,7 @@ struct TelegramStickerCropView: View {
         Task {
             defer { isRemovingBackground = false }
             do {
-                currentImage = try await Task.detached(priority: .userInitiated) {
-                    try TelegramStickerBackgroundRemoval.removingBackground(from: imageToProcess)
-                }.value
+                currentImage = try await Self.removingBackgroundConcurrently(from: imageToProcess)
             } catch {
                 backgroundRemovalErrorMessage = error.localizedDescription
             }

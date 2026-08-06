@@ -97,6 +97,22 @@ struct TelegramStickerAnimationView: UIViewRepresentable {
         )
     }
 
+    /// `@concurrent` (Swift 6.2) offloads this off the main actor while staying a structured child
+    /// of `loadTask` - unlike `Task.detached`, `loadTask?.cancel()` (called on every re-configure
+    /// and on `deinit`/`stop()`) actually reaches in here instead of only discarding the result
+    /// after the decode finishes regardless.
+    @concurrent private nonisolated static func loadAnimationConcurrently(from url: URL) async -> LottieAnimation? {
+        LottieAnimation(tgsFileURL: url)
+    }
+
+    @concurrent private nonisolated static func renderFrameConcurrently(
+        animation: LottieAnimation,
+        index: Int,
+        size: CGSize,
+    ) async -> CGImage? {
+        animation.renderFrame(index: index, size: size, scale: 1)
+    }
+
     private func loadAnimation(from url: URL) {
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -108,9 +124,7 @@ struct TelegramStickerAnimationView: UIViewRepresentable {
         displayLink?.isPaused = true
 
         loadTask = Task { [weak self] in
-            let animation = await Task.detached(priority: .userInitiated) {
-                LottieAnimation(tgsFileURL: url)
-            }.value
+            let animation = await Self.loadAnimationConcurrently(from: url)
             guard let self, generation == loadGeneration, !Task.isCancelled else { return }
             self.animation = animation
             configureDisplayRate()
@@ -146,13 +160,11 @@ struct TelegramStickerAnimationView: UIViewRepresentable {
         frameIndex = (frameIndex + 1) % max(1, animation.frameCount)
 
         renderTask = Task { [weak self] in
-            let image = await Task.detached(priority: .userInitiated) {
-                animation.renderFrame(
-                    index: index,
-                    size: CGSize(width: CGFloat(width), height: CGFloat(height)),
-                    scale: 1,
-                )
-            }.value
+            let image = await Self.renderFrameConcurrently(
+                animation: animation,
+                index: index,
+                size: CGSize(width: CGFloat(width), height: CGFloat(height)),
+            )
             guard let self else { return }
             defer { renderTask = nil }
             guard generation == loadGeneration, !Task.isCancelled else { return }
@@ -252,6 +264,22 @@ struct TelegramStickerAnimationView: NSViewRepresentable {
         )
     }
 
+    /// `@concurrent` (Swift 6.2) offloads this off the main actor while staying a structured child
+    /// of `loadTask` - unlike `Task.detached`, `loadTask?.cancel()` (called on every re-configure
+    /// and on `deinit`/`stop()`) actually reaches in here instead of only discarding the result
+    /// after the decode finishes regardless.
+    @concurrent private nonisolated static func loadAnimationConcurrently(from url: URL) async -> LottieAnimation? {
+        LottieAnimation(tgsFileURL: url)
+    }
+
+    @concurrent private nonisolated static func renderFrameConcurrently(
+        animation: LottieAnimation,
+        index: Int,
+        size: CGSize,
+    ) async -> CGImage? {
+        animation.renderFrame(index: index, size: size, scale: 1)
+    }
+
     private func loadAnimation(from url: URL) {
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -263,9 +291,7 @@ struct TelegramStickerAnimationView: NSViewRepresentable {
         displayLink?.isPaused = true
 
         loadTask = Task { [weak self] in
-            let animation = await Task.detached(priority: .userInitiated) {
-                LottieAnimation(tgsFileURL: url)
-            }.value
+            let animation = await Self.loadAnimationConcurrently(from: url)
             guard let self, generation == loadGeneration, !Task.isCancelled else { return }
             self.animation = animation
             configureDisplayRate()
@@ -301,13 +327,11 @@ struct TelegramStickerAnimationView: NSViewRepresentable {
         frameIndex = (frameIndex + 1) % max(1, animation.frameCount)
 
         renderTask = Task { [weak self] in
-            let image = await Task.detached(priority: .userInitiated) {
-                animation.renderFrame(
-                    index: index,
-                    size: CGSize(width: CGFloat(width), height: CGFloat(height)),
-                    scale: 1,
-                )
-            }.value
+            let image = await Self.renderFrameConcurrently(
+                animation: animation,
+                index: index,
+                size: CGSize(width: CGFloat(width), height: CGFloat(height)),
+            )
             guard let self else { return }
             defer { renderTask = nil }
             guard generation == loadGeneration, !Task.isCancelled else { return }

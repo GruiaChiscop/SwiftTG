@@ -265,21 +265,13 @@ final class PermissionsManager: Sendable {
     /// authorized - this never itself prompts, unlike `requestPostLoginPermissions()`.
     func fetchDeviceContactsIfAuthorized() async -> [DeviceContactRecord] {
         guard contactsAuthorizationStatus == .authorized else { return [] }
-        let access = contactsAccess
-        return await Task.detached(priority: .utility) {
-            (try? access.fetchContacts()) ?? []
-        }.value
+        return await Self.fetchContactsConcurrently(access: contactsAccess) ?? []
     }
 
     func requestPostLoginPermissions() async {
         guard let contactsSync else { return }
         guard await contactsAreAllowed() else { return }
-
-        let access = contactsAccess
-        let records = await Task.detached(priority: .utility) {
-            try? access.fetchContacts()
-        }.value
-        guard let records else { return }
+        guard let records = await Self.fetchContactsConcurrently(access: contactsAccess) else { return }
 
         let contacts = Self.importedContacts(from: records)
         _ = try? await contactsSync.changeImportedContacts(contacts: contacts)
@@ -304,6 +296,14 @@ final class PermissionsManager: Sendable {
     private let contactsAccess: any ContactsAccess
     private let contactsSync: (any TelegramContactsSyncing)?
     private let locationAccess: any LocationAccess
+
+    /// `@concurrent` (Swift 6.2) offloads this off the caller's context directly - unlike
+    /// `Task.detached`, cancelling the caller's own task now actually propagates into the address
+    /// book fetch below instead of only discarding its result afterward.
+    @concurrent
+    private static func fetchContactsConcurrently(access: any ContactsAccess) async -> [DeviceContactRecord]? {
+        try? access.fetchContacts()
+    }
 
     @MainActor private func contactsAreAllowed() async -> Bool {
         switch contactsAccess.authorizationStatus() {

@@ -12,44 +12,46 @@ enum TelegramDocumentExport {
         TelegramFileName.sanitized(suggestedName)
     }
 
-    static func exportURL(
+    /// `@concurrent` (Swift 6.2) offloads this off the caller's context directly - the enum has no
+    /// actor isolation to begin with, so there's no wrapper closure needed the way `Task.detached`
+    /// required; unlike `Task.detached`, cancelling the caller's own task now actually propagates
+    /// into the file-coordination work below instead of only discarding its result afterward.
+    @concurrent static func exportURL(
         sourceURL: URL,
         suggestedFileName: String,
         identifier: String,
     ) async throws -> URL {
-        try await Task.detached(priority: .userInitiated) {
-            let accessedSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
-            defer {
-                if accessedSecurityScopedResource {
-                    sourceURL.stopAccessingSecurityScopedResource()
-                }
+        let accessedSecurityScopedResource = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessedSecurityScopedResource {
+                sourceURL.stopAccessingSecurityScopedResource()
             }
+        }
 
-            let coordinator = NSFileCoordinator(filePresenter: nil)
-            var coordinationError: NSError?
-            var stagingResult: Result<URL, Error>?
-            coordinator.coordinate(
-                readingItemAt: sourceURL,
-                options: [.withoutChanges],
-                error: &coordinationError,
-            ) { coordinatedURL in
-                stagingResult = Result {
-                    try stageCoordinatedFile(
-                        sourceURL: coordinatedURL,
-                        suggestedFileName: suggestedFileName,
-                        identifier: identifier,
-                    )
-                }
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationError: NSError?
+        var stagingResult: Result<URL, Error>?
+        coordinator.coordinate(
+            readingItemAt: sourceURL,
+            options: [.withoutChanges],
+            error: &coordinationError,
+        ) { coordinatedURL in
+            stagingResult = Result {
+                try stageCoordinatedFile(
+                    sourceURL: coordinatedURL,
+                    suggestedFileName: suggestedFileName,
+                    identifier: identifier,
+                )
             }
+        }
 
-            if let coordinationError {
-                throw coordinationError
-            }
-            guard let stagingResult else {
-                throw TelegramFileTransferError.sourceUnavailable
-            }
-            return try stagingResult.get()
-        }.value
+        if let coordinationError {
+            throw coordinationError
+        }
+        guard let stagingResult else {
+            throw TelegramFileTransferError.sourceUnavailable
+        }
+        return try stagingResult.get()
     }
 
     static func previewURL(
@@ -76,28 +78,26 @@ enum TelegramDocumentExport {
         return "\(sanitizedName).\(fileExtension)"
     }
 
-    static func copyFile(from sourceURL: URL, to destinationURL: URL) async throws {
-        try await Task.detached(priority: .userInitiated) {
-            let fileManager = FileManager.default
-            guard fileManager.fileExists(atPath: sourceURL.path) else {
-                throw TelegramFileTransferError.sourceUnavailable
-            }
+    @concurrent static func copyFile(from sourceURL: URL, to destinationURL: URL) async throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            throw TelegramFileTransferError.sourceUnavailable
+        }
 
-            let temporaryURL = destinationURL
-                .deletingLastPathComponent()
-                .appendingPathComponent(".BetterTG-\(UUID().uuidString).tmp")
-            try fileManager.copyItem(at: sourceURL, to: temporaryURL)
-            do {
-                if fileManager.fileExists(atPath: destinationURL.path) {
-                    _ = try fileManager.replaceItemAt(destinationURL, withItemAt: temporaryURL)
-                } else {
-                    try fileManager.moveItem(at: temporaryURL, to: destinationURL)
-                }
-            } catch {
-                try? fileManager.removeItem(at: temporaryURL)
-                throw error
+        let temporaryURL = destinationURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(".BetterTG-\(UUID().uuidString).tmp")
+        try fileManager.copyItem(at: sourceURL, to: temporaryURL)
+        do {
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                _ = try fileManager.replaceItemAt(destinationURL, withItemAt: temporaryURL)
+            } else {
+                try fileManager.moveItem(at: temporaryURL, to: destinationURL)
             }
-        }.value
+        } catch {
+            try? fileManager.removeItem(at: temporaryURL)
+            throw error
+        }
     }
 
     // MARK: Private

@@ -81,6 +81,29 @@ struct TelegramStickerVideoView: UIViewRepresentable {
     private var loadTask: Task<Void, Never>?
     private var renderTask: Task<Void, Never>?
 
+    /// `@concurrent` (Swift 6.2) offloads this off the main actor while staying a structured child
+    /// of `loadTask` - unlike `Task.detached`, `loadTask?.cancel()` (called on every re-configure
+    /// and on `deinit`/`stop()`) actually reaches in here instead of only discarding the result
+    /// after the decode finishes regardless.
+    @concurrent private nonisolated static func loadAnimationConcurrently(from url: URL) async -> WebMAnimation? {
+        try? WebMAnimation(fileURL: url)
+    }
+
+    @concurrent private nonisolated static func renderFramesConcurrently(
+        animation: WebMAnimation,
+        frameCount: Int,
+    ) async -> CGImage? {
+        var image: CGImage?
+        for _ in 0..<frameCount {
+            if let frame = animation.nextFrame() {
+                image = frame
+            } else if animation.restart() {
+                image = animation.nextFrame()
+            }
+        }
+        return image
+    }
+
     private func loadAnimation(from url: URL) {
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -91,9 +114,7 @@ struct TelegramStickerVideoView: UIViewRepresentable {
         displayLink?.isPaused = true
 
         loadTask = Task { [weak self] in
-            let animation = await Task.detached(priority: .userInitiated) {
-                try? WebMAnimation(fileURL: url)
-            }.value
+            let animation = await Self.loadAnimationConcurrently(from: url)
             guard let self, generation == loadGeneration, !Task.isCancelled else { return }
             self.animation = animation
             configureDisplayRate()
@@ -132,17 +153,7 @@ struct TelegramStickerVideoView: UIViewRepresentable {
         let generation = loadGeneration
 
         renderTask = Task { [weak self] in
-            let image = await Task.detached(priority: .userInitiated) {
-                var image: CGImage?
-                for _ in 0..<frameCount {
-                    if let frame = animation.nextFrame() {
-                        image = frame
-                    } else if animation.restart() {
-                        image = animation.nextFrame()
-                    }
-                }
-                return image
-            }.value
+            let image = await Self.renderFramesConcurrently(animation: animation, frameCount: frameCount)
             guard let self else { return }
             defer { renderTask = nil }
             guard generation == loadGeneration, !Task.isCancelled else { return }
@@ -229,6 +240,29 @@ struct TelegramStickerVideoView: NSViewRepresentable {
     private var loadTask: Task<Void, Never>?
     private var renderTask: Task<Void, Never>?
 
+    /// `@concurrent` (Swift 6.2) offloads this off the main actor while staying a structured child
+    /// of `loadTask` - unlike `Task.detached`, `loadTask?.cancel()` (called on every re-configure
+    /// and on `deinit`/`stop()`) actually reaches in here instead of only discarding the result
+    /// after the decode finishes regardless.
+    @concurrent private nonisolated static func loadAnimationConcurrently(from url: URL) async -> WebMAnimation? {
+        try? WebMAnimation(fileURL: url)
+    }
+
+    @concurrent private nonisolated static func renderFramesConcurrently(
+        animation: WebMAnimation,
+        frameCount: Int,
+    ) async -> CGImage? {
+        var image: CGImage?
+        for _ in 0..<frameCount {
+            if let frame = animation.nextFrame() {
+                image = frame
+            } else if animation.restart() {
+                image = animation.nextFrame()
+            }
+        }
+        return image
+    }
+
     private func loadAnimation(from url: URL) {
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -239,9 +273,7 @@ struct TelegramStickerVideoView: NSViewRepresentable {
         displayLink?.isPaused = true
 
         loadTask = Task { [weak self] in
-            let animation = await Task.detached(priority: .userInitiated) {
-                try? WebMAnimation(fileURL: url)
-            }.value
+            let animation = await Self.loadAnimationConcurrently(from: url)
             guard let self, generation == loadGeneration, !Task.isCancelled else { return }
             self.animation = animation
             configureDisplayRate()
@@ -280,17 +312,7 @@ struct TelegramStickerVideoView: NSViewRepresentable {
         let generation = loadGeneration
 
         renderTask = Task { [weak self] in
-            let image = await Task.detached(priority: .userInitiated) {
-                var image: CGImage?
-                for _ in 0..<frameCount {
-                    if let frame = animation.nextFrame() {
-                        image = frame
-                    } else if animation.restart() {
-                        image = animation.nextFrame()
-                    }
-                }
-                return image
-            }.value
+            let image = await Self.renderFramesConcurrently(animation: animation, frameCount: frameCount)
             guard let self else { return }
             defer { renderTask = nil }
             guard generation == loadGeneration, !Task.isCancelled else { return }
