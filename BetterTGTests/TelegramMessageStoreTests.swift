@@ -170,12 +170,12 @@ struct TelegramMessageStoreTests {
             store.reduce(.updateNewMessage(.init(message: message)))
         }
 
-        var initialSnapshot: TelegramMessageSnapshot?
-        let cancellable = store.publisher(chatId: chatId).first().sink { initialSnapshot = $0 }
-        withExtendedLifetime(cancellable) {}
+        let initialSnapshot = try waitForSnapshot(store: store, chatId: chatId, matching: {
+            $0.messages[message.id] != nil
+        }) {}
 
-        #expect(initialSnapshot?.change == nil)
-        #expect(initialSnapshot?.messages[message.id] == message)
+        #expect(initialSnapshot.change == nil)
+        #expect(initialSnapshot.messages[message.id] == message)
     }
 
     @Test func `retention is capped to the most recent messages regardless of how history arrived`() throws {

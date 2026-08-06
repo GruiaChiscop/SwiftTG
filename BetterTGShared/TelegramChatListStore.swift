@@ -248,8 +248,11 @@ struct ChatListSnapshot: Sendable, Equatable {
 final class TelegramChatListStore: @unchecked Sendable {
     // MARK: Internal
 
+    /// Delivered on the main thread - `subject` is written from the store's private background
+    /// queue, but every consumer is a SwiftUI `.onReceive`/`@Observable` update, which requires
+    /// the main thread.
     var publisher: AnyPublisher<ChatListSnapshot, Never> {
-        subject.eraseToAnyPublisher()
+        subject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
     func reduce(_ update: Update) {

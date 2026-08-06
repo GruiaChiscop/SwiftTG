@@ -2,6 +2,7 @@
 
 @testable import BetterTG
 import Combine
+import Foundation
 import TDLibKit
 import Testing
 
@@ -112,9 +113,15 @@ struct TelegramChatListStoreTests {
 
     private func currentSnapshot(of store: TelegramChatListStore) throws -> ChatListSnapshot {
         store.waitForPendingWork()
+        let semaphore = DispatchSemaphore(value: 0)
         var result: ChatListSnapshot?
-        let cancellable = store.publisher.first().sink { result = $0 }
+        let cancellable = store.publisher.first().sink { snapshot in
+            result = snapshot
+            semaphore.signal()
+        }
+        let waitResult = semaphore.wait(timeout: .now() + 2)
         withExtendedLifetime(cancellable) {}
+        #expect(waitResult == .success)
         return try #require(result)
     }
 }

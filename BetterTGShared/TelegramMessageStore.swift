@@ -152,6 +152,10 @@ final class TelegramMessageStore: @unchecked Sendable {
                     (isFirst: false, snapshot: state.isFirst ? snapshot.withoutChange() : snapshot)
                 }
                 .map(\.snapshot)
+                // Delivered on the main thread - `subject` is written from the store's private
+                // background queue, but every consumer is a SwiftUI `.onReceive`/`@Observable`
+                // update, which requires the main thread.
+                .receive(on: DispatchQueue.main)
                 .eraseToAnyPublisher()
         }
     }

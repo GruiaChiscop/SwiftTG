@@ -11,8 +11,11 @@ final class TelegramUpdateStore: @unchecked Sendable {
         chatListStore.publisher
     }
 
+    /// Delivered on the main thread - `updateSubject` is written from `queue` (this store's
+    /// private background queue), but every consumer is a SwiftUI `.onReceive`/`@Observable`
+    /// update, which requires the main thread.
     var updatePublisher: AnyPublisher<Update, Never> {
-        updateSubject.eraseToAnyPublisher()
+        updateSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
     var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> {
@@ -21,6 +24,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
                 guard case .updateAuthorizationState(let value) = update else { return nil }
                 return value.authorizationState
             }
+            .receive(on: DispatchQueue.main)
             .eraseToAnyPublisher()
     }
 

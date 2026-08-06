@@ -22,9 +22,7 @@ struct TelegramFileStoreTests {
         let received = try waitForFile(store: store, fileId: file.id) { $0 == file }
         #expect(received == file)
 
-        var replayed: File?
-        let cancellable = store.publisher(fileId: file.id).first().sink { replayed = $0 }
-        withExtendedLifetime(cancellable) {}
+        let replayed = try waitForFile(store: store, fileId: file.id) { $0 == file }
         #expect(replayed == file)
     }
 
