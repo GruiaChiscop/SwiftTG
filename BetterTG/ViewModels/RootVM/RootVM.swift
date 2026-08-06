@@ -71,7 +71,7 @@ struct ChatListLoadKey: Hashable, Sendable {
 
 // MARK: - RootVM
 
-@Observable final class RootVM {
+@MainActor @Observable final class RootVM {
     // MARK: Lifecycle
 
     init(service: any TelegramService = TDLib.shared.service) {

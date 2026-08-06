@@ -184,13 +184,6 @@ private struct MainNavigationRootView: View {
         }
         #endif
         .onAppear {
-            #if DEBUG
-            if MockData.isEnabled, CommandLine.arguments.contains("-mockChat"),
-               let chat = rootVM.mainFolder?.chats.first
-            {
-                rootVM.navigate(to: .customChat(chat, messageId: nil))
-            }
-            #endif
                 if rootVM.currentFolder == nil {
                     rootVM.currentFolder = rootVM.folders.first?.id
                 }

@@ -186,67 +186,57 @@ struct LoginView: View {
             )
         }
         .animation(.default, value: model.loginState)
-        #if DEBUG
-        .safeAreaInset(edge: .top) {
-            if !model.isPreview {
-                Button("Load Mock Data") {
-                    MockData.install()
-                }
-                .padding()
-            }
-        }
-        #endif
         .safeAreaInset(edge: .bottom) {
-                Button {
-                    if model.loginState == .phoneNumber {
-                        focused = nil
+            Button {
+                if model.loginState == .phoneNumber {
+                    focused = nil
+                }
+                model.continueLogin()
+            } label: {
+                Text("Continue")
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding()
+        }
+        .alert(
+            "Login Failed",
+            isPresented: Binding(
+                get: { model.errorMessage != nil },
+                set: {
+                    if !$0 {
+                        model.errorMessage = nil
                     }
-                    model.continueLogin()
-                } label: {
-                    Text("Continue")
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .padding()
+                },
+            ),
+        ) {
+            Button("OK") { model.errorMessage = nil }
+        } message: {
+            Text(model.errorMessage ?? "Telegram couldn't complete the login.")
+        }
+        .alert("Error", isPresented: $model.waitPremiumErrorShown) {
+            Text("In order to login, you need to upgrade to Telegram Premium. Please do it in the Telegram app.")
+        }
+        .alert(model.formattedPhoneNumber, isPresented: $model.showPhoneConfirmation) {
+            Button("Edit", role: .cancel) {
+                focused = .phoneNumber
             }
-            .alert(
-                "Login Failed",
-                isPresented: Binding(
-                    get: { model.errorMessage != nil },
-                    set: {
-                        if !$0 {
-                            model.errorMessage = nil
-                        }
-                    },
-                ),
-            ) {
-                Button("OK") { model.errorMessage = nil }
-            } message: {
-                Text(model.errorMessage ?? "Telegram couldn't complete the login.")
+            Button("Yes") {
+                model.submitPhoneNumber()
             }
-            .alert("Error", isPresented: $model.waitPremiumErrorShown) {
-                Text("In order to login, you need to upgrade to Telegram Premium. Please do it in the Telegram app.")
+        } message: {
+            Text("Is this the correct number?")
+        }
+        .alert("Terms of Service", isPresented: $model.showsTermsConfirmation) {
+            Button("Decline", role: .cancel) {}
+            Button("Agree") {
+                model.acceptTermsAndContinue()
             }
-            .alert(model.formattedPhoneNumber, isPresented: $model.showPhoneConfirmation) {
-                Button("Edit", role: .cancel) {
-                    focused = .phoneNumber
-                }
-                Button("Yes") {
-                    model.submitPhoneNumber()
-                }
-            } message: {
-                Text("Is this the correct number?")
-            }
-            .alert("Terms of Service", isPresented: $model.showsTermsConfirmation) {
-                Button("Decline", role: .cancel) {}
-                Button("Agree") {
-                    model.acceptTermsAndContinue()
-                }
-            } message: {
-                Text(model.termsOfService?.text.text ?? "")
-            }
-            .task { await model.start() }
+        } message: {
+            Text(model.termsOfService?.text.text ?? "")
+        }
+        .task { await model.start() }
     }
 
     func loginStateView(_ content: () -> some View) -> some View {

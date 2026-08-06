@@ -27,13 +27,6 @@ struct ChatView: View {
             initialMessageId: initialMessageId,
             movesAccessibilityFocusToInitialMessage: movesAccessibilityFocusToInitialMessage,
         )
-        #if DEBUG
-        if MockData.isEnabled, let user = customChat.user {
-            let messages = MockData.makeMessages(chatId: customChat.chat.id, otherUser: user)
-            chatVM.messages = messages
-            customChat.lastMessage = messages.last?.message
-        }
-        #endif
         self._chatVM = State(wrappedValue: chatVM)
     }
     

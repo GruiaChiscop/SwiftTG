@@ -14,12 +14,6 @@ import UserNotifications
         guard !Utils.isRunningTests else { return }
         TDLib.shared.startTdLibUpdateHandler()
 
-        #if DEBUG
-        if CommandLine.arguments.contains("-mockData") {
-            MockData.install()
-        }
-        #endif
-
         let appearance = UINavigationBarAppearance()
         appearance.configureWithDefaultBackground()
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
