@@ -143,7 +143,8 @@ import Observation
         }
 
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
-            MainActor.assumeIsolated {
+            nonisolated(unsafe) let event = event
+            return MainActor.assumeIsolated {
                 guard let self, let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
                     return .commandFailed
                 }

@@ -200,26 +200,28 @@ import SwiftOGG
                     channels: streamFormat.channels,
                 )
             }
-            DispatchQueue.main.async {
-                guard let self, self.currentPath == sourcePath else { return }
-                switch result {
-                case .success(let buffer) where buffer.frameLength > 0:
-                    self.decodedBufferCache.setObject(
-                        buffer,
-                        forKey: sourcePath as NSString,
-                        cost: Int(buffer.frameLength) * Int(buffer.format.streamDescription.pointee.mBytesPerFrame),
-                    )
-                    self.configure(with: buffer)
-                    self.play()
-                case .success:
-                    // configure/schedule silently no-op on an empty buffer, which would
-                    // otherwise leave play() reporting isPlaying = true with nothing
-                    // actually scheduled - audible as complete silence with no error.
-                    self.trace("decode produced empty buffer, refusing to play")
-                    self.stop()
-                case .failure(let error):
-                    self.trace("decode failed: \(error.localizedDescription)")
-                    self.stop()
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.currentPath == sourcePath else { return }
+                    switch result {
+                    case .success(let buffer) where buffer.frameLength > 0:
+                        self.decodedBufferCache.setObject(
+                            buffer,
+                            forKey: sourcePath as NSString,
+                            cost: Int(buffer.frameLength) * Int(buffer.format.streamDescription.pointee.mBytesPerFrame),
+                        )
+                        self.configure(with: buffer)
+                        self.play()
+                    case .success:
+                        // configure/schedule silently no-op on an empty buffer, which would
+                        // otherwise leave play() reporting isPlaying = true with nothing
+                        // actually scheduled - audible as complete silence with no error.
+                        self.trace("decode produced empty buffer, refusing to play")
+                        self.stop()
+                    case .failure(let error):
+                        self.trace("decode failed: \(error.localizedDescription)")
+                        self.stop()
+                    }
                 }
             }
         }
@@ -263,9 +265,11 @@ import SwiftOGG
         }
         scheduledStartFrame = startFrame
         playerNode.scheduleBuffer(slice, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self, self.generation == scheduledGeneration else { return }
-                self.stop()
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.generation == scheduledGeneration else { return }
+                    self.stop()
+                }
             }
         }
     }

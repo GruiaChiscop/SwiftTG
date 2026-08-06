@@ -139,7 +139,8 @@ struct EditProfileView: View {
     }
 
     private var photoSection: some View {
-        HStack {
+        let hasPhoto = photoData != nil || pendingPhotoData != nil
+        return HStack {
             Spacer()
             VStack(spacing: 10) {
                 ZStack {
@@ -164,7 +165,7 @@ struct EditProfileView: View {
                 .accessibilityHidden(true)
 
                 PhotosPicker(selection: $pickedPhotoItem, matching: .images) {
-                    Text(photoData == nil && pendingPhotoData == nil ? "Add Photo" : "Change Photo")
+                    Text(hasPhoto ? "Change Photo" : "Add Photo")
                 }
             }
             Spacer()

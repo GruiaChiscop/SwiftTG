@@ -43,9 +43,11 @@ struct TelegramStickerAnimationView: UIViewRepresentable {
     }
 
     deinit {
-        displayLink?.invalidate()
-        loadTask?.cancel()
-        renderTask?.cancel()
+        MainActor.assumeIsolated {
+            displayLink?.invalidate()
+            loadTask?.cancel()
+            renderTask?.cancel()
+        }
     }
 
     // MARK: Internal

@@ -13,15 +13,17 @@ import SwiftUI
     private init() {}
 
     deinit {
-        timeControlObservation?.invalidate()
-        if let timeObserver {
-            player?.removeTimeObserver(timeObserver)
+        MainActor.assumeIsolated {
+            timeControlObservation?.invalidate()
+            if let timeObserver {
+                player?.removeTimeObserver(timeObserver)
+            }
+            if let playbackFinishedObserver {
+                NotificationCenter.default.removeObserver(playbackFinishedObserver)
+            }
+            resourceLoader?.cancel()
+            fallbackTask?.cancel()
         }
-        if let playbackFinishedObserver {
-            NotificationCenter.default.removeObserver(playbackFinishedObserver)
-        }
-        resourceLoader?.cancel()
-        fallbackTask?.cancel()
     }
 
     // MARK: Internal

@@ -4,7 +4,7 @@ import Combine
 import Foundation
 import TDLibKit
 
-@Observable final class TelegramLinkPreviewComposer {
+@MainActor @Observable final class TelegramLinkPreviewComposer {
     // MARK: Lifecycle
 
     init(

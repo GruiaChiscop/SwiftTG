@@ -30,6 +30,7 @@ import TDLibKit
 
     func startTimer() {
         let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] timer in
+            nonisolated(unsafe) let timer = timer
             MainActor.assumeIsolated {
                 guard let self, let audioRecorder = self.audioRecorder else { return }
                 self.wave.append(audioRecorder.currentPeakPower())

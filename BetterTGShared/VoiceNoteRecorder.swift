@@ -45,7 +45,10 @@ final class VoiceNoteRecorder: @unchecked Sendable {
         peakPower = -160
 
         input.installTap(onBus: 0, bufferSize: 960, format: inputFormat) { [weak self] buffer, _ in
-            self?.encodingQueue.async { self?.encode(buffer, outputFormat: outputFormat) }
+            guard let self else { return }
+            encodingQueue.async { [weak self] in
+                self?.encode(buffer, outputFormat: outputFormat)
+            }
         }
         engine.prepare()
         try engine.start()

@@ -124,6 +124,7 @@ extension MacSessionModel {
                     )
                     stagedURLs.append(stagedURL)
                 }
+                let stagedURLs = stagedURLs
                 let contents = stagedURLs.map { url in
                     TelegramMessageSending.documentContent(url: url, caption: formattedCaption)
                 }

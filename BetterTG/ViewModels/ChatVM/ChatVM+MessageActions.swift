@@ -57,13 +57,30 @@ extension ChatVM {
     }
 
     /// Forwards to every chat concurrently rather than one at a time, so picking several
-    /// destinations doesn't make the last one wait on all the earlier round trips.
+    /// destinations doesn't make the last one wait on all the earlier round trips. Passes plain
+    /// ids into each child task rather than `self.forwardMessage(_:to:)` directly - `TaskGroup.
+    /// addTask` requires a `@Sendable` closure, and neither `ChatVM` nor `CustomChat`/`CustomMessage`
+    /// are (they're `@MainActor`-only types), but the ids they wrap are.
     @discardableResult func forwardMessage(_ message: CustomMessage, to chats: [CustomChat]) async -> Bool {
+        let messageIds = message.album.isEmpty ? [message.id] : message.album.map(\.id)
+        let fromChatId = customChat.chat.id
+        let toChatIds = chats.map(\.chat.id)
         let succeededCount = await withTaskGroup(of: Bool.self) { group in
-            for chat in chats {
-                group.addTask { await self.forwardMessage(message, to: chat) }
+            for toChatId in toChatIds {
+                group.addTask { [service] in
+                    await (try? TelegramMessageActions.forward(
+                        service: service,
+                        messageIds: messageIds,
+                        fromChatId: fromChatId,
+                        toChatId: toChatId,
+                    )) != nil
+                }
             }
-            return await group.reduce(into: 0) { count, succeeded in count += succeeded ? 1 : 0 }
+            var count = 0
+            for await succeeded in group where succeeded {
+                count += 1
+            }
+            return count
         }
         if succeededCount < chats.count {
             await main {

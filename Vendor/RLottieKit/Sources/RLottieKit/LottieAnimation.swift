@@ -4,7 +4,13 @@ import RLottieCore
 
 /// Swift facade for `LottieInstance` plus a CGImage renderer. Owns the per-animation
 /// memory; release the instance and the backing rlottie buffers come with it.
-public final class LottieAnimation {
+///
+/// `@unchecked Sendable`: `instance` is immutable (`let`) and every render call allocates its own
+/// local pixel buffer rather than mutating shared state - callers are expected to load one
+/// instance per animation player rather than share a single instance across concurrent renderers
+/// (`TelegramStickerAnimationSurfaceView` in the app does exactly this), which sidesteps rlottie's
+/// internal per-instance path cache ever seeing two renders in flight at once.
+public final class LottieAnimation: @unchecked Sendable {
     private let instance: LottieInstance
 
     public var dimensions: CGSize { instance.dimensions }

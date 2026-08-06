@@ -139,7 +139,7 @@ struct TelegramContactComposerView: View {
         service: any TelegramService,
         deviceContactsAccessIsDenied: Bool = false,
         onOpenSettings: (() -> Void)? = nil,
-        loadDeviceContacts: (() async -> [DeviceContactRecord])? = nil,
+        loadDeviceContacts: (@Sendable () async -> [DeviceContactRecord])? = nil,
         onSend: @escaping (TelegramContactDraft) async throws -> Void,
     ) {
         self.service = service
@@ -162,7 +162,7 @@ struct TelegramContactComposerView: View {
     /// Reads the device's full address book (people without Telegram included) so they can still
     /// be shared, matching Telegram-iOS's own contact picker. `nil` on macOS, which has no device
     /// contacts sync of its own; `getContacts()`-known people still show either way.
-    let loadDeviceContacts: (() async -> [DeviceContactRecord])?
+    let loadDeviceContacts: (@Sendable () async -> [DeviceContactRecord])?
     let onSend: (TelegramContactDraft) async throws -> Void
 
     var body: some View {

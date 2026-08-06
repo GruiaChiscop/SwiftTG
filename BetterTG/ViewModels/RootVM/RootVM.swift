@@ -185,7 +185,13 @@ struct ChatListLoadKey: Hashable, Sendable {
     
     func getCustomChats(for chatList: ChatList) async -> [CustomChat]? {
         guard let chatIds = try? await service.getChats(chatList: chatList, limit: 200).chatIds else { return nil }
-        return await chatIds.asyncCompactMap { await getCustomChat(from: $0, for: chatList) }
+        var customChats = [CustomChat]()
+        for chatId in chatIds {
+            if let customChat = await getCustomChat(from: chatId, for: chatList) {
+                customChats.append(customChat)
+            }
+        }
+        return customChats
     }
 
     // MARK: Private

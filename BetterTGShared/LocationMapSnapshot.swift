@@ -53,7 +53,9 @@ enum LocationMapSnapshot {
 
     // MARK: Private
 
-    private static let cache: NSCache<NSString, PlatformMapImage> = {
+    /// `NSCache` is documented as thread-safe for concurrent access from multiple threads, even
+    /// though it doesn't conform to `Sendable` itself.
+    private nonisolated(unsafe) static let cache: NSCache<NSString, PlatformMapImage> = {
         let cache = NSCache<NSString, PlatformMapImage>()
         cache.countLimit = 40
         return cache
