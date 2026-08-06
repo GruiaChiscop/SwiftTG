@@ -12,6 +12,9 @@ struct TelegramLocationDraft: Equatable {
     var longitude: Double?
     var horizontalAccuracy: Double = 0
     var address: String?
+    /// Set when the user picked a nearby place instead of a bare point - sends as a venue
+    /// (`inputMessageVenue`) instead of a plain location.
+    var venue: TelegramVenueSelection?
 
     var isValid: Bool {
         (try? inputMessageContent()) != nil
@@ -21,12 +24,56 @@ struct TelegramLocationDraft: Equatable {
         guard let latitude, let longitude else {
             throw TelegramLocationDraftValidationError.locationRequired
         }
-        return .inputMessageLocation(.init(location: Location(
-            horizontalAccuracy: horizontalAccuracy,
-            latitude: latitude,
-            longitude: longitude,
-        )))
+        let location = Location(horizontalAccuracy: horizontalAccuracy, latitude: latitude, longitude: longitude)
+        if let venue {
+            return .inputMessageVenue(.init(venue: Venue(
+                address: venue.address,
+                id: venue.id,
+                location: location,
+                provider: venue.provider,
+                title: venue.title,
+                type: venue.type,
+            )))
+        }
+        return .inputMessageLocation(.init(location: location))
     }
+}
+
+// MARK: - TelegramVenueSelection
+
+/// A nearby place found via `MKLocalPointsOfInterestRequest` - no Foursquare/Google Places
+/// account needed since MapKit's own point-of-interest search covers the same "pick a place near
+/// here" use case. `id` only needs to be unique to this draft, not resolvable against Apple's
+/// database - `Venue.id` is documented as "as defined by the sender".
+struct TelegramVenueSelection: Equatable, Identifiable {
+    // MARK: Lifecycle
+
+    init(mapItem: MKMapItem) {
+        self.id = UUID().uuidString
+        self.title = mapItem.name ?? "Unnamed Place"
+        self.type = mapItem.pointOfInterestCategory?.rawValue.replacingOccurrences(of: "MKPOICategory", with: "") ?? ""
+        // `.placemark` is deprecated as of iOS/macOS 26 in favor of `.location`/`.address` - see
+        // the matching split in `reverseGeocodedAddress` below.
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.address = mapItem.address?.fullAddress ?? ""
+            self.latitude = mapItem.location.coordinate.latitude
+            self.longitude = mapItem.location.coordinate.longitude
+        } else {
+            self.address = mapItem.placemark.title ?? ""
+            self.latitude = mapItem.placemark.coordinate.latitude
+            self.longitude = mapItem.placemark.coordinate.longitude
+        }
+    }
+
+    // MARK: Internal
+
+    let id: String
+    let title: String
+    let address: String
+    let type: String
+    let latitude: Double
+    let longitude: Double
+    let provider = "apple"
 }
 
 // MARK: - TelegramLocationDraftValidationError
@@ -114,6 +161,7 @@ struct TelegramLocationComposerView: View {
 
                 Form {
                     statusSection
+                    nearbyVenuesSection
 
                     if isSending {
                         Section { ProgressView("Sending location") }
@@ -157,6 +205,8 @@ struct TelegramLocationComposerView: View {
     /// Meters spanned by the map when it first centers on a location - close enough to read
     /// street-level detail without the picker starting out over-zoomed.
     private static let initialSpanMeters: CLLocationDistance = 800
+    /// Search radius for nearby places around the picked point.
+    private static let nearbyVenueRadiusMeters: CLLocationDistance = 500
 
     @AccessibilityFocusState private var feedbackIsFocused: Bool
     @Environment(\.dismiss) private var dismiss
@@ -172,6 +222,9 @@ struct TelegramLocationComposerView: View {
     @State private var isFetchingLocation = false
     @State private var isSending = false
     @State private var hasRequestedLocation = false
+    @State private var nearbyVenues = [TelegramVenueSelection]()
+    @State private var isSearchingVenues = false
+    @State private var venueSearchTask: Task<Void, Never>?
     @State private var fetchErrorMessage: String?
     @State private var fetchErrorIsPermissionDenied = false
     @State private var feedbackMessage: String?
@@ -242,7 +295,7 @@ struct TelegramLocationComposerView: View {
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Selected Location")
+                    Text(draft.venue?.title ?? "Selected Location")
                     if isPanning {
                         Text("Selecting…")
                             .font(.caption)
@@ -259,6 +312,41 @@ struct TelegramLocationComposerView: View {
                 }
             }
             .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder private var nearbyVenuesSection: some View {
+        if isSearchingVenues {
+            Section { ProgressView("Finding nearby places…") }
+        } else if !nearbyVenues.isEmpty {
+            Section("Nearby Places") {
+                ForEach(nearbyVenues) { venue in
+                    Button {
+                        selectVenue(venue)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(venue.title)
+                                    .foregroundStyle(.primary)
+                                if !venue.address.isEmpty {
+                                    Text(venue.address)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if draft.venue?.id == venue.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Color.accentColor)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(draft.venue?.id == venue.id ? [.isButton, .isSelected] : .isButton)
+                }
+            }
         }
     }
 
@@ -283,18 +371,48 @@ struct TelegramLocationComposerView: View {
         }
     }
 
+    /// Best-effort only - a failed or empty search just leaves the "Nearby Places" section off.
+    private static func nearbyVenues(around coordinate: CLLocationCoordinate2D) async -> [TelegramVenueSelection] {
+        let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: nearbyVenueRadiusMeters)
+        guard let response = try? await MKLocalSearch(request: request).start() else { return [] }
+        return response.mapItems.prefix(20).map(TelegramVenueSelection.init(mapItem:))
+    }
+
     private func selectCenter(_ center: CLLocationCoordinate2D) {
         geocodeTask?.cancel()
         draft.latitude = center.latitude
         draft.longitude = center.longitude
         draft.horizontalAccuracy = 0
         draft.address = nil
+        draft.venue = nil
         geocodeTask = Task {
             let address = await Self.reverseGeocodedAddress(
                 for: CLLocation(latitude: center.latitude, longitude: center.longitude),
             )
             guard !Task.isCancelled else { return }
             draft.address = address
+        }
+        searchNearbyVenues(around: center)
+    }
+
+    private func selectVenue(_ venue: TelegramVenueSelection) {
+        geocodeTask?.cancel()
+        draft.latitude = venue.latitude
+        draft.longitude = venue.longitude
+        draft.horizontalAccuracy = 0
+        draft.address = venue.address
+        draft.venue = venue
+    }
+
+    private func searchNearbyVenues(around center: CLLocationCoordinate2D) {
+        venueSearchTask?.cancel()
+        isSearchingVenues = true
+        nearbyVenues = []
+        venueSearchTask = Task {
+            let venues = await Self.nearbyVenues(around: center)
+            guard !Task.isCancelled else { return }
+            nearbyVenues = venues
+            isSearchingVenues = false
         }
     }
 
@@ -309,6 +427,7 @@ struct TelegramLocationComposerView: View {
             draft.longitude = location.coordinate.longitude
             draft.horizontalAccuracy = max(location.horizontalAccuracy, 0)
             draft.address = await Self.reverseGeocodedAddress(for: location)
+            draft.venue = nil
             if recenterMap {
                 cameraPosition = .region(MKCoordinateRegion(
                     center: location.coordinate,
@@ -316,6 +435,7 @@ struct TelegramLocationComposerView: View {
                     longitudinalMeters: Self.initialSpanMeters,
                 ))
             }
+            searchNearbyVenues(around: location.coordinate)
         } catch {
             fetchErrorIsPermissionDenied = (error as? LocationAccessError) == .accessDenied
             fetchErrorMessage = telegramErrorDescription(error)
