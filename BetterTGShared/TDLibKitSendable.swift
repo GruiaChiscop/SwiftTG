@@ -49,4 +49,6 @@ extension BasicGroup: @retroactive @unchecked Sendable {}
 extension UserTypeBot: @retroactive @unchecked Sendable {}
 extension PollOption: @retroactive @unchecked Sendable {}
 extension FileType: @retroactive @unchecked Sendable {}
+extension ReactionType: @retroactive @unchecked Sendable {}
+extension File: @retroactive @unchecked Sendable {}
 extension MessageProperties: @retroactive @unchecked Sendable {}

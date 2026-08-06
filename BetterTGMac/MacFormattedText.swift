@@ -129,7 +129,7 @@ func macComposerFormattedText(
 
 /// SwiftUI can reevaluate a message row whenever asynchronously loaded metadata changes. Keep the
 /// comparatively expensive link detection and attributed-string construction out of those redraws.
-private final class MacFormattedTextCache {
+private final class MacFormattedTextCache: @unchecked Sendable {
     // MARK: Internal
 
     static let shared = MacFormattedTextCache()
@@ -247,7 +247,9 @@ func macNSAttributedString(_ formattedText: FormattedText) -> NSAttributedString
 
 private let macLinkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
-let macComposerDefaultAttributes: [NSAttributedString.Key: Any] = [
+/// Immutable after initialization - `NSFont`/`NSColor` values aren't `Sendable`, but reading this
+/// static system font/color pairing concurrently is safe since nothing ever mutates it.
+nonisolated(unsafe) let macComposerDefaultAttributes: [NSAttributedString.Key: Any] = [
     .font: NSFont.preferredFont(forTextStyle: .body),
     .foregroundColor: NSColor.labelColor,
 ]

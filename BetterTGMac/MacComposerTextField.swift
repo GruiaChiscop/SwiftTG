@@ -8,7 +8,7 @@ import SwiftUI
 struct MacComposerTextField: NSViewRepresentable {
     // MARK: Coordinator
 
-    final class Coordinator: NSObject, NSTextStorageDelegate, NSTextViewDelegate {
+    @MainActor final class Coordinator: NSObject, @preconcurrency NSTextStorageDelegate, NSTextViewDelegate {
         // MARK: Lifecycle
 
         init(parent: MacComposerTextField) {

@@ -71,6 +71,7 @@ final class ShareViewController: UIViewController {
     private func loadItem(_ provider: NSItemProvider, typeIdentifier: String) async -> NSSecureCoding? {
         await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
+                nonisolated(unsafe) let item = item
                 continuation.resume(returning: item)
             }
         }

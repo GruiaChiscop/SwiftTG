@@ -118,13 +118,29 @@ extension MacSessionModel {
     }
 
     /// Forwards to every chat concurrently rather than one at a time, so picking several
-    /// destinations doesn't make the last one wait on all the earlier round trips.
+    /// destinations doesn't make the last one wait on all the earlier round trips. Passes plain
+    /// ids into each child task rather than `self.forward(_:to:)` directly - `TaskGroup.addTask`
+    /// requires a `@Sendable` closure, and `MacSessionModel` isn't (it's `@MainActor`-only), but
+    /// the ids/service it wraps are.
     @discardableResult func forward(_ message: Message, to chatIds: [Int64]) async -> Bool {
+        let fromChatId = message.chatId
+        let messageId = message.id
         let succeededCount = await withTaskGroup(of: Bool.self) { group in
-            for chatId in chatIds {
-                group.addTask { await self.forward(message, to: chatId) }
+            for toChatId in chatIds {
+                group.addTask { [service] in
+                    await (try? TelegramMessageActions.forward(
+                        service: service,
+                        messageIds: [messageId],
+                        fromChatId: fromChatId,
+                        toChatId: toChatId,
+                    )) != nil
+                }
             }
-            return await group.reduce(into: 0) { count, succeeded in count += succeeded ? 1 : 0 }
+            var count = 0
+            for await succeeded in group where succeeded {
+                count += 1
+            }
+            return count
         }
         if succeededCount < chatIds.count {
             messageActionError = succeededCount == 0
