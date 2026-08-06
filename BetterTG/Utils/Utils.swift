@@ -7,7 +7,7 @@ enum Utils {
     /// link against the app's own symbols), so without this check every test run - even one testing
     /// pure logic - would start a real TDLib client and register for push notifications.
     static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    static var screen: UIScreen!
+    @MainActor static var screen: UIScreen!
     static let applicationVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
     static let modelName: String = {
         var simulator = false
@@ -62,5 +62,5 @@ enum Utils {
         return simulator ? "Simulator \(model)" : model
     }()
 
-    static var maxMessageContentWidth: CGFloat { screen.bounds.width * 0.8 - 32 }
+    @MainActor static var maxMessageContentWidth: CGFloat { screen.bounds.width * 0.8 - 32 }
 }

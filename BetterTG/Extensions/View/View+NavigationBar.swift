@@ -34,7 +34,9 @@ struct NavigationBarAccessor: UIViewControllerRepresentable {
         // MARK: Lifecycle
 
         deinit {
-            stopObservingNavigationBar()
+            MainActor.assumeIsolated {
+                stopObservingNavigationBar()
+            }
         }
         
         // MARK: Internal
@@ -75,7 +77,9 @@ struct NavigationBarAccessor: UIViewControllerRepresentable {
                 .initial,
                 .new,
             ]) { [weak self] navigationBar, _ in
-                self?.reportHeightIfNeeded(for: navigationBar)
+                MainActor.assumeIsolated {
+                    self?.reportHeightIfNeeded(for: navigationBar)
+                }
             }
         }
         

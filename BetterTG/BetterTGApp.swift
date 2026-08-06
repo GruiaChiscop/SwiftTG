@@ -108,7 +108,7 @@ import UserNotifications
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
     ) {
         completionHandler([.banner, .list, .sound, .badge])
-        let userInfo = notification.request.content.userInfo
+        nonisolated(unsafe) let userInfo = notification.request.content.userInfo
         Task { @MainActor in
             _ = await PushNotificationsManager.shared.process(userInfo: userInfo)
         }
@@ -124,7 +124,12 @@ import UserNotifications
         if !content.threadIdentifier.isEmpty {
             userInfo["thread-id"] = content.threadIdentifier
         }
+        nonisolated(unsafe) let capturedUserInfo = userInfo
+        nonisolated(unsafe) let capturedResponse = response
+        nonisolated(unsafe) let capturedCompletionHandler = completionHandler
         Task { @MainActor in
+            let userInfo = capturedUserInfo
+            let response = capturedResponse
             _ = await PushNotificationsManager.shared.process(userInfo: userInfo)
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 await RootVM.shared.openChatFromNotification(userInfo: userInfo)
@@ -134,7 +139,7 @@ import UserNotifications
             {
                 await Self.sendReply(text: textResponse.userText, userInfo: userInfo)
             }
-            completionHandler()
+            capturedCompletionHandler()
         }
     }
 

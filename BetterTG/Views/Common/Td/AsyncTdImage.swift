@@ -72,6 +72,7 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
         let localPath = file.local.path
         guard !localPath.isEmpty, decodedLocalPath != localPath else { return }
         decodedLocalPath = localPath
+        let maxPixelSize = maxPixelSize
         guard let uiImage = await Task.detached(priority: .userInitiated, operation: {
             downsampledImage(at: URL(filePath: localPath), maxPixelSize: maxPixelSize)
         })

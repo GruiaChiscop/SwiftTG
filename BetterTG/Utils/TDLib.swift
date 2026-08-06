@@ -36,7 +36,7 @@ final class TDLib: @unchecked Sendable {
             databaseDirectory: dir,
             deviceModel: Utils.modelName,
             systemLanguageCode: "en-US",
-            systemVersion: UIDevice.current.systemVersion,
+            systemVersion: MainActor.assumeIsolated { UIDevice.current.systemVersion },
         ))
 
         nc.publisher(&cancellables, for: UIApplication.willTerminateNotification) { [weak self] _ in

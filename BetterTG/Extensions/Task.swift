@@ -80,7 +80,7 @@ extension Task where Success == Void, Failure == Never {
     }
 }
 
-func main<Value>(
+func main<Value: Sendable>(
     delay: Double? = nil,
     _ operation: @escaping @Sendable @MainActor () throws -> Value,
 ) async throws -> Value {
@@ -90,7 +90,10 @@ func main<Value>(
     }
 }
 
-func main<Value>(delay: Double? = nil, _ operation: @escaping @Sendable @MainActor () -> Value) async -> Value {
+func main<Value: Sendable>(
+    delay: Double? = nil,
+    _ operation: @escaping @Sendable @MainActor () -> Value,
+) async -> Value {
     try? await Task.sleep(delay)
     return await MainActor.run(resultType: Value.self) {
         operation()

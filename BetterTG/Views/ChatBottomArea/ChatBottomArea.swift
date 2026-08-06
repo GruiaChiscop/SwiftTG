@@ -707,13 +707,15 @@ struct ChatBottomArea: View {
             ),
             proximityAlertRadius: 0,
         )))
+        let service = chatVM.service
+        let chatId = chatVM.customChat.chat.id
         let messages = try await TelegramMessageSending.send(
-            service: chatVM.service,
-            chatId: chatVM.customChat.chat.id,
+            service: service,
+            chatId: chatId,
             contents: [content],
             replyTo: TelegramMessageSending.replyTo(messageId: chatVM.replyMessage?.id),
             onAccepted: { messages in
-                chatVM.service.mergeMessages(chatId: chatVM.customChat.chat.id, messages: messages)
+                service.mergeMessages(chatId: chatId, messages: messages)
             },
         )
         guard let message = messages.first else {

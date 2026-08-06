@@ -137,7 +137,7 @@ private struct ChatViewAlbumRootView: View {
 private struct ChatAlbumPageControl: UIViewRepresentable {
     // MARK: - Coordinator
 
-    final class Coordinator: NSObject {
+    @MainActor final class Coordinator: NSObject {
         // MARK: Lifecycle
 
         init(selection: Binding<Int64>, messageIds: [Int64]) {

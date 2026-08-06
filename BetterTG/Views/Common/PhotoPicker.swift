@@ -23,10 +23,9 @@ struct PhotoPicker: UIViewControllerRepresentable {
             previousResultsCount = results.count
             for (index, result) in results.enumerated() where result.itemProvider.canLoadObject(ofClass: UIImage.self) {
                 result.itemProvider.loadObject(ofClass: UIImage.self) { [self] item, error in
-                    if let selectedImage = writeImage(item as? UIImage) {
+                    let selectedImage = writeImage(item as? UIImage)
+                    Task { @MainActor in
                         onSelection(index, selectedImage, error)
-                    } else {
-                        onSelection(index, nil, error)
                     }
                 }
             }

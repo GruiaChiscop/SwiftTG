@@ -19,7 +19,7 @@ private struct EquatableView<Content: View, Value: Equatable>: Equatable, View {
         content
     }
     
-    static func == (lhs: Self, rhs: Self) -> Bool {
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.value == rhs.value
     }
 }
