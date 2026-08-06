@@ -108,17 +108,22 @@ struct TelegramLocationComposerView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                statusSection
+            VStack(spacing: 0) {
+                mapPicker
+                    .frame(height: 260)
 
-                if isSending {
-                    Section { ProgressView("Sending location") }
-                }
-                if let feedbackMessage {
-                    Section {
-                        Text(feedbackMessage)
-                            .foregroundStyle(.red)
-                            .accessibilityFocused($feedbackIsFocused)
+                Form {
+                    statusSection
+
+                    if isSending {
+                        Section { ProgressView("Sending location") }
+                    }
+                    if let feedbackMessage {
+                        Section {
+                            Text(feedbackMessage)
+                                .foregroundStyle(.red)
+                                .accessibilityFocused($feedbackIsFocused)
+                        }
                     }
                 }
             }
@@ -138,61 +143,122 @@ struct TelegramLocationComposerView: View {
                 }
         }
         #if os(macOS)
-        .frame(minWidth: 380, minHeight: 320)
+        .frame(minWidth: 380, minHeight: 480)
         #endif
         .task {
             guard !hasRequestedLocation else { return }
             hasRequestedLocation = true
-            await fetchCurrentLocation()
+            await fetchCurrentLocation(recenterMap: true)
         }
     }
 
     // MARK: Private
 
+    /// Meters spanned by the map when it first centers on a location - close enough to read
+    /// street-level detail without the picker starting out over-zoomed.
+    private static let initialSpanMeters: CLLocationDistance = 800
+
     @AccessibilityFocusState private var feedbackIsFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var draft = TelegramLocationDraft()
+    @State private var cameraPosition = MapCameraPosition.region(
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            latitudinalMeters: 40_000_000,
+            longitudinalMeters: 40_000_000,
+        ),
+    )
+    @State private var isPanning = false
     @State private var isFetchingLocation = false
     @State private var isSending = false
     @State private var hasRequestedLocation = false
     @State private var fetchErrorMessage: String?
     @State private var fetchErrorIsPermissionDenied = false
     @State private var feedbackMessage: String?
+    @State private var geocodeTask: Task<Void, Never>?
 
     private var coordinateText: String {
         guard let latitude = draft.latitude, let longitude = draft.longitude else { return "" }
         return String(format: "%.5f, %.5f", latitude, longitude)
     }
 
+    private var mapPicker: some View {
+        ZStack {
+            Map(position: $cameraPosition, interactionModes: [.pan, .zoom])
+                .onMapCameraChange(frequency: .continuous) { _ in
+                    isPanning = true
+                }
+                .onMapCameraChange(frequency: .onEnd) { context in
+                    isPanning = false
+                    selectCenter(context.region.center)
+                }
+                .accessibilityLabel("Map. Pan to choose a location to send.")
+
+            Image(systemName: "mappin")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(.red)
+                .shadow(radius: 2)
+                .offset(y: -17)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        Task { await fetchCurrentLocation(recenterMap: true) }
+                    } label: {
+                        Image(systemName: "location.fill")
+                            .padding(10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.circle)
+                    .disabled(isFetchingLocation)
+                    .accessibilityLabel("Use My Current Location")
+                    .padding(12)
+                }
+            }
+        }
+    }
+
     @ViewBuilder private var statusSection: some View {
-        if isFetchingLocation {
-            Section { ProgressView("Finding your location…") }
-        } else if let fetchErrorMessage {
+        if let fetchErrorMessage {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(fetchErrorMessage)
                     if fetchErrorIsPermissionDenied, let onOpenSettings {
                         Button("Open Settings", action: onOpenSettings)
                     } else {
-                        Button("Try Again") { Task { await fetchCurrentLocation() } }
+                        Button("Try Again") { Task { await fetchCurrentLocation(recenterMap: true) } }
                     }
                 }
             }
-        } else if draft.latitude != nil, draft.longitude != nil {
-            Section {
-                HStack(spacing: 10) {
-                    Image(systemName: "location.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Color.accentColor)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Your Current Location")
+        }
+        Section {
+            HStack(spacing: 10) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Selected Location")
+                    if isPanning {
+                        Text("Selecting…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if draft.latitude != nil {
                         Text(draft.address ?? coordinateText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Pan the map above to choose a location")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -217,16 +283,39 @@ struct TelegramLocationComposerView: View {
         }
     }
 
-    @MainActor private func fetchCurrentLocation() async {
+    private func selectCenter(_ center: CLLocationCoordinate2D) {
+        geocodeTask?.cancel()
+        draft.latitude = center.latitude
+        draft.longitude = center.longitude
+        draft.horizontalAccuracy = 0
+        draft.address = nil
+        geocodeTask = Task {
+            let address = await Self.reverseGeocodedAddress(
+                for: CLLocation(latitude: center.latitude, longitude: center.longitude),
+            )
+            guard !Task.isCancelled else { return }
+            draft.address = address
+        }
+    }
+
+    @MainActor private func fetchCurrentLocation(recenterMap: Bool) async {
         isFetchingLocation = true
         fetchErrorMessage = nil
         defer { isFetchingLocation = false }
         do {
             let location = try await requestCurrentLocation()
+            geocodeTask?.cancel()
             draft.latitude = location.coordinate.latitude
             draft.longitude = location.coordinate.longitude
             draft.horizontalAccuracy = max(location.horizontalAccuracy, 0)
             draft.address = await Self.reverseGeocodedAddress(for: location)
+            if recenterMap {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: location.coordinate,
+                    latitudinalMeters: Self.initialSpanMeters,
+                    longitudinalMeters: Self.initialSpanMeters,
+                ))
+            }
         } catch {
             fetchErrorIsPermissionDenied = (error as? LocationAccessError) == .accessDenied
             fetchErrorMessage = telegramErrorDescription(error)
