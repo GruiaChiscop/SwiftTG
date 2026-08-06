@@ -71,7 +71,7 @@ enum TelegramMessageSending {
         replyTo: InputMessageReplyTo?,
         uploadAction: ChatAction? = nil,
         schedulingState: MessageSchedulingState? = nil,
-        onAccepted: (([Message]) -> Void)? = nil,
+        onAccepted: (@Sendable ([Message]) -> Void)? = nil,
     ) async throws -> [Message] {
         guard !contents.isEmpty else { return [] }
         // A scheduled send has nothing to upload yet from the recipient's perspective, and

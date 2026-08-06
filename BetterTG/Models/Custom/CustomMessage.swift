@@ -140,7 +140,7 @@ import TDLibKit
 // MARK: Hashable
 
 extension CustomMessage: Hashable {
-    func hash(into hasher: inout Hasher) {
+    nonisolated func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
 }
@@ -148,7 +148,7 @@ extension CustomMessage: Hashable {
 // MARK: Identifiable
 
 extension CustomMessage: Identifiable {
-    var id: Int64 { message.id }
+    nonisolated var id: Int64 { message.id }
 }
 
 // MARK: Equatable
@@ -159,7 +159,7 @@ extension CustomMessage: Equatable {
     /// every re-render of an existing message (edits, reactions, pin changes - each producing a
     /// new `CustomMessage` instance per the note on `message` above) look unchanged to SwiftUI,
     /// leaving the row stuck showing whatever it rendered first.
-    static func == (lhs: CustomMessage, rhs: CustomMessage) -> Bool {
+    nonisolated static func == (lhs: CustomMessage, rhs: CustomMessage) -> Bool {
         lhs === rhs
     }
 }

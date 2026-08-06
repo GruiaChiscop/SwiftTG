@@ -4,7 +4,12 @@
 import Foundation
 import SwiftOGG
 
-final class VoiceNoteRecorder {
+/// All mutable state is only ever touched from `init`/`start()` (before the audio tap exists, so
+/// nothing else can race it yet) or from within `encodingQueue.sync`/`.async` afterward - the
+/// audio-render-thread tap closure and the main-thread `Timer` in `VoiceRecordingController` both
+/// go through that same serial queue, which is the actual thread-safety mechanism `@unchecked`
+/// asserts here.
+final class VoiceNoteRecorder: @unchecked Sendable {
     // MARK: Internal
 
     /// Reads across `encodingQueue`, the same way `stopAndWrite`/`cancel` already do - `peakPower`
@@ -92,7 +97,7 @@ final class VoiceNoteRecorder {
         let capacity = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength) * ratio)) + 32
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return }
 
-        var suppliedInput = false
+        nonisolated(unsafe) var suppliedInput = false
         var conversionError: NSError?
         let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
             if suppliedInput {

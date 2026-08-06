@@ -189,10 +189,10 @@ import TDLibKit
             replyTo: getMessageReplyTo(from: replyMessage),
             uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
             schedulingState: schedulingState,
-            onAccepted: { messages in
+            onAccepted: { [chatId] messages in
                 TelegramOutgoingFileStaging.shared.register(
                     fileURLs: documentURLs,
-                    chatId: self.chatId,
+                    chatId: chatId,
                     temporaryMessageIds: messages.map(\.id),
                 )
             },
@@ -213,10 +213,10 @@ import TDLibKit
             replyTo: getMessageReplyTo(from: replyMessage),
             uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
             schedulingState: schedulingState,
-            onAccepted: { messages in
+            onAccepted: { [chatId] messages in
                 TelegramOutgoingFileStaging.shared.register(
                     fileURLs: imageURLs,
-                    chatId: self.chatId,
+                    chatId: chatId,
                     temporaryMessageIds: messages.map(\.id),
                 )
             },

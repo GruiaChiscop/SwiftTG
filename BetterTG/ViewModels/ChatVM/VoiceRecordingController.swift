@@ -7,7 +7,7 @@ import TDLibKit
 /// Lifecycle of recording an outgoing voice note (timer, waveform, recorder). Split out of
 /// `ChatVM`, which composes this alongside `MessageComposer` and hands the finished recording's
 /// artifact back to `ChatVM.mediaStopRecordingVoice(duration:wave:)` for sending.
-@Observable final class VoiceRecordingController {
+@MainActor @Observable final class VoiceRecordingController {
     // MARK: Lifecycle
 
     init(chatId: Int64, service: any TelegramService) {
@@ -30,9 +30,11 @@ import TDLibKit
 
     func startTimer() {
         let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] timer in
-            guard let self, let audioRecorder else { return }
-            wave.append(audioRecorder.currentPeakPower())
-            timerCount += timer.timeInterval
+            MainActor.assumeIsolated {
+                guard let self, let audioRecorder = self.audioRecorder else { return }
+                self.wave.append(audioRecorder.currentPeakPower())
+                self.timerCount += timer.timeInterval
+            }
         }
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -44,7 +46,7 @@ import TDLibKit
         timerCount = 0
     }
 
-    @MainActor func mediaStartRecordingVoice() async {
+    func mediaStartRecordingVoice() async {
         Media.shared.stop()
         Media.shared.setAudioSessionRecord()
 
@@ -84,7 +86,7 @@ import TDLibKit
             recordingLocked = false
             recordingDragTranslation = .zero
         }
-        Task.background { try? await self.tdSendChatAction(.chatActionCancel) }
+        Task.main { try? await self.tdSendChatAction(.chatActionCancel) }
     }
 
     /// Finalizes the in-progress recording and returns its artifact for `ChatVM` to send, or
@@ -105,7 +107,7 @@ import TDLibKit
             recordingLocked = false
             recordingDragTranslation = .zero
         }
-        Task.background { try? await self.tdSendChatAction(.chatActionCancel) }
+        Task.main { try? await self.tdSendChatAction(.chatActionCancel) }
 
         let waveform = TelegramVoiceNoteSending.waveform(from: wave)
         return (url: savedVoiceNoteUrl, duration: max(encodedDuration, duration), waveform: waveform)
