@@ -19,7 +19,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .profile: "Profile"
         case .blockedUsers: "Blocked Users"
-        case .activeSessions: "Active Sessions"
+        case .activeSessions: "Devices"
         case .privacy: "Privacy"
         case .storage: "Storage"
         }

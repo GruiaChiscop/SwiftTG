@@ -10,7 +10,7 @@ import UserNotifications
     // MARK: Internal
 
     var body: some Scene {
-        Window("BetterTG", id: "main") {
+        Window("SwiftTG", id: "main") {
             MacRootView(model: model)
                 .frame(minWidth: 820, minHeight: 560)
                 .background(MacWindowBridge(appDelegate: appDelegate))
@@ -22,7 +22,7 @@ import UserNotifications
         .defaultSize(width: 1100, height: 760)
         .commands {
             CommandGroup(replacing: .appTermination) {
-                Button("Quit BetterTG") {
+                Button("Quit SwiftTG") {
                     appDelegate.requestTermination()
                 }
                 .keyboardShortcut("q", modifiers: .command)
@@ -34,7 +34,7 @@ import UserNotifications
                 .frame(width: 620, height: 420)
         }
 
-        MenuBarExtra("BetterTG", systemImage: "paperplane.fill") {
+        MenuBarExtra("SwiftTG", systemImage: "paperplane.fill") {
             MacMenuBarView(model: model, appDelegate: appDelegate)
         }
     }
@@ -87,8 +87,8 @@ UNUserNotificationCenterDelegate {
 
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "Keep BetterTG running?"
-        alert.informativeText = "BetterTG can remain in the menu bar and receive Telegram updates and notifications."
+        alert.messageText = "Keep SwiftTG running?"
+        alert.informativeText = "SwiftTG can remain in the menu bar and receive Telegram updates and notifications."
         alert.addButton(withTitle: "Keep in Menu Bar")
         alert.addButton(withTitle: "Quit Completely")
         alert.addButton(withTitle: "Cancel")
@@ -115,8 +115,8 @@ UNUserNotificationCenterDelegate {
 
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "Close BetterTG?"
-        alert.informativeText = "You can keep BetterTG in the menu bar to continue receiving Telegram updates and notifications."
+        alert.messageText = "Close SwiftTG?"
+        alert.informativeText = "You can keep SwiftTG in the menu bar to continue receiving Telegram updates and notifications."
         alert.addButton(withTitle: "Keep in Menu Bar")
         alert.addButton(withTitle: "Quit Completely")
         alert.addButton(withTitle: "Cancel")
@@ -224,7 +224,7 @@ private struct MacMenuBarView: View {
 
         Divider()
 
-        Button("Open BetterTG") {
+        Button("Open SwiftTG") {
             appDelegate.showMainWindow()
             openWindow(id: "main")
         }

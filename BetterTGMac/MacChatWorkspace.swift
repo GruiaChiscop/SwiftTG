@@ -13,7 +13,7 @@ struct MacChatWorkspace: View {
         } detail: {
             MacChatDetail(model: model)
         }
-        .navigationTitle("BetterTG")
+        .navigationTitle("SwiftTG")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             TelegramAudioPlayerBar()
         }

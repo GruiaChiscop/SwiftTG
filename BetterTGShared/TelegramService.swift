@@ -247,6 +247,10 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setAuthenticationEmailAddress(emailAddress: String?) async throws -> Ok
     func registerUser(disableNotification: Bool?, firstName: String?, lastName: String?) async throws -> Ok
     func requestQrCodeAuthentication(otherUserIds: [Int64]?) async throws -> Ok
+    /// Approves a login QR code scanned with the in-app camera on another (already logged-in)
+    /// device - the counterpart to `requestQrCodeAuthentication`, which is what generates the
+    /// code being scanned in the first place.
+    func confirmQrCodeAuthentication(link: String?) async throws -> Session
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
     func getUserPrivacySettingRules(setting: UserPrivacySetting?) async throws -> UserPrivacySettingRules
     func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok
@@ -1054,6 +1058,10 @@ extension TelegramSession: TelegramService {
 
     func requestQrCodeAuthentication(otherUserIds: [Int64]?) async throws -> Ok {
         try await client.requestQrCodeAuthentication(otherUserIds: otherUserIds)
+    }
+
+    func confirmQrCodeAuthentication(link: String?) async throws -> Session {
+        try await client.confirmQrCodeAuthentication(link: link)
     }
 
     func toggleChatIsMarkedAsUnread(chatId: Int64?, isMarkedAsUnread: Bool?) async throws -> Ok {

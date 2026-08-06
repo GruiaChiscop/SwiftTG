@@ -69,7 +69,7 @@ private struct MacAuthorizationView: View {
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
 
-            Text("BetterTG")
+            Text("SwiftTG")
                 .font(.largeTitle.bold())
 
             Group {

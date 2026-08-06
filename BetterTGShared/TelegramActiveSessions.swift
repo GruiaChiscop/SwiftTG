@@ -3,6 +3,10 @@
 import SwiftUI
 import TDLibKit
 
+#if os(iOS)
+import CodeScanner
+#endif
+
 // MARK: - SessionDeviceType + systemImage
 
 extension SessionDeviceType {
@@ -56,6 +60,18 @@ struct ActiveSessionsView: View {
 
     var body: some View {
         List {
+            #if os(iOS)
+            Section {
+                Button {
+                    showsScanner = true
+                } label: {
+                    Label("Link a Device", systemImage: "qrcode.viewfinder")
+                }
+            } footer: {
+                Text("Scan the QR code on Telegram Desktop, Telegram Web, or another device to log it in.")
+            }
+            #endif
+
             if let currentSession {
                 Section("Current Session") {
                     sessionRow(currentSession, showsTerminateButton: false)
@@ -74,7 +90,7 @@ struct ActiveSessionsView: View {
             }
 
             if !otherSessions.isEmpty {
-                Section("Active Sessions") {
+                Section("Other Devices") {
                     ForEach(otherSessions) { session in
                         sessionRow(session, showsTerminateButton: true)
                     }
@@ -91,39 +107,58 @@ struct ActiveSessionsView: View {
                 }
             }
         }
-        .navigationTitle("Active Sessions")
+        .navigationTitle("Devices")
         .task {
             guard !hasLoaded else { return }
             hasLoaded = true
             await loadSessions()
         }
         .refreshable { await loadSessions() }
+        #if os(iOS)
+        .sheet(isPresented: $showsScanner) {
+            NavigationStack {
+                CodeScannerView(codeTypes: [.qr], showViewfinder: true) { result in
+                    handleScan(result)
+                }
+                .navigationTitle("Scan QR Code")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showsScanner = false }
+                    }
+                }
+            }
+        }
+        #endif
         .alert("Terminate All Other Sessions", isPresented: $confirmsTerminateAll) {
-            Button("Terminate All Other Sessions", role: .destructive) {
-                Task { await terminateAllOtherSessions() }
+                Button("Terminate All Other Sessions", role: .destructive) {
+                    Task { await terminateAllOtherSessions() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to terminate all other sessions?")
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Are you sure you want to terminate all other sessions?")
-        }
-        .alert("Terminate Session", isPresented: terminationConfirmationIsPresented) {
-            Button("Terminate Session", role: .destructive) {
-                guard let sessionPendingTermination else { return }
-                Task { await terminate(sessionPendingTermination) }
+            .alert("Terminate Session", isPresented: terminationConfirmationIsPresented) {
+                Button("Terminate Session", role: .destructive) {
+                    guard let sessionPendingTermination else { return }
+                    Task { await terminate(sessionPendingTermination) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to terminate this session?")
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Are you sure you want to terminate this session?")
-        }
-        .alert("Error", isPresented: errorIsPresented) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
+            .alert("Error", isPresented: errorIsPresented) {
+                Button("OK") {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
     }
 
     // MARK: Private
 
+    #if os(iOS)
+    @State private var showsScanner = false
+    #endif
     @State private var confirmsTerminateAll = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -229,4 +264,38 @@ struct ActiveSessionsView: View {
             errorMessage = sessionActionErrorDescription(error)
         }
     }
+
+    #if os(iOS)
+    private func handleScan(_ result: Result<ScanResult, ScanError>) {
+        showsScanner = false
+        switch result {
+        case .success(let scan):
+            Task { await confirmQrCodeAuthentication(link: scan.string) }
+        case .failure(let error):
+            errorMessage = Self.scanErrorDescription(error)
+        }
+    }
+
+    private static func scanErrorDescription(_ error: ScanError) -> String {
+        switch error {
+        case .badInput:
+            "Couldn't access the camera."
+        case .badOutput:
+            "The camera couldn't scan a code."
+        case .initError(let underlying):
+            underlying.localizedDescription
+        case .permissionDenied:
+            "Camera access is denied. Turn it on in Settings to scan a QR code."
+        }
+    }
+
+    @MainActor private func confirmQrCodeAuthentication(link: String) async {
+        do {
+            _ = try await service.confirmQrCodeAuthentication(link: link)
+            await loadSessions()
+        } catch {
+            errorMessage = sessionActionErrorDescription(error)
+        }
+    }
+    #endif
 }

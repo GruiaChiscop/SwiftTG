@@ -1,6 +1,15 @@
 {
-  "originHash" : "24e918667e6fb5493c1a2848872d7f7a8b1c625c776c8c3134ae39cfef44124e",
+  "originHash" : "965c9eb57728eaae8ae6b2f0ee3e1701c4dc525af10a614fc1514ee49c17a7d6",
   "pins" : [
+    {
+      "identity" : "codescanner",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/twostraws/CodeScanner",
+      "state" : {
+        "revision" : "5e886430238944c7200fc9e10dbf2d9550dba865",
+        "version" : "2.5.2"
+      }
+    },
     {
       "identity" : "ogg-swift",
       "kind" : "remoteSourceControl",

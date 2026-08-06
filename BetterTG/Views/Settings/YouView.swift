@@ -43,7 +43,7 @@ struct YouView: View {
                 NavigationLink {
                     ActiveSessionsView(service: service)
                 } label: {
-                    Label("Active Sessions", systemImage: "checkmark.shield")
+                    Label("Devices", systemImage: "checkmark.shield")
                 }
 
                 NavigationLink {
