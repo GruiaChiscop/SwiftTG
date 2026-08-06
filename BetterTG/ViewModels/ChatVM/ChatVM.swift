@@ -4,7 +4,7 @@ import Combine
 import SwiftUI
 import TDLibKit
 
-@Observable final class ChatVM {
+@MainActor @Observable final class ChatVM {
     // MARK: Lifecycle
 
     init(
@@ -14,6 +14,7 @@ import TDLibKit
         service: any TelegramService = TDLib.shared.service,
     ) {
         self.customChat = customChat
+        self.chatId = customChat.chat.id
         self.initialMessageId = initialMessageId
         self.movesAccessibilityFocusToInitialMessage = movesAccessibilityFocusToInitialMessage
         self.initialUnreadCount = customChat.unreadCount
@@ -38,7 +39,7 @@ import TDLibKit
         conversationStatusTask?.cancel()
         pinnedMessagesTask?.cancel()
         guard hasStarted else { return }
-        let chatId = customChat.chat.id
+        let chatId = chatId
         let service = service
         Task { _ = try? await service.closeChat(chatId: chatId) }
     }
@@ -50,6 +51,10 @@ import TDLibKit
     static let initialHistoryWindowSize = 44
 
     var customChat: CustomChat
+    /// Mirrors `customChat.chat.id` as a plain `Int64` so `deinit` (always nonisolated, even on a
+    /// `@MainActor` class) can read it without hopping actors - `customChat` itself is a mutable,
+    /// non-`Sendable` property and can't be touched from there.
+    let chatId: Int64
     let initialMessageId: Int64?
     let movesAccessibilityFocusToInitialMessage: Bool
     let initialUnreadCount: Int
@@ -136,10 +141,10 @@ import TDLibKit
         loadMessages()
         Media.shared.onChatOpen(title: customChat.chat.title)
 
-        Task.background {
+        Task.main {
             guard let draftMessage = self.customChat.draftMessage else { return }
             let replyMessage = await self.getInputReplyToMessage(draftMessage.replyTo)
-            await main { withAnimation { self.composer.replyMessage = replyMessage } }
+            withAnimation { self.composer.replyMessage = replyMessage }
         }
     }
 
