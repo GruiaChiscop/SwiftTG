@@ -185,13 +185,15 @@ import TDLibKit
 // MARK: Hashable
 
 extension CustomChat: Hashable {
+    /// `CustomChat` is a reference type whose properties are already tracked individually by
+    /// `@Observable` - the only consumer of this conformance (`.onChange(of: rootVM.folders)` in
+    /// MainView.swift) just needs to know whether the *set of chat objects* changed, not whether
+    /// any chat's content did. Hashing every nested TDLib field (recursively, including `chat`,
+    /// `lastMessage`, etc.) was measured costing ~561ms during chat-list bootstrap via an
+    /// xctrace Time Profiler capture, since each incrementally-appended chat re-triggers a full
+    /// rehash of every chat already in its folder.
     func hash(into hasher: inout Hasher) {
-        hasher.combine(chat)
-        hasher.combine(position)
-        hasher.combine(unreadCount)
-        hasher.combine(type)
-        hasher.combine(lastMessage)
-        hasher.combine(draftMessage)
+        hasher.combine(ObjectIdentifier(self))
     }
 }
 
@@ -205,7 +207,7 @@ extension CustomChat: Identifiable {
 
 extension CustomChat: Equatable {
     static func == (lhs: CustomChat, rhs: CustomChat) -> Bool {
-        lhs.hashValue == rhs.hashValue
+        lhs === rhs
     }
 }
 

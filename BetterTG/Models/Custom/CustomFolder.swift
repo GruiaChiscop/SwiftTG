@@ -60,9 +60,12 @@ import TDLibKit
 // MARK: Hashable
 
 extension CustomFolder: Hashable {
+    /// Same reasoning as `CustomChat.hash(into:)` - hashing `chats` recursively hashed every
+    /// `CustomChat` in the folder (each of which hashed its own nested TDLib structs), which is
+    /// exactly the O(n^2) cost the xctrace capture found during chat-list bootstrap. `.onChange(of:
+    /// rootVM.folders)` (MainView.swift) only needs identity, not content, equality.
     func hash(into hasher: inout Hasher) {
-        hasher.combine(chats)
-        hasher.combine(type)
+        hasher.combine(ObjectIdentifier(self))
     }
 }
 
@@ -82,6 +85,6 @@ extension CustomFolder: Identifiable {
 
 extension CustomFolder: Equatable {
     static func == (lhs: CustomFolder, rhs: CustomFolder) -> Bool {
-        lhs.hashValue == rhs.hashValue
+        lhs === rhs
     }
 }
