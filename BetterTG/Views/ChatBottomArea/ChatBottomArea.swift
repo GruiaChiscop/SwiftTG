@@ -6,6 +6,8 @@ import SwiftUI
 import TDLibKit
 import UniformTypeIdentifiers
 
+// MARK: - ChatBottomArea
+
 struct ChatBottomArea: View {
     // MARK: Internal
 
@@ -195,16 +197,20 @@ struct ChatBottomArea: View {
                     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     UIApplication.shared.open(url)
                 },
-            ) { draft in
-                try await TelegramLocationSending.send(
-                    draft: draft,
-                    service: chatVM.service,
-                    chatId: chatVM.customChat.chat.id,
-                    replyToMessageId: chatVM.replyMessage?.id,
-                )
-                chatVM.replyMessage = nil
-                await chatVM.updateDraft()
-            }
+                onSend: { draft in
+                    try await TelegramLocationSending.send(
+                        draft: draft,
+                        service: chatVM.service,
+                        chatId: chatVM.customChat.chat.id,
+                        replyToMessageId: chatVM.replyMessage?.id,
+                    )
+                    chatVM.replyMessage = nil
+                    await chatVM.updateDraft()
+                },
+                onShareLiveLocation: { livePeriod in
+                    try await shareLiveLocation(livePeriod: livePeriod)
+                },
+            )
         }
         .sheet(isPresented: $showsStickerPicker) {
             TelegramStickerPickerView(
@@ -683,5 +689,62 @@ struct ChatBottomArea: View {
     private func submitMessage() {
         chatVM.sendMessageTask?.cancel()
         chatVM.sendMessageTask = Task.main { await chatVM.sendMessage() }
+    }
+
+    private func shareLiveLocation(livePeriod: Int) async throws {
+        guard await PermissionsManager.shared.requestAlwaysAuthorization() else {
+            throw TelegramLiveLocationSharingError.alwaysAccessDenied
+        }
+        let location = try await PermissionsManager.shared.requestCurrentLocation()
+        let heading = location.course >= 0 ? Int(location.course.rounded()) : 0
+        let content = InputMessageContent.inputMessageLiveLocation(.init(location: LiveLocation(
+            heading: heading,
+            livePeriod: livePeriod,
+            location: Location(
+                horizontalAccuracy: max(location.horizontalAccuracy, 0),
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+            ),
+            proximityAlertRadius: 0,
+        )))
+        let messages = try await TelegramMessageSending.send(
+            service: chatVM.service,
+            chatId: chatVM.customChat.chat.id,
+            contents: [content],
+            replyTo: TelegramMessageSending.replyTo(messageId: chatVM.replyMessage?.id),
+            onAccepted: { messages in
+                chatVM.service.mergeMessages(chatId: chatVM.customChat.chat.id, messages: messages)
+            },
+        )
+        guard let message = messages.first else {
+            throw TelegramLiveLocationSharingError.noMessageReturned
+        }
+        TelegramLiveLocationManager.shared.start(
+            chatId: chatVM.customChat.chat.id,
+            chatTitle: chatVM.customChat.displayTitle,
+            messageId: message.id,
+            livePeriod: livePeriod,
+            expiresIn: livePeriod,
+        )
+        chatVM.replyMessage = nil
+        await chatVM.updateDraft()
+    }
+}
+
+// MARK: - TelegramLiveLocationSharingError
+
+private enum TelegramLiveLocationSharingError: Swift.Error, LocalizedError {
+    case alwaysAccessDenied
+    case noMessageReturned
+
+    // MARK: Internal
+
+    var errorDescription: String? {
+        switch self {
+        case .alwaysAccessDenied:
+            "Live location needs \"Always\" location access to keep updating in the background. Turn it on in Settings."
+        case .noMessageReturned:
+            "Telegram accepted the live location but didn't return the sent message."
+        }
     }
 }

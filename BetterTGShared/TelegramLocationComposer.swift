@@ -141,10 +141,12 @@ struct TelegramLocationComposerView: View {
         requestCurrentLocation: @escaping () async throws -> CLLocation,
         onOpenSettings: (() -> Void)? = nil,
         onSend: @escaping (TelegramLocationDraft) async throws -> Void,
+        onShareLiveLocation: ((Int) async throws -> Void)? = nil,
     ) {
         self.requestCurrentLocation = requestCurrentLocation
         self.onOpenSettings = onOpenSettings
         self.onSend = onSend
+        self.onShareLiveLocation = onShareLiveLocation
     }
 
     // MARK: Internal
@@ -152,6 +154,8 @@ struct TelegramLocationComposerView: View {
     let requestCurrentLocation: () async throws -> CLLocation
     let onOpenSettings: (() -> Void)?
     let onSend: (TelegramLocationDraft) async throws -> Void
+    /// `nil` on macOS call sites - live location tracking needs a moving device, so it's iOS only.
+    let onShareLiveLocation: ((Int) async throws -> Void)?
 
     var body: some View {
         NavigationStack {
@@ -161,6 +165,9 @@ struct TelegramLocationComposerView: View {
 
                 Form {
                     statusSection
+                    #if os(iOS)
+                    liveLocationSection
+                    #endif
                     placesSection
 
                     if isSending {
@@ -339,6 +346,26 @@ struct TelegramLocationComposerView: View {
             .accessibilityElement(children: .combine)
         }
     }
+
+    #if os(iOS)
+    @ViewBuilder private var liveLocationSection: some View {
+        if let onShareLiveLocation {
+            Section {
+                Menu {
+                    Button("For 15 Minutes") { shareLiveLocation(seconds: 900, using: onShareLiveLocation) }
+                    Button("For 1 Hour") { shareLiveLocation(seconds: 3600, using: onShareLiveLocation) }
+                    Button("For 8 Hours") { shareLiveLocation(seconds: 28800, using: onShareLiveLocation) }
+                    Button("Until I Turn It Off") {
+                        shareLiveLocation(seconds: TelegramLiveShare.indefiniteLivePeriod, using: onShareLiveLocation)
+                    }
+                } label: {
+                    Label("Share Live Location", systemImage: "location.fill.viewfinder")
+                }
+                .disabled(isSending)
+            }
+        }
+    }
+    #endif
 
     /// Search results replace the nearby-places browse list rather than sitting alongside it -
     /// showing both at once would leave it unclear which list a tap picks from.
@@ -552,4 +579,22 @@ struct TelegramLocationComposerView: View {
             }
         }
     }
+
+    #if os(iOS)
+    private func shareLiveLocation(seconds: Int, using onShareLiveLocation: @escaping (Int) async throws -> Void) {
+        feedbackMessage = nil
+        feedbackIsFocused = false
+        isSending = true
+        Task {
+            do {
+                try await onShareLiveLocation(seconds)
+                dismiss()
+            } catch {
+                isSending = false
+                feedbackMessage = telegramErrorDescription(error)
+                feedbackIsFocused = true
+            }
+        }
+    }
+    #endif
 }

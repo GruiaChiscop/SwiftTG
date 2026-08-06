@@ -19,6 +19,9 @@ extension RootVM {
                     Task { @MainActor [weak self] in
                         await self?.processPendingShareRequests()
                     }
+                    Task { @MainActor in
+                        await TelegramLiveLocationManager.shared.resumeActiveShares()
+                    }
                 case .authorizationStateClosed,
                      .authorizationStateClosing,
                      .authorizationStateLoggingOut,

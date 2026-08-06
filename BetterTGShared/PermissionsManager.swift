@@ -97,6 +97,10 @@ protocol LocationAccess: Sendable {
     func authorizationStatus() -> LocationAuthorizationStatus
     func requestAccess() async -> Bool
     func requestCurrentLocation() async throws -> CLLocation
+    /// Upgrades to "Always" access (needed for live location updates to keep going while
+    /// backgrounded) - distinct from `requestAccess()`, which only ever asks for "When In Use".
+    func hasAlwaysAuthorization() -> Bool
+    func requestAlwaysAuthorization() async -> Bool
 }
 
 // MARK: - SystemLocationAccess
@@ -149,17 +153,44 @@ final class SystemLocationAccess: NSObject, LocationAccess, CLLocationManagerDel
         throw LocationAccessError.noLocationReturned
     }
 
+    func hasAlwaysAuthorization() -> Bool {
+        manager.authorizationStatus == .authorizedAlways
+    }
+
+    /// No-op (returning the current state) once denied/restricted - like `requestAccess()`, the
+    /// system only ever shows a prompt while there's still somewhere to go (`.notDetermined` or,
+    /// on iOS specifically, the "When In Use" -> "Always" upgrade from `.authorizedWhenInUse` -
+    /// macOS's `CLAuthorizationStatus` has no separate "when in use" case to upgrade from).
+    func requestAlwaysAuthorization() async -> Bool {
+        guard hasAlwaysAuthorization() == false else { return true }
+        var canPrompt = manager.authorizationStatus == .notDetermined
+        #if os(iOS)
+        canPrompt = canPrompt || manager.authorizationStatus == .authorizedWhenInUse
+        #endif
+        guard canPrompt else { return false }
+        return await withCheckedContinuation { continuation in
+            alwaysAuthorizationContinuation = continuation
+            manager.requestAlwaysAuthorization()
+        }
+    }
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        guard manager.authorizationStatus != .notDetermined,
-              let continuation = authorizationContinuation else { return }
-        authorizationContinuation = nil
-        continuation.resume(returning: authorizationStatus() == .authorized)
+        guard manager.authorizationStatus != .notDetermined else { return }
+        if let continuation = authorizationContinuation {
+            authorizationContinuation = nil
+            continuation.resume(returning: authorizationStatus() == .authorized)
+        }
+        if let continuation = alwaysAuthorizationContinuation {
+            alwaysAuthorizationContinuation = nil
+            continuation.resume(returning: hasAlwaysAuthorization())
+        }
     }
 
     // MARK: Private
 
     private let manager = CLLocationManager()
     private var authorizationContinuation: CheckedContinuation<Bool, Never>?
+    private var alwaysAuthorizationContinuation: CheckedContinuation<Bool, Never>?
 }
 
 // MARK: - PermissionsManager
@@ -248,6 +279,13 @@ final class PermissionsManager: Sendable {
     func requestCurrentLocation() async throws -> CLLocation {
         guard await locationIsAllowed() else { throw LocationAccessError.accessDenied }
         return try await locationAccess.requestCurrentLocation()
+    }
+
+    /// Upgrades to "Always" access, needed before starting live location sharing so updates keep
+    /// going while the app is backgrounded. Returns `false` without throwing if the user declines
+    /// or access is already permanently denied - the caller decides how to surface that.
+    func requestAlwaysAuthorization() async -> Bool {
+        await locationAccess.requestAlwaysAuthorization()
     }
 
     // MARK: Private

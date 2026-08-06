@@ -10,6 +10,9 @@ struct RootView: View {
             if rootVM.loggedIn {
                 MainView()
                     .safeAreaInset(edge: .bottom, spacing: 0) {
+                        TelegramLiveLocationBar()
+                    }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
                         TelegramAudioPlayerBar()
                     }
             } else {

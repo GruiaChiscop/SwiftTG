@@ -64,6 +64,13 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         messageId: Int64?,
         replyMarkup: ReplyMarkup?,
     ) async throws -> Message
+    /// `location: nil` stops sharing the live location.
+    func editMessageLiveLocation(
+        chatId: Int64?,
+        location: LiveLocation?,
+        messageId: Int64?,
+        replyMarkup: ReplyMarkup?,
+    ) async throws -> Message
     func forwardMessages(
         chatId: Int64?,
         fromChatId: Int64?,
@@ -73,6 +80,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         sendCopy: Bool?,
         topicId: MessageTopic?,
     ) async throws -> Messages
+    /// Every outgoing live location that still needs periodic updates - persisted by TDLib across
+    /// app restarts, so this is how tracking resumes after a relaunch.
+    func getActiveLiveLocationMessages() async throws -> Messages
     func getBasicGroup(basicGroupId: Int64?) async throws -> BasicGroup
     func getBasicGroupFullInfo(basicGroupId: Int64?) async throws -> BasicGroupFullInfo
     func getChat(chatId: Int64?) async throws -> Chat
@@ -575,6 +585,54 @@ extension TelegramSession: TelegramService {
             messageId: messageId,
             replyMarkup: replyMarkup,
         )
+    }
+
+    func editMessageLiveLocation(
+        chatId: Int64?,
+        location: LiveLocation?,
+        messageId: Int64?,
+        replyMarkup: ReplyMarkup?,
+    ) async throws -> Message {
+        try await client.editMessageLiveLocation(
+            chatId: chatId,
+            location: location,
+            messageId: messageId,
+            replyMarkup: replyMarkup,
+        )
+    }
+
+    /// `GetActiveLiveLocationMessages` exists as a TDLibKit model but was never wired into either
+    /// of TDLibKit's generated client classes (`TDLibApi`/`TdApi`) - confirmed against the
+    /// upstream repo, not just this checkout, via `gh api search/code`, and the currently pinned
+    /// commit is the newest one touching that generated file, so bumping the package wouldn't add
+    /// it either. This replicates what the generated wrappers' own private `run(query:)` does,
+    /// using the same public building blocks it uses internally (`client.encoder`/`client.decoder`
+    /// are `public let`, already configured with TDLib's snake_case wire format) - except for
+    /// unwrapping the response, since `DTO.payload` is only `internal` from outside the module:
+    /// TDLib's response JSON carries the payload's own fields directly (just tagged with an
+    /// `@type`/`@extra` envelope Codable's keyed decoding ignores unless asked for it), so
+    /// decoding straight into `Error`/`Messages` themselves - skipping `DTO<...>` on this side -
+    /// works the same as unwrapping `.payload` would have.
+    func getActiveLiveLocationMessages() async throws -> Messages {
+        try await withCheckedThrowingContinuation { continuation in
+            do {
+                let dto = DTO(GetActiveLiveLocationMessages(), encoder: client.encoder)
+                try client.send(query: dto) { [self] data in
+                    if let error = try? client.decoder.decode(TDLibKit.Error.self, from: data) {
+                        continuation.resume(throwing: error)
+                    } else if let response = try? client.decoder.decode(Messages.self, from: data) {
+                        continuation.resume(returning: response)
+                    } else {
+                        continuation.resume(throwing: TDLibKit.Error(
+                            code: 500,
+                            message: "Couldn't decode getActiveLiveLocationMessages response",
+                        ))
+                    }
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
     }
 
     func getBasicGroup(basicGroupId: Int64?) async throws -> BasicGroup {
