@@ -161,7 +161,7 @@ struct TelegramLocationComposerView: View {
 
                 Form {
                     statusSection
-                    nearbyVenuesSection
+                    placesSection
 
                     if isSending {
                         Section { ProgressView("Sending location") }
@@ -174,6 +174,7 @@ struct TelegramLocationComposerView: View {
                         }
                     }
                 }
+                .searchable(text: $searchQuery, prompt: "Search for a place")
             }
             .navigationTitle("Send Location")
             #if os(iOS)
@@ -198,6 +199,9 @@ struct TelegramLocationComposerView: View {
             hasRequestedLocation = true
             await fetchCurrentLocation(recenterMap: true)
         }
+        .task(id: searchQuery) {
+            await performSearch()
+        }
     }
 
     // MARK: Private
@@ -207,9 +211,16 @@ struct TelegramLocationComposerView: View {
     private static let initialSpanMeters: CLLocationDistance = 800
     /// Search radius for nearby places around the picked point.
     private static let nearbyVenueRadiusMeters: CLLocationDistance = 500
+    /// Region size used to bias a text search toward the picked point, without excluding matches
+    /// further out (a landmark search like "Eiffel Tower" still needs to resolve globally).
+    private static let searchBiasMeters: CLLocationDistance = 50000
+    /// How long a keystroke waits before it triggers a search - cancelled and restarted by
+    /// `.task(id: searchQuery)` on every subsequent keystroke, so only the settled query searches.
+    private static let searchDebounceNanoseconds: UInt64 = 300_000_000
 
     @AccessibilityFocusState private var feedbackIsFocused: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissSearch) private var dismissSearch
     @State private var draft = TelegramLocationDraft()
     @State private var cameraPosition = MapCameraPosition.region(
         MKCoordinateRegion(
@@ -219,12 +230,22 @@ struct TelegramLocationComposerView: View {
         ),
     )
     @State private var isPanning = false
+    /// Set right before a programmatic recenter (picking a place, "Use My Current Location") and
+    /// consumed by the very next pan-settle callback - that callback is the animated recenter
+    /// itself finishing, not a real user pan, so it must not overwrite the place just picked with
+    /// a plain point at the same coordinates. A fixed time window doesn't work here: recentering
+    /// across a large distance (e.g. a search result on another continent) animates for longer
+    /// than any short delay would cover, so the delay was expiring before the real settle fired.
+    @State private var suppressNextCameraSettle = false
     @State private var isFetchingLocation = false
     @State private var isSending = false
     @State private var hasRequestedLocation = false
     @State private var nearbyVenues = [TelegramVenueSelection]()
     @State private var isSearchingVenues = false
     @State private var venueSearchTask: Task<Void, Never>?
+    @State private var searchQuery = ""
+    @State private var searchResults = [TelegramVenueSelection]()
+    @State private var isSearchingQuery = false
     @State private var fetchErrorMessage: String?
     @State private var fetchErrorIsPermissionDenied = false
     @State private var feedbackMessage: String?
@@ -243,6 +264,10 @@ struct TelegramLocationComposerView: View {
                 }
                 .onMapCameraChange(frequency: .onEnd) { context in
                     isPanning = false
+                    if suppressNextCameraSettle {
+                        suppressNextCameraSettle = false
+                        return
+                    }
                     selectCenter(context.region.center)
                 }
                 .accessibilityLabel("Map. Pan to choose a location to send.")
@@ -315,39 +340,59 @@ struct TelegramLocationComposerView: View {
         }
     }
 
-    @ViewBuilder private var nearbyVenuesSection: some View {
-        if isSearchingVenues {
+    /// Search results replace the nearby-places browse list rather than sitting alongside it -
+    /// showing both at once would leave it unclear which list a tap picks from.
+    @ViewBuilder private var placesSection: some View {
+        if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if isSearchingQuery {
+                Section { ProgressView("Searching…") }
+            } else if searchResults.isEmpty {
+                Section {
+                    Text("No places found")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Section("Search Results") {
+                    ForEach(searchResults) { venue in
+                        venueRow(venue) { selectPlace(venue) }
+                    }
+                }
+            }
+        } else if isSearchingVenues {
             Section { ProgressView("Finding nearby places…") }
         } else if !nearbyVenues.isEmpty {
             Section("Nearby Places") {
                 ForEach(nearbyVenues) { venue in
-                    Button {
-                        selectVenue(venue)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(venue.title)
-                                    .foregroundStyle(.primary)
-                                if !venue.address.isEmpty {
-                                    Text(venue.address)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if draft.venue?.id == venue.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(Color.accentColor)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(draft.venue?.id == venue.id ? [.isButton, .isSelected] : .isButton)
+                    venueRow(venue) { selectPlace(venue) }
                 }
             }
         }
+    }
+
+    private func venueRow(_ venue: TelegramVenueSelection, onSelect: @escaping () -> Void) -> some View {
+        let isSelected = draft.venue?.id == venue.id
+        return Button(action: onSelect) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(venue.title)
+                        .foregroundStyle(.primary)
+                    if !venue.address.isEmpty {
+                        Text(venue.address)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     /// Best-effort only - a missing/failed reverse geocode just falls back to raw coordinates
@@ -378,6 +423,25 @@ struct TelegramLocationComposerView: View {
         return response.mapItems.prefix(20).map(TelegramVenueSelection.init(mapItem:))
     }
 
+    /// Text search by name/address, biased toward (but not limited to) the currently picked
+    /// point - a landmark search still needs to resolve somewhere else in the world.
+    private static func searchVenues(
+        query: String,
+        biasedTo coordinate: CLLocationCoordinate2D?,
+    ) async -> [TelegramVenueSelection] {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
+        if let coordinate {
+            request.region = MKCoordinateRegion(
+                center: coordinate,
+                latitudinalMeters: searchBiasMeters,
+                longitudinalMeters: searchBiasMeters,
+            )
+        }
+        guard let response = try? await MKLocalSearch(request: request).start() else { return [] }
+        return response.mapItems.prefix(20).map(TelegramVenueSelection.init(mapItem:))
+    }
+
     private func selectCenter(_ center: CLLocationCoordinate2D) {
         geocodeTask?.cancel()
         draft.latitude = center.latitude
@@ -395,13 +459,30 @@ struct TelegramLocationComposerView: View {
         searchNearbyVenues(around: center)
     }
 
-    private func selectVenue(_ venue: TelegramVenueSelection) {
+    private func selectPlace(_ venue: TelegramVenueSelection) {
         geocodeTask?.cancel()
         draft.latitude = venue.latitude
         draft.longitude = venue.longitude
         draft.horizontalAccuracy = 0
         draft.address = venue.address
         draft.venue = venue
+        moveCamera(to: CLLocationCoordinate2D(latitude: venue.latitude, longitude: venue.longitude))
+        // Picking a result doesn't end "searching" on its own - the search field (and, on iOS,
+        // the nav bar it takes over in place of the Cancel/Send toolbar) stays active until this
+        // is called explicitly.
+        dismissSearch()
+    }
+
+    /// Recenters the map while arming `suppressNextCameraSettle`, so the animated recenter's own
+    /// settle callback - not a real user pan - doesn't immediately overwrite the selection that
+    /// triggered it with a fresh plain point at the same coordinates.
+    private func moveCamera(to coordinate: CLLocationCoordinate2D) {
+        suppressNextCameraSettle = true
+        cameraPosition = .region(MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: Self.initialSpanMeters,
+            longitudinalMeters: Self.initialSpanMeters,
+        ))
     }
 
     private func searchNearbyVenues(around center: CLLocationCoordinate2D) {
@@ -414,6 +495,24 @@ struct TelegramLocationComposerView: View {
             nearbyVenues = venues
             isSearchingVenues = false
         }
+    }
+
+    private func performSearch() async {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            searchResults = []
+            return
+        }
+        try? await Task.sleep(nanoseconds: Self.searchDebounceNanoseconds)
+        guard !Task.isCancelled else { return }
+        isSearchingQuery = true
+        let coordinate = draft.latitude.map {
+            CLLocationCoordinate2D(latitude: $0, longitude: draft.longitude ?? 0)
+        }
+        let results = await Self.searchVenues(query: query, biasedTo: coordinate)
+        guard !Task.isCancelled else { return }
+        searchResults = results
+        isSearchingQuery = false
     }
 
     @MainActor private func fetchCurrentLocation(recenterMap: Bool) async {
@@ -429,11 +528,7 @@ struct TelegramLocationComposerView: View {
             draft.address = await Self.reverseGeocodedAddress(for: location)
             draft.venue = nil
             if recenterMap {
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: location.coordinate,
-                    latitudinalMeters: Self.initialSpanMeters,
-                    longitudinalMeters: Self.initialSpanMeters,
-                ))
+                moveCamera(to: location.coordinate)
             }
             searchNearbyVenues(around: location.coordinate)
         } catch {
