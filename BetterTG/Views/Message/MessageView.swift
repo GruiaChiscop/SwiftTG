@@ -472,6 +472,42 @@ struct MessageView: View {
         return AnyView(EmptyView())
     }
 
+    /// Pre-erased for the same reason as `contentColumnPieces` - `.modify { if hasAccessibilityGroup
+    /// { ... } else { $0 } }` would otherwise wrap the *entire* row (already simple now, but a real
+    /// type) in another `_ConditionalContent`, which is exactly the pattern that made `body` slow
+    /// to begin with.
+    private var accessibilityGroupedRow: AnyView {
+        hasAccessibilityGroup ? AnyView(linkAccessibilityGroup(row)) : AnyView(row)
+    }
+
+    /// Pre-erased for the same reason as `accessibilityGroupedRow`.
+    private var mainColumn: AnyView {
+        let column = VStack(alignment: .trailing, spacing: 1) {
+            ForEach(Array(contentColumnPieces.enumerated()), id: \.offset) { _, piece in
+                piece
+            }
+
+            if !hasInlineVisualMetadata {
+                standaloneVisualMessageMetadata
+            }
+        }
+        .background {
+            if !isStickerMessage {
+                messageBubbleColor
+            }
+        }
+        .clipShape(.rect(cornerRadius: 20))
+        .contextMenu {
+            messageContextMenu
+        }
+        .accessibilityHidden(hasAccessibilityGroup)
+
+        if isPollMessage || isChecklistMessage {
+            return AnyView(column)
+        }
+        return AnyView(messageAccessibilityElement(column))
+    }
+
     /// Each top-level piece below is individually type-erased into `AnyView` and combined via
     /// `ForEach` over a plain array, instead of a chain of `if`/`else if` statements. A sequential
     /// `if`/`else` chain here would still hit the same demangling cost `body` does (see its doc
@@ -481,75 +517,45 @@ struct MessageView: View {
     /// combining already-simple `AnyView`s through `ForEach`/`Array`, means the runtime never needs
     /// to build the sprawling combined type at all.
     private var messageBody: some View {
+        accessibilityGroupedRow
+            .sheet(item: $shownAlbum) { album in
+                ChatViewAlbum(album: album.photos, selection: album.selection)
+            }
+            .sheet(isPresented: $showReactionDetails) {
+                TelegramReactionDetailsView(
+                    service: chatVM.service,
+                    chatId: customMessage.message.chatId,
+                    messageId: customMessage.id,
+                )
+            }
+            .alert("Delete message?", isPresented: $showDeleteOptions) {
+                if customMessage.properties.canBeDeletedOnlyForSelf {
+                    Button("Delete only for me", role: .destructive) {
+                        chatVM.deleteMessage(id: customMessage.id, deleteForBoth: false)
+                    }
+                }
+                if customMessage.properties.canBeDeletedForAllUsers {
+                    Button("Delete for everyone", role: .destructive) {
+                        chatVM.deleteMessage(id: customMessage.id, deleteForBoth: true)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .popover(
+                isPresented: $showReactionOptions,
+                attachmentAnchor: .rect(.bounds),
+                arrowEdge: .bottom,
+            ) {
+                reactionPicker
+                    .presentationCompactAdaptation(.popover)
+            }
+    }
+
+    private var row: some View {
         HStack(alignment: .bottom, spacing: 5) {
             leadingReactionsSlot
-
-            VStack(alignment: .trailing, spacing: 1) {
-                ForEach(Array(contentColumnPieces.enumerated()), id: \.offset) { _, piece in
-                    piece
-                }
-
-                if !hasInlineVisualMetadata {
-                    standaloneVisualMessageMetadata
-                }
-            }
-            .background {
-                if !isStickerMessage {
-                    messageBubbleColor
-                }
-            }
-            .clipShape(.rect(cornerRadius: 20))
-            .contextMenu {
-                messageContextMenu
-            }
-            .modify {
-                if isPollMessage || isChecklistMessage {
-                    $0
-                } else {
-                    messageAccessibilityElement($0)
-                }
-            }
-            .accessibilityHidden(hasAccessibilityGroup)
-
+            mainColumn
             trailingReactionsSlot
-        }
-        .modify {
-            if !hasAccessibilityGroup {
-                $0
-            } else {
-                linkAccessibilityGroup($0)
-            }
-        }
-        .sheet(item: $shownAlbum) { album in
-            ChatViewAlbum(album: album.photos, selection: album.selection)
-        }
-        .sheet(isPresented: $showReactionDetails) {
-            TelegramReactionDetailsView(
-                service: chatVM.service,
-                chatId: customMessage.message.chatId,
-                messageId: customMessage.id,
-            )
-        }
-        .alert("Delete message?", isPresented: $showDeleteOptions) {
-            if customMessage.properties.canBeDeletedOnlyForSelf {
-                Button("Delete only for me", role: .destructive) {
-                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: false)
-                }
-            }
-            if customMessage.properties.canBeDeletedForAllUsers {
-                Button("Delete for everyone", role: .destructive) {
-                    chatVM.deleteMessage(id: customMessage.id, deleteForBoth: true)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .popover(
-            isPresented: $showReactionOptions,
-            attachmentAnchor: .rect(.bounds),
-            arrowEdge: .bottom,
-        ) {
-            reactionPicker
-                .presentationCompactAdaptation(.popover)
         }
     }
 
