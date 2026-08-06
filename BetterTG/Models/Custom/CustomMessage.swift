@@ -132,11 +132,8 @@ import TDLibKit
         return nil
     }
 
-    var messageLocation: MessageLocation? {
-        if case .messageLocation(let messageLocation) = message.content {
-            return messageLocation
-        }
-        return nil
+    var locationPresentation: TelegramLocationPresentation? {
+        TelegramLocationPresentation(message.content)
     }
 }
 

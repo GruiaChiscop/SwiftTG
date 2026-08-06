@@ -451,7 +451,7 @@ struct MessageView: View {
             || customMessage.messageAudio != nil
             || customMessage.messageSticker != nil
             || customMessage.messageContact != nil
-            || customMessage.messageLocation != nil
+            || customMessage.locationPresentation != nil
             || !customMessage.album.isEmpty
         {
             return AnyView(

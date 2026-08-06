@@ -220,9 +220,9 @@ extension MessageView {
     }
 
     func activateLocation() {
-        guard let messageLocation = customMessage.messageLocation else { return }
-        let latitude = messageLocation.location.latitude
-        let longitude = messageLocation.location.longitude
+        guard let presentation = customMessage.locationPresentation else { return }
+        let latitude = presentation.location.latitude
+        let longitude = presentation.location.longitude
         guard let url = URL(string: "http://maps.apple.com/?ll=\(latitude),\(longitude)") else { return }
         UIApplication.shared.open(url)
     }

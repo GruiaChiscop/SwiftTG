@@ -1,34 +1,62 @@
 // MacLocationMessageContent.swift
 
+import AppKit
 import SwiftUI
 import TDLibKit
 
 struct MacLocationMessageContent: View {
     // MARK: Internal
 
-    let content: MessageLocation
+    let presentation: TelegramLocationPresentation
     let onOpen: () -> Void
 
     var body: some View {
         Button(action: onOpen) {
-            HStack(spacing: 8) {
-                Image(systemName: "location.fill")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Location")
-                    Text(coordinateText)
-                        .font(.caption)
+            VStack(alignment: .leading, spacing: 0) {
+                mapThumbnail
+                    .frame(width: 240, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                HStack(spacing: 8) {
+                    Image(systemName: presentation.isLive ? "location.fill.viewfinder" : "location.fill")
                         .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(presentation.title)
+                        Text(presentation.subtitle ?? presentation.coordinateText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .padding(.top, 8)
             }
         }
         .buttonStyle(.plain)
         .accessibilityHidden(true)
+        .task(id: presentation) {
+            mapImage = await LocationMapSnapshot.image(
+                latitude: presentation.location.latitude,
+                longitude: presentation.location.longitude,
+                size: CGSize(width: 240, height: 120),
+                scale: NSScreen.main?.backingScaleFactor ?? 2,
+            )
+        }
     }
 
     // MARK: Private
 
-    private var coordinateText: String {
-        String(format: "%.5f, %.5f", content.location.latitude, content.location.longitude)
+    @State private var mapImage: NSImage?
+
+    @ViewBuilder private var mapThumbnail: some View {
+        if let mapImage {
+            Image(nsImage: mapImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 240, height: 120)
+        } else {
+            Rectangle()
+                .fill(.secondary.opacity(0.15))
+                .overlay {
+                    ProgressView()
+                }
+        }
     }
 }

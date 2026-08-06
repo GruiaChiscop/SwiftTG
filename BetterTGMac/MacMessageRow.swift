@@ -154,9 +154,8 @@ struct MacMessageRow: View {
         return content
     }
 
-    private var messageLocation: MessageLocation? {
-        guard case .messageLocation(let content) = message.content else { return nil }
-        return content
+    private var locationPresentation: TelegramLocationPresentation? {
+        TelegramLocationPresentation(message.content)
     }
 
     private var documentTransferStatus: String? {
@@ -196,7 +195,7 @@ struct MacMessageRow: View {
 
     private var hasDefaultActivation: Bool {
         voiceFileId != nil || audioFileId != nil || documentFileId != nil || photoFileId != nil
-            || videoFileId != nil || messageContact != nil || messageLocation != nil
+            || videoFileId != nil || messageContact != nil || locationPresentation != nil
     }
 
     private var photoFileId: Int? {
@@ -356,7 +355,7 @@ struct MacMessageRow: View {
                 systemImage: presentation.hasTelegramAccount ? "message" : "person.crop.circle.badge.plus",
             ) { activateMessage() })
         }
-        if messageLocation != nil {
+        if locationPresentation != nil {
             items.append(.button(title: "Open in Maps", systemImage: "location") { activateMessage() })
         }
         if capabilities?.properties.canBeEdited == true, editableMessageText(message) != nil {
@@ -524,8 +523,8 @@ struct MacMessageRow: View {
                         )
                     } else if case .messageContact(let content) = message.content {
                         MacContactMessageContent(content: content, onOpen: activateMessage)
-                    } else if case .messageLocation(let content) = message.content {
-                        MacLocationMessageContent(content: content, onOpen: activateMessage)
+                    } else if let locationPresentation {
+                        MacLocationMessageContent(presentation: locationPresentation, onOpen: activateMessage)
                     } else if case .messagePoll(let content) = message.content {
                         TelegramPollView(content: content, message: message, service: model.service) {
                             Text(content.poll.question.text)
@@ -1040,9 +1039,9 @@ struct MacMessageRow: View {
             } else {
                 model.addContact(presentation)
             }
-        } else if let messageLocation {
-            let latitude = messageLocation.location.latitude
-            let longitude = messageLocation.location.longitude
+        } else if let locationPresentation {
+            let latitude = locationPresentation.location.latitude
+            let longitude = locationPresentation.location.longitude
             guard let url = URL(string: "http://maps.apple.com/?ll=\(latitude),\(longitude)") else { return }
             NSWorkspace.shared.open(url)
         }

@@ -47,8 +47,10 @@ struct MessageContentView: View {
                     )
                 case .messageContact(let messageContact):
                     MessageContactView(content: messageContact, onTap: onContactTap)
-                case .messageLocation(let messageLocation):
-                    MessageLocationView(content: messageLocation, onTap: onLocationTap)
+                case .messageLiveLocation, .messageLocation, .messageVenue:
+                    if let presentation = customMessage.locationPresentation {
+                        MessageLocationView(presentation: presentation, onTap: onLocationTap)
+                    }
                 default:
                     EmptyView()
                 }
