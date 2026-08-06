@@ -237,7 +237,15 @@ struct ChatView: View {
         .scrollEdgeEffectHidden(true, for: .all)
         .onTapGesture { focused = false }
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.visibleRect.maxY >= geometry.contentSize.height - 20
+            // Hysteresis, not a single fixed threshold: self-sizing bubbles (images/link previews
+            // resolving) make `contentSize.height` jitter by a few points on its own, which with
+            // one threshold flipped this bool - and the button's visibility with it - back and
+            // forth right as it settled at the bottom, so the button looked stuck mid-dismissal.
+            // Once already at the bottom, tolerate more slack before counting that as "scrolled
+            // away" again; only require the tight margin when actually approaching from above.
+            let distanceFromBottom = geometry.contentSize.height - geometry.visibleRect.maxY
+            let threshold: CGFloat = chatVM.isAtBottom ? 80 : 20
+            return distanceFromBottom <= threshold
         } action: { _, isAtBottom in
             guard !isPreview else { return }
             chatVM.updateBottomVisibility(isLastMessageVisible: isAtBottom)
@@ -508,15 +516,34 @@ struct ChatView: View {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
         positionedInitialMessages = true
 
-        var transaction = Transaction()
-        transaction.animation = nil
-        withTransaction(transaction) {
-            if let initialMessageId = chatVM.initialMessageId {
-                initialScrollPosition.scrollTo(id: initialMessageId, anchor: .center)
-            } else if let initialUnreadMessageId {
-                initialScrollPosition.scrollTo(id: initialUnreadMessageId, anchor: .top)
-            } else {
-                initialScrollPosition.scrollTo(edge: .bottom)
+        let focusMessageId: Int64?
+        let anchor: UnitPoint
+        if let initialMessageId = chatVM.initialMessageId {
+            focusMessageId = initialMessageId
+            anchor = .center
+        } else if let initialUnreadMessageId {
+            focusMessageId = initialUnreadMessageId
+            anchor = .top
+        } else {
+            focusMessageId = chatVM.messages.last?.id
+            anchor = .bottom
+        }
+
+        Task { @MainActor in
+            // `initialMessagesLoaded` flips true the same tick `messages` is populated - List
+            // (UITableView-backed) hasn't necessarily created/laid out those rows yet, so a
+            // `scrollTo` issued synchronously here can silently land nowhere.
+            await Task.yield()
+            await Task.yield()
+            guard let focusMessageId else { return }
+            // Scrolls to the exact id, via the same `ScrollViewReader` proxy `focusMessage`/
+            // `scrollToMessage` already rely on - `initialScrollPosition`'s edge-based
+            // `.scrollTo(edge: .bottom)` doesn't guarantee *which* row ends up laid out, only
+            // that the scroll offset ends up near the bottom.
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                chatVM.scrollViewProxy?.scrollTo(focusMessageId, anchor: anchor)
             }
         }
     }
