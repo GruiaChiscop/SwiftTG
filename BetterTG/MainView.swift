@@ -9,48 +9,42 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            NavigationStack {
-                ContactsView(service: rootVM.service)
+            Tab("Contacts", systemImage: "person.2.fill", value: MainTab.contacts) {
+                NavigationStack {
+                    ContactsView(service: rootVM.service)
+                }
             }
-            .tabItem {
-                Label("Contacts", systemImage: "person.2.fill")
-            }
-            .tag(MainTab.contacts)
 
-            NavigationStack(path: $rootVM.path) {
-                MainNavigationRootView()
-                    .navigationDestination(for: Route.self) { route in
-                        switch route {
-                        case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
-                            ChatView(
-                                customChat: customChat,
-                                initialMessageId: messageId,
-                                movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
-                            )
-                        case .archive(let customFolder):
-                            FolderView(folder: customFolder)
-                                .navigationTitle(customFolder.name)
-                                .navigationBarTitleDisplayMode(.inline)
-                                .searchable(
-                                    text: $rootVM.query,
-                                    placement: .navigationBarDrawer(displayMode: .always),
-                                    prompt: "Search archive...",
+            Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: MainTab.chats) {
+                NavigationStack(path: $rootVM.path) {
+                    MainNavigationRootView()
+                        .navigationDestination(for: Route.self) { route in
+                            switch route {
+                            case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
+                                ChatView(
+                                    customChat: customChat,
+                                    initialMessageId: messageId,
+                                    movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
                                 )
+                            case .archive(let customFolder):
+                                FolderView(folder: customFolder)
+                                    .navigationTitle(customFolder.name)
+                                    .navigationBarTitleDisplayMode(.inline)
+                                    .searchable(
+                                        text: $rootVM.query,
+                                        placement: .navigationBarDrawer(displayMode: .always),
+                                        prompt: "Search archive...",
+                                    )
+                            }
                         }
-                    }
+                }
             }
-            .tabItem {
-                Label("Chats", systemImage: "bubble.left.and.bubble.right.fill")
-            }
-            .tag(MainTab.chats)
 
-            NavigationStack {
-                YouView(service: rootVM.service)
+            Tab("You", systemImage: "person.crop.circle", value: MainTab.you) {
+                NavigationStack {
+                    YouView(service: rootVM.service)
+                }
             }
-            .tabItem {
-                Label("You", systemImage: "person.crop.circle")
-            }
-            .tag(MainTab.you)
         }
         .onChange(of: rootVM.path) { _, path in
             if !path.isEmpty {

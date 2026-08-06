@@ -32,12 +32,12 @@ struct SelectCountryView: View {
                 .accessibilityLabel(info.accessibilityLabel)
             }
             .background(.black)
-            .padding(.top, -20)
+            .contentMargins(.top, 0, for: .scrollContent)
             .navigationTitle("Country")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") {
                         showSelectCountryView.toggle()
                     }

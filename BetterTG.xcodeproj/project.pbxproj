@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		18FA9AD33024B90A00AF40BC /* CodeScanner in Frameworks */ = {isa = PBXBuildFile; productRef = AED4C5E0195046E893F77F0B /* CodeScanner */; };
 		29D283DD1F8E47DF90BEAF36 /* SwiftOGG in Frameworks */ = {isa = PBXBuildFile; productRef = 69151C5FAB054AB894A93455 /* SwiftOGG */; };
 		A10000000000000000000001 /* TDLibKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000000B /* TDLibKit */; };
 		B3000000000000000000000C /* TDLibKit in Frameworks */ = {isa = PBXBuildFile; productRef = DF9C5CC0292698BC00ED1CA8 /* TDLibKit */; };
@@ -133,6 +134,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				18FA9AD33024B90A00AF40BC /* CodeScanner in Frameworks */,
 				DF9C5CC1292698BC00ED1CA8 /* TDLibKit in Frameworks */,
 				29D283DD1F8E47DF90BEAF36 /* SwiftOGG in Frameworks */,
 				D10000000000000000000003 /* RLottieKit in Frameworks */,
@@ -929,11 +931,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		AED4C5E0195046E893F77F0B /* CodeScanner */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 18FA93183024B5DB00AF40BC /* XCRemoteSwiftPackageReference "CodeScanner" */;
-			productName = CodeScanner;
-		};
 		69151C5FAB054AB894A93455 /* SwiftOGG */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A6E7805221DFB1D743A23E6D /* XCRemoteSwiftPackageReference "swift-ogg" */;
@@ -943,6 +940,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DF9C5CBF292698BC00ED1CA8 /* XCRemoteSwiftPackageReference "TDLibKit" */;
 			productName = TDLibKit;
+		};
+		AED4C5E0195046E893F77F0B /* CodeScanner */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 18FA93183024B5DB00AF40BC /* XCRemoteSwiftPackageReference "CodeScanner" */;
+			productName = CodeScanner;
 		};
 		D10000000000000000000005 /* RLottieKit */ = {
 			isa = XCSwiftPackageProductDependency;
