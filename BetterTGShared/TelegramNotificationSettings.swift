@@ -95,13 +95,29 @@ struct TelegramNotificationsView: View {
 
     var body: some View {
         List(telegramNotificationScopeItems) { item in
-            Button {
-                selectedItem = item
-            } label: {
-                LabeledContent(item.title, value: statusText(for: item.scope))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            #if os(iOS)
+                NavigationLink {
+                    TelegramNotificationScopeDetailContent(
+                        service: service,
+                        item: item,
+                        settings: settings[item.scope] ?? .defaultSettings,
+                    ) { newSettings in
+                        settings[item.scope] = newSettings
+                    }
+                    .navigationTitle(item.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    LabeledContent(item.title, value: statusText(for: item.scope))
+                }
+            #else
+                Button {
+                    selectedItem = item
+                } label: {
+                    LabeledContent(item.title, value: statusText(for: item.scope))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            #endif
         }
         .navigationTitle("Notifications")
         .task {
@@ -109,6 +125,7 @@ struct TelegramNotificationsView: View {
             hasLoaded = true
             await loadSettings()
         }
+        #if os(macOS)
         .sheet(item: $selectedItem) { item in
             TelegramNotificationScopeDetailView(
                 service: service,
@@ -118,6 +135,7 @@ struct TelegramNotificationsView: View {
                 settings[item.scope] = newSettings
             }
         }
+        #endif
         .alert("Couldn't Load Notification Settings", isPresented: errorIsPresented) {
             Button("OK") {}
         } message: {
@@ -129,7 +147,9 @@ struct TelegramNotificationsView: View {
 
     @State private var errorMessage: String?
     @State private var hasLoaded = false
+    #if os(macOS)
     @State private var selectedItem: TelegramNotificationScopeItem?
+    #endif
     @State private var settings = [NotificationSettingsScope: ScopeNotificationSettings]()
 
     private let service: any TelegramService
@@ -183,7 +203,38 @@ struct TelegramNotificationsView: View {
 
 // MARK: - TelegramNotificationScopeDetailView
 
+#if os(macOS)
 private struct TelegramNotificationScopeDetailView: View {
+    // MARK: Internal
+
+    let service: any TelegramService
+    let item: TelegramNotificationScopeItem
+    let settings: ScopeNotificationSettings
+
+    let onSaved: (ScopeNotificationSettings) -> Void
+
+    var body: some View {
+        NavigationStack {
+            TelegramNotificationScopeDetailContent(service: service, item: item, settings: settings, onSaved: onSaved)
+                .navigationTitle(item.title)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+        .frame(minWidth: 360, minHeight: 320)
+    }
+
+    // MARK: Private
+
+    @Environment(\.dismiss) private var dismiss
+}
+#endif
+
+// MARK: - TelegramNotificationScopeDetailContent
+
+private struct TelegramNotificationScopeDetailContent: View {
     // MARK: Internal
 
     let service: any TelegramService
@@ -193,36 +244,22 @@ private struct TelegramNotificationScopeDetailView: View {
     let onSaved: (ScopeNotificationSettings) -> Void
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Toggle("Enabled", isOn: enabledBinding)
-                    Toggle("Show Preview", isOn: showPreviewBinding)
-                        .disabled(!settings.isEnabled)
-                    Toggle("Play Sound", isOn: playsSoundBinding)
-                        .disabled(!settings.isEnabled)
-                }
-
-                Section {
-                    Toggle("Mentions as Regular Notifications", isOn: disableMentionBinding)
-                    Toggle("Pinned Messages as Regular Notifications", isOn: disablePinnedBinding)
-                } footer: {
-                    Text("When on, mentions and pinned messages in this scope no longer stand out from ordinary unread messages.")
-                }
+        Form {
+            Section {
+                Toggle("Enabled", isOn: enabledBinding)
+                Toggle("Show Preview", isOn: showPreviewBinding)
+                    .disabled(!settings.isEnabled)
+                Toggle("Play Sound", isOn: playsSoundBinding)
+                    .disabled(!settings.isEnabled)
             }
-            .navigationTitle(item.title)
-            #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-            #endif
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                }
+
+            Section {
+                Toggle("Mentions as Regular Notifications", isOn: disableMentionBinding)
+                Toggle("Pinned Messages as Regular Notifications", isOn: disablePinnedBinding)
+            } footer: {
+                Text("When on, mentions and pinned messages in this scope no longer stand out from ordinary unread messages.")
+            }
         }
-        #if os(macOS)
-        .frame(minWidth: 360, minHeight: 320)
-        #endif
         .alert("Couldn't Update Notification Settings", isPresented: errorIsPresented) {
             Button("OK") {}
         } message: {
@@ -232,7 +269,6 @@ private struct TelegramNotificationScopeDetailView: View {
 
     // MARK: Private
 
-    @Environment(\.dismiss) private var dismiss
     @State private var errorMessage: String?
     @State private var isSaving = false
 
