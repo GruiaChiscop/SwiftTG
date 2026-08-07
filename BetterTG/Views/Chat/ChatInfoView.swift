@@ -48,7 +48,6 @@ struct ChatInfoView: View {
                     userId: userId,
                     expectedCount: info?.commonGroupCount ?? 0,
                     service: chatVM.service,
-                    onSelect: openChat,
                 )
             }
         }
@@ -363,7 +362,6 @@ struct ChatInfoView: View {
                 isChannel: chat.kind == .channel,
                 filter: filter,
                 service: chatVM.service,
-                onSelect: openMember,
             )
         }
     }
@@ -502,33 +500,4 @@ struct ChatInfoView: View {
         }
     }
 
-    private func openMember(_ sender: MessageSender) {
-        Task {
-            let customChat: CustomChat? =
-                switch sender {
-                case .messageSenderUser(let value):
-                    await RootVM.shared.getPrivateCustomChat(userId: value.userId)
-                case .messageSenderChat(let value):
-                    await RootVM.shared.getCustomChat(from: value.chatId)
-                }
-            await openResolvedChat(customChat)
-        }
-    }
-
-    private func openChat(_ resolvedChat: Chat) {
-        Task {
-            let customChat = await RootVM.shared.getCustomChat(from: resolvedChat.id)
-            await openResolvedChat(customChat)
-        }
-    }
-
-    @MainActor private func openResolvedChat(_ customChat: CustomChat?) async {
-        guard let customChat else {
-            errorMessage = "This chat is private or unavailable."
-            return
-        }
-        dismiss()
-        await Task.yield()
-        RootVM.shared.navigate(to: .customChat(customChat, messageId: nil))
-    }
 }

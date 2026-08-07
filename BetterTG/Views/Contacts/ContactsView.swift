@@ -98,6 +98,12 @@ struct ContactsView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        // Pushed locally (this tab has its own NavigationStack) rather than through
+        // `rootVM.navigate`, which mutates the *Chats* tab's path and force-switches to it - opening
+        // a contact's chat should stay in Contacts, with Back genuinely returning here.
+        .navigationDestination(item: $pushedChat) { customChat in
+            ChatView(customChat: customChat, backButtonTitleOverride: "Contacts")
+        }
     }
 
     // MARK: Private
@@ -115,6 +121,7 @@ struct ContactsView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var openingUserId: Int64?
+    @State private var pushedChat: CustomChat?
     @State private var query = ""
     @State private var showsNewContact = false
 
@@ -224,7 +231,7 @@ struct ContactsView: View {
                 errorMessage = "The conversation couldn't be opened."
                 return
             }
-            rootVM.navigate(to: .customChat(customChat))
+            pushedChat = customChat
         } catch {
             errorMessage = telegramErrorDescription(error)
         }

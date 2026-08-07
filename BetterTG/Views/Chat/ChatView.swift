@@ -21,6 +21,7 @@ struct ChatView: View {
         customChat: CustomChat,
         initialMessageId: Int64? = nil,
         movesAccessibilityFocusToInitialMessage: Bool = false,
+        backButtonTitleOverride: String? = nil,
     ) {
         let chatVM = ChatVM(
             customChat: customChat,
@@ -28,17 +29,25 @@ struct ChatView: View {
             movesAccessibilityFocusToInitialMessage: movesAccessibilityFocusToInitialMessage,
         )
         self._chatVM = State(wrappedValue: chatVM)
+        self.backButtonTitleOverride = backButtonTitleOverride
     }
-    
+
     // MARK: Internal
 
     @AccessibilityFocusState var accessibilityFocusedMessageId: Int64?
     @Environment(\.isPreview) var isPreview
     @Environment(\.dismiss) var dismiss
-    
+
     @FocusState var focused
 
     @State var chatVM: ChatVM
+
+    /// Set when this chat was pushed from somewhere other than the root chat list/another chat
+    /// (e.g. Chat Info's Members or Groups in Common) - `previousChatTitle` only knows how to look
+    /// back through `rootVM.path`, which those screens deliberately don't push onto (see the
+    /// comments in ChatInfoDetailViews.swift), so without this the back button falls back to a
+    /// misleading "Chats" even though back doesn't actually go to the chat list.
+    let backButtonTitleOverride: String?
     
     var body: some View {
         @Bindable var chatVM = chatVM
@@ -145,7 +154,7 @@ struct ChatView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.backward")
                             Text(backButtonTitle)
-                            if previousChatTitle == nil, unreadChatCount > 0 {
+                            if backButtonTitleOverride == nil, previousChatTitle == nil, unreadChatCount > 0 {
                                 Text("\(unreadChatCount)")
                                     .font(.caption2.bold())
                                     .foregroundStyle(.white)
@@ -319,10 +328,13 @@ struct ChatView: View {
     }
 
     private var backButtonTitle: String {
-        previousChatTitle ?? "Chats"
+        backButtonTitleOverride ?? previousChatTitle ?? "Chats"
     }
 
     private var backButtonAccessibilityLabel: String {
+        if let backButtonTitleOverride {
+            return "Back to \(backButtonTitleOverride)"
+        }
         if let previousChatTitle {
             return "Back to \(previousChatTitle)"
         }

@@ -18,7 +18,6 @@ struct ChatInfoMembersView: View {
     let isChannel: Bool
     let filter: TelegramChatInfoMemberFilter
     let service: any TelegramService
-    let onSelect: (MessageSender) -> Void
 
     var body: some View {
         List {
@@ -39,7 +38,7 @@ struct ChatInfoMembersView: View {
 
             ForEach(members) { member in
                 Button {
-                    onSelect(member.id)
+                    openMember(member.id)
                 } label: {
                     memberRow(member)
                 }
@@ -58,17 +57,42 @@ struct ChatInfoMembersView: View {
         .task(id: query) {
             await reload(query: query)
         }
+        // Declared here (not on the ancestor ChatInfoView) so it stacks directly on top of this
+        // screen - a `.navigationDestination` registered on an ancestor view inserts its pushed
+        // content at the ancestor's position, not on top of whatever's currently the deepest
+        // active push, which sent the back button to the wrong screen.
+        .navigationDestination(item: $pushedChat) { customChat in
+            ChatView(customChat: customChat, backButtonTitleOverride: displayTitle)
+        }
+        .alert("Can't Open Chat", isPresented: errorIsPresented) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     // MARK: Private
 
+    @State private var errorMessage: String?
     @State private var hasMore = true
     @State private var isLoading = false
     @State private var loadGeneration: UInt64 = 0
     @State private var members = [TelegramChatInfoMember]()
     @State private var nextOffset = 0
+    @State private var pushedChat: CustomChat?
     @State private var query = ""
     @State private var totalCount = 0
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    errorMessage = nil
+                }
+            },
+        )
+    }
 
     private var displayTitle: String {
         filter == .members && isChannel ? "Subscribers" : filter.title
@@ -98,6 +122,23 @@ struct ChatInfoMembersView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentShape(.rect)
+    }
+
+    private func openMember(_ sender: MessageSender) {
+        Task {
+            let customChat: CustomChat? =
+                switch sender {
+                case .messageSenderUser(let value):
+                    await RootVM.shared.getPrivateCustomChat(userId: value.userId)
+                case .messageSenderChat(let value):
+                    await RootVM.shared.getCustomChat(from: value.chatId)
+                }
+            guard let customChat else {
+                errorMessage = "This chat is private or unavailable."
+                return
+            }
+            pushedChat = customChat
+        }
     }
 
     private func loadNextPage() {
@@ -156,13 +197,12 @@ struct ChatInfoCommonGroupsView: View {
     let userId: Int64
     let expectedCount: Int
     let service: any TelegramService
-    let onSelect: (Chat) -> Void
 
     var body: some View {
         List {
             ForEach(groups, id: \.id) { group in
                 Button {
-                    onSelect(group)
+                    openGroup(group)
                 } label: {
                     HStack(spacing: 12) {
                         ProfileImageView(
@@ -199,14 +239,47 @@ struct ChatInfoCommonGroupsView: View {
         .navigationTitle(expectedCount > 0 ? "Groups in Common, \(expectedCount)" : "Groups in Common")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadGroups() }
+        // Declared here (not on the ancestor ChatInfoView) so it stacks directly on top of this
+        // screen - see the matching comment in ChatInfoMembersView.
+        .navigationDestination(item: $pushedChat) { customChat in
+            ChatView(customChat: customChat, backButtonTitleOverride: "Groups in Common")
+        }
+        .alert("Can't Open Chat", isPresented: errorIsPresented) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     // MARK: Private
 
+    @State private var errorMessage: String?
     @State private var groups = [Chat]()
     @State private var hasMore = true
     @State private var isLoading = true
     @State private var nextOffsetChatId: Int64 = 0
+    @State private var pushedChat: CustomChat?
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    errorMessage = nil
+                }
+            },
+        )
+    }
+
+    private func openGroup(_ resolvedChat: Chat) {
+        Task {
+            guard let customChat = await RootVM.shared.getCustomChat(from: resolvedChat.id) else {
+                errorMessage = "This chat is private or unavailable."
+                return
+            }
+            pushedChat = customChat
+        }
+    }
 
     private func loadGroups() async {
         let page = await TelegramChatInfoLoader(service: service).loadCommonGroups(
