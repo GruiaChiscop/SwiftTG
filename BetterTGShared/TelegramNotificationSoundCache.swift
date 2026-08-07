@@ -76,27 +76,41 @@ enum TelegramNotificationSoundCache {
     /// Updates `scope`'s manifest entry to `soundId` and makes sure the underlying file (if any)
     /// is cached. Call whenever a scope's chosen sound changes, and once at launch to resync.
     static func refresh(scope: NotificationSettingsScope, soundId: TdInt64, service: any TelegramService) async {
-        var manifest = TelegramNotificationSoundManifest.load()
-        let scopeKey = key(for: scope)
+        await updateManifestEntry(key: key(for: scope), soundId: soundId, service: service)
+    }
 
-        guard soundId.rawValue > 0 else {
-            manifest[scopeKey] = nil
-            TelegramNotificationSoundManifest.save(manifest)
-            TelegramNotificationSoundManifest.pruneOrphanedFiles()
-            debug("refresh: cleared scope \(scopeKey)")
-            return
-        }
-
-        let cachedURL = await ensureCached(soundId: soundId, service: service)
-        manifest[scopeKey] = soundId.rawValue
-        TelegramNotificationSoundManifest.save(manifest)
-        TelegramNotificationSoundManifest.pruneOrphanedFiles()
-        debug(
-            "refresh: scope \(scopeKey) -> soundId \(soundId.rawValue), cached=\(cachedURL != nil), soundsDir=\(String(describing: TelegramNotificationSoundManifest.soundsDirectoryURL))",
+    /// Same as `refresh(scope:soundId:service:)`, but for a single chat's override. `useDefault`
+    /// (mirrors `ChatNotificationSettings.useDefaultSound`) clears any chat-level override so the
+    /// Notification Service Extension falls back to resolving the chat's scope instead - it has no
+    /// TDLib access to ask "what's this chat's scope" the way `MacLocalNotifications` can, so an
+    /// explicit per-chat entry only needs to exist while it actually differs from the scope.
+    static func refreshChat(chatId: Int64, useDefault: Bool, soundId: TdInt64, service: any TelegramService) async {
+        await updateManifestEntry(
+            key: TelegramNotificationSoundManifest.chatKey(for: chatId),
+            soundId: useDefault ? 0 : soundId,
+            service: service,
         )
     }
 
     // MARK: Private
+
+    private static func updateManifestEntry(key: String, soundId: TdInt64, service: any TelegramService) async {
+        var manifest = TelegramNotificationSoundManifest.load()
+
+        guard soundId.rawValue > 0 else {
+            manifest[key] = nil
+            TelegramNotificationSoundManifest.save(manifest)
+            TelegramNotificationSoundManifest.pruneOrphanedFiles()
+            debug("updateManifestEntry: cleared \(key)")
+            return
+        }
+
+        let cachedURL = await ensureCached(soundId: soundId, service: service)
+        manifest[key] = soundId.rawValue
+        TelegramNotificationSoundManifest.save(manifest)
+        TelegramNotificationSoundManifest.pruneOrphanedFiles()
+        debug("updateManifestEntry: \(key) -> soundId \(soundId.rawValue), cached=\(cachedURL != nil)")
+    }
 
     /// `UNNotificationSound(named:)` requires Linear PCM/IMA4/µLaw/aLaw wrapped in a caf/aif/wav
     /// container - Telegram's saved sounds are plain MP3, so they need converting even though

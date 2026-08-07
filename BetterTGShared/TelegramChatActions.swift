@@ -124,4 +124,44 @@ enum TelegramChatActions {
             notificationSettings: settings,
         )
     }
+
+    /// `useDefault: true` means "use this chat's scope default sound", matching
+    /// `ChatNotificationSettings.useDefaultSound`'s own meaning - `soundId` is ignored by TDLib in
+    /// that case, so it's fine to just carry `current.soundId` through unchanged.
+    static func setSoundId(
+        service: any TelegramService,
+        chatId: Int64,
+        soundId: TdInt64,
+        useDefault: Bool,
+        current: ChatNotificationSettings,
+    ) async {
+        let settings = ChatNotificationSettings(
+            disableMentionNotifications: current.disableMentionNotifications,
+            disablePinnedMessageNotifications: current.disablePinnedMessageNotifications,
+            muteFor: current.muteFor,
+            muteStories: current.muteStories,
+            showPreview: current.showPreview,
+            showStoryPoster: current.showStoryPoster,
+            soundId: useDefault ? current.soundId : soundId,
+            storySoundId: current.storySoundId,
+            useDefaultDisableMentionNotifications: current.useDefaultDisableMentionNotifications,
+            useDefaultDisablePinnedMessageNotifications: current.useDefaultDisablePinnedMessageNotifications,
+            useDefaultMuteFor: current.useDefaultMuteFor,
+            useDefaultMuteStories: current.useDefaultMuteStories,
+            useDefaultShowPreview: current.useDefaultShowPreview,
+            useDefaultShowStoryPoster: current.useDefaultShowStoryPoster,
+            useDefaultSound: useDefault,
+            useDefaultStorySound: current.useDefaultStorySound,
+        )
+        _ = try? await service.setChatNotificationSettings(
+            chatId: chatId,
+            notificationSettings: settings,
+        )
+        await TelegramNotificationSoundCache.refreshChat(
+            chatId: chatId,
+            useDefault: useDefault,
+            soundId: soundId,
+            service: service,
+        )
+    }
 }

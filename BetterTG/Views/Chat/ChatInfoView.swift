@@ -14,6 +14,7 @@ struct ChatInfoView: View {
 
             if let info {
                 profileInformationSection(info)
+                notificationsSection(info)
                 memberDetailsSection(info)
                 sharedContentSection(info)
                 unofficialAppWarningSection(info)
@@ -54,13 +55,12 @@ struct ChatInfoView: View {
         .sheet(isPresented: $showsScheduledMessages) {
             ScheduledMessagesView()
         }
-        .confirmationDialog("Mute \(chat.displayTitle)", isPresented: $showMuteOptions) {
-            ForEach(TelegramMutePreset.allCases) { preset in
-                Button(preset.title) { setMuteDuration(preset.duration) }
-            }
-            Button("Cancel", role: .cancel) {
+        .popover(isPresented: $showMuteOptions) {
+            TelegramMutePresetPopoverContent { duration in
+                setMuteDuration(duration)
                 showMuteOptions = false
             }
+            .presentationCompactAdaptation(.popover)
         }
         .alert(
             "Delete \(chat.displayTitle)?",
@@ -148,43 +148,43 @@ struct ChatInfoView: View {
                 }
                 .accessibilityElement(children: .combine)
 
-                if let info {
-                    HStack(spacing: 12) {
-                        Button {
-                            if isMuted(info) {
-                                setMuteDuration(0)
-                            } else {
-                                showMuteOptions = true
-                            }
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: isMuted(info) ? "bell.slash.fill" : "bell.fill")
-                                Text(isMuted(info) ? "Unmute" : "Mute")
-                                    .font(.caption)
-                            }
-                            .frame(minWidth: 88, minHeight: 44)
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button {
-                            openConversationSearch()
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: "magnifyingglass")
-                                Text("Search")
-                                    .font(.caption)
-                            }
-                            .frame(minWidth: 88, minHeight: 44)
-                        }
-                        .buttonStyle(.bordered)
+                Button {
+                    openConversationSearch()
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                        Text("Search")
+                            .font(.caption)
                     }
+                    .frame(minWidth: 88, minHeight: 44)
                 }
+                .buttonStyle(.bordered)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
+    }
+
+    private func notificationsSection(_ info: TelegramChatInfoData) -> some View {
+        Section("Notifications") {
+            Button {
+                if isMuted(info) {
+                    setMuteDuration(0)
+                } else {
+                    showMuteOptions = true
+                }
+            } label: {
+                Text(isMuted(info) ? "Unmute" : "Mute")
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            TelegramChatSoundRow(service: chatVM.service, chatId: chat.id, settings: chat.notificationSettings)
+        }
     }
 
     private func sharedContentSection(_ info: TelegramChatInfoData) -> some View {

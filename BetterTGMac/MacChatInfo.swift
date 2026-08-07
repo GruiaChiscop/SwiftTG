@@ -19,6 +19,7 @@ struct MacChatInfoView: View {
                 if let info {
                     List {
                         identitySection(info)
+                        notificationsSection()
                         detailsSections(info)
                         sharedMediaSection(info)
                         unofficialAppWarningSection(info)
@@ -75,11 +76,11 @@ struct MacChatInfoView: View {
         .sheet(isPresented: $showsScheduledMessages) {
             MacScheduledMessagesView(model: model)
         }
-        .confirmationDialog("Mute \(chat.displayTitle)", isPresented: $showMuteOptions) {
-            ForEach(TelegramMutePreset.allCases) { preset in
-                Button(preset.title) { model.setMuteDuration(preset.duration, for: currentChat) }
+        .popover(isPresented: $showMuteOptions) {
+            TelegramMutePresetPopoverContent { duration in
+                model.setMuteDuration(duration, for: currentChat)
+                showMuteOptions = false
             }
-            Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Leave \(chat.title)?", isPresented: $confirmLeave) {
             Button("Leave", role: .destructive) {
@@ -173,6 +174,27 @@ struct MacChatInfoView: View {
             : settings.muteFor > 0
     }
 
+    private var chatNotificationSettings: ChatNotificationSettings {
+        currentChat.notificationSettings ?? ChatNotificationSettings(
+            disableMentionNotifications: false,
+            disablePinnedMessageNotifications: false,
+            muteFor: 0,
+            muteStories: false,
+            showPreview: true,
+            showStoryPoster: true,
+            soundId: 0,
+            storySoundId: 0,
+            useDefaultDisableMentionNotifications: true,
+            useDefaultDisablePinnedMessageNotifications: true,
+            useDefaultMuteFor: true,
+            useDefaultMuteStories: true,
+            useDefaultShowPreview: true,
+            useDefaultShowStoryPoster: true,
+            useDefaultSound: true,
+            useDefaultStorySound: true,
+        )
+    }
+
     private var blockDialogTitle: String {
         if info?.isBot == true {
             return info?.isBlocked == true ? "Restart \(chat.title)?" : "Stop \(chat.title)?"
@@ -189,6 +211,25 @@ struct MacChatInfoView: View {
 
     private var deleteDialogTitle: String {
         "\(currentChat.actionPolicy.deleteActionTitle) \(chat.displayTitle)?"
+    }
+
+    private func notificationsSection() -> some View {
+        Section("Notifications") {
+            Button {
+                if isMuted {
+                    model.setMuteDuration(0, for: currentChat)
+                } else {
+                    showMuteOptions = true
+                }
+            } label: {
+                Text(isMuted ? "Unmute" : "Mute")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            TelegramChatSoundRow(service: model.service, chatId: chat.chatId, settings: chatNotificationSettings)
+        }
     }
 
     private func sharedMediaSection(_ info: TelegramChatInfoData) -> some View {
@@ -226,16 +267,6 @@ struct MacChatInfoView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .accessibilityElement(children: .combine)
-
-            Button(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "bell.slash.fill" : "bell.fill") {
-                if isMuted {
-                    model.setMuteDuration(0, for: currentChat)
-                } else {
-                    showMuteOptions = true
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
 
             Button("Search", systemImage: "magnifyingglass") {
                 openConversationSearch()

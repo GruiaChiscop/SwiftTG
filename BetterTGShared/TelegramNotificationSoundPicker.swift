@@ -136,6 +136,14 @@ struct TelegramNotificationSoundPickerView: View {
                 synchronous: true,
             ), file.local.isDownloadingCompleted, !file.local.path.isEmpty else { return }
             await MainActor.run {
+                #if os(iOS)
+                // Without `.mixWithOthers`, activating the session for this one-off preview takes
+                // exclusive control of audio output and cuts off VoiceOver's own speech mid-word -
+                // which then has to re-announce the screen, reading as a spurious "reload" with
+                // focus reset to the top.
+                try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+                try? AVAudioSession.sharedInstance().setActive(true, options: [])
+                #endif
                 player = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: file.local.path))
                 player?.play()
             }

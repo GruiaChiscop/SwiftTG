@@ -13,8 +13,20 @@ import Foundation
 enum TelegramNotificationSoundManifest {
     // MARK: Internal
 
-    /// Scope key ("private"/"group"/"channel") -> the sound id currently configured for it.
+    /// Scope key ("private"/"group"/"channel") or chat key ("chat:<id>") -> the sound id currently
+    /// configured for it. A chat key wins over the scope it belongs to when both are present -
+    /// see `soundFileURL(forScopeKey:)` callers, which try the chat key first.
     typealias Contents = [String: Int64]
+
+    /// TDLib's own chat id encoding, reconstructed here (not asked of TDLib - the Notification
+    /// Service Extension has no TDLib access) so a chat-level override can be looked up from a raw
+    /// push payload's separate `from_id`/`basic_group_id`/`channel_id` fields: private chat ids are
+    /// the user id verbatim, basic groups are the negated group id, super groups/channels are
+    /// offset by -1000000000000. This scheme is stable/publicly documented and used throughout
+    /// TDLib, not something Telegram is expected to change.
+    static func chatKey(for chatId: Int64) -> String {
+        "chat:\(chatId)"
+    }
 
     static var soundsDirectoryURL: URL? {
         TelegramShareExtension.appGroupContainerURL?.appending(path: soundsDirectoryName, directoryHint: .isDirectory)
