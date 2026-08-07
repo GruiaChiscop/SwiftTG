@@ -7,7 +7,6 @@ import TDLibKit
 
 enum ChatInfoDestination: Hashable {
     case members(TelegramChatInfoMemberFilter)
-    case commonGroups(userId: Int64, count: Int)
 }
 
 // MARK: - ChatInfoMembersView

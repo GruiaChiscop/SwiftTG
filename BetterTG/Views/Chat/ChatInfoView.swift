@@ -42,6 +42,16 @@ struct ChatInfoView: View {
         .navigationDestination(for: ChatInfoDestination.self) { destination in
             destinationView(destination)
         }
+        .navigationDestination(isPresented: $showsCommonGroups) {
+            if let userId = info?.commonGroupsUserId {
+                ChatInfoCommonGroupsView(
+                    userId: userId,
+                    expectedCount: info?.commonGroupCount ?? 0,
+                    service: chatVM.service,
+                    onSelect: openChat,
+                )
+            }
+        }
         .task(id: chat.id) { await loadInfo() }
         .sheet(isPresented: $showsSharedMedia) {
             SharedMediaView(
@@ -114,6 +124,7 @@ struct ChatInfoView: View {
     @State private var muteOverride: Bool?
     @State private var showDeleteConfirmation = false
     @State private var showMuteOptions = false
+    @State private var showsCommonGroups = false
     @State private var showsScheduledMessages = false
     @State private var showsSharedMedia = false
 
@@ -203,11 +214,16 @@ struct ChatInfoView: View {
 
             if let commonGroupCount = info.commonGroupCount,
                commonGroupCount > 0,
-               let userId = info.commonGroupsUserId
+               info.commonGroupsUserId != nil
             {
-                NavigationLink(value: ChatInfoDestination.commonGroups(userId: userId, count: commonGroupCount)) {
+                Button {
+                    showsCommonGroups = true
+                } label: {
                     LabeledContent("Groups in common", value: commonGroupCount.formatted())
+                        .foregroundStyle(.primary)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -348,13 +364,6 @@ struct ChatInfoView: View {
                 filter: filter,
                 service: chatVM.service,
                 onSelect: openMember,
-            )
-        case .commonGroups(let userId, let count):
-            ChatInfoCommonGroupsView(
-                userId: userId,
-                expectedCount: count,
-                service: chatVM.service,
-                onSelect: openChat,
             )
         }
     }
