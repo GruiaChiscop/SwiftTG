@@ -99,6 +99,15 @@ struct TelegramStorageSettingsView: View {
                 .foregroundStyle(.secondary)
             }
 
+            if canIgnoreSensitiveContentRestrictions {
+                Section {
+                    Toggle("Sensitive Content", isOn: sensitiveContentBinding)
+                        .disabled(isSavingSensitiveContent)
+                } footer: {
+                    Text("Show media that's flagged as sensitive without a spoiler overlay.")
+                }
+            }
+
             if isWorking {
                 Section {
                     ProgressView(workingLabel)
@@ -110,6 +119,7 @@ struct TelegramStorageSettingsView: View {
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: service)
             await TelegramAutoDownloadStore.applyStored(service: service)
             await refreshStatistics()
+            await loadSensitiveContentOptions()
         }
         .onChange(of: keepMediaDays) { _, newValue in
             guard let policy = TelegramKeepMediaPolicy(rawValue: newValue) else { return }
@@ -163,8 +173,11 @@ struct TelegramStorageSettingsView: View {
         .rawValue
     @State private var cachedFileCount = 0
     @State private var cachedFilesSize: Int64 = 0
+    @State private var canIgnoreSensitiveContentRestrictions = false
     @State private var confirmsCacheClear = false
     @State private var errorMessage: String?
+    @State private var ignoresSensitiveContentRestrictions = false
+    @State private var isSavingSensitiveContent = false
     @State private var isWorking = false
     @State private var workingLabel = "Calculating storage usage…"
 
@@ -183,6 +196,40 @@ struct TelegramStorageSettingsView: View {
 
     private var formattedCacheSize: String {
         ByteCountFormatter.string(fromByteCount: cachedFilesSize, countStyle: .file)
+    }
+
+    private var sensitiveContentBinding: Binding<Bool> {
+        Binding(
+            get: { ignoresSensitiveContentRestrictions },
+            set: { newValue in
+                let previousValue = ignoresSensitiveContentRestrictions
+                ignoresSensitiveContentRestrictions = newValue
+                isSavingSensitiveContent = true
+                Task {
+                    defer { isSavingSensitiveContent = false }
+                    do {
+                        _ = try await service.setOption(
+                            name: "ignore_sensitive_content_restrictions",
+                            value: .optionValueBoolean(OptionValueBoolean(value: newValue)),
+                        )
+                    } catch {
+                        ignoresSensitiveContentRestrictions = previousValue
+                        errorMessage = telegramErrorDescription(error)
+                    }
+                }
+            },
+        )
+    }
+
+    @MainActor private func loadSensitiveContentOptions() async {
+        guard case .optionValueBoolean(let canIgnore) = try? await service.getOption(
+            name: "can_ignore_sensitive_content_restrictions",
+        ) else { return }
+        canIgnoreSensitiveContentRestrictions = canIgnore.value
+        guard canIgnore.value, case .optionValueBoolean(let ignores) = try? await service.getOption(
+            name: "ignore_sensitive_content_restrictions",
+        ) else { return }
+        ignoresSensitiveContentRestrictions = ignores.value
     }
 
     @MainActor private func apply(_ policy: TelegramKeepMediaPolicy) async {

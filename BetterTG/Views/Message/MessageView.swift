@@ -9,6 +9,7 @@ struct MessageView: View {
     let customMessage: CustomMessage
 
     @Environment(ChatVM.self) var chatVM
+    @Environment(\.telegramBubbleCornerRadius) var bubbleCornerRadius
     @State var shownAlbum: CustomMessageAlbum?
     @State var media = Media.shared
     @State var audioPlayer = TelegramAudioPlayer.shared
@@ -496,7 +497,7 @@ struct MessageView: View {
                 messageBubbleColor
             }
         }
-        .clipShape(.rect(cornerRadius: 20))
+        .clipShape(.rect(cornerRadius: bubbleCornerRadius))
         .contextMenu {
             messageContextMenu
         }

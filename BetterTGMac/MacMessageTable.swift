@@ -62,6 +62,8 @@ struct MacMessageTable: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .telegramChatWallpaper()
+        .telegramMessageTextSize()
         .scrollPosition($scrollPosition)
         .accessibilityLabel("Messages")
         .onScrollGeometryChange(for: Bool.self) { geometry in

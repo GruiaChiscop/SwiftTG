@@ -79,6 +79,36 @@ let telegramPrivacyItems: [TelegramPrivacyItem] = [
     TelegramPrivacyItem(setting: .userPrivacySettingShowBio, title: "Bio", footer: nil),
 ]
 
+// MARK: - TelegramAutoDeleteDuration
+
+/// TDLib requires the auto-delete time to be a whole number of days (divisible by 86400, up to a
+/// year) - these four map directly to the options the official app itself offers.
+enum TelegramAutoDeleteDuration: Int, CaseIterable, Identifiable {
+    case off = 0
+    case oneDay = 86400
+    case oneWeek = 604_800
+    case oneMonth = 2_592_000
+
+    // MARK: Lifecycle
+
+    init(seconds: Int) {
+        self = Self(rawValue: seconds) ?? .off
+    }
+
+    // MARK: Internal
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .off: "Off"
+        case .oneDay: "1 Day"
+        case .oneWeek: "1 Week"
+        case .oneMonth: "1 Month"
+        }
+    }
+}
+
 // MARK: - TelegramPrivacyView
 
 struct TelegramPrivacyView: View {
@@ -98,20 +128,36 @@ struct TelegramPrivacyView: View {
         // the other rows (confirmed: wrapping in a dedicated NavigationStack did not fix it - the
         // auto-select is coming from the List/NavigationSplitView column-selection interaction
         // itself, not from a missing navigation context). A sheet sidesteps that whole mechanism.
-        List(telegramPrivacyItems) { item in
-            Button {
-                selectedItem = item
-            } label: {
-                LabeledContent(item.title, value: (options[item.setting] ?? .everybody).title)
-                    .contentShape(Rectangle())
+        List {
+            Section {
+                ForEach(telegramPrivacyItems) { item in
+                    Button {
+                        selectedItem = item
+                    } label: {
+                        LabeledContent(item.title, value: (options[item.setting] ?? .everybody).title)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+
+            Section {
+                Picker("Auto-Delete Messages", selection: autoDeleteBinding) {
+                    ForEach(TelegramAutoDeleteDuration.allCases) { duration in
+                        Text(duration.title).tag(duration)
+                    }
+                }
+                .disabled(isSavingAutoDelete)
+            } footer: {
+                Text("Automatically delete messages in newly started chats after the selected period.")
+            }
         }
         .navigationTitle("Privacy")
         .task {
             guard !hasLoaded else { return }
             hasLoaded = true
             await loadOptions()
+            await loadAutoDelete()
         }
         .sheet(item: $selectedItem) { item in
             TelegramPrivacyDetailView(
@@ -131,8 +177,10 @@ struct TelegramPrivacyView: View {
 
     // MARK: Private
 
+    @State private var autoDelete = TelegramAutoDeleteDuration.off
     @State private var errorMessage: String?
     @State private var hasLoaded = false
+    @State private var isSavingAutoDelete = false
     @State private var options = [UserPrivacySetting: TelegramPrivacyOption]()
     @State private var selectedItem: TelegramPrivacyItem?
 
@@ -147,6 +195,33 @@ struct TelegramPrivacyView: View {
                 }
             },
         )
+    }
+
+    private var autoDeleteBinding: Binding<TelegramAutoDeleteDuration> {
+        Binding(
+            get: { autoDelete },
+            set: { newValue in
+                let previousValue = autoDelete
+                autoDelete = newValue
+                isSavingAutoDelete = true
+                Task {
+                    defer { isSavingAutoDelete = false }
+                    do {
+                        _ = try await service.setDefaultMessageAutoDeleteTime(
+                            messageAutoDeleteTime: MessageAutoDeleteTime(time: newValue.rawValue),
+                        )
+                    } catch {
+                        autoDelete = previousValue
+                        errorMessage = telegramErrorDescription(error)
+                    }
+                }
+            },
+        )
+    }
+
+    @MainActor private func loadAutoDelete() async {
+        guard let time = try? await service.getDefaultMessageAutoDeleteTime() else { return }
+        autoDelete = TelegramAutoDeleteDuration(seconds: time.time)
     }
 
     @MainActor private func loadOptions() async {

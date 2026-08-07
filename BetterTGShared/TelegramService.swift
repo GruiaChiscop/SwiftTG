@@ -284,6 +284,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setUsername(username: String?) async throws -> Ok
     func setProfilePhoto(isPublic: Bool?, photo: InputChatPhoto?) async throws -> Ok
     func setOption(name: String?, value: OptionValue?) async throws -> Ok
+    func getOption(name: String?) async throws -> OptionValue
+    func getDefaultMessageAutoDeleteTime() async throws -> MessageAutoDeleteTime
+    func setDefaultMessageAutoDeleteTime(messageAutoDeleteTime: MessageAutoDeleteTime?) async throws -> Ok
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok
     func markChecklistTasksAsDone(
         chatId: Int64?,
@@ -317,6 +320,18 @@ extension TelegramSession: TelegramService {
 
     func setOption(name: String?, value: OptionValue?) async throws -> Ok {
         try await client.setOption(name: name, value: value)
+    }
+
+    func getOption(name: String?) async throws -> OptionValue {
+        try await client.getOption(name: name)
+    }
+
+    func getDefaultMessageAutoDeleteTime() async throws -> MessageAutoDeleteTime {
+        try await client.getDefaultMessageAutoDeleteTime()
+    }
+
+    func setDefaultMessageAutoDeleteTime(messageAutoDeleteTime: MessageAutoDeleteTime?) async throws -> Ok {
+        try await client.setDefaultMessageAutoDeleteTime(messageAutoDeleteTime: messageAutoDeleteTime)
     }
 
     func optimizeStorage(

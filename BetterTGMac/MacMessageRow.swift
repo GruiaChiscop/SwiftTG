@@ -43,6 +43,7 @@ struct MacMessageRow: View {
         case preparingPreview
     }
 
+    @Environment(\.telegramBubbleCornerRadius) private var bubbleCornerRadius
     @State private var player = MacVoicePlayer.shared
     @State private var audioPlayer = TelegramAudioPlayer.shared
     @State private var documentPath: String?
@@ -586,7 +587,7 @@ struct MacMessageRow: View {
                 .padding(.vertical, 8)
                 .background {
                     if !isStickerMessage {
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: bubbleCornerRadius)
                             .fill(
                                 isServiceMessage
                                     ? Color.secondary.opacity(0.12)
