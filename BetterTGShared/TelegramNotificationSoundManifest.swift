@@ -9,7 +9,13 @@ import Foundation
 /// second process can't open the same locked TDLib database) can read it directly. See
 /// `TelegramNotificationSoundCache.swift` for the TDLib-backed half that actually downloads and
 /// transcodes sounds; this file only knows how to read/write the resulting manifest and resolve
-/// where things live in the shared App Group container.
+/// where things live.
+///
+/// On iOS this has to be the shared App Group container, since the main app and the NSE are two
+/// separate processes handing files off to each other. macOS has no such extension - only
+/// `MacLocalNotifications` ever reads this cache, in the same process that wrote it - so it uses
+/// this app's own container instead, needing no App Group entitlement at all (and none of the
+/// "would like to access data from other apps" prompt that entitlement brings with it).
 enum TelegramNotificationSoundManifest {
     // MARK: Internal
 
@@ -29,7 +35,7 @@ enum TelegramNotificationSoundManifest {
     }
 
     static var soundsDirectoryURL: URL? {
-        TelegramShareExtension.appGroupContainerURL?.appending(path: soundsDirectoryName, directoryHint: .isDirectory)
+        storageBaseURL?.appending(path: soundsDirectoryName, directoryHint: .isDirectory)
     }
 
     /// The `-v3` bumps past files cached by earlier (broken) transcoder versions: v1 wrote
@@ -110,6 +116,15 @@ enum TelegramNotificationSoundManifest {
     private static let soundsDirectoryName = "Library/Sounds"
 
     private static var manifestURL: URL? {
-        TelegramShareExtension.appGroupContainerURL?.appending(path: manifestName, directoryHint: .notDirectory)
+        storageBaseURL?.appending(path: manifestName, directoryHint: .notDirectory)
+    }
+
+    private static var storageBaseURL: URL? {
+        #if os(macOS)
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appending(path: "BetterTG", directoryHint: .isDirectory)
+        #else
+        TelegramShareExtension.appGroupContainerURL
+        #endif
     }
 }
