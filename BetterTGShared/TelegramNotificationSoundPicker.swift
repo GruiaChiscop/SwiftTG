@@ -7,10 +7,15 @@ import UniformTypeIdentifiers
 
 // MARK: - TelegramNotificationSoundPickerView
 
-/// A push destination (works identically on both platforms - see the comment on
+/// The same List-based sound picker on both platforms - "Default"/"Off", then the account's saved
+/// cloud sounds (synced across devices via TDLib), with upload and delete. iOS pushes to this
+/// directly (works identically wherever it's pushed from - see the comment on
 /// `TelegramNotificationScopeDetailView` for why nested `NavigationLink`s are safe here even on
-/// macOS). Mirrors Telegram-iOS's own sound picker: "Default"/"Off", then the account's saved
-/// cloud sounds (synced across devices via TDLib), with upload and delete.
+/// macOS). macOS instead wraps it in a sheet (`TelegramNotificationSoundPickerSheet` below), the
+/// same way `TelegramPrivacyView` and the notification scope screens present their own detail
+/// content: a List/NavigationLink placed inside (or reachable through) a NavigationSplitView's
+/// detail column on macOS auto-selects and auto-activates its first row as soon as it appears, and
+/// a sheet's own NavigationStack sidesteps that entirely.
 struct TelegramNotificationSoundPickerView: View {
     // MARK: Internal
 
@@ -27,7 +32,7 @@ struct TelegramNotificationSoundPickerView: View {
 
             Section {
                 ForEach(savedSounds) { sound in
-                    soundRow(title: sound.title, soundId: sound.id, duration: sound.duration)
+                    soundRow(title: sound.title, soundId: sound.id)
                         .swipeActions(edge: .trailing) {
                             Button("Delete", role: .destructive) {
                                 Task { await delete(sound) }
@@ -90,20 +95,13 @@ struct TelegramNotificationSoundPickerView: View {
         )
     }
 
-    private func soundRow(title: String, soundId: TdInt64, duration: Int? = nil) -> some View {
+    private func soundRow(title: String, soundId: TdInt64) -> some View {
         Button {
             select(soundId: soundId)
         } label: {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .foregroundStyle(.primary)
-                    if let duration {
-                        Text(durationString(duration))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Text(title)
+                    .foregroundStyle(.primary)
                 Spacer()
                 if soundId == selectedSoundId {
                     Image(systemName: "checkmark")
@@ -113,11 +111,6 @@ struct TelegramNotificationSoundPickerView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(soundId == selectedSoundId ? [.isSelected] : [])
-    }
-
-    private func durationString(_ seconds: Int) -> String {
-        String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     private func select(soundId: TdInt64) {
@@ -201,3 +194,33 @@ struct TelegramNotificationSoundPickerView: View {
         }
     }
 }
+
+// MARK: - TelegramNotificationSoundPickerSheet
+
+#if os(macOS)
+/// macOS-only sheet wrapper around `TelegramNotificationSoundPickerView`, mirroring
+/// `TelegramNotificationScopeDetailView`'s own sheet wrapper for the same reason.
+struct TelegramNotificationSoundPickerSheet: View {
+    // MARK: Internal
+
+    let service: any TelegramService
+    let selectedSoundId: TdInt64
+    let onSelect: (TdInt64) -> Void
+
+    var body: some View {
+        NavigationStack {
+            TelegramNotificationSoundPickerView(service: service, selectedSoundId: selectedSoundId, onSelect: onSelect)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+        .frame(minWidth: 380, minHeight: 420)
+    }
+
+    // MARK: Private
+
+    @Environment(\.dismiss) private var dismiss
+}
+#endif

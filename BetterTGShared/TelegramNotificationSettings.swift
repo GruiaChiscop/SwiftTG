@@ -251,21 +251,26 @@ private struct TelegramNotificationScopeDetailContent: View {
                 Toggle("Enabled", isOn: enabledBinding)
                 Toggle("Show Preview", isOn: showPreviewBinding)
                     .disabled(!settings.isEnabled)
-                NavigationLink {
-                    TelegramNotificationSoundPickerView(service: service, selectedSoundId: settings.soundId) { newSoundId in
-                        save(settings.withSoundId(newSoundId))
-                        Task {
-                            await TelegramNotificationSoundCache.refresh(
-                                scope: item.scope,
-                                soundId: newSoundId,
-                                service: service,
-                            )
+                #if os(iOS)
+                    NavigationLink {
+                        TelegramNotificationSoundPickerView(service: service, selectedSoundId: settings.soundId) { newSoundId in
+                            saveSoundId(newSoundId)
                         }
+                    } label: {
+                        LabeledContent("Sound", value: soundDisplayName)
                     }
-                } label: {
-                    LabeledContent("Sound", value: soundDisplayName)
-                }
-                .disabled(!settings.isEnabled)
+                    .disabled(!settings.isEnabled)
+                #else
+                    Button {
+                        showsSoundPicker = true
+                    } label: {
+                        LabeledContent("Sound", value: soundDisplayName)
+                            .foregroundStyle(.primary)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!settings.isEnabled)
+                #endif
             }
 
             Section {
@@ -287,18 +292,39 @@ private struct TelegramNotificationScopeDetailContent: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        #if os(macOS)
+        .sheet(isPresented: $showsSoundPicker) {
+            TelegramNotificationSoundPickerSheet(service: service, selectedSoundId: settings.soundId) { newSoundId in
+                saveSoundId(newSoundId)
+            }
+        }
+        #endif
     }
 
     // MARK: Private
 
     @State private var errorMessage: String?
     @State private var isSaving = false
+    #if os(macOS)
+    @State private var showsSoundPicker = false
+    #endif
     @State private var soundTitle: String?
 
     private var soundDisplayName: String {
         if settings.soundId <= -1 { return "Default" }
         if settings.soundId == 0 { return "Off" }
         return soundTitle ?? "…"
+    }
+
+    private func saveSoundId(_ newSoundId: TdInt64) {
+        save(settings.withSoundId(newSoundId))
+        Task {
+            await TelegramNotificationSoundCache.refresh(
+                scope: item.scope,
+                soundId: newSoundId,
+                service: service,
+            )
+        }
     }
 
     private var errorIsPresented: Binding<Bool> {

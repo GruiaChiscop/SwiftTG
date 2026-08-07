@@ -24,25 +24,51 @@ struct TelegramChatSoundRow: View {
     let chatId: Int64
 
     var body: some View {
-        NavigationLink {
-            TelegramNotificationSoundPickerView(service: service, selectedSoundId: pickerSoundId) { newSoundId in
-                save(newSoundId)
+        #if os(iOS)
+            NavigationLink {
+                TelegramNotificationSoundPickerView(service: service, selectedSoundId: pickerSoundId) { newSoundId in
+                    save(newSoundId)
+                }
+            } label: {
+                LabeledContent("Sound", value: soundDisplayName)
             }
-        } label: {
-            LabeledContent("Sound", value: soundDisplayName)
-        }
-        .task(id: settings.soundId) {
-            guard !settings.useDefaultSound, settings.soundId.rawValue > 0 else {
-                soundTitle = nil
-                return
+            .task(id: settings.soundId) {
+                await loadSoundTitleIfNeeded()
             }
-            soundTitle = try? await service.getSavedNotificationSound(notificationSoundId: settings.soundId).title
+        #else
+            Button {
+                showsSoundPicker = true
+            } label: {
+                LabeledContent("Sound", value: soundDisplayName)
+                    .foregroundStyle(.primary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .task(id: settings.soundId) {
+                await loadSoundTitleIfNeeded()
+            }
+            .sheet(isPresented: $showsSoundPicker) {
+                TelegramNotificationSoundPickerSheet(service: service, selectedSoundId: pickerSoundId) { newSoundId in
+                    save(newSoundId)
+                }
+            }
+        #endif
+    }
+
+    private func loadSoundTitleIfNeeded() async {
+        guard !settings.useDefaultSound, settings.soundId.rawValue > 0 else {
+            soundTitle = nil
+            return
         }
+        soundTitle = try? await service.getSavedNotificationSound(notificationSoundId: settings.soundId).title
     }
 
     // MARK: Private
 
     @State private var settings: ChatNotificationSettings
+    #if os(macOS)
+    @State private var showsSoundPicker = false
+    #endif
     @State private var soundTitle: String?
 
     /// The picker treats "Default" as a `-1` pseudo-id (same convention the scope screens use);
