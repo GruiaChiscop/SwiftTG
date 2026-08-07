@@ -1,7 +1,7 @@
 // MacSessionModel+Notifications.swift
 
 import AppKit
-import TDLibKit
+@preconcurrency import TDLibKit
 
 extension MacSessionModel {
     // MARK: Internal (called from `observeSession()` in the core file)
@@ -20,7 +20,7 @@ extension MacSessionModel {
             guard Date().timeIntervalSince1970 - TimeInterval(notification.date) < 3600,
                   let body = notificationBody(notification)
             else { continue }
-            let playsSound = group.notificationSoundId != 0 && !notification.isSilent
+            let soundId = notification.isSilent ? 0 : group.notificationSoundId
             Task {
                 await notifications.deliver(
                     chatId: group.chatId,
@@ -28,7 +28,8 @@ extension MacSessionModel {
                     body: body,
                     notificationGroupId: group.notificationGroupId,
                     notificationId: notification.id,
-                    playsSound: playsSound,
+                    soundId: soundId,
+                    service: service,
                 )
             }
         }

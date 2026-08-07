@@ -1,6 +1,7 @@
 // MacLocalNotifications.swift
 
 import Foundation
+@preconcurrency import TDLibKit
 @preconcurrency import UserNotifications
 
 final class MacLocalNotifications: @unchecked Sendable {
@@ -16,7 +17,8 @@ final class MacLocalNotifications: @unchecked Sendable {
         body: String,
         notificationGroupId: Int,
         notificationId: Int,
-        playsSound: Bool,
+        soundId: TdInt64,
+        service: any TelegramService,
     ) async {
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
@@ -25,7 +27,7 @@ final class MacLocalNotifications: @unchecked Sendable {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = playsSound ? .default : nil
+        content.sound = await resolvedSound(soundId: soundId, service: service)
         content.threadIdentifier = String(chatId)
         content.userInfo = ["chatId": String(chatId)]
         try? await center.add(UNNotificationRequest(
@@ -49,5 +51,19 @@ final class MacLocalNotifications: @unchecked Sendable {
 
     private static func identifier(groupId: Int, notificationId: Int) -> String {
         "tdlib-\(groupId)-\(notificationId)"
+    }
+
+    /// `soundId` follows TDLib's own convention: 0 is silent, negative means "use the app-default
+    /// sound", positive references one of the account's saved cloud sounds.
+    private func resolvedSound(soundId: TdInt64, service: any TelegramService) async -> UNNotificationSound? {
+        guard soundId != 0 else { return nil }
+        guard
+            soundId > 0,
+            let url = await TelegramNotificationSoundCache.ensureCached(soundId: soundId, service: service),
+            // UNNotificationSound(named:) only resolves a bare filename against this process's own
+            // container, not the shared App Group container the cache actually lives in.
+            let localFileName = TelegramNotificationSoundManifest.localSoundFileName(copyingFrom: url)
+        else { return .default }
+        return UNNotificationSound(named: UNNotificationSoundName(localFileName))
     }
 }

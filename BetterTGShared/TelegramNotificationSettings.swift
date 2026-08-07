@@ -22,8 +22,6 @@ extension ScopeNotificationSettings {
 
     var isEnabled: Bool { muteFor <= 0 }
 
-    var playsSound: Bool { soundId != 0 }
-
     func withEnabled(_ isEnabled: Bool) -> ScopeNotificationSettings {
         ScopeNotificationSettings(
             disableMentionNotifications: disableMentionNotifications,
@@ -52,7 +50,7 @@ extension ScopeNotificationSettings {
         )
     }
 
-    func withPlaysSound(_ playsSound: Bool) -> ScopeNotificationSettings {
+    func withSoundId(_ soundId: TdInt64) -> ScopeNotificationSettings {
         ScopeNotificationSettings(
             disableMentionNotifications: disableMentionNotifications,
             disablePinnedMessageNotifications: disablePinnedMessageNotifications,
@@ -60,7 +58,7 @@ extension ScopeNotificationSettings {
             muteStories: muteStories,
             showPreview: showPreview,
             showStoryPoster: showStoryPoster,
-            soundId: playsSound ? -1 : 0,
+            soundId: soundId,
             storySoundId: storySoundId,
             useDefaultMuteStories: useDefaultMuteStories,
         )
@@ -94,30 +92,34 @@ struct TelegramNotificationsView: View {
     // MARK: Internal
 
     var body: some View {
-        List(telegramNotificationScopeItems) { item in
-            #if os(iOS)
-                NavigationLink {
-                    TelegramNotificationScopeDetailContent(
-                        service: service,
-                        item: item,
-                        settings: settings[item.scope] ?? .defaultSettings,
-                    ) { newSettings in
-                        settings[item.scope] = newSettings
-                    }
-                    .navigationTitle(item.title)
-                    .navigationBarTitleDisplayMode(.inline)
-                } label: {
-                    LabeledContent(item.title, value: statusText(for: item.scope))
+        List {
+            Section {
+                ForEach(telegramNotificationScopeItems) { item in
+                    #if os(iOS)
+                        NavigationLink {
+                            TelegramNotificationScopeDetailContent(
+                                service: service,
+                                item: item,
+                                settings: settings[item.scope] ?? .defaultSettings,
+                            ) { newSettings in
+                                settings[item.scope] = newSettings
+                            }
+                            .navigationTitle(item.title)
+                            .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            LabeledContent(item.title, value: statusText(for: item.scope))
+                        }
+                    #else
+                        Button {
+                            selectedItem = item
+                        } label: {
+                            LabeledContent(item.title, value: statusText(for: item.scope))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    #endif
                 }
-            #else
-                Button {
-                    selectedItem = item
-                } label: {
-                    LabeledContent(item.title, value: statusText(for: item.scope))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            #endif
+            }
         }
         .navigationTitle("Notifications")
         .task {
@@ -249,8 +251,21 @@ private struct TelegramNotificationScopeDetailContent: View {
                 Toggle("Enabled", isOn: enabledBinding)
                 Toggle("Show Preview", isOn: showPreviewBinding)
                     .disabled(!settings.isEnabled)
-                Toggle("Play Sound", isOn: playsSoundBinding)
-                    .disabled(!settings.isEnabled)
+                NavigationLink {
+                    TelegramNotificationSoundPickerView(service: service, selectedSoundId: settings.soundId) { newSoundId in
+                        save(settings.withSoundId(newSoundId))
+                        Task {
+                            await TelegramNotificationSoundCache.refresh(
+                                scope: item.scope,
+                                soundId: newSoundId,
+                                service: service,
+                            )
+                        }
+                    }
+                } label: {
+                    LabeledContent("Sound", value: soundDisplayName)
+                }
+                .disabled(!settings.isEnabled)
             }
 
             Section {
@@ -259,6 +274,13 @@ private struct TelegramNotificationScopeDetailContent: View {
             } footer: {
                 Text("When on, mentions and pinned messages in this scope no longer stand out from ordinary unread messages.")
             }
+        }
+        .task(id: settings.soundId) {
+            guard settings.soundId > 0 else {
+                soundTitle = nil
+                return
+            }
+            soundTitle = try? await service.getSavedNotificationSound(notificationSoundId: settings.soundId).title
         }
         .alert("Couldn't Update Notification Settings", isPresented: errorIsPresented) {
             Button("OK") {}
@@ -271,6 +293,13 @@ private struct TelegramNotificationScopeDetailContent: View {
 
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var soundTitle: String?
+
+    private var soundDisplayName: String {
+        if settings.soundId <= -1 { return "Default" }
+        if settings.soundId == 0 { return "Off" }
+        return soundTitle ?? "…"
+    }
 
     private var errorIsPresented: Binding<Bool> {
         Binding(
@@ -294,13 +323,6 @@ private struct TelegramNotificationScopeDetailContent: View {
         Binding(
             get: { settings.showPreview },
             set: { save(settings.withShowPreview($0)) },
-        )
-    }
-
-    private var playsSoundBinding: Binding<Bool> {
-        Binding(
-            get: { settings.playsSound },
-            set: { save(settings.withPlaysSound($0)) },
         )
     }
 
@@ -359,3 +381,4 @@ private struct TelegramNotificationScopeDetailContent: View {
         }
     }
 }
+

@@ -22,6 +22,10 @@ extension RootVM {
                     Task { @MainActor in
                         await TelegramLiveLocationManager.shared.resumeActiveShares()
                     }
+                    Task { [weak self] in
+                        guard let self else { return }
+                        await TelegramNotificationSoundCacheRefresh.refreshAll(service: service)
+                    }
                 case .authorizationStateClosed,
                      .authorizationStateClosing,
                      .authorizationStateLoggingOut,

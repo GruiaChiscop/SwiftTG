@@ -402,6 +402,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 guard await notifications.requestAuthorization() else { return }
                 NSApplication.shared.registerForRemoteNotifications()
             }
+            Task { [service] in
+                await TelegramNotificationSoundCacheRefresh.refreshAll(service: service)
+            }
         case .authorizationStateClosing, .authorizationStateLoggingOut:
             guard !isStopping else { return }
             canReuseSessionForReauthentication = false

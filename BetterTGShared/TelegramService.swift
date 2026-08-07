@@ -258,6 +258,10 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         notificationSettings: ScopeNotificationSettings?,
         scope: NotificationSettingsScope?,
     ) async throws -> Ok
+    func getSavedNotificationSounds() async throws -> NotificationSounds
+    func getSavedNotificationSound(notificationSoundId: TdInt64?) async throws -> NotificationSound
+    func addSavedNotificationSound(sound: InputFile?) async throws -> NotificationSound
+    func removeSavedNotificationSound(notificationSoundId: TdInt64?) async throws -> Ok
     func getAutoDownloadSettingsPresets() async throws -> AutoDownloadSettingsPresets
     func setAutoDownloadSettings(settings: AutoDownloadSettings?, type: NetworkType?) async throws -> Ok
     func getPasswordState() async throws -> PasswordState
@@ -1025,6 +1029,22 @@ extension TelegramSession: TelegramService {
         scope: NotificationSettingsScope?,
     ) async throws -> Ok {
         try await client.setScopeNotificationSettings(notificationSettings: notificationSettings, scope: scope)
+    }
+
+    func getSavedNotificationSounds() async throws -> NotificationSounds {
+        try await client.getSavedNotificationSounds()
+    }
+
+    func getSavedNotificationSound(notificationSoundId: TdInt64?) async throws -> NotificationSound {
+        try await client.getSavedNotificationSound(notificationSoundId: notificationSoundId)
+    }
+
+    func addSavedNotificationSound(sound: InputFile?) async throws -> NotificationSound {
+        try await client.addSavedNotificationSound(sound: sound)
+    }
+
+    func removeSavedNotificationSound(notificationSoundId: TdInt64?) async throws -> Ok {
+        try await client.removeSavedNotificationSound(notificationSoundId: notificationSoundId)
     }
 
     func getAutoDownloadSettingsPresets() async throws -> AutoDownloadSettingsPresets {
