@@ -14,6 +14,8 @@ import UserNotifications
             MacRootView(model: model)
                 .frame(minWidth: 820, minHeight: 560)
                 .background(MacWindowBridge(appDelegate: appDelegate))
+                .telegramAppearance()
+                .appLockOverlay()
                 .task {
                     appDelegate.model = model
                     model.start()
@@ -32,6 +34,7 @@ import UserNotifications
         Settings {
             MacSettingsView(service: model.service)
                 .frame(width: 620, height: 420)
+                .telegramAppearance()
         }
 
         MenuBarExtra("SwiftTG", systemImage: "paperplane.fill") {
@@ -60,6 +63,11 @@ UNUserNotificationCenterDelegate {
 
     func applicationDidResignActive(_: Notification) {
         model?.saveCurrentDraft()
+        TelegramAppLockController.shared.noteDidEnterBackground()
+    }
+
+    func applicationDidBecomeActive(_: Notification) {
+        TelegramAppLockController.shared.noteWillEnterForeground()
     }
 
     func application(

@@ -35,6 +35,8 @@ import UserNotifications
                 EmptyView()
             } else {
                 RootView()
+                    .telegramAppearance()
+                    .appLockOverlay()
                     // Handles the Share Extension's `swifttg://share?id=<uuid>` hand-off - covers
                     // both a cold launch (the URL that started the app) and an already-running app,
                     // unlike the hand-rolled `UIWindowSceneDelegate` this replaced, which turned out
@@ -51,8 +53,17 @@ import UserNotifications
         // until the next real cold launch. Retrying on every foreground transition closes that gap
         // regardless of whether the extension's own `open(url:)` hand-off actually landed.
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active else { return }
-            Task { await RootVM.shared.processPendingShareRequests() }
+            switch newPhase {
+            case .active:
+                TelegramAppLockController.shared.noteWillEnterForeground()
+                Task { await RootVM.shared.processPendingShareRequests() }
+            case .background:
+                TelegramAppLockController.shared.noteDidEnterBackground()
+            case .inactive:
+                break
+            @unknown default:
+                break
+            }
         }
     }
 

@@ -77,6 +77,14 @@ struct TelegramStorageSettingsView: View {
                 .disabled(isWorking || cachedFileCount == 0)
             }
 
+            Section {
+                NavigationLink {
+                    TelegramAutoDownloadSettingsView(service: service)
+                } label: {
+                    Text("Automatic Media Download")
+                }
+            }
+
             Section("Keep Media") {
                 Picker("Keep Media", selection: $keepMediaDays) {
                     ForEach(TelegramKeepMediaPolicy.allCases) { policy in
@@ -100,6 +108,7 @@ struct TelegramStorageSettingsView: View {
         .navigationTitle("Storage Usage")
         .task {
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: service)
+            await TelegramAutoDownloadStore.applyStored(service: service)
             await refreshStatistics()
         }
         .onChange(of: keepMediaDays) { _, newValue in

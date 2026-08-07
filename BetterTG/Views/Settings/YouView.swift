@@ -47,15 +47,45 @@ struct YouView: View {
                 }
 
                 NavigationLink {
+                    TelegramNotificationsView(service: service)
+                } label: {
+                    Label("Notifications and Sounds", systemImage: "bell")
+                }
+
+                NavigationLink {
+                    TelegramAppearanceSettingsView()
+                } label: {
+                    Label("Appearance", systemImage: "paintpalette")
+                }
+
+                NavigationLink {
                     TelegramPrivacyView(service: service)
                 } label: {
                     Label("Privacy", systemImage: "hand.raised")
                 }
 
                 NavigationLink {
+                    TelegramTwoStepVerificationView(service: service)
+                } label: {
+                    Label("Two-Step Verification", systemImage: "lock.shield")
+                }
+
+                NavigationLink {
+                    TelegramAppLockSettingsView()
+                } label: {
+                    Label("App Lock", systemImage: "lock")
+                }
+
+                NavigationLink {
                     TelegramStorageSettingsView(service: service)
                 } label: {
                     Label("Storage Usage", systemImage: "internaldrive")
+                }
+
+                NavigationLink {
+                    TelegramProxySettingsView(service: service)
+                } label: {
+                    Label("Proxy", systemImage: "network")
                 }
             }
         }

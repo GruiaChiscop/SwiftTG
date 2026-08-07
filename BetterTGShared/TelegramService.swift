@@ -254,6 +254,27 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
     func getUserPrivacySettingRules(setting: UserPrivacySetting?) async throws -> UserPrivacySettingRules
     func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok
+    func setScopeNotificationSettings(
+        notificationSettings: ScopeNotificationSettings?,
+        scope: NotificationSettingsScope?,
+    ) async throws -> Ok
+    func getAutoDownloadSettingsPresets() async throws -> AutoDownloadSettingsPresets
+    func setAutoDownloadSettings(settings: AutoDownloadSettings?, type: NetworkType?) async throws -> Ok
+    func getPasswordState() async throws -> PasswordState
+    func setPassword(
+        newHint: String?,
+        newPassword: String?,
+        newRecoveryEmailAddress: String?,
+        oldPassword: String?,
+        setRecoveryEmailAddress: Bool?,
+    ) async throws -> PasswordState
+    func addProxy(comment: String?, enable: Bool?, proxy: Proxy?) async throws -> AddedProxy
+    func editProxy(comment: String?, enable: Bool?, proxy: Proxy?, proxyId: Int?) async throws -> AddedProxy
+    func enableProxy(proxyId: Int?) async throws -> Ok
+    func disableProxy() async throws -> Ok
+    func removeProxy(proxyId: Int?) async throws -> Ok
+    func getProxies() async throws -> AddedProxies
+    func pingProxy(proxy: Proxy?) async throws -> Seconds
     func setName(firstName: String?, lastName: String?) async throws -> Ok
     func setBio(bio: String?) async throws -> Ok
     func setUsername(username: String?) async throws -> Ok
@@ -997,6 +1018,69 @@ extension TelegramSession: TelegramService {
 
     func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok {
         try await client.setUserPrivacySettingRules(rules: rules, setting: setting)
+    }
+
+    func setScopeNotificationSettings(
+        notificationSettings: ScopeNotificationSettings?,
+        scope: NotificationSettingsScope?,
+    ) async throws -> Ok {
+        try await client.setScopeNotificationSettings(notificationSettings: notificationSettings, scope: scope)
+    }
+
+    func getAutoDownloadSettingsPresets() async throws -> AutoDownloadSettingsPresets {
+        try await client.getAutoDownloadSettingsPresets()
+    }
+
+    func setAutoDownloadSettings(settings: AutoDownloadSettings?, type: NetworkType?) async throws -> Ok {
+        try await client.setAutoDownloadSettings(settings: settings, type: type)
+    }
+
+    func getPasswordState() async throws -> PasswordState {
+        try await client.getPasswordState()
+    }
+
+    func setPassword(
+        newHint: String?,
+        newPassword: String?,
+        newRecoveryEmailAddress: String?,
+        oldPassword: String?,
+        setRecoveryEmailAddress: Bool?,
+    ) async throws -> PasswordState {
+        try await client.setPassword(
+            newHint: newHint,
+            newPassword: newPassword,
+            newRecoveryEmailAddress: newRecoveryEmailAddress,
+            oldPassword: oldPassword,
+            setRecoveryEmailAddress: setRecoveryEmailAddress,
+        )
+    }
+
+    func addProxy(comment: String?, enable: Bool?, proxy: Proxy?) async throws -> AddedProxy {
+        try await client.addProxy(comment: comment, enable: enable, proxy: proxy)
+    }
+
+    func editProxy(comment: String?, enable: Bool?, proxy: Proxy?, proxyId: Int?) async throws -> AddedProxy {
+        try await client.editProxy(comment: comment, enable: enable, proxy: proxy, proxyId: proxyId)
+    }
+
+    func enableProxy(proxyId: Int?) async throws -> Ok {
+        try await client.enableProxy(proxyId: proxyId)
+    }
+
+    func disableProxy() async throws -> Ok {
+        try await client.disableProxy()
+    }
+
+    func removeProxy(proxyId: Int?) async throws -> Ok {
+        try await client.removeProxy(proxyId: proxyId)
+    }
+
+    func getProxies() async throws -> AddedProxies {
+        try await client.getProxies()
+    }
+
+    func pingProxy(proxy: Proxy?) async throws -> Seconds {
+        try await client.pingProxy(proxy: proxy)
     }
 
     func setName(firstName: String?, lastName: String?) async throws -> Ok {
