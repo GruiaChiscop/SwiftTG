@@ -173,6 +173,21 @@ import TDLibKit
         return true
     }
 
+    /// True when the chat is a group/supergroup/channel the current user isn't a member of but
+    /// could join - the state Telegram's own chat panel shows a "Join" button for instead of the
+    /// composer. Excludes `.chatMemberStatusBanned`, which needs to be unbanned first and can't be
+    /// resolved by joining again.
+    var canJoin: Bool {
+        switch membershipStatus {
+        case .chatMemberStatusLeft:
+            true
+        case .chatMemberStatusRestricted(let value):
+            !value.isMember
+        default:
+            false
+        }
+    }
+
     // MARK: Private
 
     private var membershipStatus: ChatMemberStatus? {

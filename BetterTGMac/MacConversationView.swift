@@ -35,6 +35,8 @@ struct MacConversationView: View {
             Divider()
             if model.isConversationSearchActive {
                 conversationSearchNavigationBar
+            } else if chat.membership == .notMember {
+                joinChatButton
             } else if chat.kind != .channel || chat.canPostMessages == true {
                 composer
             } else {
@@ -170,6 +172,7 @@ struct MacConversationView: View {
 
     @FocusState private var conversationSearchFocused
     @State private var isAtBottom = false
+    @State private var isJoiningChat = false
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
     @State private var showsPollComposer = false
@@ -371,6 +374,32 @@ struct MacConversationView: View {
                 ProgressView("Loading messages…")
                     .padding()
             }
+        }
+    }
+
+    private var joinChatButton: some View {
+        Button {
+            isJoiningChat = true
+            model.joinChat(chat)
+        } label: {
+            HStack {
+                Spacer()
+                if isJoiningChat {
+                    ProgressView()
+                } else {
+                    Text(chat.kind == .channel ? "Join Channel" : "Join Group")
+                        .font(.body.weight(.semibold))
+                }
+                Spacer()
+            }
+            .padding(12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isJoiningChat)
+        .onChange(of: chat.membership) { _, newValue in
+            guard newValue != .notMember else { return }
+            isJoiningChat = false
         }
     }
 

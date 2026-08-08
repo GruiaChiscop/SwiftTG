@@ -65,6 +65,7 @@ import TDLibKit
     let conversationSearch: TelegramConversationSearchStore
 
     var actionStatus = ""
+    var isJoiningChat = false
     var onlineStatus = ""
     var highlightedMessageId: Int64?
     var scrollRequestMessageId: Int64?
@@ -194,6 +195,32 @@ import TDLibKit
 
     func getOnlineStatus(from userStatus: UserStatus) -> String {
         telegramUserPresenceDescription(userStatus)
+    }
+
+    /// Joins the current channel/group and refreshes `customChat.type` with the resulting
+    /// membership status - `CustomChat` isn't kept live against `updateSupergroup`/`updateBasicGroup`,
+    /// so without this the "Join" button would keep showing until the chat is reopened.
+    func joinCurrentChat() async {
+        guard !isJoiningChat else { return }
+        isJoiningChat = true
+        defer { isJoiningChat = false }
+
+        guard await (try? service.joinChat(chatId: chatId)) != nil else {
+            navigationError = "Couldn't join this chat."
+            return
+        }
+
+        switch customChat.type {
+        case .supergroup(let currentGroup):
+            guard let group = try? await service.getSupergroup(supergroupId: currentGroup.id) else { return }
+            customChat.type = .supergroup(group)
+        case .group(let currentGroup):
+            guard let group = try? await service.getBasicGroup(basicGroupId: currentGroup.id) else { return }
+            customChat.type = .group(group)
+        case .bot, .user:
+            break
+        }
+        refreshConversationStatus()
     }
 
     // MARK: Private

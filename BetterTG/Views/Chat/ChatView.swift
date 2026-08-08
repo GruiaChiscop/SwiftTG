@@ -113,6 +113,8 @@ struct ChatView: View {
                         guard let message = chatVM.messageActionError else { return }
                         presentedActionError = PresentedChatActionError(message: message)
                     }
+                } else if chatVM.customChat.canJoin {
+                    joinChatButton
                 } else if chatVM.customChat.kind == .channel {
                     Text("Only channel administrators can post.")
                         .font(.callout)
@@ -266,6 +268,27 @@ struct ChatView: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
+    }
+
+    var joinChatButton: some View {
+        Button {
+            Task { await chatVM.joinCurrentChat() }
+        } label: {
+            HStack {
+                Spacer()
+                if chatVM.isJoiningChat {
+                    ProgressView()
+                } else {
+                    Text(chatVM.customChat.kind == .channel ? "Join Channel" : "Join Group")
+                        .font(.body.weight(.semibold))
+                }
+                Spacer()
+            }
+            .padding(12)
+            .contentShape(Rectangle())
+        }
+        .disabled(chatVM.isJoiningChat)
+        .background(.bar)
     }
 
     var scrollToBottomButton: some View {

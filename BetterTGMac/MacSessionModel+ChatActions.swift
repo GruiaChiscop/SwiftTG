@@ -50,6 +50,16 @@ extension MacSessionModel {
         }
     }
 
+    /// `chat.membership` updates on its own once TDLib pushes the resulting `updateSupergroup`/
+    /// `updateBasicGroup` (already reduced into `chatList` by `TelegramChatListStore`), so no
+    /// manual refresh is needed here - unlike iOS's `CustomChat`, which isn't kept live against
+    /// those updates and refetches explicitly in `ChatVM.joinCurrentChat()`.
+    func joinChat(_ chat: ChatListItemState) {
+        performMessageAction {
+            _ = try await self.service.joinChat(chatId: chat.chatId)
+        }
+    }
+
     func deleteChat(_ chat: ChatListItemState, forEveryone: Bool) {
         performMessageAction {
             await TelegramChatActions.deleteChatHistory(

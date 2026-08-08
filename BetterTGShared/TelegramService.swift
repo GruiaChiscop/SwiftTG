@@ -208,6 +208,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         supergroupId: Int64?,
     ) async throws -> ChatMembers
     func leaveChat(chatId: Int64?) async throws -> Ok
+    func joinChat(chatId: Int64?) async throws -> ChatJoinResult
     func openChat(chatId: Int64?) async throws -> Ok
     func pinChatMessage(chatId: Int64?, disableNotification: Bool?, messageId: Int64?, onlyForSelf: Bool?) async throws
         -> Ok
@@ -1079,6 +1080,10 @@ extension TelegramSession: TelegramService {
 
     func leaveChat(chatId: Int64?) async throws -> Ok {
         try await client.leaveChat(chatId: chatId)
+    }
+
+    func joinChat(chatId: Int64?) async throws -> ChatJoinResult {
+        try await client.joinChat(chatId: chatId)
     }
 
     func openChat(chatId: Int64?) async throws -> Ok {
