@@ -15,6 +15,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
     case appLock
     case storage
     case proxy
+    case chatFolders
 
     // MARK: Internal
 
@@ -32,6 +33,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
         case .appLock: "App Lock"
         case .storage: "Storage"
         case .proxy: "Proxy"
+        case .chatFolders: "Chat Folders"
         }
     }
 
@@ -47,6 +49,7 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
         case .appLock: "lock"
         case .storage: "internaldrive"
         case .proxy: "network"
+        case .chatFolders: "folder"
         }
     }
 }
@@ -88,6 +91,8 @@ struct MacSettingsView: View {
                 TelegramStorageSettingsView(service: service)
             case .proxy:
                 TelegramProxySettingsView(service: service)
+            case .chatFolders:
+                TelegramChatFoldersView(service: service)
             }
         }
     }

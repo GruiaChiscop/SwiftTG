@@ -87,6 +87,12 @@ struct YouView: View {
                 } label: {
                     Label("Proxy", systemImage: "network")
                 }
+
+                NavigationLink {
+                    TelegramChatFoldersView(service: service)
+                } label: {
+                    Label("Chat Folders", systemImage: "folder")
+                }
             }
         }
         .navigationTitle("You")

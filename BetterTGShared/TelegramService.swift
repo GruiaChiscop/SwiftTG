@@ -15,6 +15,7 @@ protocol TelegramContactsSyncing: Sendable {
 protocol TelegramService: TelegramContactsSyncing, Sendable {
     var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> { get }
     var chatListPublisher: AnyPublisher<ChatListSnapshot, Never> { get }
+    var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> { get }
     var updatePublisher: AnyPublisher<Update, Never> { get }
 
     func filePublisher(fileId: Int) -> AnyPublisher<File, Never>
@@ -87,6 +88,15 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getBasicGroupFullInfo(basicGroupId: Int64?) async throws -> BasicGroupFullInfo
     func getChat(chatId: Int64?) async throws -> Chat
     func getChatFolder(chatFolderId: Int?) async throws -> ChatFolder
+    func createChatFolder(folder: ChatFolder?) async throws -> ChatFolderInfo
+    func editChatFolder(chatFolderId: Int?, folder: ChatFolder?) async throws -> ChatFolderInfo
+    func deleteChatFolder(chatFolderId: Int?, leaveChatIds: [Int64]?) async throws -> Ok
+    func getChatFolderChatsToLeave(chatFolderId: Int?) async throws -> Chats
+    func getChatFolderChatCount(folder: ChatFolder?) async throws -> Count
+    func reorderChatFolders(chatFolderIds: [Int]?, mainChatListPosition: Int?) async throws -> Ok
+    func toggleChatFolderTags(areTagsEnabled: Bool?) async throws -> Ok
+    func getRecommendedChatFolders() async throws -> RecommendedChatFolders
+    func getChatFolderDefaultIconName(folder: ChatFolder?) async throws -> ChatFolderIcon
     func getChatScheduledMessages(chatId: Int64?) async throws -> Messages
     func editMessageSchedulingState(
         chatId: Int64?,
@@ -101,6 +111,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         onlyLocal: Bool?,
     ) async throws -> Messages
     func getChats(chatList: ChatList?, limit: Int?) async throws -> Chats
+    func loadChats(chatList: ChatList?, limit: Int?) async throws -> Ok
     func getContacts() async throws -> Users
     func getAuthorizationState() async throws -> AuthorizationState
     func getCountries() async throws -> Countries
@@ -695,6 +706,42 @@ extension TelegramSession: TelegramService {
         try await client.getChatFolder(chatFolderId: chatFolderId)
     }
 
+    func createChatFolder(folder: ChatFolder?) async throws -> ChatFolderInfo {
+        try await client.createChatFolder(folder: folder)
+    }
+
+    func editChatFolder(chatFolderId: Int?, folder: ChatFolder?) async throws -> ChatFolderInfo {
+        try await client.editChatFolder(chatFolderId: chatFolderId, folder: folder)
+    }
+
+    func deleteChatFolder(chatFolderId: Int?, leaveChatIds: [Int64]?) async throws -> Ok {
+        try await client.deleteChatFolder(chatFolderId: chatFolderId, leaveChatIds: leaveChatIds)
+    }
+
+    func getChatFolderChatsToLeave(chatFolderId: Int?) async throws -> Chats {
+        try await client.getChatFolderChatsToLeave(chatFolderId: chatFolderId)
+    }
+
+    func getChatFolderChatCount(folder: ChatFolder?) async throws -> Count {
+        try await client.getChatFolderChatCount(folder: folder)
+    }
+
+    func reorderChatFolders(chatFolderIds: [Int]?, mainChatListPosition: Int?) async throws -> Ok {
+        try await client.reorderChatFolders(chatFolderIds: chatFolderIds, mainChatListPosition: mainChatListPosition)
+    }
+
+    func toggleChatFolderTags(areTagsEnabled: Bool?) async throws -> Ok {
+        try await client.toggleChatFolderTags(areTagsEnabled: areTagsEnabled)
+    }
+
+    func getRecommendedChatFolders() async throws -> RecommendedChatFolders {
+        try await client.getRecommendedChatFolders()
+    }
+
+    func getChatFolderDefaultIconName(folder: ChatFolder?) async throws -> ChatFolderIcon {
+        try await client.getChatFolderDefaultIconName(folder: folder)
+    }
+
     func getChatScheduledMessages(chatId: Int64?) async throws -> Messages {
         try await client.getChatScheduledMessages(chatId: chatId)
     }
@@ -771,6 +818,10 @@ extension TelegramSession: TelegramService {
 
     func getChats(chatList: ChatList?, limit: Int?) async throws -> Chats {
         try await client.getChats(chatList: chatList, limit: limit)
+    }
+
+    func loadChats(chatList: ChatList?, limit: Int?) async throws -> Ok {
+        try await client.loadChats(chatList: chatList, limit: limit)
     }
 
     func getAuthorizationState() async throws -> AuthorizationState {

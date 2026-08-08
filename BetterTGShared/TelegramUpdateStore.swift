@@ -28,6 +28,15 @@ final class TelegramUpdateStore: @unchecked Sendable {
             .eraseToAnyPublisher()
     }
 
+    /// `CurrentValueSubject`, not a plain filter over `updatePublisher` - TDLib pushes
+    /// `updateChatFolders` once, early in the session, and won't repeat it just because a new
+    /// screen subscribes later. A `PassthroughSubject`-backed filter would leave a Settings screen
+    /// opened after that point stuck showing an empty folder list until the user's folders actually
+    /// change again. `CurrentValueSubject` replays its latest value to every new subscriber instead.
+    var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> {
+        chatFoldersSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     func messagePublisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
         messageStore.publisher(chatId: chatId)
     }
@@ -60,17 +69,21 @@ final class TelegramUpdateStore: @unchecked Sendable {
     }
 
     func publish(_ update: Update) {
-        queue.async { [updateSubject] in
+        queue.async { [updateSubject, chatFoldersSubject] in
             dispatchPrecondition(condition: .onQueue(self.queue))
             self.chatListStore.reduce(update)
             self.fileStore.reduce(update)
             self.messageStore.reduce(update)
+            if case .updateChatFolders(let value) = update {
+                chatFoldersSubject.send(value)
+            }
             updateSubject.send(update)
         }
     }
 
     // MARK: Private
 
+    private let chatFoldersSubject = CurrentValueSubject<UpdateChatFolders?, Never>(nil)
     private let chatListStore = TelegramChatListStore()
     private let fileStore = TelegramFileStore()
     private let messageStore = TelegramMessageStore()

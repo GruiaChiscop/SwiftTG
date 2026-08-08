@@ -166,7 +166,6 @@ struct AttachmentPreviewView: View {
                     .clipShape(.circle)
                     .frame(width: 32, height: 32)
             }
-            .accessibilityLabel("Send")
             .contextMenu {
                 Button("Send Later…", systemImage: "clock") { showsScheduleSendPicker = true }
             }

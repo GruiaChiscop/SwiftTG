@@ -14,7 +14,15 @@ struct FolderView: View {
         folder.chats
             .sorted { $0.position.order > $1.position.order }
     }
-    
+
+    var isSearching: Bool {
+        !rootVM.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasArchive: Bool {
+        !(rootVM.archive?.chats.isEmpty ?? true)
+    }
+
     var body: some View {
         ScrollViewReader { scrollViewProxy in
             bodyView.onAppear { folder.scrollViewProxy = scrollViewProxy }
@@ -38,14 +46,18 @@ struct FolderView: View {
                 .accessibilityHidden(true)
                 .id("top")
 
-            if !rootVM.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if isSearching {
                 searchResults
-            } else if chats.isEmpty {
+            } else if chats.isEmpty, !hasArchive {
                 Text("Empty folder")
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             } else {
+                if folder.type == .main, let archive = rootVM.archive, hasArchive {
+                    archivedRow(archive)
+                }
+
                 ForEach(chats) { customChat in
                     NavigationLink(value: Route.customChat(customChat, messageId: nil)) {
                         ChatsListItemView(customChat: customChat)
@@ -128,6 +140,50 @@ struct FolderView: View {
             }
             Button("Cancel", role: .cancel) { chatToMute = nil }
         }
+    }
+
+    /// Inline row for the archive, shown at the top of the "All Chats" folder only when there's at
+    /// least one archived chat - matches how other Telegram-family clients surface it (a row that
+    /// only exists when relevant), rather than a permanent toolbar button.
+    func archivedRow(_ archive: CustomFolder) -> some View {
+        Button {
+            rootVM.navigate(to: .archive(archive))
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Color.gray.opacity(0.3))
+                    Image(systemName: "archivebox.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 54, height: 54)
+
+                Text("Archived")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Text("\(archive.chats.count)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .accessibilityLabel("Archived, \(archive.chats.count) chat\(archive.chats.count == 1 ? "" : "s")")
     }
 
     @ViewBuilder func contextMenu(for customChat: CustomChat) -> some View {

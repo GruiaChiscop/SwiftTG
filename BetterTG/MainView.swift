@@ -153,14 +153,6 @@ private struct MainNavigationRootView: View {
             Text("You will leave this chat and it will be removed from your chat list.")
         }
         .toolbar {
-            if let archive = rootVM.archive {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Archive", systemImage: "archivebox") {
-                        rootVM.navigate(to: .archive(archive))
-                    }
-                    .labelStyle(.iconOnly)
-                }
-            }
             #if DEBUG
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Preview Login", systemImage: "person.crop.circle.badge.questionmark") {
