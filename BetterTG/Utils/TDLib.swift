@@ -3,6 +3,7 @@
 import Combine
 import SwiftUI
 import TDLibKit
+import UserNotifications
 
 // MARK: - TDLib
 
@@ -42,6 +43,19 @@ final class TDLib: @unchecked Sendable {
         nc.publisher(&cancellables, for: UIApplication.willTerminateNotification) { [weak self] _ in
             self?.session.close()
         }
+
+        // The app-icon badge otherwise never updates on its own: nothing else calls
+        // `setBadgeCount`, and the only thing that could set it - the `badge` field on an incoming
+        // remote push - only lands when a push actually arrives, not when messages get read while
+        // the app is open. `unreadUnmutedCount` (not `unreadCount`) matches the official app's own
+        // badge, which excludes muted chats.
+        session.unreadChatCountPublisher
+            .compactMap { $0?.unreadUnmutedCount }
+            .removeDuplicates()
+            .sink { count in
+                Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: Private

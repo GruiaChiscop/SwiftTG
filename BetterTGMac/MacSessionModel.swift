@@ -356,6 +356,19 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             }
             .store(in: &cancellables)
 
+        // Nothing else updates the Dock badge - it otherwise stays wherever it last was (or
+        // permanently unset), since reading messages while the app is open never touches it on
+        // its own. `unreadUnmutedCount` matches the official app's own badge convention of
+        // excluding muted chats.
+        service.unreadChatCountPublisher
+            .compactMap { $0?.unreadUnmutedCount }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { count in
+                NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+            }
+            .store(in: &cancellables)
+
         service.updatePublisher
             // Filter on TelegramUpdateStore's background queue, before `receive(on:)` schedules
             // work on AppKit's event loop. The two handlers below ignore every other update type.

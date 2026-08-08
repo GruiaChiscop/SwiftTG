@@ -16,6 +16,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> { get }
     var chatListPublisher: AnyPublisher<ChatListSnapshot, Never> { get }
     var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> { get }
+    var unreadChatCountPublisher: AnyPublisher<UpdateUnreadChatCount?, Never> { get }
     var updatePublisher: AnyPublisher<Update, Never> { get }
 
     func filePublisher(fileId: Int) -> AnyPublisher<File, Never>

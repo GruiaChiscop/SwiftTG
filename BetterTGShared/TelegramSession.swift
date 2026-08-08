@@ -41,6 +41,10 @@ final class TelegramSession: @unchecked Sendable {
         updateStore.chatFoldersPublisher
     }
 
+    var unreadChatCountPublisher: AnyPublisher<UpdateUnreadChatCount?, Never> {
+        updateStore.unreadChatCountPublisher
+    }
+
     var updatePublisher: AnyPublisher<Update, Never> {
         updateStore.updatePublisher
     }

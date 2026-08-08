@@ -37,6 +37,13 @@ final class TelegramUpdateStore: @unchecked Sendable {
         chatFoldersSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
+    /// Same `CurrentValueSubject` reasoning as `chatFoldersPublisher` - the app-icon/Dock badge
+    /// subscriber is wired up once at launch, and needs the count TDLib already knows about even
+    /// if `updateUnreadChatCount` for `.chatListMain` last fired before that subscription existed.
+    var unreadChatCountPublisher: AnyPublisher<UpdateUnreadChatCount?, Never> {
+        unreadChatCountSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     func messagePublisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
         messageStore.publisher(chatId: chatId)
     }
@@ -69,13 +76,16 @@ final class TelegramUpdateStore: @unchecked Sendable {
     }
 
     func publish(_ update: Update) {
-        queue.async { [updateSubject, chatFoldersSubject] in
+        queue.async { [updateSubject, chatFoldersSubject, unreadChatCountSubject] in
             dispatchPrecondition(condition: .onQueue(self.queue))
             self.chatListStore.reduce(update)
             self.fileStore.reduce(update)
             self.messageStore.reduce(update)
             if case .updateChatFolders(let value) = update {
                 chatFoldersSubject.send(value)
+            }
+            if case .updateUnreadChatCount(let value) = update, value.chatList == .chatListMain {
+                unreadChatCountSubject.send(value)
             }
             updateSubject.send(update)
         }
@@ -84,6 +94,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
     // MARK: Private
 
     private let chatFoldersSubject = CurrentValueSubject<UpdateChatFolders?, Never>(nil)
+    private let unreadChatCountSubject = CurrentValueSubject<UpdateUnreadChatCount?, Never>(nil)
     private let chatListStore = TelegramChatListStore()
     private let fileStore = TelegramFileStore()
     private let messageStore = TelegramMessageStore()
