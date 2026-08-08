@@ -385,6 +385,21 @@ struct FolderView: View {
             }
         }
 
+        if !rootVM.searchGlobalChatResults.isEmpty {
+            Section {
+                ForEach(rootVM.searchGlobalChatResults) { customChat in
+                    NavigationLink(value: Route.customChat(customChat, messageId: nil)) {
+                        ChatsListItemView(customChat: customChat)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("Global Search")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+
         if !rootVM.searchMessageResults.isEmpty {
             Section {
                 ForEach(Array(rootVM.searchMessageResults.enumerated()), id: \.offset) { _, message in
@@ -425,7 +440,9 @@ struct FolderView: View {
                 Spacer()
             }
             .padding()
-        } else if rootVM.searchChatResults.isEmpty, rootVM.searchMessageResults.isEmpty {
+        } else if rootVM.searchChatResults.isEmpty, rootVM.searchGlobalChatResults.isEmpty,
+                  rootVM.searchMessageResults.isEmpty
+        {
             ContentUnavailableView.search(text: rootVM.query)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)

@@ -153,6 +153,14 @@ private struct MainNavigationRootView: View {
             Text("You will leave this chat and it will be removed from your chat list.")
         }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                TelegramNewChatMenu(service: rootVM.service) { chat in
+                    Task {
+                        guard let customChat = await rootVM.getCustomChat(from: chat.id) else { return }
+                        rootVM.navigate(to: .customChat(customChat, messageId: nil))
+                    }
+                }
+            }
             #if DEBUG
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Preview Login", systemImage: "person.crop.circle.badge.questionmark") {

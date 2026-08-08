@@ -9,6 +9,7 @@ extension RootVM {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
             searchChatResults = []
+            searchGlobalChatResults = []
             searchMessageResults = []
             searchMessageChatTitles = [:]
             searchResultChatsById = [:]
@@ -37,10 +38,20 @@ extension RootVM {
                 offset: "",
                 query: normalized,
             )
-            let (chatResponse, messageResponse) = await (foundChats, foundMessages)
+            // Unlike `searchChats` (offline, known chats only), `searchPublicChats` reaches the
+            // server for public chats/users not already in the chat list or contacts - matches the
+            // official app's own "Global Search" section. TDLib already excludes anything from
+            // `searchChats`' own results, so no further de-duplication is needed on top.
+            async let foundGlobalChats = try? self.service.searchPublicChats(query: normalized, typeFilter: nil)
+            let (chatResponse, messageResponse, globalChatResponse) = await (
+                foundChats,
+                foundMessages,
+                foundGlobalChats,
+            )
             guard !Task.isCancelled else { return }
 
             let searchedChatIds = chatResponse?.chatIds ?? []
+            let globalChatIds = globalChatResponse?.chatIds ?? []
             let messages = messageResponse?.messages ?? []
             var resolvedChats = knownChats
             var titles = [Int64: String]()
@@ -62,10 +73,18 @@ extension RootVM {
                 titles[chatId] = customChat.displayTitle
             }
 
+            var globalResolvedChats = [Int64: CustomChat]()
+            for chatId in globalChatIds where resolvedChats[chatId] == nil {
+                guard !Task.isCancelled, let customChat = await self.getCustomChat(from: chatId) else { continue }
+                globalResolvedChats[chatId] = customChat
+            }
+
             let chatResults = searchedChatIds.compactMap { resolvedChats[$0] }
+            let globalChatResults = globalChatIds.compactMap { globalResolvedChats[$0] }
             let messageResults = messages.filter { resolvedChats[$0.chatId] != nil }
             guard generation == self.searchGeneration, self.query == query else { return }
             self.searchChatResults = chatResults
+            self.searchGlobalChatResults = globalChatResults
             self.searchMessageResults = messageResults
             self.searchMessageChatTitles = titles
             self.searchResultChatsById = resolvedChats

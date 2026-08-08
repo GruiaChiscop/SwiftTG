@@ -106,6 +106,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var voiceRecordingDuration: TimeInterval = 0
     var searchQuery = ""
     var chatSearchResults = [MacChatSearchResult]()
+    var globalChatSearchResults = [MacChatSearchResult]()
     var messageSearchResults = [MacMessageSearchResult]()
     var focusedSearchResult: MacSearchResultID?
     var isSearching = false

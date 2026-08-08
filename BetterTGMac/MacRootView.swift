@@ -21,6 +21,13 @@ struct MacRootView: View {
                 .task {
                     await TelegramKeepMediaPolicy.applyStoredPolicy(service: model.service)
                 }
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        TelegramNewChatMenu(service: model.service) { chat in
+                            model.activateChat(chat.id)
+                        }
+                    }
+                }
                 #if DEBUG
                 .toolbar {
                     ToolbarItem {

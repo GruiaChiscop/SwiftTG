@@ -47,7 +47,25 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func closeChat(chatId: Int64?) async throws -> Ok
     func createBasicGroupChat(basicGroupId: Int64?, force: Bool?) async throws -> Chat
     func createPrivateChat(force: Bool?, userId: Int64?) async throws -> Chat
+    func createNewSecretChat(userId: Int64?) async throws -> Chat
     func createSupergroupChat(force: Bool?, supergroupId: Int64?) async throws -> Chat
+    func createNewBasicGroupChat(
+        messageAutoDeleteTime: Int?,
+        title: String?,
+        userIds: [Int64]?,
+    ) async throws -> CreatedBasicGroupChat
+    func createNewSupergroupChat(
+        description: String?,
+        forImport: Bool?,
+        isChannel: Bool?,
+        isForum: Bool?,
+        location: ChatLocation?,
+        messageAutoDeleteTime: Int?,
+        title: String?,
+    ) async throws -> Chat
+    func setChatPhoto(chatId: Int64?, photo: InputChatPhoto?) async throws -> Ok
+    func checkChatUsername(chatId: Int64?, username: String?) async throws -> CheckChatUsernameResult
+    func setSupergroupUsername(supergroupId: Int64?, username: String?) async throws -> Ok
     func deleteChat(chatId: Int64?) async throws -> Ok
     func deleteChatHistory(chatId: Int64?, removeFromChatList: Bool?, revoke: Bool?) async throws -> Ok
     func deleteMessages(chatId: Int64?, messageIds: [Int64]?, revoke: Bool?) async throws -> Ok
@@ -217,6 +235,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         topicId: MessageTopic?,
     ) async throws -> Messages
     func searchChats(limit: Int?, query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats
+    func searchPublicChats(query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats
     func searchChatMembers(
         chatId: Int64?,
         filter: ChatMembersFilter?,
@@ -406,12 +425,60 @@ extension TelegramSession: TelegramService {
         try await client.createSupergroupChat(force: force, supergroupId: supergroupId)
     }
 
+    func createNewBasicGroupChat(
+        messageAutoDeleteTime: Int?,
+        title: String?,
+        userIds: [Int64]?,
+    ) async throws -> CreatedBasicGroupChat {
+        try await client.createNewBasicGroupChat(
+            messageAutoDeleteTime: messageAutoDeleteTime,
+            title: title,
+            userIds: userIds,
+        )
+    }
+
+    func createNewSupergroupChat(
+        description: String?,
+        forImport: Bool?,
+        isChannel: Bool?,
+        isForum: Bool?,
+        location: ChatLocation?,
+        messageAutoDeleteTime: Int?,
+        title: String?,
+    ) async throws -> Chat {
+        try await client.createNewSupergroupChat(
+            description: description,
+            forImport: forImport,
+            isChannel: isChannel,
+            isForum: isForum,
+            location: location,
+            messageAutoDeleteTime: messageAutoDeleteTime,
+            title: title,
+        )
+    }
+
+    func setChatPhoto(chatId: Int64?, photo: InputChatPhoto?) async throws -> Ok {
+        try await client.setChatPhoto(chatId: chatId, photo: photo)
+    }
+
+    func checkChatUsername(chatId: Int64?, username: String?) async throws -> CheckChatUsernameResult {
+        try await client.checkChatUsername(chatId: chatId, username: username)
+    }
+
+    func setSupergroupUsername(supergroupId: Int64?, username: String?) async throws -> Ok {
+        try await client.setSupergroupUsername(supergroupId: supergroupId, username: username)
+    }
+
     func deleteChat(chatId: Int64?) async throws -> Ok {
         try await client.deleteChat(chatId: chatId)
     }
 
     func searchChats(limit: Int?, query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats {
         try await client.searchChats(limit: limit, query: query, typeFilter: typeFilter)
+    }
+
+    func searchPublicChats(query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats {
+        try await client.searchPublicChats(query: query, typeFilter: typeFilter)
     }
 
     func searchChatMembers(
@@ -561,6 +628,10 @@ extension TelegramSession: TelegramService {
 
     func createPrivateChat(force: Bool?, userId: Int64?) async throws -> Chat {
         try await client.createPrivateChat(force: force, userId: userId)
+    }
+
+    func createNewSecretChat(userId: Int64?) async throws -> Chat {
+        try await client.createNewSecretChat(userId: userId)
     }
 
     func deleteChatHistory(chatId: Int64?, removeFromChatList: Bool?, revoke: Bool?) async throws -> Ok {

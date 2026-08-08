@@ -93,6 +93,7 @@ struct ChatListLoadKey: Hashable, Sendable {
     var currentFolder: Int?
     var query = ""
     var searchChatResults = [CustomChat]()
+    var searchGlobalChatResults = [CustomChat]()
     var searchMessageResults = [Message]()
     var searchMessageChatTitles = [Int64: String]()
     var searchResultChatsById = [Int64: CustomChat]()

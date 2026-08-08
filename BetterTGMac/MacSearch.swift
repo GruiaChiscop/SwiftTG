@@ -40,6 +40,7 @@ extension MacSessionModel {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
             chatSearchResults = []
+            globalChatSearchResults = []
             messageSearchResults = []
             isSearching = false
             return
@@ -66,7 +67,17 @@ extension MacSessionModel {
                 offset: "",
                 query: normalized,
             )
-            let (foundChats, foundMessages) = await (chatResponse, messageResponse)
+            // Unlike `searchChats` (offline, known chats only), `searchPublicChats` reaches the
+            // server for public chats/users not already in the chat list or contacts - matches the
+            // official app's own "Global Search" section (and the same addition already made to
+            // iOS's RootVM+Search.swift). TDLib already excludes anything `searchChats` itself would
+            // return, so no further de-duplication is needed on top.
+            async let globalChatResponse = try? service.searchPublicChats(query: normalized, typeFilter: nil)
+            let (foundChats, foundMessages, foundGlobalChats) = await (
+                chatResponse,
+                messageResponse,
+                globalChatResponse,
+            )
             guard !Task.isCancelled else { return }
 
             let chatIds = foundChats?.chatIds ?? []
@@ -87,6 +98,18 @@ extension MacSessionModel {
                         chatList: chat.positions.first?.list ?? searchedChatList,
                     ))
                 }
+            }
+
+            let globalChatIds = foundGlobalChats?.chatIds ?? []
+            var globalChatResults = [MacChatSearchResult]()
+            for chatId in globalChatIds where self?.chatList.items[chatId] == nil {
+                guard !Task.isCancelled else { return }
+                guard let chat = try? await service.getChat(chatId: chatId) else { continue }
+                let membership = await service.resolveMembership(for: chat)
+                globalChatResults.append(.init(
+                    chat: ChatListItemState(chat, membership: membership),
+                    chatList: chat.positions.first?.list ?? searchedChatList,
+                ))
             }
 
             let messages = foundMessages?.messages ?? []
@@ -112,6 +135,7 @@ extension MacSessionModel {
 
             guard let self, generation == searchGeneration, searchQuery == query else { return }
             chatSearchResults = chatResults
+            globalChatSearchResults = globalChatResults
             messageSearchResults = messageResults
             isSearching = false
         }

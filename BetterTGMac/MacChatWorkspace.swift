@@ -125,6 +125,24 @@ private struct MacChatSidebar: View {
                 }
             }
 
+            if !model.globalChatSearchResults.isEmpty {
+                Section {
+                    ForEach(model.globalChatSearchResults) { result in
+                        MacChatRow(
+                            model: model,
+                            chat: model.chatList.items[result.chatId] ?? result.chat,
+                            chatList: result.chatList,
+                        )
+                        .tag(result.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.activateChat(result.chatId) }
+                    }
+                } header: {
+                    Text("Global Search")
+                        .font(.headline)
+                }
+            }
+
             if !model.messageSearchResults.isEmpty {
                 Section {
                     ForEach(model.messageSearchResults) { result in
@@ -173,6 +191,7 @@ private struct MacChatSidebar: View {
         .overlay {
             if !model.isSearching,
                model.chatSearchResults.isEmpty,
+               model.globalChatSearchResults.isEmpty,
                model.messageSearchResults.isEmpty
             {
                 ContentUnavailableView.search(text: model.searchQuery)
