@@ -98,6 +98,8 @@ struct ChatListLoadKey: Hashable, Sendable {
     var searchMessageChatTitles = [Int64: String]()
     var searchResultChatsById = [Int64: CustomChat]()
     var isSearching = false
+    var deepLinkErrorMessage: String?
+    var pendingDeepLinkJoin: TelegramPendingDeepLinkJoin?
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
     @ObservationIgnored let service: any TelegramService
     @ObservationIgnored var appliedChatListVersion: UInt64?

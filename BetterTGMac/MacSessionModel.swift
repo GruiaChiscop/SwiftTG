@@ -122,6 +122,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var openedLastReadInboxMessageId: Int64 = 0
     var conversationHeaderBaseStatus: String?
     var conversationHeaderActivities = [MessageSender: ChatAction]()
+    var deepLinkErrorMessage: String?
+    var pendingDeepLinkJoin: TelegramPendingDeepLinkJoin?
 
     let linkPreviewComposer: TelegramLinkPreviewComposer
     let editLinkPreviewComposer: TelegramLinkPreviewComposer

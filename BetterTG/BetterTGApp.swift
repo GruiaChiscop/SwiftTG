@@ -37,13 +37,18 @@ import UserNotifications
                 RootView()
                     .telegramAppearance()
                     .appLockOverlay()
-                    // Handles the Share Extension's `swifttg://share?id=<uuid>` hand-off - covers
-                    // both a cold launch (the URL that started the app) and an already-running app,
-                    // unlike the hand-rolled `UIWindowSceneDelegate` this replaced, which turned out
-                    // to never actually get invoked in practice.
-                        .onOpenURL { url in
+                    // Handles both the Share Extension's `swifttg://share?id=<uuid>` hand-off
+                    // (covers both a cold launch and an already-running app, unlike the
+                    // hand-rolled `UIWindowSceneDelegate` this replaced, which turned out to never
+                    // actually get invoked in practice) and any `tg:`/`t.me` deep link the app is
+                    // opened with directly (a share-sheet "Open in SwiftTG", a Shortcut, etc.).
+                    .onOpenURL { url in
+                        if url.scheme == "swifttg" {
                             RootVM.shared.handleShareURL(url)
+                        } else {
+                            RootVM.shared.handleDeepLink(url)
                         }
+                    }
             }
         }
         // Belt-and-suspenders for the share hand-off: `.authorizationStateReady` (RootVM's other

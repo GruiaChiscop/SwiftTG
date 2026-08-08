@@ -310,6 +310,13 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func removeProxy(proxyId: Int?) async throws -> Ok
     func getProxies() async throws -> AddedProxies
     func pingProxy(proxy: Proxy?) async throws -> Seconds
+    func getInternalLinkType(link: String?) async throws -> InternalLinkType
+    func getMessageLinkInfo(url: String?) async throws -> MessageLinkInfo
+    func searchPublicChat(username: String?) async throws -> Chat
+    func checkChatInviteLink(inviteLink: String?) async throws -> ChatInviteLinkInfo
+    func joinChatByInviteLink(inviteLink: String?) async throws -> ChatJoinResult
+    func searchUserByPhoneNumber(onlyLocal: Bool?, phoneNumber: String?) async throws -> User
+    func sendBotStartMessage(botUserId: Int64?, chatId: Int64?, parameter: String?) async throws -> Message
     func setName(firstName: String?, lastName: String?) async throws -> Ok
     func setBio(bio: String?) async throws -> Ok
     func setUsername(username: String?) async throws -> Ok
@@ -1239,6 +1246,34 @@ extension TelegramSession: TelegramService {
 
     func pingProxy(proxy: Proxy?) async throws -> Seconds {
         try await client.pingProxy(proxy: proxy)
+    }
+
+    func getInternalLinkType(link: String?) async throws -> InternalLinkType {
+        try await client.getInternalLinkType(link: link)
+    }
+
+    func getMessageLinkInfo(url: String?) async throws -> MessageLinkInfo {
+        try await client.getMessageLinkInfo(url: url)
+    }
+
+    func searchPublicChat(username: String?) async throws -> Chat {
+        try await client.searchPublicChat(username: username)
+    }
+
+    func checkChatInviteLink(inviteLink: String?) async throws -> ChatInviteLinkInfo {
+        try await client.checkChatInviteLink(inviteLink: inviteLink)
+    }
+
+    func joinChatByInviteLink(inviteLink: String?) async throws -> ChatJoinResult {
+        try await client.joinChatByInviteLink(inviteLink: inviteLink)
+    }
+
+    func searchUserByPhoneNumber(onlyLocal: Bool?, phoneNumber: String?) async throws -> User {
+        try await client.searchUserByPhoneNumber(onlyLocal: onlyLocal, phoneNumber: phoneNumber)
+    }
+
+    func sendBotStartMessage(botUserId: Int64?, chatId: Int64?, parameter: String?) async throws -> Message {
+        try await client.sendBotStartMessage(botUserId: botUserId, chatId: chatId, parameter: parameter)
     }
 
     func setName(firstName: String?, lastName: String?) async throws -> Ok {

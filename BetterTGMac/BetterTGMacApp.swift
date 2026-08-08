@@ -20,6 +20,9 @@ import UserNotifications
                     appDelegate.model = model
                     model.start()
                 }
+                .onOpenURL { url in
+                    model.handleDeepLink(url)
+                }
         }
         .defaultSize(width: 1100, height: 760)
         .commands {

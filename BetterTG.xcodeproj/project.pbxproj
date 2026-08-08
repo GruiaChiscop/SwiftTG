@@ -534,6 +534,7 @@
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BetterTGMac/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SwiftTG uses your location to share it in a chat when you choose to.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftTG uses the microphone to record and send voice messages.";
@@ -563,6 +564,7 @@
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BetterTGMac/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SwiftTG uses your location to share it in a chat when you choose to.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftTG uses the microphone to record and send voice messages.";
