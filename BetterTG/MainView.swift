@@ -89,7 +89,7 @@ private struct MainNavigationRootView: View {
         .animation(.default, value: rootVM.currentFolder)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationTitle("SwiftTG")
+        .navigationTitle("Chats")
         .searchable(
             text: $rootVM.query,
             placement: .navigationBarDrawer(displayMode: .always),
