@@ -34,6 +34,7 @@ struct MacCountryPicker: View {
                 Spacer()
             } else {
                 List(filteredCountries) { country in
+                    let isSelected = country == selectedCountry
                     Button {
                         selectCountry(country)
                         dismiss()
@@ -45,7 +46,7 @@ struct MacCountryPicker: View {
                             Spacer()
                             Text("+\(country.phoneNumberPrefix)")
                                 .foregroundStyle(.secondary)
-                            if country == selectedCountry {
+                            if isSelected {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.tint)
                             }
@@ -53,6 +54,9 @@ struct MacCountryPicker: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    // Without this, a `List` row built from multiple `Text` views reads as an
+                    // empty cell to VoiceOver on macOS.
+                    .accessibilityElement(children: .combine)
                 }
             }
         }

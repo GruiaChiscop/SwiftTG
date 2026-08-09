@@ -82,7 +82,7 @@ struct TelegramNotificationSoundPickerView: View {
     @State private var isLoading = false
     @State private var isUploading = false
     @State private var player: AVAudioPlayer?
-    @State private var savedSounds: [NotificationSound] = []
+    @State private var savedSounds = [NotificationSound]()
 
     private var errorIsPresented: Binding<Bool> {
         Binding(
@@ -160,7 +160,11 @@ struct TelegramNotificationSoundPickerView: View {
 
     @MainActor private func upload(url: URL) async {
         let didAccess = url.startAccessingSecurityScopedResource()
-        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
 
         isUploading = true
         defer { isUploading = false }

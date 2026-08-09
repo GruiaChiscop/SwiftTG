@@ -458,6 +458,9 @@ struct MacChatInfoView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
+                    // Without this, a `List` row built from multiple `Text` views reads as an
+                    // empty cell to VoiceOver on macOS.
+                    .accessibilityElement(children: .combine)
                 }
             }
         }

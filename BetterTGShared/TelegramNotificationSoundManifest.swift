@@ -24,6 +24,10 @@ enum TelegramNotificationSoundManifest {
     /// see `soundFileURL(forScopeKey:)` callers, which try the chat key first.
     typealias Contents = [String: Int64]
 
+    static var soundsDirectoryURL: URL? {
+        storageBaseURL?.appending(path: soundsDirectoryName, directoryHint: .isDirectory)
+    }
+
     /// TDLib's own chat id encoding, reconstructed here (not asked of TDLib - the Notification
     /// Service Extension has no TDLib access) so a chat-level override can be looked up from a raw
     /// push payload's separate `from_id`/`basic_group_id`/`channel_id` fields: private chat ids are
@@ -32,10 +36,6 @@ enum TelegramNotificationSoundManifest {
     /// TDLib, not something Telegram is expected to change.
     static func chatKey(for chatId: Int64) -> String {
         "chat:\(chatId)"
-    }
-
-    static var soundsDirectoryURL: URL? {
-        storageBaseURL?.appending(path: soundsDirectoryName, directoryHint: .isDirectory)
     }
 
     /// The `-v3` bumps past files cached by earlier (broken) transcoder versions: v1 wrote
@@ -94,8 +94,7 @@ enum TelegramNotificationSoundManifest {
     /// to UserNotifications (the Notification Service Extension, or `MacLocalNotifications` on
     /// macOS) must first copy it into its own `Library/Sounds`. Cheap and idempotent - skips the
     /// copy if already there.
-    @discardableResult
-    static func localSoundFileName(copyingFrom sourceURL: URL) -> String? {
+    @discardableResult static func localSoundFileName(copyingFrom sourceURL: URL) -> String? {
         guard let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {
             return nil
         }
@@ -121,7 +120,9 @@ enum TelegramNotificationSoundManifest {
 
     private static var storageBaseURL: URL? {
         #if os(macOS)
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        FileManager.default
+.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+.first?
             .appending(path: "BetterTG", directoryHint: .isDirectory)
         #else
         TelegramShareExtension.appGroupContainerURL

@@ -23,13 +23,19 @@ struct TelegramTwoStepVerificationView: View {
                         LabeledContent("Hint", value: passwordState.passwordHint)
                     }
                     if passwordState.hasPassword {
-                        LabeledContent("Recovery Email", value: passwordState.hasRecoveryEmailAddress ? "Set" : "Not Set")
+                        LabeledContent(
+                            "Recovery Email",
+                            value: passwordState.hasRecoveryEmailAddress
+                                ? "Set"
+                                : "Not Set",
+                        )
                     }
                 } footer: {
                     Text(
                         passwordState.hasPassword
                             ? "You'll need this password in addition to the code from your phone when you sign in on a new device."
-                            : "Add an extra layer of security to your account: a password required at sign-in, in addition to the code sent by SMS or in-app.",
+                            :
+                            "Add an extra layer of security to your account: a password required at sign-in, in addition to the code sent by SMS or in-app.",
                     )
                 }
 
@@ -116,7 +122,7 @@ private struct TelegramSetPasswordView: View {
 
     init(service: any TelegramService, existingHint: String?) {
         self.service = service
-        isChangingExistingPassword = existingHint != nil
+        self.isChangingExistingPassword = existingHint != nil
         _hint = State(initialValue: existingHint ?? "")
     }
 
@@ -209,7 +215,9 @@ private struct TelegramSetPasswordView: View {
 
     private var isValid: Bool {
         guard !newPassword.isEmpty, newPassword == confirmPassword else { return false }
-        if isChangingExistingPassword, currentPassword.isEmpty { return false }
+        if isChangingExistingPassword, currentPassword.isEmpty {
+            return false
+        }
         return true
     }
 

@@ -50,7 +50,7 @@ enum TelegramForumTopicSending {
         forumTopicId: Int,
         draft: TelegramForumTopicDraft,
     ) async throws {
-        try await service.editForumTopic(
+        _ = try await service.editForumTopic(
             chatId: chatId,
             editIconCustomEmoji: true,
             forumTopicId: forumTopicId,

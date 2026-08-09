@@ -31,6 +31,9 @@ struct MacCommonGroupsView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    // Without this, a `List` row built from a custom `HStack` label reads as an
+                    // empty cell to VoiceOver on macOS.
+                    .accessibilityElement(children: .combine)
                 }
                 if hasMore {
                     ProgressView()

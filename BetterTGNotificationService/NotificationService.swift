@@ -14,6 +14,8 @@ private let logger = Logger(subsystem: "com.gruiachiscop.BetterTG", category: "N
 /// already prepared in the shared App Group container (see `TelegramNotificationSoundCache.swift`
 /// and `TelegramNotificationSoundManifest.swift`).
 final class NotificationService: UNNotificationServiceExtension {
+    // MARK: Internal
+
     override func didReceive(
         _ request: UNNotificationRequest,
         withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void,
@@ -32,7 +34,7 @@ final class NotificationService: UNNotificationServiceExtension {
         let chatKey = Self.chatKey(from: request.content.userInfo)
         let scopeKey = Self.scopeKey(from: request.content.userInfo)
         let resolvedKey = [chatKey, scopeKey]
-            .compactMap { $0 }
+            .compactMap(\.self)
             .first { TelegramNotificationSoundManifest.soundFileURL(forScopeKey: $0) != nil }
 
         if let resolvedKey, let soundURL = TelegramNotificationSoundManifest.soundFileURL(forScopeKey: resolvedKey) {
@@ -41,7 +43,10 @@ final class NotificationService: UNNotificationServiceExtension {
             if let localFileName = TelegramNotificationSoundManifest.localSoundFileName(copyingFrom: soundURL) {
                 bestAttemptContent.sound = UNNotificationSound(named: UNNotificationSoundName(localFileName))
             } else {
-                logger.error("didReceive: local sound copy failed for \(resolvedKey, privacy: .public), falling back to .default")
+                logger
+                    .error(
+                        "didReceive: local sound copy failed for \(resolvedKey, privacy: .public), falling back to .default",
+                    )
                 bestAttemptContent.sound = .default
             }
         }
@@ -69,9 +74,15 @@ final class NotificationService: UNNotificationServiceExtension {
         func has(_ keys: [String]) -> Bool {
             keys.contains { (userInfo[$0] ?? aps?[$0]) != nil }
         }
-        if has(["channel_id", "channelId"]) { return "channel" }
-        if has(["basic_group_id", "basicGroupId", "supergroup_id", "supergroupId"]) { return "group" }
-        if has(["from_id", "fromId", "user_id", "userId", "chat_id", "chatId", "chatID"]) { return "private" }
+        if has(["channel_id", "channelId"]) {
+            return "channel"
+        }
+        if has(["basic_group_id", "basicGroupId", "supergroup_id", "supergroupId"]) {
+            return "group"
+        }
+        if has(["from_id", "fromId", "user_id", "userId", "chat_id", "chatId", "chatID"]) {
+            return "private"
+        }
         return nil
     }
 
@@ -85,8 +96,12 @@ final class NotificationService: UNNotificationServiceExtension {
         func firstInt64(_ keys: [String]) -> Int64? {
             for key in keys {
                 guard let raw = userInfo[key] ?? aps?[key] else { continue }
-                if let number = raw as? NSNumber { return number.int64Value }
-                if let string = raw as? String, let value = Int64(string) { return value }
+                if let number = raw as? NSNumber {
+                    return number.int64Value
+                }
+                if let string = raw as? String, let value = Int64(string) {
+                    return value
+                }
             }
             return nil
         }

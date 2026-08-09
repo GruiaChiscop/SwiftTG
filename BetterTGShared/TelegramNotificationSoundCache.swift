@@ -39,8 +39,7 @@ enum TelegramNotificationSoundCache {
 
     /// Downloads, transcodes, and caches `soundId` if it isn't already - safe to call repeatedly.
     /// `soundId <= 0` (default/off) has no file to cache and returns `nil`.
-    @discardableResult
-    static func ensureCached(soundId: TdInt64, service: any TelegramService) async -> URL? {
+    @discardableResult static func ensureCached(soundId: TdInt64, service: any TelegramService) async -> URL? {
         guard soundId.rawValue > 0 else { return nil }
         let fileName = TelegramNotificationSoundManifest.fileName(for: soundId.rawValue)
         if let existingURL = TelegramNotificationSoundManifest.soundFileURL(named: fileName),
@@ -159,7 +158,9 @@ enum TelegramNotificationSoundCache {
             var totalFrames: AVAudioFramePosition = 0
             while true {
                 try sourceFile.read(into: buffer)
-                if buffer.frameLength == 0 { break }
+                if buffer.frameLength == 0 {
+                    break
+                }
                 try destinationFile.write(from: buffer)
                 totalFrames += AVAudioFramePosition(buffer.frameLength)
             }

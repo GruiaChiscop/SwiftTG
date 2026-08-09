@@ -35,6 +35,16 @@ extension MacSessionModel {
         canLoadOlderMessages = !reachedBeginning
         latestHistoryTargetMessageId = newestMessage.id
         let latestMessages = Array(messagesById.values)
+        // Preserve messages that arrived while the latest page was in flight. `replaceHistory`
+        // keeps the same live tail in the store, so the presentation window must keep it too.
+        let liveTailIds = messages.messages.values.compactMap { message -> Int64? in
+            guard message.id < 0
+                || message.date > newestMessage.date
+                || (message.date == newestMessage.date && message.id > newestMessage.id)
+            else { return nil }
+            return message.id
+        }
+        loadedMessageIds = Set(messagesById.keys).union(liveTailIds)
         service.replaceMessageHistory(chatId: chatId, messages: latestMessages)
     }
 
@@ -73,6 +83,7 @@ extension MacSessionModel {
             return false
         }
 
+        loadedMessageIds.formUnion(olderMessages.map(\.id))
         service.mergeMessageHistory(chatId: chatId, messages: olderMessages)
         return true
     }
@@ -92,6 +103,7 @@ extension MacSessionModel {
             else { return [] }
 
             let foundMessages = history.messages ?? []
+            loadedMessageIds.formUnion(foundMessages.map(\.id))
             service.mergeMessageHistory(chatId: chatId, messages: foundMessages)
             canLoadOlderMessages = !foundMessages.isEmpty
             return foundMessages
@@ -116,6 +128,7 @@ extension MacSessionModel {
         // publishing after every single one forces a full table reload each time, turning what
         // should be one clean reveal into a visibly janky, multi-second churn.
         if !messagesById.isEmpty {
+            loadedMessageIds.formUnion(messagesById.keys)
             service.mergeMessageHistory(chatId: chatId, messages: Array(messagesById.values))
         }
         canLoadOlderMessages = !reachedBeginning && !messagesById.isEmpty
@@ -174,7 +187,7 @@ extension MacSessionModel {
     private func fetchMessagesBackward(
         chatId: Int64,
         generation: UInt64,
-        targetCount: Int = 30,
+        targetCount: Int = MacSessionModel.initialHistoryWindowSize,
         maxIterations: Int = 10,
         startingFromMessageId: Int64 = 0,
     ) async -> (messages: [Int64: Message], reachedBeginning: Bool) {

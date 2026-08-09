@@ -43,8 +43,7 @@ enum TelegramAppLockDelay: Int, CaseIterable, Identifiable {
 /// back to the device's own passcode automatically if biometrics fail or aren't available. No
 /// app-specific code is ever stored - the user's device lock is the whole mechanism.
 @MainActor
-@Observable
-final class TelegramAppLockController {
+@Observable final class TelegramAppLockController {
     // MARK: Lifecycle
 
     private init() {}
@@ -59,7 +58,9 @@ final class TelegramAppLockController {
         get { UserDefaults.standard.bool(forKey: Self.enabledDefaultsKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: Self.enabledDefaultsKey)
-            if !newValue { isLocked = false }
+            if !newValue {
+                isLocked = false
+            }
         }
     }
 
@@ -89,18 +90,19 @@ final class TelegramAppLockController {
         }
     }
 
-    @discardableResult
-    func authenticate() async -> Bool {
+    @discardableResult func authenticate() async -> Bool {
         guard !isAuthenticating else { return false }
         isAuthenticating = true
         defer { isAuthenticating = false }
         let context = LAContext()
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { return false }
-        let success = (try? await context.evaluatePolicy(
+        let success = await (try? context.evaluatePolicy(
             .deviceOwnerAuthentication,
             localizedReason: "Unlock SwiftTG",
         )) ?? false
-        if success { isLocked = false }
+        if success {
+            isLocked = false
+        }
         return success
     }
 

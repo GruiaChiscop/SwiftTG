@@ -339,6 +339,9 @@ struct NewGroupView: View {
                     }
                 }
         }
+        #if os(macOS)
+        .frame(width: 380, height: 460)
+        #endif
         .task {
             guard !hasLoadedContacts else { return }
             hasLoadedContacts = true
@@ -385,28 +388,30 @@ struct NewGroupView: View {
         )
     }
 
-    private var memberSelectionList: some View {
-        List(contacts) { user in
-            Button {
-                toggle(user.id)
-            } label: {
-                HStack {
-                    Text(telegramUserDisplayName(user))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: selectedUserIds.contains(user.id) ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(selectedUserIds.contains(user.id) ? Color.accentColor : .secondary)
+    @ViewBuilder private var memberSelectionList: some View {
+        if !hasLoadedContacts || isLoadingContacts {
+            ProgressView("Loading Contacts…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if contacts.isEmpty {
+            ContentUnavailableView("No Contacts", systemImage: "person.crop.circle.badge.xmark")
+        } else {
+            #if os(macOS)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(contacts, id: \.id) { user in
+                        memberButton(user)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+
+                        Divider()
+                    }
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-        }
-        .overlay {
-            if isLoadingContacts, contacts.isEmpty {
-                ProgressView()
-            } else if contacts.isEmpty {
-                ContentUnavailableView("No Contacts", systemImage: "person.crop.circle.badge.xmark")
+            #else
+            List(contacts, id: \.id) { user in
+                memberButton(user)
             }
+            #endif
         }
     }
 
@@ -428,12 +433,13 @@ struct NewGroupView: View {
     }
 
     private var photoPicker: some View {
-        HStack {
+        let hasPendingPhoto = pendingPhotoData != nil
+        return HStack {
             Spacer()
             VStack(spacing: 10) {
                 groupPhotoPreview
                 PhotosPicker(selection: $pickedPhotoItem, matching: .images) {
-                    Text(pendingPhotoData == nil ? "Add Photo" : "Change Photo")
+                    Text(hasPendingPhoto ? "Change Photo" : "Add Photo")
                 }
             }
             Spacer()
@@ -460,6 +466,37 @@ struct NewGroupView: View {
         .frame(width: 88, height: 88)
         .clipShape(Circle())
         .accessibilityHidden(true)
+    }
+
+    private func memberAvatar(_ user: User, displayName: String) -> some View {
+        Circle()
+            .fill(Color(telegramAvatarId: user.id).gradient)
+            .overlay {
+                Text(String(displayName.prefix(1)).uppercased())
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 32, height: 32)
+            .accessibilityHidden(true)
+    }
+
+    private func memberButton(_ user: User) -> some View {
+        let isSelected = selectedUserIds.contains(user.id)
+        let displayName = telegramUserDisplayName(user)
+        return Button {
+            toggle(user.id)
+        } label: {
+            HStack(spacing: 10) {
+                memberAvatar(user, displayName: displayName)
+                Text(displayName)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
     }
 
     private func toggle(_ userId: Int64) {
@@ -644,12 +681,13 @@ struct NewChannelView: View {
     }
 
     private var photoPicker: some View {
-        HStack {
+        let hasPendingPhoto = pendingPhotoData != nil
+        return HStack {
             Spacer()
             VStack(spacing: 10) {
                 channelPhotoPreview
                 PhotosPicker(selection: $pickedPhotoItem, matching: .images) {
-                    Text(pendingPhotoData == nil ? "Add Photo" : "Change Photo")
+                    Text(hasPendingPhoto ? "Change Photo" : "Add Photo")
                 }
             }
             Spacer()

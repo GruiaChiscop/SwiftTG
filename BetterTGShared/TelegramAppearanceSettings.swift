@@ -224,10 +224,10 @@ enum TelegramChatWallpaper: String, CaseIterable, Identifiable {
 }
 
 extension EnvironmentValues {
-    // Read by `MessageView`/`MacMessageRow` - an `@Environment` read costs nothing per row, unlike
-    // giving every message its own `@AppStorage` (message rows are a hot, perf-sensitive path; see
-    // the doc comments throughout `MessageView.swift`/`MacMessageRow.swift`). `telegramAppearance()`
-    // resolves the stored preference into this environment value exactly once, at the app root.
+    /// Read by `MessageView`/`MacMessageRow` - an `@Environment` read costs nothing per row, unlike
+    /// giving every message its own `@AppStorage` (message rows are a hot, perf-sensitive path; see
+    /// the doc comments throughout `MessageView.swift`/`MacMessageRow.swift`). `telegramAppearance()`
+    /// resolves the stored preference into this environment value exactly once, at the app root.
     @Entry var telegramBubbleCornerRadius: CGFloat = TelegramBubbleCornerStyle.rounded.radius
 }
 

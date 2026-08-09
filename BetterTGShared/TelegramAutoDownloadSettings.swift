@@ -58,6 +58,8 @@ let telegramAutoDownloadNetworkItems: [TelegramAutoDownloadNetworkItem] = [
 // MARK: - TelegramAutoDownloadStore
 
 enum TelegramAutoDownloadStore {
+    // MARK: Internal
+
     static func preset(for type: NetworkType, in presets: AutoDownloadSettingsPresets) -> AutoDownloadSettings {
         switch type {
         case .networkTypeWiFi: presets.high
@@ -91,6 +93,8 @@ enum TelegramAutoDownloadStore {
             _ = try? await service.setAutoDownloadSettings(settings: settings, type: item.type)
         }
     }
+
+    // MARK: Private
 
     private static func defaultsKey(for type: NetworkType) -> String {
         switch type {
@@ -133,7 +137,8 @@ struct TelegramAutoDownloadSettingsView: View {
             TelegramAutoDownloadDetailView(
                 service: service,
                 item: item,
-                settings: settings[item.type] ?? presets.map { TelegramAutoDownloadStore.preset(for: item.type, in: $0) },
+                settings: settings[item.type] ?? presets
+                    .map { TelegramAutoDownloadStore.preset(for: item.type, in: $0) },
             ) { newSettings in
                 settings[item.type] = newSettings
             }
@@ -268,7 +273,7 @@ private struct TelegramAutoDownloadDetailView: View {
         )
     }
 
-    @ViewBuilder private var optionRows: some View {
+    private var optionRows: some View {
         ForEach(TelegramAutoDownloadSizeOption.allCases) { option in
             Text(option.title).tag(option)
         }

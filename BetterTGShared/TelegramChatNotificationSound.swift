@@ -55,14 +55,6 @@ struct TelegramChatSoundRow: View {
         #endif
     }
 
-    private func loadSoundTitleIfNeeded() async {
-        guard !settings.useDefaultSound, settings.soundId.rawValue > 0 else {
-            soundTitle = nil
-            return
-        }
-        soundTitle = try? await service.getSavedNotificationSound(notificationSoundId: settings.soundId).title
-    }
-
     // MARK: Private
 
     @State private var settings: ChatNotificationSettings
@@ -78,9 +70,21 @@ struct TelegramChatSoundRow: View {
     }
 
     private var soundDisplayName: String {
-        if settings.useDefaultSound { return "Default" }
-        if settings.soundId.rawValue <= 0 { return "Off" }
+        if settings.useDefaultSound {
+            return "Default"
+        }
+        if settings.soundId.rawValue <= 0 {
+            return "Off"
+        }
         return soundTitle ?? "…"
+    }
+
+    private func loadSoundTitleIfNeeded() async {
+        guard !settings.useDefaultSound, settings.soundId.rawValue > 0 else {
+            soundTitle = nil
+            return
+        }
+        soundTitle = try? await service.getSavedNotificationSound(notificationSoundId: settings.soundId).title
     }
 
     private func save(_ newSoundId: TdInt64) {

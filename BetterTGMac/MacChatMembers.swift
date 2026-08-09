@@ -45,6 +45,9 @@ struct MacChatMembersView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
+                    // Without this, a `List` row built from multiple `Text` views (rather than a
+                    // single one) reads as an empty cell to VoiceOver on macOS.
+                    .accessibilityElement(children: .combine)
                 }
 
                 if hasMore {

@@ -88,6 +88,7 @@ extension MacSessionModel {
         translationShownMessageIds = []
         translatingMessageIds = []
         messageTranslationEligibility = [:]
+        loadedMessageIds = []
         detectedChatLanguage = nil
         isChatTranslationEnabled = TelegramChatTranslationPreferences.isEnabled(chatId: chatId)
         isLoadingMessages = true
@@ -257,11 +258,27 @@ extension MacSessionModel {
     /// Restricts a snapshot to `openedTopic`'s messages - the shared store publishes every message
     /// in the chat regardless of thread/topic, so a comment thread or forum topic needs this
     /// filter applied before anything (row list, unread count) reads from it.
-    private func topicFiltered(_ snapshot: TelegramMessageSnapshot) -> TelegramMessageSnapshot {
-        guard openedTopic != nil else { return snapshot }
-        let filteredIds = snapshot.orderedMessageIds
-            .filter { snapshot.messages[$0].map(messageMatchesOpenedTopic) ?? false }
-        let filteredMessages = snapshot.messages.filter { messageMatchesOpenedTopic($0.value) }
+    private func presentationSnapshot(from snapshot: TelegramMessageSnapshot) -> TelegramMessageSnapshot {
+        let topicMessageIds =
+            if openedTopic == nil {
+                snapshot.orderedMessageIds
+            } else {
+                snapshot.orderedMessageIds.filter {
+                    snapshot.messages[$0].map(messageMatchesOpenedTopic) ?? false
+                }
+            }
+
+        // A CurrentValueSubject immediately replays the store's retained snapshot to a new chat
+        // subscription. Seed only a first screenful from that replay; older ids become visible
+        // explicitly through `loadOlderMessages()` instead of all being mounted in one List diff.
+        if loadedMessageIds.isEmpty {
+            loadedMessageIds.formUnion(topicMessageIds.suffix(Self.initialHistoryWindowSize))
+        }
+
+        let filteredIds = topicMessageIds.filter(loadedMessageIds.contains)
+        let filteredMessages = Dictionary(uniqueKeysWithValues: filteredIds.compactMap { messageId in
+            snapshot.messages[messageId].map { (messageId, $0) }
+        })
         return TelegramMessageSnapshot(
             chatId: snapshot.chatId,
             version: snapshot.version,
@@ -286,7 +303,25 @@ extension MacSessionModel {
         default:
             break
         }
-        messages = topicFiltered(snapshot)
+
+        // Keep live row identity in the presented window while still excluding retained history
+        // that this conversation instance has not paged into.
+        switch snapshot.change {
+        case .newMessage(let update) where messageMatchesOpenedTopic(update.message):
+            loadedMessageIds.insert(update.message.id)
+        case .messageSendSucceeded(let update) where messageMatchesOpenedTopic(update.message):
+            loadedMessageIds.remove(update.oldMessageId)
+            loadedMessageIds.insert(update.message.id)
+        case .messageSendFailed(let update) where messageMatchesOpenedTopic(update.message):
+            loadedMessageIds.remove(update.oldMessageId)
+            loadedMessageIds.insert(update.message.id)
+        case .deleteMessages(let update):
+            loadedMessageIds.subtract(update.messageIds)
+        default:
+            break
+        }
+
+        messages = presentationSnapshot(from: snapshot)
         switch snapshot.change {
         case .newMessage(let update) where !update.message.isOutgoing && messageMatchesOpenedTopic(update.message):
             let isMuted = (chatList.items[snapshot.chatId]?.notificationSettings?.muteFor ?? 0) > 0

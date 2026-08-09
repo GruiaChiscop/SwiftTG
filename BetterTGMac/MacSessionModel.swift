@@ -48,6 +48,12 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
 
     // MARK: Internal
 
+    /// Matches the first page assembled by `fetchMessagesBackward`. The shared macOS message
+    /// store intentionally retains every explicitly loaded page, but mounting that entire retained
+    /// history when a chat is reopened can make SwiftUI's `List` synchronously build thousands of
+    /// rows. `loadedMessageIds` below keeps the presented window bounded until the user paginates.
+    static let initialHistoryWindowSize = 30
+
     var authorizationState: AuthorizationState?
     var authorizationStatus = "Starting Telegram…"
     var sessionEnded = false
@@ -145,6 +151,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored var scheduledMessagesTask: Task<Void, Never>?
     @ObservationIgnored var scheduledMessagesGeneration: UInt64 = 0
     @ObservationIgnored var historyRequestGeneration: UInt64 = 0
+    @ObservationIgnored var loadedMessageIds = Set<Int64>()
     @ObservationIgnored var service: any TelegramService
     @ObservationIgnored var draftReplyLoadTask: Task<Void, Never>?
 
@@ -493,6 +500,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         scheduledMessagesError = nil
         isLoadingPinnedMessages = false
         messages = .empty(chatId: 0)
+        loadedMessageIds = []
         loadedChatFolderIds = []
         messageText = NSAttributedString(string: "")
         editMessageText = NSAttributedString(string: "")
