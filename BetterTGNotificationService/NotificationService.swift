@@ -24,6 +24,11 @@ final class NotificationService: UNNotificationServiceExtension {
         let bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent
         self.bestAttemptContent = bestAttemptContent
 
+        // The NSE has no other maintenance run to piggyback on - sweep stale sound copies out of
+        // this extension's own Library/Sounds (see `localSoundFileName(copyingFrom:)`) here, before
+        // adding today's, so switching sounds doesn't leave old ones behind forever.
+        TelegramNotificationSoundManifest.pruneOrphanedFiles()
+
         guard let bestAttemptContent else {
             contentHandler(request.content)
             return
