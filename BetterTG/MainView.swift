@@ -21,11 +21,18 @@ struct MainView: View {
                         .navigationDestination(for: Route.self) { route in
                             switch route {
                             case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
-                                ChatView(
-                                    customChat: customChat,
-                                    initialMessageId: messageId,
-                                    movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
-                                )
+                                // A forum-enabled supergroup shows its topic list first, matching
+                                // Telegram-iOS - a link to a specific message still opens straight
+                                // into the flat message stream it lives in.
+                                if customChat.supergroup?.isForum == true, messageId == nil {
+                                    ForumTopicsListView(customChat: customChat, service: rootVM.service)
+                                } else {
+                                    ChatView(
+                                        customChat: customChat,
+                                        initialMessageId: messageId,
+                                        movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
+                                    )
+                                }
                             case .archive(let customFolder):
                                 FolderView(folder: customFolder)
                                     .navigationTitle(customFolder.name)

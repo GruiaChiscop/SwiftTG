@@ -43,6 +43,9 @@ extension MessageView {
 
     /// SwiftUI announces actions in reverse declaration order, so declare them from last to first.
     @ViewBuilder var messageAccessibilityActions: some View {
+        if chatVM.customChat.kind == .channel, let replyInfo = customMessage.message.interactionInfo?.replyInfo {
+            Button(replyInfo.replyCount > 0 ? "View Comments" : "Add Comment") { openComments() }
+        }
         if customMessage.properties.canBeDeletedOnlyForSelf
             || customMessage.properties.canBeDeletedForAllUsers
         {
@@ -77,6 +80,13 @@ extension MessageView {
     }
 
     @ViewBuilder var messageContextMenu: some View {
+        if chatVM.customChat.kind == .channel, let replyInfo = customMessage.message.interactionInfo?.replyInfo {
+            Button {
+                openComments()
+            } label: {
+                Label(replyInfo.replyCount > 0 ? "View Comments" : "Add Comment", systemImage: "bubble.left")
+            }
+        }
         if customMessage.properties.canBeReplied {
             Button(action: reply) {
                 Label("Reply", systemImage: "arrowshape.turn.up.left")
@@ -281,6 +291,50 @@ extension MessageView {
             } catch {
                 guard !Task.isCancelled else { return }
                 chatVM.messageActionError = "File couldn't be saved: \(telegramErrorDescription(error))"
+            }
+        }
+    }
+
+    var commentsErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { commentsErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    commentsErrorMessage = nil
+                }
+            },
+        )
+    }
+
+    /// Resolves the comment thread's discussion group/`messageThreadId` before presenting
+    /// anything - `resolvedComments` only gets set (triggering the sheet) once that's done, so
+    /// there's no empty screen that fills in after the fact, matching Telegram-iOS's own
+    /// preload-then-navigate flow.
+    func openComments() {
+        guard !isLoadingComments else { return }
+        isLoadingComments = true
+        commentsErrorMessage = nil
+
+        Task { @MainActor in
+            defer { isLoadingComments = false }
+            do {
+                let thread = try await chatVM.service.getMessageThread(
+                    chatId: customMessage.message.chatId,
+                    messageId: customMessage.id,
+                )
+                guard let discussionChat = await RootVM.shared.getCustomChat(from: thread.chatId) else {
+                    commentsErrorMessage = "Couldn't load this discussion."
+                    return
+                }
+                resolvedComments = TelegramResolvedCommentsThread(
+                    discussionChat: discussionChat,
+                    messageThreadId: thread.messageThreadId,
+                    channelTitle: chatVM.customChat.displayTitle,
+                    replyCount: customMessage.message.interactionInfo?.replyInfo?.replyCount ?? 0,
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                commentsErrorMessage = telegramErrorDescription(error)
             }
         }
     }

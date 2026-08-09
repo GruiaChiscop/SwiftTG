@@ -54,3 +54,5 @@ extension File: @retroactive @unchecked Sendable {}
 extension MessageProperties: @retroactive @unchecked Sendable {}
 extension ImportedContact: @retroactive @unchecked Sendable {}
 extension ImportedContacts: @retroactive @unchecked Sendable {}
+extension MessageTopic: @retroactive @unchecked Sendable {}
+extension TdInt64: @retroactive @unchecked Sendable {}

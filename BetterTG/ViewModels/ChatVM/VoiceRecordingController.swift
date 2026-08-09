@@ -10,9 +10,10 @@ import TDLibKit
 @MainActor @Observable final class VoiceRecordingController {
     // MARK: Lifecycle
 
-    init(chatId: Int64, service: any TelegramService) {
+    init(chatId: Int64, service: any TelegramService, topicId: MessageTopic? = nil) {
         self.chatId = chatId
         self.service = service
+        self.topicId = topicId
     }
 
     // MARK: Internal
@@ -118,6 +119,7 @@ import TDLibKit
 
     private let chatId: Int64
     private let service: any TelegramService
+    private let topicId: MessageTopic?
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var savedVoiceNoteUrl = URL(filePath: "")
@@ -128,7 +130,7 @@ import TDLibKit
             action: chatAction,
             businessConnectionId: nil,
             chatId: chatId,
-            topicId: nil,
+            topicId: topicId,
         )
     }
 }

@@ -71,6 +71,7 @@ enum TelegramMessageSending {
         replyTo: InputMessageReplyTo?,
         uploadAction: ChatAction? = nil,
         schedulingState: MessageSchedulingState? = nil,
+        topicId: MessageTopic? = nil,
         onAccepted: (@Sendable ([Message]) -> Void)? = nil,
     ) async throws -> [Message] {
         guard !contents.isEmpty else { return [] }
@@ -81,7 +82,7 @@ enum TelegramMessageSending {
                 action: uploadAction,
                 businessConnectionId: nil,
                 chatId: chatId,
-                topicId: nil,
+                topicId: topicId,
             )
         }
         let options = sendOptions(schedulingState: schedulingState)
@@ -94,10 +95,10 @@ enum TelegramMessageSending {
                     options: options,
                     replyMarkup: nil,
                     replyTo: replyTo,
-                    topicId: nil,
+                    topicId: topicId,
                 )
                 onAccepted?([message])
-                await cancelChatAction(service: service, chatId: chatId)
+                await cancelChatAction(service: service, chatId: chatId, topicId: topicId)
                 return [message]
             } else {
                 let messages = try await service.sendMessageAlbum(
@@ -105,14 +106,14 @@ enum TelegramMessageSending {
                     inputMessageContents: contents,
                     options: options,
                     replyTo: replyTo,
-                    topicId: nil,
+                    topicId: topicId,
                 )
                 onAccepted?(messages.messages ?? [])
-                await cancelChatAction(service: service, chatId: chatId)
+                await cancelChatAction(service: service, chatId: chatId, topicId: topicId)
                 return messages.messages ?? []
             }
         } catch {
-            await cancelChatAction(service: service, chatId: chatId)
+            await cancelChatAction(service: service, chatId: chatId, topicId: topicId)
             throw error
         }
     }
@@ -136,12 +137,16 @@ enum TelegramMessageSending {
         )
     }
 
-    private static func cancelChatAction(service: any TelegramService, chatId: Int64) async {
+    private static func cancelChatAction(
+        service: any TelegramService,
+        chatId: Int64,
+        topicId: MessageTopic? = nil,
+    ) async {
         _ = try? await service.sendChatAction(
             action: .chatActionCancel,
             businessConnectionId: nil,
             chatId: chatId,
-            topicId: nil,
+            topicId: topicId,
         )
     }
 }

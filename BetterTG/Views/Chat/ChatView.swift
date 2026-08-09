@@ -21,15 +21,19 @@ struct ChatView: View {
         customChat: CustomChat,
         initialMessageId: Int64? = nil,
         movesAccessibilityFocusToInitialMessage: Bool = false,
+        messageTopic: MessageTopic? = nil,
         backButtonTitleOverride: String? = nil,
+        titleOverride: String? = nil,
     ) {
         let chatVM = ChatVM(
             customChat: customChat,
             initialMessageId: initialMessageId,
             movesAccessibilityFocusToInitialMessage: movesAccessibilityFocusToInitialMessage,
+            messageTopic: messageTopic,
         )
         self._chatVM = State(wrappedValue: chatVM)
         self.backButtonTitleOverride = backButtonTitleOverride
+        self.titleOverride = titleOverride
     }
 
     // MARK: Internal
@@ -48,6 +52,11 @@ struct ChatView: View {
     /// comments in ChatInfoDetailViews.swift), so without this the back button falls back to a
     /// misleading "Chats" even though back doesn't actually go to the chat list.
     let backButtonTitleOverride: String?
+
+    /// Telegram-iOS shows "N Comments" as the nav title for a comment thread rather than the
+    /// underlying discussion group's own name, even though it's mechanically the same chat
+    /// screen - set by `TelegramCommentsChatView` to match.
+    let titleOverride: String?
     
     var body: some View {
         @Bindable var chatVM = chatVM
@@ -108,7 +117,7 @@ struct ChatView: View {
             if chatVM.isConversationSearchActive {
                 conversationSearchNavigationBar
             } else if !isPreview {
-                if chatVM.customChat.canPostMessages {
+                if chatVM.customChat.canPostMessages || chatVM.isCommentThread {
                     ChatBottomArea(focused: $focused) {
                         guard let message = chatVM.messageActionError else { return }
                         presentedActionError = PresentedChatActionError(message: message)
@@ -127,7 +136,9 @@ struct ChatView: View {
         }
         .background(.black)
         .ignoresSafeArea(.container, edges: .top)
-        .navigationTitle(chatVM.isConversationSearchActive ? "" : chatVM.customChat.displayTitle)
+        .navigationTitle(
+            chatVM.isConversationSearchActive ? "" : (titleOverride ?? chatVM.customChat.displayTitle),
+        )
         .navigationBarBackButtonHidden(true)
         .dropDestination(for: SelectedImage.self) { items, _ in
             nc.post(name: .localOnSelectedImagesDrop, object: Array(items.prefix(10)))
@@ -512,7 +523,7 @@ struct ChatView: View {
             showsChatInfo = true
         } label: {
             VStack(spacing: 0) {
-                Text(chatVM.customChat.displayTitle)
+                Text(titleOverride ?? chatVM.customChat.displayTitle)
 
                 Group {
                     if !chatVM.actionStatus.isEmpty {

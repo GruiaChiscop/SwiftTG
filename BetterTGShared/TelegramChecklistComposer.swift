@@ -130,6 +130,7 @@ enum TelegramChecklistSending {
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let content = try draft.inputMessageContent()
         let messages = try await TelegramMessageSending.send(
@@ -137,6 +138,7 @@ enum TelegramChecklistSending {
             chatId: chatId,
             contents: [content],
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            topicId: topicId,
             onAccepted: { messages in
                 service.mergeMessages(chatId: chatId, messages: messages)
             },

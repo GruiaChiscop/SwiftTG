@@ -23,12 +23,14 @@ enum TelegramStickerSending {
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let messages = try await TelegramMessageSending.send(
             service: service,
             chatId: chatId,
             contents: [content(for: sticker)],
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            topicId: topicId,
             onAccepted: { messages in
                 service.mergeMessages(chatId: chatId, messages: messages)
             },
@@ -49,12 +51,14 @@ struct TelegramStickerPickerView<Preview: View>: View {
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        topicId: MessageTopic? = nil,
         onSent: @escaping @MainActor () async -> Void,
         @ViewBuilder preview: @escaping (Sticker) -> Preview,
     ) {
         self.service = service
         self.chatId = chatId
         self.replyToMessageId = replyToMessageId
+        self.topicId = topicId
         self.onSent = onSent
         self.preview = preview
     }
@@ -129,6 +133,7 @@ struct TelegramStickerPickerView<Preview: View>: View {
     private let service: any TelegramService
     private let chatId: Int64
     private let replyToMessageId: Int64?
+    private let topicId: MessageTopic?
     private let onSent: @MainActor () async -> Void
     private let preview: (Sticker) -> Preview
 
@@ -334,6 +339,7 @@ struct TelegramStickerPickerView<Preview: View>: View {
                     service: service,
                     chatId: chatId,
                     replyToMessageId: replyToMessageId,
+                    topicId: topicId,
                 )
                 await onSent()
                 dismiss()

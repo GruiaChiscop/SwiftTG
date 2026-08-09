@@ -153,6 +153,7 @@ struct ChatBottomArea: View {
                     service: chatVM.service,
                     chatId: chatVM.customChat.chat.id,
                     replyToMessageId: chatVM.replyMessage?.id,
+                    topicId: chatVM.messageTopic,
                 )
                 chatVM.replyMessage = nil
                 await chatVM.updateDraft()
@@ -165,6 +166,7 @@ struct ChatBottomArea: View {
                     service: chatVM.service,
                     chatId: chatVM.customChat.chat.id,
                     replyToMessageId: chatVM.replyMessage?.id,
+                    topicId: chatVM.messageTopic,
                 )
                 chatVM.replyMessage = nil
                 await chatVM.updateDraft()
@@ -185,6 +187,7 @@ struct ChatBottomArea: View {
                     service: chatVM.service,
                     chatId: chatVM.customChat.chat.id,
                     replyToMessageId: chatVM.replyMessage?.id,
+                    topicId: chatVM.messageTopic,
                 )
                 chatVM.replyMessage = nil
                 await chatVM.updateDraft()
@@ -203,6 +206,7 @@ struct ChatBottomArea: View {
                         service: chatVM.service,
                         chatId: chatVM.customChat.chat.id,
                         replyToMessageId: chatVM.replyMessage?.id,
+                        topicId: chatVM.messageTopic,
                     )
                     chatVM.replyMessage = nil
                     await chatVM.updateDraft()
@@ -217,6 +221,7 @@ struct ChatBottomArea: View {
                 service: chatVM.service,
                 chatId: chatVM.customChat.chat.id,
                 replyToMessageId: chatVM.replyMessage?.id,
+                topicId: chatVM.messageTopic,
                 onSent: {
                     chatVM.replyMessage = nil
                     await chatVM.updateDraft()
@@ -714,6 +719,7 @@ struct ChatBottomArea: View {
             chatId: chatId,
             contents: [content],
             replyTo: TelegramMessageSending.replyTo(messageId: chatVM.replyMessage?.id),
+            topicId: chatVM.messageTopic,
             onAccepted: { messages in
                 service.mergeMessages(chatId: chatId, messages: messages)
             },

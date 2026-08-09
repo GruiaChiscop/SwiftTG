@@ -11,12 +11,14 @@ import TDLibKit
         customChat: CustomChat,
         initialMessageId: Int64? = nil,
         movesAccessibilityFocusToInitialMessage: Bool = false,
+        messageTopic: MessageTopic? = nil,
         service: any TelegramService = TDLib.shared.service,
     ) {
         self.customChat = customChat
         self.chatId = customChat.chat.id
         self.initialMessageId = initialMessageId
         self.movesAccessibilityFocusToInitialMessage = movesAccessibilityFocusToInitialMessage
+        self.messageTopic = messageTopic
         self.initialUnreadCount = customChat.unreadCount
         self.initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
         self.service = service
@@ -24,8 +26,13 @@ import TDLibKit
             chatId: customChat.chat.id,
             service: service,
             draftMessage: customChat.draftMessage,
+            topicId: messageTopic,
         )
-        self.voiceRecorder = VoiceRecordingController(chatId: customChat.chat.id, service: service)
+        self.voiceRecorder = VoiceRecordingController(
+            chatId: customChat.chat.id,
+            service: service,
+            topicId: messageTopic,
+        )
         self.conversationSearch = TelegramConversationSearchStore(service: service)
         self.onlineStatus =
             if let user = customChat.user {
@@ -57,6 +64,10 @@ import TDLibKit
     let chatId: Int64
     let initialMessageId: Int64?
     let movesAccessibilityFocusToInitialMessage: Bool
+    /// When set, this `ChatVM` is scoped to a single thread (channel-post comments) or forum topic
+    /// within `customChat`, rather than the chat's whole history - `nil` preserves the original
+    /// full-chat behavior everywhere below.
+    let messageTopic: MessageTopic?
     let initialUnreadCount: Int
     let initialLastReadInboxMessageId: Int64
 
@@ -124,6 +135,18 @@ import TDLibKit
     var showScrollToBottomButton = false
     @ObservationIgnored var scrollViewProxy: ScrollViewProxy?
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
+
+    /// Telegram has no separate "Join Group" step for channel comments - sending your first
+    /// comment on a post silently adds you to the channel's linked discussion group server-side,
+    /// unlike opening an ordinary group/channel, which does require an explicit join before
+    /// posting. Lets `ChatView` show the normal composer here even while `customChat.canJoin`.
+    var isCommentThread: Bool {
+        if case .messageTopicThread = messageTopic {
+            true
+        } else {
+            false
+        }
+    }
 
     /// Opens the chat and kicks off history loading. `ChatView` is a SwiftUI value type that gets
     /// reconstructed (and this `ChatVM` re-initialized) on every unrelated body re-evaluation of its
@@ -195,6 +218,14 @@ import TDLibKit
 
     func getOnlineStatus(from userStatus: UserStatus) -> String {
         telegramUserPresenceDescription(userStatus)
+    }
+
+    /// True when `messageTopic` is unset (ordinary full-chat mode) or `message` belongs to it -
+    /// the single check every topic-scoping filter in `ChatVM+History.swift`/`ChatVM+Publishers.swift`
+    /// funnels through, so there's one place that defines what "belongs to this thread" means.
+    func messageMatchesTopic(_ message: Message) -> Bool {
+        guard let messageTopic else { return true }
+        return message.topicId == messageTopic
     }
 
     /// Joins the current channel/group and refreshes `customChat.type` with the resulting

@@ -17,6 +17,7 @@ struct MacMessageRow: View {
     let albumMessages: [Message]
     let lastReadOutboxMessageId: Int64
     let showsSenderName: Bool
+    let isChannelMessage: Bool
 
     /// Type-erased for the same reason as iOS's `MessageView.body` - see the comment there. This
     /// row's conditional-branch count (104 `if`/`else if`/`switch` occurrences) is even higher, so
@@ -60,6 +61,7 @@ struct MacMessageRow: View {
     @State private var showDeleteOptions = false
     @State private var showReactionOptions = false
     @State private var showReactionDetails = false
+    @State private var showsComments = false
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
     @State private var showForwardPicker = false
@@ -306,6 +308,12 @@ struct MacMessageRow: View {
 
     private var rowActions: [MacRowAction] {
         var items = [MacRowAction]()
+        if isChannelMessage, let replyInfo = message.interactionInfo?.replyInfo {
+            items.append(.button(
+                title: replyInfo.replyCount > 0 ? "View Comments" : "Add Comment",
+                systemImage: "bubble.left",
+            ) { showsComments = true })
+        }
         if capabilities?.properties.canBeReplied == true {
             items.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left") {
                 model.beginReply(to: message)
@@ -582,6 +590,12 @@ struct MacMessageRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
+
+                    if isChannelMessage, let replyInfo = message.interactionInfo?.replyInfo {
+                        TelegramCommentsBar(replyCount: replyInfo.replyCount) {
+                            showsComments = true
+                        }
+                    }
                 }
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
@@ -724,6 +738,13 @@ struct MacMessageRow: View {
             TelegramReactionDetailsView(
                 service: model.service,
                 chatId: message.chatId,
+                messageId: message.id,
+            )
+        }
+        .sheet(isPresented: $showsComments) {
+            TelegramCommentsView(
+                service: model.service,
+                channelChatId: message.chatId,
                 messageId: message.id,
             )
         }

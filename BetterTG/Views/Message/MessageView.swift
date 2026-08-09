@@ -17,6 +17,9 @@ struct MessageView: View {
     @State var showDeleteOptions = false
     @State var showReactionOptions = false
     @State var showReactionDetails = false
+    @State var isLoadingComments = false
+    @State var resolvedComments: TelegramResolvedCommentsThread?
+    @State var commentsErrorMessage: String?
     @State var isSavingDocument = false
     @State var isAddingContact = false
     @State var documentTransferStatus: String?
@@ -407,6 +410,14 @@ struct MessageView: View {
             ))
         }
 
+        if chatVM.customChat.kind == .channel, let replyInfo = customMessage.message.interactionInfo?.replyInfo {
+            pieces.append(AnyView(
+                TelegramCommentsBar(replyCount: replyInfo.replyCount, isLoading: isLoadingComments) {
+                    openComments()
+                },
+            ))
+        }
+
         return pieces
     }
 
@@ -528,6 +539,14 @@ struct MessageView: View {
                     chatId: customMessage.message.chatId,
                     messageId: customMessage.id,
                 )
+            }
+            .sheet(item: $resolvedComments) { resolvedThread in
+                TelegramCommentsChatView(resolvedThread: resolvedThread)
+            }
+            .alert("Couldn't Open Comments", isPresented: commentsErrorIsPresented) {
+                Button("OK") {}
+            } message: {
+                Text(commentsErrorMessage ?? "")
             }
             .alert("Delete message?", isPresented: $showDeleteOptions) {
                 if customMessage.properties.canBeDeletedOnlyForSelf {

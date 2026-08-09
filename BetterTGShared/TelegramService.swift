@@ -235,6 +235,47 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         replyTo: InputMessageReplyTo?,
         topicId: MessageTopic?,
     ) async throws -> Messages
+    func getMessageThread(chatId: Int64?, messageId: Int64?) async throws -> MessageThreadInfo
+    func getMessageThreadHistory(
+        chatId: Int64?,
+        fromMessageId: Int64?,
+        limit: Int?,
+        messageId: Int64?,
+        offset: Int?,
+    ) async throws -> Messages
+    func getForumTopics(
+        chatId: Int64?,
+        limit: Int?,
+        offsetDate: Int?,
+        offsetForumTopicId: Int?,
+        offsetMessageId: Int64?,
+        query: String?,
+    ) async throws -> ForumTopics
+    func getForumTopic(chatId: Int64?, forumTopicId: Int?) async throws -> ForumTopic
+    func getForumTopicHistory(
+        chatId: Int64?,
+        forumTopicId: Int?,
+        fromMessageId: Int64?,
+        limit: Int?,
+        offset: Int?,
+    ) async throws -> Messages
+    func createForumTopic(
+        chatId: Int64?,
+        icon: ForumTopicIcon?,
+        isNameImplicit: Bool?,
+        name: String?,
+    ) async throws -> ForumTopicInfo
+    func editForumTopic(
+        chatId: Int64?,
+        editIconCustomEmoji: Bool?,
+        forumTopicId: Int?,
+        iconCustomEmojiId: TdInt64?,
+        name: String?,
+    ) async throws -> Ok
+    func deleteForumTopic(chatId: Int64?, forumTopicId: Int?) async throws -> Ok
+    func toggleForumTopicIsClosed(chatId: Int64?, forumTopicId: Int?, isClosed: Bool?) async throws -> Ok
+    func toggleForumTopicIsPinned(chatId: Int64?, forumTopicId: Int?, isPinned: Bool?) async throws -> Ok
+    func getForumTopicDefaultIcons() async throws -> Stickers
     func searchChats(limit: Int?, query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats
     func searchPublicChats(query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats
     func searchChatMembers(
@@ -1150,6 +1191,105 @@ extension TelegramSession: TelegramService {
             replyTo: replyTo,
             topicId: topicId,
         )
+    }
+
+    func getMessageThread(chatId: Int64?, messageId: Int64?) async throws -> MessageThreadInfo {
+        try await client.getMessageThread(chatId: chatId, messageId: messageId)
+    }
+
+    func getMessageThreadHistory(
+        chatId: Int64?,
+        fromMessageId: Int64?,
+        limit: Int?,
+        messageId: Int64?,
+        offset: Int?,
+    ) async throws -> Messages {
+        try await client.getMessageThreadHistory(
+            chatId: chatId,
+            fromMessageId: fromMessageId,
+            limit: limit,
+            messageId: messageId,
+            offset: offset,
+        )
+    }
+
+    func getForumTopics(
+        chatId: Int64?,
+        limit: Int?,
+        offsetDate: Int?,
+        offsetForumTopicId: Int?,
+        offsetMessageId: Int64?,
+        query: String?,
+    ) async throws -> ForumTopics {
+        try await client.getForumTopics(
+            chatId: chatId,
+            limit: limit,
+            offsetDate: offsetDate,
+            offsetForumTopicId: offsetForumTopicId,
+            offsetMessageId: offsetMessageId,
+            query: query,
+        )
+    }
+
+    func getForumTopic(chatId: Int64?, forumTopicId: Int?) async throws -> ForumTopic {
+        try await client.getForumTopic(chatId: chatId, forumTopicId: forumTopicId)
+    }
+
+    func getForumTopicHistory(
+        chatId: Int64?,
+        forumTopicId: Int?,
+        fromMessageId: Int64?,
+        limit: Int?,
+        offset: Int?,
+    ) async throws -> Messages {
+        try await client.getForumTopicHistory(
+            chatId: chatId,
+            forumTopicId: forumTopicId,
+            fromMessageId: fromMessageId,
+            limit: limit,
+            offset: offset,
+        )
+    }
+
+    func createForumTopic(
+        chatId: Int64?,
+        icon: ForumTopicIcon?,
+        isNameImplicit: Bool?,
+        name: String?,
+    ) async throws -> ForumTopicInfo {
+        try await client.createForumTopic(chatId: chatId, icon: icon, isNameImplicit: isNameImplicit, name: name)
+    }
+
+    func editForumTopic(
+        chatId: Int64?,
+        editIconCustomEmoji: Bool?,
+        forumTopicId: Int?,
+        iconCustomEmojiId: TdInt64?,
+        name: String?,
+    ) async throws -> Ok {
+        try await client.editForumTopic(
+            chatId: chatId,
+            editIconCustomEmoji: editIconCustomEmoji,
+            forumTopicId: forumTopicId,
+            iconCustomEmojiId: iconCustomEmojiId,
+            name: name,
+        )
+    }
+
+    func deleteForumTopic(chatId: Int64?, forumTopicId: Int?) async throws -> Ok {
+        try await client.deleteForumTopic(chatId: chatId, forumTopicId: forumTopicId)
+    }
+
+    func toggleForumTopicIsClosed(chatId: Int64?, forumTopicId: Int?, isClosed: Bool?) async throws -> Ok {
+        try await client.toggleForumTopicIsClosed(chatId: chatId, forumTopicId: forumTopicId, isClosed: isClosed)
+    }
+
+    func toggleForumTopicIsPinned(chatId: Int64?, forumTopicId: Int?, isPinned: Bool?) async throws -> Ok {
+        try await client.toggleForumTopicIsPinned(chatId: chatId, forumTopicId: forumTopicId, isPinned: isPinned)
+    }
+
+    func getForumTopicDefaultIcons() async throws -> Stickers {
+        try await client.getForumTopicDefaultIcons()
     }
 
     func setChatNotificationSettings(

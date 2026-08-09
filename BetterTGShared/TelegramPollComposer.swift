@@ -218,6 +218,7 @@ enum TelegramPollSending {
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let content = try draft.inputMessageContent()
         try await validateDestination(service: service, chatId: chatId)
@@ -226,6 +227,7 @@ enum TelegramPollSending {
             chatId: chatId,
             contents: [content],
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            topicId: topicId,
             onAccepted: { messages in
                 service.mergeMessages(chatId: chatId, messages: messages)
             },
