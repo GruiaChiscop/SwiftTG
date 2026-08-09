@@ -150,11 +150,12 @@ extension MacSessionModel {
             linkPreviewOptions: linkPreviewComposer.options,
         )
         let service = service
+        let topicId = openedTopic
         Task {
             _ = try? await service.setChatDraftMessage(
                 chatId: chatId,
                 draftMessage: draft,
-                topicId: nil,
+                topicId: topicId,
             )
         }
     }
@@ -163,11 +164,12 @@ extension MacSessionModel {
 
     func clearDraft(chatId: Int64) {
         let service = service
+        let topicId = openedTopic
         Task {
             _ = try? await service.setChatDraftMessage(
                 chatId: chatId,
                 draftMessage: nil,
-                topicId: nil,
+                topicId: topicId,
             )
         }
     }

@@ -59,6 +59,13 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var selectedChatFolderId = MacChatFolderID.main
     var focusedChatId: Int64?
     var openedChatId: Int64?
+    /// When set, `openedChatId` is scoped to a single forum topic or comment thread rather than
+    /// the chat's whole history - `nil` preserves ordinary full-chat behavior everywhere below.
+    /// Mirrors iOS's `ChatVM.messageTopic`.
+    var openedTopic: MessageTopic?
+    /// Display name for `openedTopic`, shown in `MacConversationHeader` instead of the parent
+    /// chat's name while a forum topic is open - `nil` whenever `openedTopic` is.
+    var openedTopicTitle: String?
     var messages = TelegramMessageSnapshot.empty(chatId: 0)
     var editingMessage: Message?
     var replyingToMessage: Message?
@@ -475,6 +482,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         selectedChatFolderId = .main
         focusedChatId = nil
         openedChatId = nil
+        openedTopic = nil
+        openedTopicTitle = nil
         openedChatType = nil
         conversationHeaderBaseStatus = nil
         conversationHeaderActivities = [:]

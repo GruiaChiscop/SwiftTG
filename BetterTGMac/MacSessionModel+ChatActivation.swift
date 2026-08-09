@@ -26,7 +26,12 @@ extension MacSessionModel {
         activateChat(focusedChatId)
     }
 
-    func activateChat(_ chatId: Int64, messageId: Int64? = nil) {
+    /// `topic` scopes the opened chat to a single forum topic or comment thread (mirrors iOS's
+    /// `ChatVM.messageTopic`) - `nil` is an ordinary full-chat open. Switching `topic` alone, with
+    /// `chatId` unchanged (e.g. moving between two topics of the same forum group), goes through
+    /// the same full reset/resubscribe path as switching chats entirely, since the message list,
+    /// composer, and history-loading state all need to start over either way.
+    func activateChat(_ chatId: Int64, messageId: Int64? = nil, topic: MessageTopic? = nil, topicTitle: String? = nil) {
         if openedChatId != chatId, isConversationSearchActive {
             endConversationSearch()
         }
@@ -34,7 +39,7 @@ extension MacSessionModel {
         focusedChatId = chatId
         latestHistoryTargetMessageId = nil
         navigationTargetMessageId = messageId
-        if openedChatId == chatId {
+        if openedChatId == chatId, openedTopic == topic {
             guard let messageId, messages.messages[messageId] == nil else { return }
             historyRequestGeneration &+= 1
             let generation = historyRequestGeneration
@@ -62,6 +67,8 @@ extension MacSessionModel {
 
         let previousChatId = openedChatId
         openedChatId = chatId
+        openedTopic = topic
+        openedTopicTitle = topicTitle
         pinnedMessages = []
         pinnedMessagesError = nil
         refreshPinnedMessages(for: chatId)
@@ -240,6 +247,32 @@ extension MacSessionModel {
 
     // MARK: Private
 
+    /// True when `openedTopic` is unset (ordinary full-chat mode) or `message` belongs to it -
+    /// mirrors iOS's `ChatVM.messageMatchesTopic(_:)`.
+    private func messageMatchesOpenedTopic(_ message: Message) -> Bool {
+        guard let openedTopic else { return true }
+        return message.topicId == openedTopic
+    }
+
+    /// Restricts a snapshot to `openedTopic`'s messages - the shared store publishes every message
+    /// in the chat regardless of thread/topic, so a comment thread or forum topic needs this
+    /// filter applied before anything (row list, unread count) reads from it.
+    private func topicFiltered(_ snapshot: TelegramMessageSnapshot) -> TelegramMessageSnapshot {
+        guard openedTopic != nil else { return snapshot }
+        let filteredIds = snapshot.orderedMessageIds
+            .filter { snapshot.messages[$0].map(messageMatchesOpenedTopic) ?? false }
+        let filteredMessages = snapshot.messages.filter { messageMatchesOpenedTopic($0.value) }
+        return TelegramMessageSnapshot(
+            chatId: snapshot.chatId,
+            version: snapshot.version,
+            messages: filteredMessages,
+            orderedMessageIds: filteredIds,
+            unreadCount: snapshot.unreadCount,
+            hasMergedHistory: snapshot.hasMergedHistory,
+            change: snapshot.change,
+        )
+    }
+
     private func handleMessageSnapshot(_ snapshot: TelegramMessageSnapshot) {
         switch snapshot.change {
         case .chatAction, .readInbox, .readOutbox, .userStatus:
@@ -253,17 +286,18 @@ extension MacSessionModel {
         default:
             break
         }
-        messages = snapshot
+        messages = topicFiltered(snapshot)
         switch snapshot.change {
-        case .newMessage(let update) where !update.message.isOutgoing:
+        case .newMessage(let update) where !update.message.isOutgoing && messageMatchesOpenedTopic(update.message):
             let isMuted = (chatList.items[snapshot.chatId]?.notificationSettings?.muteFor ?? 0) > 0
             MacServiceSoundManager.shared.playIncomingMessageIfAppropriate(isMuted: isMuted)
             if isChatTranslationEnabled {
                 ensureTranslation(for: update.message)
             }
-        case .messageSendSucceeded(let update) where update.message.isOutgoing:
+        case .messageSendSucceeded(let update)
+            where update.message.isOutgoing && messageMatchesOpenedTopic(update.message):
             MacServiceSoundManager.shared.playMessageDelivered()
-        case .messageSendFailed(let update):
+        case .messageSendFailed(let update) where messageMatchesOpenedTopic(update.message):
             messageActionError = "Message couldn't be sent: \(telegramErrorDescription(update.error))"
         default:
             break

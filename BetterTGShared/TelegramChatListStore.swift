@@ -139,6 +139,10 @@ struct ChatListItemState: Sendable, Equatable {
     var community: ChatListCommunity?
     var membership: ChatListMembership?
     var canPostMessages: Bool?
+    /// From `Supergroup.isForum` - only ever set for supergroups, so `MacChatDetail`/iOS's own
+    /// `Route` gate can tell a forum-enabled group apart from a plain one without a separate
+    /// `getSupergroup` round trip.
+    var isForum: Bool?
     /// The other person's user id, for private and secret chats only - `nil` for groups/channels.
     var userId: Int64?
 
@@ -172,7 +176,7 @@ extension ChatListItemState {
     /// Builds an item for a `Chat` that isn't in the store's snapshot yet (e.g. resolved via a deep
     /// link or search). `membership` should come from `TelegramService.resolveMembership(for:)`
     /// rather than being left `nil`, or Leave/Delete actions gated on membership won't show up.
-    init(_ chat: Chat, membership: ChatListMembership?, canPostMessages: Bool? = nil) {
+    init(_ chat: Chat, membership: ChatListMembership?, canPostMessages: Bool? = nil, isForum: Bool? = nil) {
         let userId: Int64? =
             switch chat.type {
             case .chatTypePrivate(let value): value.userId
@@ -197,6 +201,7 @@ extension ChatListItemState {
             community: ChatListCommunity(chat.type),
             membership: membership,
             canPostMessages: canPostMessages,
+            isForum: isForum,
             userId: userId,
         )
     }
@@ -277,6 +282,7 @@ final class TelegramChatListStore: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.telegram-chatlist")
     private var memberships = [ChatListCommunity: ChatListMembership]()
     private var postingPermissions = [ChatListCommunity: Bool]()
+    private var forumStatus = [ChatListCommunity: Bool]()
     private let subject = CurrentValueSubject<ChatListSnapshot, Never>(.empty)
 
     private func reduceOnQueue(_ update: Update) {
@@ -305,6 +311,7 @@ final class TelegramChatListStore: @unchecked Sendable {
                 value.chat,
                 membership: community.flatMap { memberships[$0] },
                 canPostMessages: community.flatMap { postingPermissions[$0] },
+                isForum: community.flatMap { forumStatus[$0] },
             )
         case .updateBasicGroup(let value):
             let community = ChatListCommunity.basicGroup(value.basicGroup.id)
@@ -314,6 +321,7 @@ final class TelegramChatListStore: @unchecked Sendable {
             let community = ChatListCommunity.supergroup(value.supergroup.id)
             memberships[community] = ChatListMembership(value.supergroup.status)
             postingPermissions[community] = telegramCanPostMessages(in: value.supergroup)
+            forumStatus[community] = value.supergroup.isForum
             guard updateCommunityAccess(in: &state, for: community) else { return }
         case .updateChatPosition(let value):
             guard var item = state.items[value.chatId] else { return }
@@ -365,6 +373,7 @@ final class TelegramChatListStore: @unchecked Sendable {
                     chat,
                     membership: community.flatMap { memberships[$0] },
                     canPostMessages: community.flatMap { postingPermissions[$0] },
+                    isForum: community.flatMap { forumStatus[$0] },
                 )
                 changed = true
             }
@@ -377,9 +386,10 @@ final class TelegramChatListStore: @unchecked Sendable {
     private func updateCommunityAccess(in state: inout ChatListSnapshot, for community: ChatListCommunity) -> Bool {
         guard let membership = memberships[community] else { return false }
         let canPostMessages = postingPermissions[community]
+        let isForum = forumStatus[community]
         let chatIds = state.items.compactMap { chatId, item in
             item.community == community
-                && (item.membership != membership || item.canPostMessages != canPostMessages)
+                && (item.membership != membership || item.canPostMessages != canPostMessages || item.isForum != isForum)
                 ? chatId
                 : nil
         }
@@ -388,6 +398,7 @@ final class TelegramChatListStore: @unchecked Sendable {
             guard var item = state.items[chatId] else { continue }
             item.membership = membership
             item.canPostMessages = canPostMessages
+            item.isForum = isForum
             state.items[chatId] = item
             changed = true
         }

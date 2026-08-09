@@ -55,12 +55,11 @@ extension MacSessionModel {
             }
         }
 
-        guard let history = try? await service.getChatHistory(
+        guard let history = try? await fetchHistoryPage(
             chatId: chatId,
             fromMessageId: anchorMessageId,
             limit: 21,
             offset: 0,
-            onlyLocal: false,
         ), !Task.isCancelled,
         openedChatId == chatId,
         historyRequestGeneration == generation
@@ -82,12 +81,11 @@ extension MacSessionModel {
         let generation = historyRequestGeneration
 
         if let targetMessageId {
-            guard let history = try? await service.getChatHistory(
+            guard let history = try? await fetchHistoryPage(
                 chatId: chatId,
                 fromMessageId: targetMessageId,
                 limit: 51,
                 offset: -25,
-                onlyLocal: false,
             ), !Task.isCancelled,
             openedChatId == chatId,
             historyRequestGeneration == generation
@@ -126,6 +124,43 @@ extension MacSessionModel {
 
     // MARK: Private
 
+    /// Dispatches to whichever TDLib history call matches `openedTopic` - `getChatHistory` for
+    /// ordinary chats, `getMessageThreadHistory` for comment threads, `getForumTopicHistory` for
+    /// forum topics. Mirrors iOS's `ChatVM.fetchHistoryPage(fromMessageId:limit:offset:)`.
+    private func fetchHistoryPage(
+        chatId: Int64,
+        fromMessageId: Int64,
+        limit: Int,
+        offset: Int,
+    ) async throws -> Messages {
+        switch openedTopic {
+        case .messageTopicThread(let thread):
+            try await service.getMessageThreadHistory(
+                chatId: chatId,
+                fromMessageId: fromMessageId,
+                limit: limit,
+                messageId: thread.messageThreadId,
+                offset: offset,
+            )
+        case .messageTopicForum(let forum):
+            try await service.getForumTopicHistory(
+                chatId: chatId,
+                forumTopicId: forum.forumTopicId,
+                fromMessageId: fromMessageId,
+                limit: limit,
+                offset: offset,
+            )
+        case .messageTopicDirectMessages, .messageTopicSavedMessages, nil:
+            try await service.getChatHistory(
+                chatId: chatId,
+                fromMessageId: fromMessageId,
+                limit: limit,
+                offset: offset,
+                onlyLocal: false,
+            )
+        }
+    }
+
     /// Pages backward from the newest known message, accumulating up to `targetCount` messages
     /// across at most `maxIterations` round trips. Shared by `loadLatestMessages` (bootstrap) and
     /// `loadInitialHistory` (jump-to-message with no target) - the only difference between the two
@@ -155,12 +190,11 @@ extension MacSessionModel {
             else { break }
 
             let requestedCount = min(100, targetCount - messagesById.count + (fromMessageId == 0 ? 0 : 1))
-            guard let history = try? await service.getChatHistory(
+            guard let history = try? await fetchHistoryPage(
                 chatId: chatId,
                 fromMessageId: fromMessageId,
                 limit: requestedCount,
                 offset: 0,
-                onlyLocal: false,
             ) else { break }
             let newMessages = (history.messages ?? []).filter { messagesById[$0.id] == nil }
             guard !newMessages.isEmpty else {

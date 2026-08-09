@@ -12,6 +12,7 @@ extension MacSessionModel {
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let replyMessageId = replyingToMessage?.id
         let linkPreviewOptions = linkPreviewComposer.options
+        let topicId = openedTopic
         messageActionError = nil
         isSubmittingMessage = true
         Task {
@@ -30,6 +31,7 @@ extension MacSessionModel {
                     )],
                     replyTo: replyTo,
                     schedulingState: schedulingState,
+                    topicId: topicId,
                 )
                 clearDraft(chatId: openedChatId)
                 guard self.openedChatId == openedChatId else { return }
@@ -50,6 +52,7 @@ extension MacSessionModel {
         let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let replyMessageId = replyingToMessage?.id
+        let topicId = openedTopic
         let photos = urls.compactMap { url -> (URL, CGSize)? in
             guard let size = imagePixelSize(at: url), size.width > 0, size.height > 0 else { return nil }
             return (url, size)
@@ -83,6 +86,7 @@ extension MacSessionModel {
                     replyTo: replyTo,
                     uploadAction: .chatActionUploadingPhoto(.init(progress: 0)),
                     schedulingState: schedulingState,
+                    topicId: topicId,
                 )
                 clearDraft(chatId: chatId)
                 guard openedChatId == chatId else { return }
@@ -103,6 +107,7 @@ extension MacSessionModel {
         let caption = macComposerFormattedText(messageText, trimmingWhitespace: true)
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let replyMessageId = replyingToMessage?.id
+        let topicId = openedTopic
         let urls = selectedDocumentURLs
 
         messageActionError = nil
@@ -135,6 +140,7 @@ extension MacSessionModel {
                     replyTo: replyTo,
                     uploadAction: .chatActionUploadingDocument(.init(progress: 0)),
                     schedulingState: schedulingState,
+                    topicId: topicId,
                     onAccepted: { messages in
                         TelegramOutgoingFileStaging.shared.register(
                             fileURLs: stagedURLs,

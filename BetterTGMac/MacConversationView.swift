@@ -16,8 +16,9 @@ struct MacConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             MacConversationHeader(
-                title: chat.displayTitle,
-                status: model.conversationHeaderStatus,
+                title: isViewingForumTopic ? (model.openedTopicTitle ?? chat.displayTitle) : chat.displayTitle,
+                status: isViewingForumTopic ? nil : model.conversationHeaderStatus,
+                onGoBack: isViewingForumTopic ? { model.activateChat(chat.chatId, topic: nil) } : nil,
                 onOpenInfo: { showsChatInfo = true },
             )
             Divider()
@@ -71,6 +72,7 @@ struct MacConversationView: View {
                     service: model.service,
                     chatId: chatId,
                     replyToMessageId: model.replyingToMessage?.id,
+                    topicId: model.openedTopic,
                 )
                 model.replyingToMessage = nil
                 model.saveCurrentDraft()
@@ -84,6 +86,7 @@ struct MacConversationView: View {
                     service: model.service,
                     chatId: chatId,
                     replyToMessageId: model.replyingToMessage?.id,
+                    topicId: model.openedTopic,
                 )
                 model.replyingToMessage = nil
                 model.saveCurrentDraft()
@@ -99,6 +102,7 @@ struct MacConversationView: View {
                     service: model.service,
                     chatId: chatId,
                     replyToMessageId: model.replyingToMessage?.id,
+                    topicId: model.openedTopic,
                 )
                 model.replyingToMessage = nil
                 model.saveCurrentDraft()
@@ -112,6 +116,7 @@ struct MacConversationView: View {
                     service: model.service,
                     chatId: chatId,
                     replyToMessageId: model.replyingToMessage?.id,
+                    topicId: model.openedTopic,
                 )
                 model.replyingToMessage = nil
                 model.saveCurrentDraft()
@@ -122,6 +127,7 @@ struct MacConversationView: View {
                 service: model.service,
                 chatId: chat.chatId,
                 replyToMessageId: model.replyingToMessage?.id,
+                topicId: model.openedTopic,
                 onSent: {
                     model.replyingToMessage = nil
                     model.saveCurrentDraft()
@@ -185,6 +191,14 @@ struct MacConversationView: View {
     @State private var showsScheduleVoicePicker = false
     @State private var showsStickerPicker = false
     @State private var pollIsAvailable = false
+
+    private var isViewingForumTopic: Bool {
+        if case .messageTopicForum = model.openedTopic {
+            true
+        } else {
+            false
+        }
+    }
 
     private var shouldFollowLatestMessage: Bool {
         switch model.messages.change {

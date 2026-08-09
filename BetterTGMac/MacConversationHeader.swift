@@ -9,29 +9,44 @@ import TDLibKit
 struct MacConversationHeader: View {
     let title: String
     let status: String?
+    /// Set while viewing a single forum topic - shows a leading "back to topics" chevron before
+    /// the title, mirroring iOS's back-button-to-the-parent-chat treatment for topic-scoped views.
+    var onGoBack: (() -> Void)?
     let onOpenInfo: () -> Void
 
     var body: some View {
-        Button(action: onOpenInfo) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
-
-                if let status, !status.isEmpty {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        HStack(spacing: 4) {
+            if let onGoBack {
+                Button(action: onGoBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Back to Topics")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+
+            Button(action: onOpenInfo) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    if let status, !status.isEmpty {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
     }
 }
 
