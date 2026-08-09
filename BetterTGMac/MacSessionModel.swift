@@ -72,6 +72,11 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     /// Display name for `openedTopic`, shown in `MacConversationHeader` instead of the parent
     /// chat's name while a forum topic is open - `nil` whenever `openedTopic` is.
     var openedTopicTitle: String?
+    /// Set while `openedChatId`/`openedTopic` point at a comment thread reached from a different
+    /// chat (a channel's linked discussion group) - `closeOpenedTopic()` uses this to return to
+    /// that chat specifically, rather than just clearing `openedTopic` the way leaving a forum
+    /// topic does (which stays within the same chat).
+    var commentThreadReturnChatId: Int64?
     var messages = TelegramMessageSnapshot.empty(chatId: 0)
     var editingMessage: Message?
     var replyingToMessage: Message?
@@ -491,6 +496,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         openedChatId = nil
         openedTopic = nil
         openedTopicTitle = nil
+        commentThreadReturnChatId = nil
         openedChatType = nil
         conversationHeaderBaseStatus = nil
         conversationHeaderActivities = [:]

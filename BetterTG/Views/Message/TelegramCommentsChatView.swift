@@ -10,9 +10,8 @@ import TDLibKit
 /// `ChatView`/`ChatVM` engine scoped to that thread via `messageTopic: .messageTopicThread(...)`,
 /// matching Telegram-iOS, where comments reuse the full chat controller (attachments, polls,
 /// replies, reactions, editing, forwarding...) rather than a bespoke reply list. `ChatView` itself
-/// lives in this (iOS) target, so this wrapper - not the platform-shared `TelegramCommentsView` -
-/// is what iOS presents; macOS still uses the bespoke list until it gets its own topic-aware chat
-/// engine.
+/// lives in this (iOS) target, so this wrapper is what iOS presents; macOS has its own equivalent
+/// built on `MacConversationView` via `MacSessionModel.openCommentThread(...)`.
 ///
 /// Takes an already-resolved `TelegramResolvedCommentsThread` rather than resolving it itself, so
 /// the thread lookup happens before this is ever presented - mirroring Telegram-iOS's own

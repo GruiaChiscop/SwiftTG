@@ -148,6 +148,43 @@ extension MacSessionModel {
         activateChat(chat.id, messageId: messageId)
     }
 
+    /// Opens a channel post's comment thread, which lives in the channel's linked discussion
+    /// group - a genuinely different chat, possibly one `chatList` doesn't know about yet if the
+    /// user has never opened it directly (mirrors `activateResolvedChat`'s on-demand registration).
+    /// Matches iOS's `TelegramCommentsChatView`: the thread is resolved before this is called, so
+    /// there's no empty screen that fills in afterward.
+    func openCommentThread(discussionChatId: Int64, messageThreadId: Int64, title: String) async {
+        if chatList.items[discussionChatId] == nil {
+            guard let chat = try? await service.getChat(chatId: discussionChatId) else {
+                messageActionError = "Couldn't load this discussion."
+                return
+            }
+            service.mergeChatListChats([chat])
+            let membership = await service.resolveMembership(for: chat)
+            chatList.items[discussionChatId] = ChatListItemState(chat, membership: membership)
+        }
+        if commentThreadReturnChatId == nil {
+            commentThreadReturnChatId = openedChatId
+        }
+        activateChat(
+            discussionChatId,
+            topic: .messageTopicThread(MessageTopicThread(messageThreadId: messageThreadId)),
+            topicTitle: title,
+        )
+    }
+
+    /// Leaves the currently open forum topic or comment thread - back to the same chat's topic
+    /// list for a forum topic, or back to the channel a comment thread was opened from.
+    func closeOpenedTopic() {
+        guard let openedChatId else { return }
+        if let returnChatId = commentThreadReturnChatId {
+            commentThreadReturnChatId = nil
+            activateChat(returnChatId, topic: nil)
+        } else {
+            activateChat(openedChatId, topic: nil)
+        }
+    }
+
     func navigateToRepliedMessage(from message: Message) {
         guard let context = messageReplyContexts[message.id], let messageId = context.messageId else { return }
         if context.chatId == openedChatId {

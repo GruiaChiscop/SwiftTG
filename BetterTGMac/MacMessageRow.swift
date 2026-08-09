@@ -61,7 +61,8 @@ struct MacMessageRow: View {
     @State private var showDeleteOptions = false
     @State private var showReactionOptions = false
     @State private var showReactionDetails = false
-    @State private var showsComments = false
+    @State private var isLoadingComments = false
+    @State private var commentsErrorMessage: String?
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
     @State private var showForwardPicker = false
@@ -312,7 +313,7 @@ struct MacMessageRow: View {
             items.append(.button(
                 title: replyInfo.replyCount > 0 ? "View Comments" : "Add Comment",
                 systemImage: "bubble.left",
-            ) { showsComments = true })
+            ) { openComments() })
         }
         if capabilities?.properties.canBeReplied == true {
             items.append(.button(title: "Reply", systemImage: "arrowshape.turn.up.left") {
@@ -424,6 +425,17 @@ struct MacMessageRow: View {
             parts.append(status)
         }
         return parts.joined(separator: ", ")
+    }
+
+    private var commentsErrorIsPresented: Binding<Bool> {
+        Binding(
+            get: { commentsErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    commentsErrorMessage = nil
+                }
+            },
+        )
     }
 
     private var messageRowBody: some View {
@@ -592,8 +604,8 @@ struct MacMessageRow: View {
                     .accessibilityHidden(true)
 
                     if isChannelMessage, let replyInfo = message.interactionInfo?.replyInfo {
-                        TelegramCommentsBar(replyCount: replyInfo.replyCount) {
-                            showsComments = true
+                        TelegramCommentsBar(replyCount: replyInfo.replyCount, isLoading: isLoadingComments) {
+                            openComments()
                         }
                     }
                 }
@@ -741,12 +753,10 @@ struct MacMessageRow: View {
                 messageId: message.id,
             )
         }
-        .sheet(isPresented: $showsComments) {
-            TelegramCommentsView(
-                service: model.service,
-                channelChatId: message.chatId,
-                messageId: message.id,
-            )
+        .alert("Couldn't Open Comments", isPresented: commentsErrorIsPresented) {
+            Button("OK") {}
+        } message: {
+            Text(commentsErrorMessage ?? "")
         }
         .sheet(isPresented: $showForwardPicker) {
             MacForwardChatPicker(model: model, message: message)
@@ -1029,6 +1039,34 @@ struct MacMessageRow: View {
                 )
             } catch {
                 model.messageActionError = "File couldn't be saved: \(telegramErrorDescription(error))"
+            }
+        }
+    }
+
+    /// Resolves the comment thread's discussion group/`messageThreadId` before switching to it -
+    /// mirrors iOS's `openComments()`, so there's no empty screen that fills in after the fact.
+    private func openComments() {
+        guard !isLoadingComments else { return }
+        isLoadingComments = true
+        commentsErrorMessage = nil
+
+        Task {
+            defer { isLoadingComments = false }
+            do {
+                let thread = try await model.service.getMessageThread(
+                    chatId: message.chatId,
+                    messageId: message.id,
+                )
+                let replyCount = message.interactionInfo?.replyInfo?.replyCount ?? 0
+                let title = replyCount > 0 ? "\(replyCount) Comment\(replyCount == 1 ? "" : "s")" : "Comments"
+                await model.openCommentThread(
+                    discussionChatId: thread.chatId,
+                    messageThreadId: thread.messageThreadId,
+                    title: title,
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                commentsErrorMessage = telegramErrorDescription(error)
             }
         }
     }

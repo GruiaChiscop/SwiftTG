@@ -16,9 +16,9 @@ struct MacConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             MacConversationHeader(
-                title: isViewingForumTopic ? (model.openedTopicTitle ?? chat.displayTitle) : chat.displayTitle,
-                status: isViewingForumTopic ? nil : model.conversationHeaderStatus,
-                onGoBack: isViewingForumTopic ? { model.activateChat(chat.chatId, topic: nil) } : nil,
+                title: isViewingScopedTopic ? (model.openedTopicTitle ?? chat.displayTitle) : chat.displayTitle,
+                status: isViewingScopedTopic ? nil : model.conversationHeaderStatus,
+                onGoBack: isViewingScopedTopic ? { model.closeOpenedTopic() } : nil,
                 onOpenInfo: { showsChatInfo = true },
             )
             Divider()
@@ -36,7 +36,10 @@ struct MacConversationView: View {
             Divider()
             if model.isConversationSearchActive {
                 conversationSearchNavigationBar
-            } else if chat.membership == .notMember {
+            } else if chat.membership == .notMember, !isViewingCommentThread {
+                // Telegram has no separate "Join Group" step for channel comments - sending your
+                // first comment silently adds you to the discussion group server-side, matching
+                // iOS's `ChatVM.isCommentThread` bypass.
                 joinChatButton
             } else if chat.kind != .channel || chat.canPostMessages == true {
                 composer
@@ -198,6 +201,18 @@ struct MacConversationView: View {
         } else {
             false
         }
+    }
+
+    private var isViewingCommentThread: Bool {
+        if case .messageTopicThread = model.openedTopic {
+            true
+        } else {
+            false
+        }
+    }
+
+    private var isViewingScopedTopic: Bool {
+        isViewingForumTopic || isViewingCommentThread
     }
 
     private var shouldFollowLatestMessage: Bool {
