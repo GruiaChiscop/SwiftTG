@@ -44,6 +44,8 @@ struct ForumTopicsListView: View {
                 .accessibilityActions {
                     Button(topic.isPinned ? "Unpin" : "Pin") { togglePinned(topic) }
                     Button(topic.info.isClosed ? "Reopen" : "Close") { toggleClosed(topic) }
+                    Button(isMuted(topic) ? "Unmute" : "Mute") { muteOrShowOptions(topic) }
+                    Button("Sound") { soundSheetTopic = topic }
                     if !topic.info.isGeneral {
                         Button("Edit") { editedTopic = topic.info }
                         Button("Delete", role: .destructive) { topicPendingDeletion = topic }
@@ -69,6 +71,15 @@ struct ForumTopicsListView: View {
                         systemImage: topic.info.isClosed ? "lock.open" : "lock",
                     ) {
                         toggleClosed(topic)
+                    }
+                    Button(
+                        isMuted(topic) ? "Unmute" : "Mute",
+                        systemImage: isMuted(topic) ? "speaker.wave.2" : "speaker.slash",
+                    ) {
+                        muteOrShowOptions(topic)
+                    }
+                    Button("Sound", systemImage: "music.note") {
+                        soundSheetTopic = topic
                     }
                     if !topic.info.isGeneral {
                         Button("Edit", systemImage: "pencil") { editedTopic = topic.info }
@@ -140,6 +151,37 @@ struct ForumTopicsListView: View {
         } message: {
             Text(actionErrorMessage ?? "")
         }
+        .popover(isPresented: mutePresetIsPresented) {
+            if let topic = mutePresetTopic {
+                TelegramMutePresetPopoverContent { duration in
+                    mutePresetTopic = nil
+                    setMuteDuration(topic, duration)
+                }
+                .presentationCompactAdaptation(.popover)
+            }
+        }
+        .sheet(isPresented: soundSheetIsPresented) {
+            if let topic = soundSheetTopic {
+                NavigationStack {
+                    List {
+                        TelegramChatSoundRow(
+                            service: service,
+                            chatId: customChat.chat.id,
+                            forumTopicId: topic.info.forumTopicId,
+                            settings: topic.notificationSettings,
+                        )
+                    }
+                    .navigationTitle("Sound")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { soundSheetTopic = nil }
+                        }
+                    }
+                }
+                .onDisappear { Task { await reload(force: true) } }
+            }
+        }
         .task { await reload() }
         .refreshable { await reload(force: true) }
     }
@@ -160,7 +202,31 @@ struct ForumTopicsListView: View {
     @State private var showsCreateComposer = false
     @State private var editedTopic: ForumTopicInfo?
     @State private var topicPendingDeletion: ForumTopic?
+    @State private var mutePresetTopic: ForumTopic?
+    @State private var soundSheetTopic: ForumTopic?
     @State private var actionErrorMessage: String?
+
+    private var mutePresetIsPresented: Binding<Bool> {
+        Binding(
+            get: { mutePresetTopic != nil },
+            set: {
+                isPresented in if !isPresented {
+                    mutePresetTopic = nil
+                }
+            },
+        )
+    }
+
+    private var soundSheetIsPresented: Binding<Bool> {
+        Binding(
+            get: { soundSheetTopic != nil },
+            set: {
+                isPresented in if !isPresented {
+                    soundSheetTopic = nil
+                }
+            },
+        )
+    }
 
     private var editComposerIsPresented: Binding<Bool> {
         Binding(
@@ -237,6 +303,12 @@ struct ForumTopicsListView: View {
 
                     Spacer(minLength: 8)
 
+                    if isMuted(topic) {
+                        Image(systemName: "speaker.slash.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                     if topic.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
@@ -298,6 +370,31 @@ struct ForumTopicsListView: View {
         }
     }
 
+    private func isMuted(_ topic: ForumTopic) -> Bool {
+        TelegramForumTopicSending.isMuted(topic, chatIsMuted: customChat.isMuted)
+    }
+
+    private func muteOrShowOptions(_ topic: ForumTopic) {
+        if isMuted(topic) {
+            setMuteDuration(topic, 0)
+        } else {
+            mutePresetTopic = topic
+        }
+    }
+
+    private func setMuteDuration(_ topic: ForumTopic, _ duration: Int) {
+        Task {
+            await TelegramForumTopicSending.setMuteDuration(
+                service: service,
+                chatId: customChat.chat.id,
+                forumTopicId: topic.info.forumTopicId,
+                duration: duration,
+                current: topic.notificationSettings,
+            )
+            await reload(force: true)
+        }
+    }
+
     private func delete(_ topic: ForumTopic) {
         Task {
             do {
@@ -319,6 +416,9 @@ struct ForumTopicsListView: View {
         }
         if topic.isPinned {
             parts.append("Pinned")
+        }
+        if isMuted(topic) {
+            parts.append("Muted")
         }
         if topic.unreadCount > 0 {
             parts.append("\(topic.unreadCount) unread")

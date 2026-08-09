@@ -29,8 +29,34 @@ final class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        // A chat-level override (if the user picked a sound for this specific conversation, not
-        // just its scope) wins over the scope default.
+        // Telegram's server pre-resolves the correct sound for this specific notification
+        // (factoring in whatever per-chat/per-topic/mention override applies - the client never
+        // has to work that out itself) and embeds it as `aps.ringtone`, a saved-notification-sound
+        // id - confirmed against a real push payload and against TDLib's own decoder
+        // (`NotificationManager.cpp`'s `ringtone_id` handling). If we've already cached that exact
+        // sound (keyed by id, the same way `TelegramNotificationSoundCache` always has), this is
+        // strictly more correct than the chat/scope-keyed fallback below, since it's the only path
+        // that can ever reflect a per-topic override.
+        if let ringtoneId = Self.ringtoneId(from: request.content.userInfo) {
+            if ringtoneId == 0 {
+                bestAttemptContent.sound = nil
+                contentHandler(bestAttemptContent)
+                return
+            }
+            let fileName = TelegramNotificationSoundManifest.fileName(for: ringtoneId)
+            if let cachedURL = TelegramNotificationSoundManifest.soundFileURL(named: fileName),
+               FileManager.default.fileExists(atPath: cachedURL.path),
+               let localFileName = TelegramNotificationSoundManifest.localSoundFileName(copyingFrom: cachedURL)
+            {
+                bestAttemptContent.sound = UNNotificationSound(named: UNNotificationSoundName(localFileName))
+                contentHandler(bestAttemptContent)
+                return
+            }
+        }
+
+        // Fallback: the sound the server pointed at (if any) isn't cached locally yet - e.g. the
+        // user just switched to a sound never played on this device before. Approximate with
+        // whatever this chat/scope was last known to use.
         let chatKey = Self.chatKey(from: request.content.userInfo)
         let scopeKey = Self.scopeKey(from: request.content.userInfo)
         let resolvedKey = [chatKey, scopeKey]
@@ -65,6 +91,25 @@ final class NotificationService: UNNotificationServiceExtension {
 
     private var bestAttemptContent: UNMutableNotificationContent?
     private var contentHandler: ((UNNotificationContent) -> Void)?
+
+    /// Reads the server-pre-resolved sound id, if any - `0` means TDLib's own convention for
+    /// "explicitly silent" (mirrors `NotificationManager.cpp` setting `ringtone_id = 0` when the
+    /// payload's `silent` field is present), distinct from `nil` ("no server hint, use the
+    /// chat/scope-keyed fallback").
+    private static func ringtoneId(from userInfo: [AnyHashable: Any]) -> Int64? {
+        let aps = userInfo["aps"] as? [AnyHashable: Any]
+        if (userInfo["silent"] ?? aps?["silent"]) != nil {
+            return 0
+        }
+        guard let raw = userInfo["ringtone"] ?? aps?["ringtone"] else { return nil }
+        if let number = raw as? NSNumber {
+            return number.int64Value
+        }
+        if let string = raw as? String {
+            return Int64(string)
+        }
+        return nil
+    }
 
     /// Mirrors the payload key names `TelegramNotificationPayload` (main app target) already
     /// parses real Telegram push payloads for - duplicated here rather than shared cross-target,

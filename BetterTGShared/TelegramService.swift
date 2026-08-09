@@ -275,6 +275,11 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func deleteForumTopic(chatId: Int64?, forumTopicId: Int?) async throws -> Ok
     func toggleForumTopicIsClosed(chatId: Int64?, forumTopicId: Int?, isClosed: Bool?) async throws -> Ok
     func toggleForumTopicIsPinned(chatId: Int64?, forumTopicId: Int?, isPinned: Bool?) async throws -> Ok
+    func setForumTopicNotificationSettings(
+        chatId: Int64?,
+        forumTopicId: Int?,
+        notificationSettings: ChatNotificationSettings?,
+    ) async throws -> Ok
     func getForumTopicDefaultIcons() async throws -> Stickers
     func searchChats(limit: Int?, query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats
     func searchPublicChats(query: String?, typeFilter: SearchChatTypeFilter?) async throws -> Chats
@@ -1286,6 +1291,18 @@ extension TelegramSession: TelegramService {
 
     func toggleForumTopicIsPinned(chatId: Int64?, forumTopicId: Int?, isPinned: Bool?) async throws -> Ok {
         try await client.toggleForumTopicIsPinned(chatId: chatId, forumTopicId: forumTopicId, isPinned: isPinned)
+    }
+
+    func setForumTopicNotificationSettings(
+        chatId: Int64?,
+        forumTopicId: Int?,
+        notificationSettings: ChatNotificationSettings?,
+    ) async throws -> Ok {
+        try await client.setForumTopicNotificationSettings(
+            chatId: chatId,
+            forumTopicId: forumTopicId,
+            notificationSettings: notificationSettings,
+        )
     }
 
     func getForumTopicDefaultIcons() async throws -> Stickers {

@@ -56,6 +56,15 @@ struct MacForumTopicsListView: View {
                             ) {
                                 toggleClosed(topic)
                             }
+                            Button(
+                                isMuted(topic) ? "Unmute" : "Mute",
+                                systemImage: isMuted(topic) ? "speaker.wave.2" : "speaker.slash",
+                            ) {
+                                muteOrShowOptions(topic)
+                            }
+                            Button("Sound", systemImage: "music.note") {
+                                soundSheetTopic = topic
+                            }
                             if !topic.info.isGeneral {
                                 Button("Edit", systemImage: "pencil") { editedTopic = topic.info }
                                 Button("Delete", systemImage: "trash", role: .destructive) {
@@ -111,6 +120,36 @@ struct MacForumTopicsListView: View {
         } message: {
             Text(actionErrorMessage ?? "")
         }
+        .popover(isPresented: mutePresetIsPresented) {
+            if let topic = mutePresetTopic {
+                TelegramMutePresetPopoverContent { duration in
+                    mutePresetTopic = nil
+                    setMuteDuration(topic, duration)
+                }
+            }
+        }
+        .sheet(isPresented: soundSheetIsPresented) {
+            if let topic = soundSheetTopic {
+                NavigationStack {
+                    List {
+                        TelegramChatSoundRow(
+                            service: model.service,
+                            chatId: chat.chatId,
+                            forumTopicId: topic.info.forumTopicId,
+                            settings: topic.notificationSettings,
+                        )
+                    }
+                    .navigationTitle("Sound")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { soundSheetTopic = nil }
+                        }
+                    }
+                }
+                .frame(minWidth: 380, minHeight: 300)
+                .onDisappear { Task { await reload(force: true) } }
+            }
+        }
         .task(id: chat.chatId) { await reload() }
     }
 
@@ -129,7 +168,31 @@ struct MacForumTopicsListView: View {
     @State private var showsCreateComposer = false
     @State private var editedTopic: ForumTopicInfo?
     @State private var topicPendingDeletion: ForumTopic?
+    @State private var mutePresetTopic: ForumTopic?
+    @State private var soundSheetTopic: ForumTopic?
     @State private var actionErrorMessage: String?
+
+    private var mutePresetIsPresented: Binding<Bool> {
+        Binding(
+            get: { mutePresetTopic != nil },
+            set: {
+                isPresented in if !isPresented {
+                    mutePresetTopic = nil
+                }
+            },
+        )
+    }
+
+    private var soundSheetIsPresented: Binding<Bool> {
+        Binding(
+            get: { soundSheetTopic != nil },
+            set: {
+                isPresented in if !isPresented {
+                    soundSheetTopic = nil
+                }
+            },
+        )
+    }
 
     private var editComposerIsPresented: Binding<Bool> {
         Binding(
@@ -217,6 +280,12 @@ struct MacForumTopicsListView: View {
 
                     Spacer(minLength: 8)
 
+                    if isMuted(topic) {
+                        Image(systemName: "speaker.slash.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                     if topic.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
@@ -285,6 +354,32 @@ struct MacForumTopicsListView: View {
         }
     }
 
+    private func isMuted(_ topic: ForumTopic) -> Bool {
+        let chatIsMuted = (chat.notificationSettings?.muteFor ?? 0) > 0
+        return TelegramForumTopicSending.isMuted(topic, chatIsMuted: chatIsMuted)
+    }
+
+    private func muteOrShowOptions(_ topic: ForumTopic) {
+        if isMuted(topic) {
+            setMuteDuration(topic, 0)
+        } else {
+            mutePresetTopic = topic
+        }
+    }
+
+    private func setMuteDuration(_ topic: ForumTopic, _ duration: Int) {
+        Task {
+            await TelegramForumTopicSending.setMuteDuration(
+                service: model.service,
+                chatId: chat.chatId,
+                forumTopicId: topic.info.forumTopicId,
+                duration: duration,
+                current: topic.notificationSettings,
+            )
+            await reload(force: true)
+        }
+    }
+
     private func delete(_ topic: ForumTopic) {
         Task {
             do {
@@ -303,6 +398,9 @@ struct MacForumTopicsListView: View {
         }
         if topic.isPinned {
             parts.append("Pinned")
+        }
+        if isMuted(topic) {
+            parts.append("Muted")
         }
         if topic.unreadCount > 0 {
             parts.append("\(topic.unreadCount) unread")

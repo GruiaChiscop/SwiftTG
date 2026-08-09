@@ -58,6 +58,83 @@ enum TelegramForumTopicSending {
             name: draft.name,
         )
     }
+
+    static func setMuteDuration(
+        service: any TelegramService,
+        chatId: Int64,
+        forumTopicId: Int,
+        duration: Int,
+        current: ChatNotificationSettings,
+    ) async {
+        let settings = ChatNotificationSettings(
+            disableMentionNotifications: current.disableMentionNotifications,
+            disablePinnedMessageNotifications: current.disablePinnedMessageNotifications,
+            muteFor: duration,
+            muteStories: current.muteStories,
+            showPreview: current.showPreview,
+            showStoryPoster: current.showStoryPoster,
+            soundId: current.soundId,
+            storySoundId: current.storySoundId,
+            useDefaultDisableMentionNotifications: current.useDefaultDisableMentionNotifications,
+            useDefaultDisablePinnedMessageNotifications: current.useDefaultDisablePinnedMessageNotifications,
+            useDefaultMuteFor: false,
+            useDefaultMuteStories: current.useDefaultMuteStories,
+            useDefaultShowPreview: current.useDefaultShowPreview,
+            useDefaultShowStoryPoster: current.useDefaultShowStoryPoster,
+            useDefaultSound: current.useDefaultSound,
+            useDefaultStorySound: current.useDefaultStorySound,
+        )
+        _ = try? await service.setForumTopicNotificationSettings(
+            chatId: chatId,
+            forumTopicId: forumTopicId,
+            notificationSettings: settings,
+        )
+    }
+
+    /// A topic's own `notificationSettings.muteFor` only applies when it isn't deferring to the
+    /// parent chat's setting - mirrors the same `useDefaultMuteFor` fallback `ChatInfoView`'s
+    /// `isMuted(_:)` already uses at the chat level.
+    static func isMuted(_ topic: ForumTopic, chatIsMuted: Bool) -> Bool {
+        topic.notificationSettings.useDefaultMuteFor ? chatIsMuted : topic.notificationSettings.muteFor > 0
+    }
+
+    /// Unlike `TelegramChatActions.setSoundId`, this never touches `TelegramNotificationSoundCache`
+    /// - that cache exists only so the (TDLib-less) Notification Service Extension can resolve a
+    /// *chat's* sound from a bare push payload, which never carries which topic a message belongs
+    /// to (confirmed against TDLib's own push-payload decoder). Writing a topic's sound into the
+    /// chat-keyed manifest would incorrectly apply it to the whole chat's other messages there.
+    static func setSoundId(
+        service: any TelegramService,
+        chatId: Int64,
+        forumTopicId: Int,
+        soundId: TdInt64,
+        useDefault: Bool,
+        current: ChatNotificationSettings,
+    ) async {
+        let settings = ChatNotificationSettings(
+            disableMentionNotifications: current.disableMentionNotifications,
+            disablePinnedMessageNotifications: current.disablePinnedMessageNotifications,
+            muteFor: current.muteFor,
+            muteStories: current.muteStories,
+            showPreview: current.showPreview,
+            showStoryPoster: current.showStoryPoster,
+            soundId: useDefault ? current.soundId : soundId,
+            storySoundId: current.storySoundId,
+            useDefaultDisableMentionNotifications: current.useDefaultDisableMentionNotifications,
+            useDefaultDisablePinnedMessageNotifications: current.useDefaultDisablePinnedMessageNotifications,
+            useDefaultMuteFor: current.useDefaultMuteFor,
+            useDefaultMuteStories: current.useDefaultMuteStories,
+            useDefaultShowPreview: current.useDefaultShowPreview,
+            useDefaultShowStoryPoster: current.useDefaultShowStoryPoster,
+            useDefaultSound: useDefault,
+            useDefaultStorySound: current.useDefaultStorySound,
+        )
+        _ = try? await service.setForumTopicNotificationSettings(
+            chatId: chatId,
+            forumTopicId: forumTopicId,
+            notificationSettings: settings,
+        )
+    }
 }
 
 // MARK: - TelegramForumTopicComposerView
