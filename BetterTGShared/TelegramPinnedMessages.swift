@@ -5,6 +5,7 @@ import TDLibKit
 func telegramPinnedMessages(
     service: any TelegramService,
     chatId: Int64,
+    topicId: MessageTopic? = nil,
 ) async throws -> [Message] {
     var fromMessageId: Int64 = 0
     var messages = [Message]()
@@ -19,7 +20,7 @@ func telegramPinnedMessages(
             offset: 0,
             query: "",
             senderId: nil,
-            topicId: nil,
+            topicId: topicId,
         )
 
         for message in result.messages where seenMessageIds.insert(message.id).inserted {

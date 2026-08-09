@@ -136,6 +136,7 @@ extension ChatVM {
         case .userStatus(let value):
             withAnimation { onlineStatus = getOnlineStatus(from: value.status) }
         case .chatAction(let value):
+            guard messageTopic == nil || value.topicId == messageTopic else { return }
             updateChatAction(value)
         case .historyMerged:
             reconcileMessages(with: snapshot)

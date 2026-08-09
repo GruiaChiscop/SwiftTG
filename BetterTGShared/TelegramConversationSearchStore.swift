@@ -54,9 +54,10 @@ import TDLibKit
     @MainActor func begin(
         chatId: Int64,
         isSecretChat: Bool,
+        topicId: MessageTopic? = nil,
         onSelect: @escaping @MainActor (Int64) -> Void,
     ) {
-        if self.chatId != chatId {
+        if self.chatId != chatId || self.topicId != topicId {
             searchTask?.cancel()
             generation &+= 1
             clearResults()
@@ -64,6 +65,7 @@ import TDLibKit
         }
         self.chatId = chatId
         self.isSecretChat = isSecretChat
+        self.topicId = topicId
         self.onSelect = onSelect
         isActive = true
     }
@@ -77,6 +79,7 @@ import TDLibKit
         query = ""
         clearResults()
         chatId = nil
+        topicId = nil
         onSelect = nil
     }
 
@@ -159,6 +162,7 @@ import TDLibKit
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var chatId: Int64?
+    @ObservationIgnored private var topicId: MessageTopic?
     @ObservationIgnored private var isSecretChat = false
     @ObservationIgnored private var nextFromMessageId: Int64 = 0
     @ObservationIgnored private var nextOffset = ""
@@ -197,7 +201,7 @@ import TDLibKit
                 offset: 0,
                 query: query,
                 senderId: nil,
-                topicId: nil,
+                topicId: topicId,
             )
             messages = result.messages
             resolvedTotalCount = result.totalCount

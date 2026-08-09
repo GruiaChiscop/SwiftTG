@@ -10,6 +10,7 @@ extension MacSessionModel {
 
     func refreshPinnedMessages(for chatId: Int64? = nil) {
         guard let chatId = chatId ?? openedChatId else { return }
+        let topicId = openedTopic
         pinnedMessagesTask?.cancel()
         pinnedMessagesGeneration &+= 1
         let generation = pinnedMessagesGeneration
@@ -19,10 +20,11 @@ extension MacSessionModel {
         pinnedMessagesTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let messages = try await telegramPinnedMessages(service: service, chatId: chatId)
+                let messages = try await telegramPinnedMessages(service: service, chatId: chatId, topicId: topicId)
                 guard !Task.isCancelled,
                       generation == pinnedMessagesGeneration,
-                      openedChatId == chatId
+                      openedChatId == chatId,
+                      openedTopic == topicId
                 else { return }
                 pinnedMessages = messages
                 isLoadingPinnedMessages = false

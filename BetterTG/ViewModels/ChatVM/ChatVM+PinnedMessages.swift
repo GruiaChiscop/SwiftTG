@@ -21,6 +21,7 @@ extension ChatVM {
                 let messages = try await telegramPinnedMessages(
                     service: service,
                     chatId: customChat.chat.id,
+                    topicId: messageTopic,
                 )
                 guard !Task.isCancelled, generation == pinnedMessagesGeneration else { return }
                 pinnedMessages = messages

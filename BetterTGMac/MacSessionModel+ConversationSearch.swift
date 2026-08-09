@@ -24,6 +24,7 @@ extension MacSessionModel {
         conversationSearch.begin(
             chatId: chatId,
             isSecretChat: isOpenedSecretChat,
+            topicId: openedTopic,
             onSelect: { [weak self] messageId in
                 guard let self, openedChatId == chatId else { return }
                 activateChat(chatId, messageId: messageId)

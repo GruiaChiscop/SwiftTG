@@ -157,7 +157,7 @@ extension MacSessionModel {
                 memberCount: value.supergroupFullInfo.memberCount,
             )
         case .updateChatAction(let value):
-            guard value.chatId == openedChatId else { return }
+            guard value.chatId == openedChatId, openedTopic == nil || value.topicId == openedTopic else { return }
             if case .chatActionCancel = value.action {
                 conversationHeaderActivities[value.senderId] = nil
             } else {

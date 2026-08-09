@@ -23,6 +23,7 @@ extension ChatVM {
         conversationSearch.begin(
             chatId: customChat.chat.id,
             isSecretChat: isSecretChat,
+            topicId: messageTopic,
             onSelect: { [weak self] messageId in
                 self?.navigateToMessage(id: messageId)
             },
