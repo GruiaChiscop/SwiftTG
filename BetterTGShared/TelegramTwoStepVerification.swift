@@ -46,6 +46,17 @@ struct TelegramTwoStepVerificationView: View {
                     }
                 }
 
+                if let codeInfo = passwordState.recoveryEmailAddressCodeInfo {
+                    Section {
+                        Button("Confirm Recovery Email") { showsRecoveryEmailCode = true }
+                    } footer: {
+                        Text(
+                            "A confirmation code was sent to \(codeInfo.emailAddressPattern). "
+                                + "Your recovery email won't be active until you confirm it.",
+                        )
+                    }
+                }
+
                 Section {
                     if passwordState.hasPassword {
                         Button("Change Password") { showsChangePassword = true }
@@ -75,6 +86,14 @@ struct TelegramTwoStepVerificationView: View {
         .sheet(isPresented: $showsTurnOffPassword, onDismiss: { Task { await loadState() } }) {
             TelegramTurnOffPasswordView(service: service)
         }
+        .sheet(isPresented: $showsRecoveryEmailCode, onDismiss: { Task { await loadState() } }) {
+            if let codeInfo = passwordState?.recoveryEmailAddressCodeInfo {
+                TelegramRecoveryEmailCodeView(service: service, codeInfo: codeInfo) { newState in
+                    passwordState = newState
+                    showsRecoveryEmailCode = false
+                }
+            }
+        }
         .alert("Couldn't Load Password Settings", isPresented: errorIsPresented) {
             Button("OK") {}
         } message: {
@@ -88,6 +107,7 @@ struct TelegramTwoStepVerificationView: View {
     @State private var hasLoaded = false
     @State private var passwordState: PasswordState?
     @State private var showsChangePassword = false
+    @State private var showsRecoveryEmailCode = false
     @State private var showsSetPassword = false
     @State private var showsTurnOffPassword = false
 
@@ -184,6 +204,13 @@ private struct TelegramSetPasswordView: View {
         #if os(macOS)
         .frame(minWidth: 380, minHeight: 420)
         #endif
+        .sheet(isPresented: pendingCodeInfoIsPresented) {
+            if let pendingCodeInfo {
+                TelegramRecoveryEmailCodeView(service: service, codeInfo: pendingCodeInfo) { _ in
+                    dismiss()
+                }
+            }
+        }
         .alert("Couldn't Save Password", isPresented: errorIsPresented) {
             Button("OK") {}
         } message: {
@@ -200,6 +227,7 @@ private struct TelegramSetPasswordView: View {
     @State private var hint: String
     @State private var isSaving = false
     @State private var newPassword = ""
+    @State private var pendingCodeInfo: EmailAddressAuthenticationCodeInfo?
     @State private var recoveryEmail = ""
 
     private var errorIsPresented: Binding<Bool> {
@@ -208,6 +236,17 @@ private struct TelegramSetPasswordView: View {
             set: { isPresented in
                 if !isPresented {
                     errorMessage = nil
+                }
+            },
+        )
+    }
+
+    private var pendingCodeInfoIsPresented: Binding<Bool> {
+        Binding(
+            get: { pendingCodeInfo != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingCodeInfo = nil
                 }
             },
         )
@@ -226,14 +265,18 @@ private struct TelegramSetPasswordView: View {
         defer { isSaving = false }
         let trimmedEmail = recoveryEmail.trimmingCharacters(in: .whitespaces)
         do {
-            _ = try await service.setPassword(
+            let newState = try await service.setPassword(
                 newHint: hint,
                 newPassword: newPassword,
                 newRecoveryEmailAddress: trimmedEmail,
                 oldPassword: isChangingExistingPassword ? currentPassword : "",
                 setRecoveryEmailAddress: !trimmedEmail.isEmpty,
             )
-            dismiss()
+            if let codeInfo = newState.recoveryEmailAddressCodeInfo {
+                pendingCodeInfo = codeInfo
+            } else {
+                dismiss()
+            }
         } catch {
             errorMessage = telegramErrorDescription(error)
         }
@@ -312,6 +355,112 @@ private struct TelegramTurnOffPasswordView: View {
                 setRecoveryEmailAddress: false,
             )
             dismiss()
+        } catch {
+            errorMessage = telegramErrorDescription(error)
+        }
+    }
+}
+
+// MARK: - TelegramRecoveryEmailCodeView
+
+/// A recovery email set via `setPassword` isn't active until this code, sent to that address, is
+/// confirmed - `PasswordState.recoveryEmailAddressCodeInfo` stays non-nil until then, from both
+/// `setPassword`'s own return value and every later `getPasswordState` call.
+private struct TelegramRecoveryEmailCodeView: View {
+    // MARK: Internal
+
+    let service: any TelegramService
+    let codeInfo: EmailAddressAuthenticationCodeInfo
+    let onCompletion: (PasswordState) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Enter the code sent to \(codeInfo.emailAddressPattern) to confirm your recovery email.")
+                        .foregroundStyle(.secondary)
+                }
+                Section {
+                    TextField("Code", text: $code)
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
+                        .autocorrectionDisabled()
+                }
+                Section {
+                    Button("Resend Code") { Task { await resend() } }
+                        .disabled(isBusy)
+                }
+            }
+            .navigationTitle("Confirm Recovery Email")
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+            #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { Task { await cancel() } }
+                            .disabled(isBusy)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Confirm") { Task { await confirm() } }
+                            .disabled(code.isEmpty || isBusy)
+                    }
+                }
+        }
+        #if os(macOS)
+        .frame(minWidth: 380, minHeight: 260)
+        #endif
+        .alert("Couldn't Confirm Recovery Email", isPresented: errorIsPresented) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    // MARK: Private
+
+    @State private var code = ""
+    @State private var errorMessage: String?
+    @State private var isBusy = false
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    errorMessage = nil
+                }
+            },
+        )
+    }
+
+    @MainActor private func confirm() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let newState = try await service.checkRecoveryEmailAddressCode(code: code)
+            onCompletion(newState)
+        } catch {
+            errorMessage = telegramErrorDescription(error)
+        }
+    }
+
+    @MainActor private func resend() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            _ = try await service.resendRecoveryEmailAddressCode()
+        } catch {
+            errorMessage = telegramErrorDescription(error)
+        }
+    }
+
+    @MainActor private func cancel() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let newState = try await service.cancelRecoveryEmailAddressVerification()
+            onCompletion(newState)
         } catch {
             errorMessage = telegramErrorDescription(error)
         }

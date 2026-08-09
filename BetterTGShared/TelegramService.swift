@@ -350,6 +350,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         oldPassword: String?,
         setRecoveryEmailAddress: Bool?,
     ) async throws -> PasswordState
+    func checkRecoveryEmailAddressCode(code: String?) async throws -> PasswordState
+    func resendRecoveryEmailAddressCode() async throws -> PasswordState
+    func cancelRecoveryEmailAddressVerification() async throws -> PasswordState
     func addProxy(comment: String?, enable: Bool?, proxy: Proxy?) async throws -> AddedProxy
     func editProxy(comment: String?, enable: Bool?, proxy: Proxy?, proxyId: Int?) async throws -> AddedProxy
     func enableProxy(proxyId: Int?) async throws -> Ok
@@ -1380,6 +1383,18 @@ extension TelegramSession: TelegramService {
             oldPassword: oldPassword,
             setRecoveryEmailAddress: setRecoveryEmailAddress,
         )
+    }
+
+    func checkRecoveryEmailAddressCode(code: String?) async throws -> PasswordState {
+        try await client.checkRecoveryEmailAddressCode(code: code)
+    }
+
+    func resendRecoveryEmailAddressCode() async throws -> PasswordState {
+        try await client.resendRecoveryEmailAddressCode()
+    }
+
+    func cancelRecoveryEmailAddressVerification() async throws -> PasswordState {
+        try await client.cancelRecoveryEmailAddressVerification()
     }
 
     func addProxy(comment: String?, enable: Bool?, proxy: Proxy?) async throws -> AddedProxy {
