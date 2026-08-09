@@ -23,12 +23,18 @@ struct TelegramTwoStepVerificationView: View {
                         LabeledContent("Hint", value: passwordState.passwordHint)
                     }
                     if passwordState.hasPassword {
-                        LabeledContent(
-                            "Recovery Email",
-                            value: passwordState.hasRecoveryEmailAddress
-                                ? "Set"
-                                : "Not Set",
-                        )
+                        Button {
+                            showsChangeRecoveryEmail = true
+                        } label: {
+                            LabeledContent(
+                                "Recovery Email",
+                                value: passwordState.hasRecoveryEmailAddress
+                                    ? "Set"
+                                    : "Not Set",
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 } footer: {
                     Text(
@@ -86,6 +92,13 @@ struct TelegramTwoStepVerificationView: View {
         .sheet(isPresented: $showsTurnOffPassword, onDismiss: { Task { await loadState() } }) {
             TelegramTurnOffPasswordView(service: service)
         }
+        .sheet(isPresented: $showsChangeRecoveryEmail, onDismiss: { Task { await loadState() } }) {
+            TelegramChangeRecoveryEmailView(
+                service: service,
+                existingHint: passwordState?.passwordHint ?? "",
+                hasExistingRecoveryEmail: passwordState?.hasRecoveryEmailAddress ?? false,
+            )
+        }
         .sheet(isPresented: $showsRecoveryEmailCode, onDismiss: { Task { await loadState() } }) {
             if let codeInfo = passwordState?.recoveryEmailAddressCodeInfo {
                 TelegramRecoveryEmailCodeView(service: service, codeInfo: codeInfo) { newState in
@@ -107,6 +120,7 @@ struct TelegramTwoStepVerificationView: View {
     @State private var hasLoaded = false
     @State private var passwordState: PasswordState?
     @State private var showsChangePassword = false
+    @State private var showsChangeRecoveryEmail = false
     @State private var showsRecoveryEmailCode = false
     @State private var showsSetPassword = false
     @State private var showsTurnOffPassword = false
@@ -271,6 +285,128 @@ private struct TelegramSetPasswordView: View {
                 newRecoveryEmailAddress: trimmedEmail,
                 oldPassword: isChangingExistingPassword ? currentPassword : "",
                 setRecoveryEmailAddress: !trimmedEmail.isEmpty,
+            )
+            if let codeInfo = newState.recoveryEmailAddressCodeInfo {
+                pendingCodeInfo = codeInfo
+            } else {
+                dismiss()
+            }
+        } catch {
+            errorMessage = telegramErrorDescription(error)
+        }
+    }
+}
+
+// MARK: - TelegramChangeRecoveryEmailView
+
+/// Changes only the recovery email, leaving the password itself untouched - `setPassword` is
+/// still the call for this (TDLib has no separate endpoint), passing the current password back as
+/// both `oldPassword` and `newPassword` and the existing hint back unchanged, matching how
+/// Telegram-iOS's own `_internal_updateTwoStepVerificationEmail` does it (confirmed in its local
+/// clone's `TwoStepVerification.swift`).
+private struct TelegramChangeRecoveryEmailView: View {
+    // MARK: Internal
+
+    let service: any TelegramService
+    let existingHint: String
+    let hasExistingRecoveryEmail: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField("Password", text: $currentPassword)
+                }
+                Section {
+                    TextField("Recovery Email", text: $newEmail)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        #endif
+                        .autocorrectionDisabled()
+                } footer: {
+                    Text("If you forget your password, this is the only way to recover your account.")
+                }
+            }
+            .navigationTitle(hasExistingRecoveryEmail ? "Change Recovery Email" : "Add Recovery Email")
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+            #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            Task { await save() }
+                        }
+                        .disabled(!isValid || isSaving)
+                    }
+                }
+        }
+        #if os(macOS)
+        .frame(minWidth: 380, minHeight: 240)
+        #endif
+        .sheet(isPresented: pendingCodeInfoIsPresented) {
+            if let pendingCodeInfo {
+                TelegramRecoveryEmailCodeView(service: service, codeInfo: pendingCodeInfo) { _ in
+                    dismiss()
+                }
+            }
+        }
+        .alert("Couldn't Save Recovery Email", isPresented: errorIsPresented) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    // MARK: Private
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var currentPassword = ""
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+    @State private var newEmail = ""
+    @State private var pendingCodeInfo: EmailAddressAuthenticationCodeInfo?
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    errorMessage = nil
+                }
+            },
+        )
+    }
+
+    private var pendingCodeInfoIsPresented: Binding<Bool> {
+        Binding(
+            get: { pendingCodeInfo != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingCodeInfo = nil
+                }
+            },
+        )
+    }
+
+    private var isValid: Bool {
+        !currentPassword.isEmpty && !newEmail.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    @MainActor private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        let trimmedEmail = newEmail.trimmingCharacters(in: .whitespaces)
+        do {
+            let newState = try await service.setPassword(
+                newHint: existingHint,
+                newPassword: currentPassword,
+                newRecoveryEmailAddress: trimmedEmail,
+                oldPassword: currentPassword,
+                setRecoveryEmailAddress: true,
             )
             if let codeInfo = newState.recoveryEmailAddressCodeInfo {
                 pendingCodeInfo = codeInfo
