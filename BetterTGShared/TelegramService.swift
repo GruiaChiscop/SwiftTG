@@ -343,6 +343,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getAutoDownloadSettingsPresets() async throws -> AutoDownloadSettingsPresets
     func setAutoDownloadSettings(settings: AutoDownloadSettings?, type: NetworkType?) async throws -> Ok
     func getPasswordState() async throws -> PasswordState
+    func getRecoveryEmailAddress(password: String?) async throws -> RecoveryEmailAddress
     func setPassword(
         newHint: String?,
         newPassword: String?,
@@ -1367,6 +1368,10 @@ extension TelegramSession: TelegramService {
 
     func getPasswordState() async throws -> PasswordState {
         try await client.getPasswordState()
+    }
+
+    func getRecoveryEmailAddress(password: String?) async throws -> RecoveryEmailAddress {
+        try await client.getRecoveryEmailAddress(password: password)
     }
 
     func setPassword(

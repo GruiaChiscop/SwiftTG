@@ -22,20 +22,6 @@ struct TelegramTwoStepVerificationView: View {
                     if passwordState.hasPassword, !passwordState.passwordHint.isEmpty {
                         LabeledContent("Hint", value: passwordState.passwordHint)
                     }
-                    if passwordState.hasPassword {
-                        Button {
-                            showsChangeRecoveryEmail = true
-                        } label: {
-                            LabeledContent(
-                                "Recovery Email",
-                                value: passwordState.hasRecoveryEmailAddress
-                                    ? "Set"
-                                    : "Not Set",
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
                 } footer: {
                     Text(
                         passwordState.hasPassword
@@ -66,6 +52,9 @@ struct TelegramTwoStepVerificationView: View {
                 Section {
                     if passwordState.hasPassword {
                         Button("Change Password") { showsChangePassword = true }
+                        Button(passwordState.hasRecoveryEmailAddress ? "Change Recovery Email" : "Add Recovery Email") {
+                            showsChangeRecoveryEmail = true
+                        }
                         Button("Turn Off Password", role: .destructive) { showsTurnOffPassword = true }
                     } else {
                         Button("Set Password") { showsSetPassword = true }
