@@ -115,6 +115,27 @@ extension ChatVM {
         }
     }
 
+    /// TDLib excludes a comment thread's own starting message (the channel post's copy in the
+    /// discussion group) from `getMessageThreadHistory` - `MessagesManager` only adds a message to
+    /// the thread's local history if its thread id differs from its own id, so the root is always
+    /// missing from that call and has to be fetched separately, matching Telegram-iOS/Unigram
+    /// (both fetch it via a dedicated discussion-message lookup and splice it into the top of the
+    /// scrollback themselves).
+    func loadThreadRootMessageIfNeeded() {
+        guard case .messageTopicThread(let thread) = messageTopic else { return }
+        let chatId = customChat.chat.id
+        Task.background {
+            guard let rootMessage = try? await self.service.getMessage(
+                chatId: chatId,
+                messageId: thread.messageThreadId,
+            ) else { return }
+            self.service.mergeMessageHistory(chatId: chatId, messages: [rootMessage])
+            await main {
+                self.loadedMessageIds.insert(rootMessage.id)
+            }
+        }
+    }
+
     @MainActor func viewMessage(id: Int64) {
         pendingViewedMessageIds.insert(id)
         guard viewMessagesTask == nil else { return }

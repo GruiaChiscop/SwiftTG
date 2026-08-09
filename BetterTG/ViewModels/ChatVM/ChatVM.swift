@@ -163,6 +163,7 @@ import TDLibKit
         refreshConversationStatus()
         refreshPinnedMessages()
         loadMessages()
+        loadThreadRootMessageIfNeeded()
         Media.shared.onChatOpen(title: customChat.chat.title)
 
         Task.main {
@@ -225,7 +226,17 @@ import TDLibKit
     /// funnels through, so there's one place that defines what "belongs to this thread" means.
     func messageMatchesTopic(_ message: Message) -> Bool {
         guard let messageTopic else { return true }
-        return message.topicId == messageTopic
+        if message.topicId == messageTopic {
+            return true
+        }
+        // TDLib excludes a thread's own starting message (the channel post's copy in the
+        // discussion group) from `getMessageThreadHistory` - it's fetched separately via
+        // `getMessageThread`/`loadThreadRootMessageIfNeeded()` and merged into the store, but may
+        // not carry a matching `topicId` the way replies do, so it needs this explicit id check.
+        if case .messageTopicThread(let thread) = messageTopic, message.id == thread.messageThreadId {
+            return true
+        }
+        return false
     }
 
     /// Joins the current channel/group and refreshes `customChat.type` with the resulting

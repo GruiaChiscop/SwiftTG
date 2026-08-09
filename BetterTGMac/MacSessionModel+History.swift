@@ -3,6 +3,25 @@
 import TDLibKit
 
 extension MacSessionModel {
+    /// TDLib excludes a comment thread's own starting message (the channel post's copy in the
+    /// discussion group) from `getMessageThreadHistory` - `MessagesManager` only adds a message to
+    /// the thread's local history if its thread id differs from its own id, so the root is always
+    /// missing from that call and has to be fetched separately, matching Telegram-iOS/Unigram
+    /// (both fetch it via a dedicated discussion-message lookup and splice it into the top of the
+    /// scrollback themselves). Once merged into the shared store, the next snapshot picks it up
+    /// automatically via `messageMatchesOpenedTopic`'s id check - no separate bookkeeping needed
+    /// here, unlike iOS's `loadedMessageIds`.
+    func loadThreadRootMessageIfNeeded(chatId: Int64, topic: MessageTopic?) {
+        guard case .messageTopicThread(let thread) = topic else { return }
+        Task {
+            guard let rootMessage = try? await service.getMessage(
+                chatId: chatId,
+                messageId: thread.messageThreadId,
+            ) else { return }
+            service.mergeMessageHistory(chatId: chatId, messages: [rootMessage])
+        }
+    }
+
     func loadLatestMessages() async {
         guard !isLoadingMessages,
               !isLoadingLatestMessages,

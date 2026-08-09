@@ -72,6 +72,7 @@ extension MacSessionModel {
         pinnedMessages = []
         pinnedMessagesError = nil
         refreshPinnedMessages(for: chatId)
+        loadThreadRootMessageIfNeeded(chatId: chatId, topic: topic)
         restoreDraft(openingChat?.draftMessage, chatId: chatId)
         prepareConversationHeader(for: chatId, fallbackKind: openingChat?.kind)
         messages = .empty(chatId: chatId)
@@ -289,7 +290,17 @@ extension MacSessionModel {
     /// mirrors iOS's `ChatVM.messageMatchesTopic(_:)`.
     private func messageMatchesOpenedTopic(_ message: Message) -> Bool {
         guard let openedTopic else { return true }
-        return message.topicId == openedTopic
+        if message.topicId == openedTopic {
+            return true
+        }
+        // TDLib excludes a thread's own starting message (the channel post's copy in the
+        // discussion group) from `getMessageThreadHistory` - it's fetched separately via
+        // `loadThreadRootMessageIfNeeded()` and merged into the store, but may not carry a
+        // matching `topicId` the way replies do, so it needs this explicit id check.
+        if case .messageTopicThread(let thread) = openedTopic, message.id == thread.messageThreadId {
+            return true
+        }
+        return false
     }
 
     /// Restricts a snapshot to `openedTopic`'s messages - the shared store publishes every message
