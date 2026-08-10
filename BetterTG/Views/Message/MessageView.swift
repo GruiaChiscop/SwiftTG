@@ -27,6 +27,7 @@ struct MessageView: View {
     @State var documentDownloadCancellationTask: Task<Void, Never>?
     @State var selectedStickerPack: TelegramStickerPackReference?
     @State var pendingStickerFromPack: Sticker?
+    @State var stickerToEdit: Sticker?
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -549,6 +550,7 @@ struct MessageView: View {
                 TelegramStickerPackPreview(
                     reference: reference,
                     service: chatVM.service,
+                    chatId: customMessage.message.chatId,
                     onSelect: { pendingStickerFromPack = $0 },
                     preview: { sticker in
                         TelegramStickerView(
@@ -556,6 +558,23 @@ struct MessageView: View {
                             service: chatVM.service,
                             maxSide: 76,
                             playsAnimation: false,
+                        )
+                    },
+                )
+            }
+            .sheet(item: $stickerToEdit) { sticker in
+                TelegramStickerEditor(
+                    sticker: sticker,
+                    service: chatVM.service,
+                    chatId: customMessage.message.chatId,
+                    actionTitle: "Send",
+                    onSave: { pngData, emojis in
+                        try await TelegramStickerEditing.sendEditedSticker(
+                            pngData: pngData,
+                            emojis: emojis,
+                            service: chatVM.service,
+                            chatId: customMessage.message.chatId,
+                            topicId: chatVM.messageTopic,
                         )
                     },
                 )

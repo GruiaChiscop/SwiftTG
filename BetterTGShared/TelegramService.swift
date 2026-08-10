@@ -230,6 +230,12 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         userId: Int64?,
     ) async throws -> StickerSet
     func addStickerToSet(name: String?, sticker: NewSticker?, userId: Int64?) async throws -> Ok
+    func replaceStickerInSet(
+        name: String?,
+        newSticker: NewSticker?,
+        oldSticker: InputFile?,
+        userId: Int64?,
+    ) async throws -> Ok
     func changeStickerSet(isArchived: Bool?, isInstalled: Bool?, setId: TdInt64?) async throws -> Ok
     func viewTrendingStickerSets(stickerSetIds: [TdInt64]?) async throws -> Ok
     func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders
@@ -1223,6 +1229,20 @@ extension TelegramSession: TelegramService {
 
     func addStickerToSet(name: String?, sticker: NewSticker?, userId: Int64?) async throws -> Ok {
         try await client.addStickerToSet(name: name, sticker: sticker, userId: userId)
+    }
+
+    func replaceStickerInSet(
+        name: String?,
+        newSticker: NewSticker?,
+        oldSticker: InputFile?,
+        userId: Int64?,
+    ) async throws -> Ok {
+        try await client.replaceStickerInSet(
+            name: name,
+            newSticker: newSticker,
+            oldSticker: oldSticker,
+            userId: userId,
+        )
     }
 
     func changeStickerSet(isArchived: Bool?, isInstalled: Bool?, setId: TdInt64?) async throws -> Ok {

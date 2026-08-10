@@ -54,6 +54,7 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
             TelegramStickerPackPreview(
                 reference: reference,
                 service: service,
+                chatId: chatId,
                 onSelect: select,
                 preview: preview,
             )

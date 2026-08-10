@@ -3,6 +3,7 @@
 @testable import BetterTG
 import CoreGraphics
 import Foundation
+import ImageIO
 import TDLibKit
 import Testing
 
@@ -63,6 +64,13 @@ struct TelegramStickerTests {
         #expect(presentation.pickerAccessibilityLabel(packTitle: "Hot Cherry") == "Premium sticker, 💃, from Hot Cherry")
     }
 
+    @Test func `editing is offered only for static nonpremium stickers`() {
+        #expect(presentation(format: .stickerFormatWebp).isEditable)
+        #expect(!presentation(format: .stickerFormatTgs).isEditable)
+        #expect(!presentation(format: .stickerFormatWebm).isEditable)
+        #expect(!presentation(format: .stickerFormatWebp, isPremium: true).isEditable)
+    }
+
     @Test func `sending reuses the existing sticker file and metadata`() {
         let sticker = sticker(format: .stickerFormatWebm, emoji: "🎉", height: 320, width: 480)
         let content = TelegramStickerSending.content(for: sticker)
@@ -80,6 +88,39 @@ struct TelegramStickerTests {
         #expect(input.sticker.width == 480)
         #expect(input.sticker.thumbnail == nil)
         #expect(file.id == 11)
+    }
+
+    @Test func `edited sticker messages preserve rendered dimensions and emoji`() {
+        let content = TelegramStickerEditing.messageContent(
+            fileId: 77,
+            emojis: "🎨",
+            height: 384,
+            width: 512,
+        )
+        guard case .inputMessageSticker(let input) = content,
+              case .inputFileId(let file) = input.sticker.sticker
+        else {
+            Issue.record("Expected an edited sticker message")
+            return
+        }
+
+        #expect(file.id == 77)
+        #expect(input.emoji == "🎨")
+        #expect(input.sticker.height == 384)
+        #expect(input.sticker.width == 512)
+    }
+
+    @MainActor @Test func `sticker editor renders a Telegram sized PNG`() throws {
+        let source = try #require(Self.solidColorImage(size: CGSize(width: 40, height: 20)))
+        let pngData = try TelegramStickerEditorRendering.pngData(
+            sourceImage: source,
+            snapshot: .init(strokes: [], overlays: []),
+        )
+        let imageSource = try #require(CGImageSourceCreateWithData(pngData as CFData, nil))
+        let rendered = try #require(CGImageSourceCreateImageAtIndex(imageSource, 0, nil))
+
+        #expect(rendered.width == TelegramStickerCropRendering.outputSide)
+        #expect(rendered.height == TelegramStickerCropRendering.outputSide / 2)
     }
 
     @Test func `duplicate stickers are removed without changing order`() {
@@ -175,6 +216,23 @@ struct TelegramStickerTests {
     }
 
     // MARK: Private
+
+    private static func solidColorImage(size: CGSize) -> CGImage? {
+        let width = Int(size.width)
+        let height = Int(size.height)
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        ) else { return nil }
+        context.setFillColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+        context.fill(CGRect(origin: .zero, size: size))
+        return context.makeImage()
+    }
 
     private func presentation(
         format: StickerFormat,

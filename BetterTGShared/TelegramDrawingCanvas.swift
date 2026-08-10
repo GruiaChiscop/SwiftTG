@@ -21,7 +21,7 @@ struct TelegramDrawingCanvas: View {
         }
         .allowsHitTesting(editorState.tool == .draw)
         .accessibilityLabel("Drawing canvas")
-        .accessibilityHint("Drag to draw on the GIF")
+        .accessibilityHint("Drag to draw on the media")
     }
 
     // MARK: Private

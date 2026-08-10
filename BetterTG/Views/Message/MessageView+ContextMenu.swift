@@ -71,6 +71,9 @@ extension MessageView {
         if stickerPackReference != nil {
             Button("View Sticker Pack", action: openStickerPack)
         }
+        if editableSticker != nil {
+            Button("Edit Sticker", action: openStickerEditor)
+        }
         if !reactionChoices.isEmpty {
             Button("React") { showReactionOptions = true }
         }
@@ -119,6 +122,11 @@ extension MessageView {
         if stickerPackReference != nil {
             Button(action: openStickerPack) {
                 Label("View Sticker Pack", systemImage: "square.stack.3d.up")
+            }
+        }
+        if editableSticker != nil {
+            Button(action: openStickerEditor) {
+                Label("Edit Sticker", systemImage: "pencil.and.outline")
             }
         }
         if customMessage.properties.canBeCopied,
@@ -191,6 +199,13 @@ extension MessageView {
         return TelegramStickerPackReference(messageSticker: messageSticker)
     }
 
+    var editableSticker: Sticker? {
+        guard let sticker = customMessage.messageSticker?.sticker,
+              TelegramStickerPresentation(sticker).isEditable
+        else { return nil }
+        return sticker
+    }
+
     var contactActionTitle: String {
         guard let messageContact = customMessage.messageContact else { return "" }
         return TelegramContactPresentation(messageContact).hasTelegramAccount ? "Message" : "Add to Contacts"
@@ -205,6 +220,10 @@ extension MessageView {
 
     func openStickerPack() {
         selectedStickerPack = stickerPackReference
+    }
+
+    func openStickerEditor() {
+        stickerToEdit = editableSticker
     }
 
     @MainActor func sendPendingStickerFromPack() async {

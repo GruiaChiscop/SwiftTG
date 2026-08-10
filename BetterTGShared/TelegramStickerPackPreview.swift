@@ -8,6 +8,7 @@ struct TelegramStickerPackPreview<Preview: View>: View {
 
     let reference: TelegramStickerPackReference
     let service: any TelegramService
+    let chatId: Int64
     let onSelect: (Sticker) -> Void
     let preview: (Sticker) -> Preview
 
@@ -22,7 +23,7 @@ struct TelegramStickerPackPreview<Preview: View>: View {
                                 spacing: 12,
                             ) {
                                 ForEach(stickerSet.stickers, id: \.sticker.id) { sticker in
-                                    stickerButton(sticker, packTitle: stickerSet.title)
+                                    stickerButton(sticker, stickerSet: stickerSet)
                                 }
                             }
                             .padding()
@@ -54,6 +55,26 @@ struct TelegramStickerPackPreview<Preview: View>: View {
         #endif
         .task(id: reference.id) { await loadStickerSet() }
         .task(id: pendingInstallationAction) { await changeInstallationState() }
+        .sheet(item: $stickerToEdit) { sticker in
+            if let stickerSet {
+                TelegramStickerEditor(
+                    sticker: sticker,
+                    service: service,
+                    chatId: chatId,
+                    actionTitle: "Save",
+                    onSave: { pngData, emojis in
+                        try await TelegramStickerEditing.replaceSticker(
+                            sticker,
+                            inPackNamed: stickerSet.name,
+                            pngData: pngData,
+                            emojis: emojis,
+                            service: service,
+                        )
+                        await loadStickerSet(clearsExisting: false)
+                    },
+                )
+            }
+        }
     }
 
     // MARK: Private
@@ -66,6 +87,7 @@ struct TelegramStickerPackPreview<Preview: View>: View {
     @State private var loadErrorMessage: String?
     @State private var installationErrorMessage: String?
     @State private var pendingInstallationAction: TelegramStickerPackInstallationAction?
+    @State private var stickerToEdit: Sticker?
 
     private var installationAction: TelegramStickerPackInstallationAction? {
         guard let stickerSet else { return nil }
@@ -108,9 +130,10 @@ struct TelegramStickerPackPreview<Preview: View>: View {
         }
     }
 
-    private func stickerButton(_ sticker: Sticker, packTitle: String) -> some View {
+    @ViewBuilder private func stickerButton(_ sticker: Sticker, stickerSet: StickerSet) -> some View {
         let presentation = TelegramStickerPresentation(sticker)
-        return Button {
+        let canEdit = stickerSet.isOwned && presentation.isEditable
+        let button = Button {
             onSelect(sticker)
             dismiss()
         } label: {
@@ -120,12 +143,29 @@ struct TelegramStickerPackPreview<Preview: View>: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(presentation.pickerAccessibilityLabel(packTitle: packTitle))
+        .accessibilityLabel(presentation.pickerAccessibilityLabel(packTitle: stickerSet.title))
+        .contextMenu {
+            if canEdit {
+                Button("Edit Sticker", systemImage: "pencil.and.outline") {
+                    stickerToEdit = sticker
+                }
+            }
+        }
+
+        if canEdit {
+            button.accessibilityAction(named: "Edit Sticker") {
+                stickerToEdit = sticker
+            }
+        } else {
+            button
+        }
     }
 
-    @MainActor private func loadStickerSet() async {
-        stickerSet = nil
-        isInstalled = nil
+    @MainActor private func loadStickerSet(clearsExisting: Bool = true) async {
+        if clearsExisting {
+            stickerSet = nil
+            isInstalled = nil
+        }
         loadErrorMessage = nil
         installationErrorMessage = nil
         do {
