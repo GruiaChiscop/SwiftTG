@@ -50,6 +50,14 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
         .task(id: suggestedEmoji) { await loadSuggestions() }
         .task(id: pendingSticker?.sticker.id) { await sendPendingSticker() }
         .task(id: favoriteMutation?.sticker.id) { await updateFavoriteState() }
+        .sheet(item: $selectedPack) { reference in
+            TelegramStickerPackPreview(
+                reference: reference,
+                service: service,
+                onSelect: select,
+                preview: preview,
+            )
+        }
     }
 
     // MARK: Private
@@ -59,6 +67,7 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
     @State private var favoriteFileIds = Set<Int>()
     @State private var pendingSticker: Sticker?
     @State private var favoriteMutation: Sticker?
+    @State private var selectedPack: TelegramStickerPackReference?
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -67,10 +76,11 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
         return TelegramStickerSuggestionQuery.emoji(from: text)
     }
 
-    private func suggestionButton(_ sticker: Sticker) -> some View {
+    @ViewBuilder private func suggestionButton(_ sticker: Sticker) -> some View {
         let presentation = TelegramStickerPresentation(sticker)
         let isFavorite = favoriteFileIds.contains(sticker.sticker.id)
-        return Button(action: { select(sticker) }) {
+        let packReference = TelegramStickerPackReference(sticker: sticker)
+        let button = Button(action: { select(sticker) }) {
             ZStack {
                 preview(sticker)
                     .accessibilityHidden(true)
@@ -88,6 +98,12 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
         .disabled(pendingSticker != nil || favoriteMutation != nil)
         .accessibilityLabel(presentation.accessibilityLabel)
         .contextMenu {
+            if let packReference {
+                Button("View Sticker Pack", systemImage: "square.stack.3d.up") {
+                    selectedPack = packReference
+                }
+            }
+
             Button(
                 isFavorite ? "Remove from Favorites" : "Add to Favorites",
                 systemImage: isFavorite ? "star.slash" : "star",
@@ -97,6 +113,14 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
         }
         .accessibilityAction(named: isFavorite ? "Remove from Favorites" : "Add to Favorites") {
             favoriteMutation = sticker
+        }
+
+        if let packReference {
+            button.accessibilityAction(named: "View Sticker Pack") {
+                selectedPack = packReference
+            }
+        } else {
+            button
         }
     }
 

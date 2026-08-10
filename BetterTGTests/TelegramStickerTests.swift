@@ -90,6 +90,14 @@ struct TelegramStickerTests {
         #expect(telegramUniqueStickers([first, duplicate, second]).map(\.sticker.id) == [11, 12])
     }
 
+    @Test func `pack references require a real sticker set`() {
+        let stickerWithPack = sticker(format: .stickerFormatWebp, setId: 42)
+        let stickerWithoutPack = sticker(format: .stickerFormatWebp, setId: 0)
+
+        #expect(TelegramStickerPackReference(sticker: stickerWithPack)?.id == 42)
+        #expect(TelegramStickerPackReference(sticker: stickerWithoutPack) == nil)
+    }
+
     @Test func `editor overlay selection maps every sticker format`() {
         let url = URL(filePath: "/tmp/sticker")
 
@@ -160,6 +168,7 @@ struct TelegramStickerTests {
         fileId: Int = 11,
         height: Int = 512,
         isPremium: Bool = false,
+        setId: TdInt64 = 2,
         thumbnail: Thumbnail? = nil,
         width: Int = 512,
     ) -> Sticker {
@@ -171,7 +180,7 @@ struct TelegramStickerTests {
             )),
             height: height,
             id: 1,
-            setId: 2,
+            setId: setId,
             sticker: TDLibFixtures.file(id: fileId, downloadedSize: 0),
             thumbnail: thumbnail,
             width: width,
