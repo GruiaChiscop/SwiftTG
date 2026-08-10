@@ -139,6 +139,7 @@ struct TelegramGifEditor: View {
             localURL = url
             duration = loadedDuration
             endTime = loadedDuration
+            editorState.timelineDuration = loadedDuration
             await loadCanvasSize(from: asset)
             let player = AVPlayer(url: url)
             player.isMuted = true
@@ -206,7 +207,7 @@ struct TelegramGifEditor: View {
         draftEmoji = ""
     }
 
-    private func addSticker(_ sticker: TelegramStaticStickerOverlay) {
+    private func addSticker(_ sticker: TelegramStickerOverlay) {
         editorState.addSticker(sticker)
     }
 

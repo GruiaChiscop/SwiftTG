@@ -6,6 +6,7 @@ import Foundation
 
 enum TelegramGifEditorError: LocalizedError {
     case downloadFailed
+    case animatedStickerRenderingFailed
     case exportUnavailable
     case invalidDuration
     case overlayRenderingFailed
@@ -15,6 +16,8 @@ enum TelegramGifEditorError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .animatedStickerRenderingFailed:
+            "An animated sticker couldn't be rendered."
         case .downloadFailed:
             "The GIF couldn't be downloaded for editing."
         case .exportUnavailable:

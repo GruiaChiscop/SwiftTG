@@ -8,15 +8,17 @@ struct TelegramMediaOverlayItemView: View {
 
     let overlay: TelegramMediaOverlay
     let canvasSize: CGSize
+    let shouldPlay: Bool
 
     @Bindable var editorState: TelegramMediaEditorState
 
     var body: some View {
         Button(action: select) {
-            TelegramMediaOverlayArtwork(
+            TelegramMediaOverlayContentView(
                 overlay: overlay,
                 canvasSize: canvasSize,
                 stickerImage: stickerImage,
+                shouldPlay: shouldPlay,
                 isSelected: editorState.selectedOverlayID == overlay.id,
             )
         }
@@ -44,7 +46,7 @@ struct TelegramMediaOverlayItemView: View {
     }
 
     private var stickerURL: URL? {
-        guard case .sticker(let sticker) = overlay.content else { return nil }
+        guard case .sticker(let sticker) = overlay.content, sticker.format == .webp else { return nil }
         return sticker.url
     }
 

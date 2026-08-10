@@ -7,7 +7,7 @@ struct TelegramEditorStickerPicker: View {
     // MARK: Internal
 
     let service: any TelegramService
-    let onSelected: (TelegramStaticStickerOverlay) -> Void
+    let onSelected: (TelegramStickerOverlay) -> Void
 
     var body: some View {
         NavigationStack {
@@ -16,9 +16,9 @@ struct TelegramEditorStickerPicker: View {
                     ProgressView("Loading stickers")
                 } else if stickers.isEmpty, errorMessage == nil {
                     ContentUnavailableView(
-                        "No Static Stickers",
+                        "No Stickers",
                         systemImage: "photo.on.rectangle.angled",
-                        description: Text("Favorite or recent WEBP stickers will appear here."),
+                        description: Text("Favorite or recent stickers will appear here."),
                     )
                 } else {
                     ScrollView {
@@ -29,7 +29,7 @@ struct TelegramEditorStickerPicker: View {
                             ForEach(stickers, id: \.sticker.id) { sticker in
                                 Button(action: { select(sticker) }) {
                                     ZStack {
-                                        TelegramStickerRasterPreview(sticker: sticker, service: service)
+                                        TelegramEditorStickerPreview(sticker: sticker, service: service)
                                         if downloadingStickerID == sticker.sticker.id {
                                             ProgressView()
                                                 .padding()
@@ -94,18 +94,10 @@ struct TelegramEditorStickerPicker: View {
         guard !Task.isCancelled else { return }
         stickers = telegramUniqueStickers(
             (favorites?.stickers ?? []) + (recent?.stickers ?? []),
-        ).filter(isStaticSticker)
+        )
         isLoading = false
         if favorites == nil, recent == nil {
             errorMessage = "Favorite and recent stickers couldn't be loaded."
-        }
-    }
-
-    private func isStaticSticker(_ sticker: Sticker) -> Bool {
-        if case .stickerFormatWebp = sticker.format {
-            true
-        } else {
-            false
         }
     }
 
@@ -128,6 +120,7 @@ struct TelegramEditorStickerPicker: View {
                     url: URL(filePath: file.local.path),
                     pixelWidth: sticker.width,
                     pixelHeight: sticker.height,
+                    format: overlayFormat(for: sticker),
                 ))
                 dismiss()
             } catch is CancellationError {
@@ -136,6 +129,14 @@ struct TelegramEditorStickerPicker: View {
                 errorMessage = telegramErrorDescription(error)
                 downloadingStickerID = nil
             }
+        }
+    }
+
+    private func overlayFormat(for sticker: Sticker) -> TelegramStickerOverlayFormat {
+        switch sticker.format {
+        case .stickerFormatWebp: .webp
+        case .stickerFormatTgs: .tgs
+        case .stickerFormatWebm: .webm
         }
     }
 }

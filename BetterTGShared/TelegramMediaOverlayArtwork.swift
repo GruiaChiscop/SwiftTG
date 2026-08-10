@@ -26,14 +26,17 @@ struct TelegramMediaOverlayArtwork: View {
                     .font(.system(size: max(40, min(canvasSize.width, canvasSize.height) * 0.22)))
                     .padding(4)
             case .sticker(let sticker):
-                if let stickerImage {
+                if sticker.format.isAnimated {
+                    Color.clear
+                        .frame(width: stickerSize(sticker).width, height: stickerSize(sticker).height)
+                } else if let stickerImage {
                     Image(decorative: stickerImage, scale: 1)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: stickerWidth(sticker), height: stickerHeight(sticker))
+                        .frame(width: stickerSize(sticker).width, height: stickerSize(sticker).height)
                 } else {
                     ProgressView()
-                        .frame(width: stickerWidth(sticker), height: stickerHeight(sticker))
+                        .frame(width: stickerSize(sticker).width, height: stickerSize(sticker).height)
                 }
             }
         }
@@ -50,15 +53,7 @@ struct TelegramMediaOverlayArtwork: View {
 
     // MARK: Private
 
-    private func stickerWidth(_ sticker: TelegramStaticStickerOverlay) -> Double {
-        let side = min(canvasSize.width, canvasSize.height) * 0.3
-        guard sticker.pixelWidth > 0, sticker.pixelHeight > 0 else { return side }
-        return side * min(Double(sticker.pixelWidth) / Double(sticker.pixelHeight), 1)
-    }
-
-    private func stickerHeight(_ sticker: TelegramStaticStickerOverlay) -> Double {
-        let side = min(canvasSize.width, canvasSize.height) * 0.3
-        guard sticker.pixelWidth > 0, sticker.pixelHeight > 0 else { return side }
-        return side * min(Double(sticker.pixelHeight) / Double(sticker.pixelWidth), 1)
+    private func stickerSize(_ sticker: TelegramStickerOverlay) -> CGSize {
+        TelegramMediaOverlayLayout.stickerSize(sticker, canvasSize: canvasSize)
     }
 }

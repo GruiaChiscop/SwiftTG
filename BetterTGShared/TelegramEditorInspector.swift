@@ -34,6 +34,29 @@ struct TelegramEditorInspector: View {
                     )
                     .frame(minWidth: 140)
                 }
+                if editorState.timelineDuration >= 0.1 {
+                    LabeledContent("Visible from") {
+                        Text(editorState.selectedStartTime, format: .number.precision(.fractionLength(1)))
+                            .monospacedDigit()
+                    }
+                    Slider(
+                        value: $editorState.selectedStartTime,
+                        in: 0...max(0, editorState.selectedEndTime - 0.1),
+                        step: 0.1,
+                        onEditingChanged: timelineEditingChanged,
+                    )
+                    LabeledContent("Visible until") {
+                        Text(editorState.selectedEndTime, format: .number.precision(.fractionLength(1)))
+                            .monospacedDigit()
+                    }
+                    Slider(
+                        value: $editorState.selectedEndTime,
+                        in: min(editorState.timelineDuration, editorState.selectedStartTime + 0.1)...editorState
+                            .timelineDuration,
+                        step: 0.1,
+                        onEditingChanged: timelineEditingChanged,
+                    )
+                }
                 HStack {
                     Button("Duplicate", systemImage: "plus.square.on.square", action: editorState.duplicateSelected)
                     Button(
@@ -59,6 +82,14 @@ struct TelegramEditorInspector: View {
     }
 
     private func rotationEditingChanged(_ isEditing: Bool) {
+        if isEditing {
+            editorState.beginInteraction()
+        } else {
+            editorState.endInteraction()
+        }
+    }
+
+    private func timelineEditingChanged(_ isEditing: Bool) {
         if isEditing {
             editorState.beginInteraction()
         } else {

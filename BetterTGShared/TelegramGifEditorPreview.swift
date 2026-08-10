@@ -19,7 +19,12 @@ struct TelegramGifEditorPreview: View {
                     VideoPlayer(player: player)
                         .disabled(true)
                     TelegramDrawingCanvas(editorState: editorState)
-                    TelegramOverlayCanvas(editorState: editorState)
+                    TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { _ in
+                        TelegramOverlayCanvas(
+                            currentTime: player.currentTime().seconds,
+                            editorState: editorState,
+                        )
+                    }
                 }
                 .aspectRatio(aspectRatio, contentMode: .fit)
             } else {

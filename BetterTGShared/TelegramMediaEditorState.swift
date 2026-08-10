@@ -9,6 +9,7 @@ import SwiftUI
     var tool = TelegramMediaEditorTool.select
     var brushColor = Color.white
     var brushWidth = 0.012
+    var timelineDuration = 0.0
     private(set) var strokes = [TelegramDrawingStroke]()
     private(set) var overlays = [TelegramMediaOverlay]()
     var selectedOverlayID: UUID?
@@ -35,6 +36,16 @@ import SwiftUI
         set { rotateSelected(to: newValue) }
     }
 
+    var selectedStartTime: Double {
+        get { selectedOverlay?.startTime ?? 0 }
+        set { setSelectedStartTime(newValue) }
+    }
+
+    var selectedEndTime: Double {
+        get { min(selectedOverlay?.endTime ?? timelineDuration, timelineDuration) }
+        set { setSelectedEndTime(newValue) }
+    }
+
     func addStroke(points: [TelegramEditorPoint]) {
         guard !points.isEmpty else { return }
         recordMutation()
@@ -53,7 +64,7 @@ import SwiftUI
         addOverlay(content: .emoji(value))
     }
 
-    func addSticker(_ sticker: TelegramStaticStickerOverlay) {
+    func addSticker(_ sticker: TelegramStickerOverlay) {
         addOverlay(content: .sticker(sticker))
     }
 
@@ -83,6 +94,18 @@ import SwiftUI
 
     func rotateSelected(to degrees: Double) {
         updateSelected { $0.rotationDegrees = min(max(degrees, -180), 180) }
+    }
+
+    func setSelectedStartTime(_ time: Double) {
+        updateSelected { overlay in
+            overlay.startTime = min(max(time, 0), max(0, overlay.endTime - 0.1))
+        }
+    }
+
+    func setSelectedEndTime(_ time: Double) {
+        updateSelected { overlay in
+            overlay.endTime = min(max(time, overlay.startTime + 0.1), timelineDuration)
+        }
     }
 
     func endInteraction() {
@@ -120,6 +143,8 @@ import SwiftUI
             ),
             scale: overlay.scale,
             rotationDegrees: overlay.rotationDegrees,
+            startTime: overlay.startTime,
+            endTime: overlay.endTime,
         )
         overlays.append(overlay)
         selectedOverlayID = overlay.id
@@ -156,7 +181,10 @@ import SwiftUI
 
     private func addOverlay(content: TelegramMediaOverlayContent) {
         recordMutation()
-        let overlay = TelegramMediaOverlay(content: content)
+        let overlay = TelegramMediaOverlay(
+            content: content,
+            endTime: timelineDuration > 0 ? timelineDuration : .greatestFiniteMagnitude,
+        )
         overlays.append(overlay)
         selectedOverlayID = overlay.id
         tool = .select

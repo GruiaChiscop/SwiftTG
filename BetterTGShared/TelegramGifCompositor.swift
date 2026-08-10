@@ -22,9 +22,15 @@ import SwiftUI
         }
 
         if hasArtwork {
-            let overlayImage = try renderOverlay(snapshot: snapshot, canvasSize: canvasSize)
-            let coreImageOverlay = CIImage(cgImage: overlayImage)
+            let resources = try await compositionResources(snapshot: snapshot, canvasSize: canvasSize)
             exporter.videoComposition = try await AVVideoComposition.videoComposition(with: asset) { request in
+                guard let coreImageOverlay = resources.overlayImage(
+                    for: snapshot.overlays,
+                    at: request.compositionTime.seconds,
+                ) else {
+                    request.finish(with: request.sourceImage, context: nil)
+                    return
+                }
                 let sourceExtent = request.sourceImage.extent
                 let scale = CGAffineTransform(
                     scaleX: sourceExtent.width / coreImageOverlay.extent.width,
@@ -70,11 +76,51 @@ import SwiftUI
 
     // MARK: Private
 
+    private static func compositionResources(
+        snapshot: TelegramMediaEditorSnapshot,
+        canvasSize: CGSize,
+    ) async throws -> TelegramGifCompositionResources {
+        let animatedStickers = snapshot.overlays.compactMap { overlay -> TelegramStickerOverlay? in
+            guard case .sticker(let sticker) = overlay.content, sticker.format.isAnimated else { return nil }
+            return sticker
+        }
+        let animatedFrames = try await TelegramAnimatedStickerFrameLoader.load(
+            stickers: animatedStickers,
+            canvasSize: canvasSize,
+        )
+        let drawingLayer: CIImage? =
+            if snapshot.strokes.isEmpty {
+                nil
+            } else {
+                try CIImage(cgImage: renderOverlay(
+                    snapshot: .init(strokes: snapshot.strokes, overlays: []),
+                    canvasSize: canvasSize,
+                ))
+            }
+        var staticLayers = [UUID: CIImage]()
+        for overlay in snapshot.overlays {
+            if case .sticker(let sticker) = overlay.content, sticker.format.isAnimated {
+                continue
+            }
+            let image = try renderOverlay(
+                snapshot: .init(strokes: [], overlays: [overlay]),
+                canvasSize: canvasSize,
+            )
+            staticLayers[overlay.id] = CIImage(cgImage: image)
+        }
+        return TelegramGifCompositionResources(
+            canvasSize: canvasSize,
+            drawingLayer: drawingLayer,
+            staticOverlayLayers: staticLayers,
+            animatedFrames: animatedFrames,
+        )
+    }
+
     private static func loadStickerImages(
         from overlays: [TelegramMediaOverlay],
     ) throws -> [URL: CGImage] {
         let urls = Set(overlays.compactMap { overlay -> URL? in
-            guard case .sticker(let sticker) = overlay.content else { return nil }
+            guard case .sticker(let sticker) = overlay.content, sticker.format == .webp else { return nil }
             return sticker.url
         })
         var images = [URL: CGImage]()
