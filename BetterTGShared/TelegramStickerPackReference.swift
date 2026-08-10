@@ -10,6 +10,10 @@ struct TelegramStickerPackReference: Equatable, Identifiable, Sendable {
         self.id = sticker.setId
     }
 
+    init?(messageSticker: MessageSticker) {
+        self.init(sticker: messageSticker.sticker)
+    }
+
     // MARK: Internal
 
     let id: TdInt64

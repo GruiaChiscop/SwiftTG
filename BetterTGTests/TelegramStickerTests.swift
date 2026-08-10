@@ -98,6 +98,15 @@ struct TelegramStickerTests {
         #expect(TelegramStickerPackReference(sticker: stickerWithoutPack) == nil)
     }
 
+    @Test func `message stickers preserve their pack reference`() {
+        let content = MessageSticker(
+            isPremium: false,
+            sticker: sticker(format: .stickerFormatWebp, setId: 84),
+        )
+
+        #expect(TelegramStickerPackReference(messageSticker: content)?.id == 84)
+    }
+
     @Test func `editor overlay selection maps every sticker format`() {
         let url = URL(filePath: "/tmp/sticker")
 

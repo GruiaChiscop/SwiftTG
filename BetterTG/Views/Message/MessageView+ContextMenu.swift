@@ -68,6 +68,9 @@ extension MessageView {
         if customMessage.messageDocument != nil {
             Button("Save to Files", action: saveDocument)
         }
+        if stickerPackReference != nil {
+            Button("View Sticker Pack", action: openStickerPack)
+        }
         if !reactionChoices.isEmpty {
             Button("React") { showReactionOptions = true }
         }
@@ -111,6 +114,11 @@ extension MessageView {
                 }
             } label: {
                 Label("React", systemImage: "face.smiling")
+            }
+        }
+        if stickerPackReference != nil {
+            Button(action: openStickerPack) {
+                Label("View Sticker Pack", systemImage: "square.stack.3d.up")
             }
         }
         if customMessage.properties.canBeCopied,
@@ -178,6 +186,11 @@ extension MessageView {
         customMessage.canBeTranslated
     }
 
+    var stickerPackReference: TelegramStickerPackReference? {
+        guard let messageSticker = customMessage.messageSticker else { return nil }
+        return TelegramStickerPackReference(messageSticker: messageSticker)
+    }
+
     var contactActionTitle: String {
         guard let messageContact = customMessage.messageContact else { return "" }
         return TelegramContactPresentation(messageContact).hasTelegramAccount ? "Message" : "Add to Contacts"
@@ -188,6 +201,29 @@ extension MessageView {
         return TelegramContactPresentation(messageContact).hasTelegramAccount
             ? "message"
             : "person.crop.circle.badge.plus"
+    }
+
+    func openStickerPack() {
+        selectedStickerPack = stickerPackReference
+    }
+
+    @MainActor func sendPendingStickerFromPack() async {
+        guard let sticker = pendingStickerFromPack else { return }
+        defer { pendingStickerFromPack = nil }
+        chatVM.messageActionError = nil
+        do {
+            try await TelegramStickerSending.send(
+                sticker,
+                service: chatVM.service,
+                chatId: customMessage.message.chatId,
+                replyToMessageId: nil,
+                topicId: chatVM.messageTopic,
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            chatVM.messageActionError = "Sticker couldn't be sent: \(telegramErrorDescription(error))"
+        }
     }
 
     func toggleTranslation() {

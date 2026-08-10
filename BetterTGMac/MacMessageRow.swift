@@ -69,6 +69,8 @@ struct MacMessageRow: View {
     @State private var showGifPreview = false
     @State private var showForwardPicker = false
     @State private var selectedAlbumMessage: Message?
+    @State private var selectedStickerPack: TelegramStickerPackReference?
+    @State private var pendingStickerFromPack: Sticker?
 
     private var capabilities: MacMessageCapabilities? {
         model.messageCapabilities[message.id]
@@ -282,6 +284,11 @@ struct MacMessageRow: View {
         }
     }
 
+    private var stickerPackReference: TelegramStickerPackReference? {
+        guard case .messageSticker(let content) = message.content else { return nil }
+        return TelegramStickerPackReference(messageSticker: content)
+    }
+
     private var isPollMessage: Bool {
         if case .messagePoll = message.content {
             true
@@ -349,6 +356,11 @@ struct MacMessageRow: View {
         }
         if !reactionChoices.isEmpty {
             items.append(.reactions)
+        }
+        if stickerPackReference != nil {
+            items.append(.button(title: "View Sticker Pack", systemImage: "square.stack.3d.up") {
+                selectedStickerPack = stickerPackReference
+            })
         }
         if canCopy {
             items.append(.button(title: "Copy", systemImage: "doc.on.doc") { copyMessageText() })
@@ -786,6 +798,22 @@ struct MacMessageRow: View {
         .sheet(item: $selectedAlbumMessage) { albumMessage in
             MacAlbumMediaPreview(model: model, message: albumMessage)
         }
+        .sheet(item: $selectedStickerPack) { reference in
+            TelegramStickerPackPreview(
+                reference: reference,
+                service: model.service,
+                onSelect: { pendingStickerFromPack = $0 },
+                preview: { sticker in
+                    MacStickerView(
+                        model: model,
+                        sticker: sticker,
+                        maxSide: 76,
+                        playsAnimation: false,
+                    )
+                },
+            )
+        }
+        .task(id: pendingStickerFromPack?.sticker.id) { await sendPendingStickerFromPack() }
         .sheet(isPresented: $showReactionDetails) {
             TelegramReactionDetailsView(
                 service: model.service,
@@ -954,6 +982,25 @@ struct MacMessageRow: View {
         guard let text = copyableMessageText(message) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @MainActor private func sendPendingStickerFromPack() async {
+        guard let sticker = pendingStickerFromPack else { return }
+        defer { pendingStickerFromPack = nil }
+        model.messageActionError = nil
+        do {
+            try await TelegramStickerSending.send(
+                sticker,
+                service: model.service,
+                chatId: message.chatId,
+                replyToMessageId: nil,
+                topicId: model.openedTopic,
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            model.messageActionError = "Sticker couldn't be sent: \(telegramErrorDescription(error))"
+        }
     }
 
     private func openDocument() {

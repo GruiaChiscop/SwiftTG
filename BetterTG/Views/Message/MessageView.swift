@@ -25,6 +25,8 @@ struct MessageView: View {
     @State var documentTransferStatus: String?
     @State var documentDownloadIsPaused = false
     @State var documentDownloadCancellationTask: Task<Void, Never>?
+    @State var selectedStickerPack: TelegramStickerPackReference?
+    @State var pendingStickerFromPack: Sticker?
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -543,6 +545,22 @@ struct MessageView: View {
             .sheet(item: $resolvedComments) { resolvedThread in
                 TelegramCommentsChatView(resolvedThread: resolvedThread)
             }
+            .sheet(item: $selectedStickerPack) { reference in
+                TelegramStickerPackPreview(
+                    reference: reference,
+                    service: chatVM.service,
+                    onSelect: { pendingStickerFromPack = $0 },
+                    preview: { sticker in
+                        TelegramStickerView(
+                            sticker: sticker,
+                            service: chatVM.service,
+                            maxSide: 76,
+                            playsAnimation: false,
+                        )
+                    },
+                )
+            }
+            .task(id: pendingStickerFromPack?.sticker.id) { await sendPendingStickerFromPack() }
             .alert("Couldn't Open Comments", isPresented: commentsErrorIsPresented) {
                 Button("OK") {}
             } message: {
