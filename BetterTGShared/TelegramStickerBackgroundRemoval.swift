@@ -27,6 +27,13 @@ enum TelegramStickerBackgroundRemoval {
 
     /// Synchronous and potentially slow (on-device ML inference) - call from a background task.
     static func removingBackground(from image: CGImage) throws -> CGImage {
+        let maskImage = try foregroundAlphaMask(from: image)
+        return try applyingMask(CIImage(cgImage: maskImage), to: CIImage(cgImage: image))
+    }
+
+    /// Produces a white alpha mask that can be edited with erase/restore strokes before it is
+    /// applied to the source image.
+    static func foregroundAlphaMask(from image: CGImage) throws -> CGImage {
         let inputImage = CIImage(cgImage: image)
         let handler = VNImageRequestHandler(ciImage: inputImage)
         let request = VNGenerateForegroundInstanceMaskRequest()
@@ -38,8 +45,8 @@ enum TelegramStickerBackgroundRemoval {
 
         let maskPixelBuffer = try result.generateScaledMaskForImage(forInstances: result.allInstances, from: handler)
         let maskImage = CIImage(cvPixelBuffer: maskPixelBuffer)
-
-        return try applyingMask(maskImage, to: inputImage)
+        let whiteImage = CIImage(color: .white).cropped(to: inputImage.extent)
+        return try applyingMask(maskImage, to: whiteImage)
     }
 
     /// Kept separate from Vision inference so the alpha-mask composition can be verified with a

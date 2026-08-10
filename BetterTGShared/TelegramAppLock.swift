@@ -1,6 +1,5 @@
 // TelegramAppLock.swift
 
-import Foundation
 import LocalAuthentication
 import Observation
 import SwiftUI

@@ -58,6 +58,48 @@ import Testing
         #expect(state.overlays.count == 1)
     }
 
+    @Test func `erase and restore strokes update the alpha mask in order`() throws {
+        let document = try Self.fullMaskDocument()
+        let erase = TelegramCutoutMaskStroke(
+            points: [.init(x: 0.25, y: 0.5), .init(x: 0.75, y: 0.5)],
+            width: 0.25,
+            mode: .erase,
+        )
+        let erased = try TelegramCutoutMaskRendering.renderedCutout(
+            document: document,
+            strokes: [erase],
+        )
+        #expect(try Self.pixel(in: erased, x: 16, y: 16).alpha == 0)
+        #expect(try Self.pixel(in: erased, x: 2, y: 2).alpha > 240)
+
+        let restore = TelegramCutoutMaskStroke(
+            points: [.init(x: 0.4, y: 0.5), .init(x: 0.6, y: 0.5)],
+            width: 0.12,
+            mode: .restore,
+        )
+        let restored = try TelegramCutoutMaskRendering.renderedCutout(
+            document: document,
+            strokes: [erase, restore],
+        )
+        #expect(try Self.pixel(in: restored, x: 16, y: 16).alpha > 240)
+    }
+
+    @Test func `mask edit reset participates in undo redo history`() {
+        let state = TelegramCutoutEditorState()
+        state.addStroke(points: [.init(x: 0.5, y: 0.5)])
+        state.mode = .restore
+        state.addStroke(points: [.init(x: 0.6, y: 0.6)])
+        #expect(state.strokes.count == 2)
+        #expect(state.strokes.last?.mode == .restore)
+
+        state.resetEdits()
+        #expect(state.strokes.isEmpty)
+        state.undo()
+        #expect(state.strokes.count == 2)
+        state.redo()
+        #expect(state.strokes.isEmpty)
+    }
+
     // MARK: Private
 
     private static let extent = CGRect(x: 0, y: 0, width: 8, height: 4)
@@ -71,6 +113,19 @@ import Testing
             .cropped(to: CGRect(x: 0, y: 0, width: 4, height: 4))
         let mask = whiteHalf.composited(over: blackMask)
         return try TelegramStickerBackgroundRemoval.applyingMask(mask, to: source)
+    }
+
+    private static func fullMaskDocument() throws -> TelegramCutoutDocument {
+        let extent = CGRect(x: 0, y: 0, width: 32, height: 32)
+        let sourceImage = try #require(CIContext().createCGImage(
+            CIImage(color: CIColor(red: 1, green: 0, blue: 0)).cropped(to: extent),
+            from: extent,
+        ))
+        let maskImage = try #require(CIContext().createCGImage(
+            CIImage(color: .white).cropped(to: extent),
+            from: extent,
+        ))
+        return TelegramCutoutDocument(sourceImage: sourceImage, initialMask: maskImage)
     }
 
     private static func pixel(

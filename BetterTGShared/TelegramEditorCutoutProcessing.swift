@@ -7,12 +7,25 @@ import ImageIO
 enum TelegramEditorCutoutProcessing {
     // MARK: Internal
 
-    @concurrent static func overlay(from photoData: Data) async throws -> TelegramStickerOverlay {
+    @concurrent static func document(from photoData: Data) async throws -> TelegramCutoutDocument {
         try Task.checkCancellation()
         guard let sourceImage = decodedImage(from: photoData) else {
             throw TelegramGifEditorError.invalidCutoutImage
         }
-        let cutoutImage = try TelegramStickerBackgroundRemoval.removingBackground(from: sourceImage)
+        let maskImage = try TelegramStickerBackgroundRemoval.foregroundAlphaMask(from: sourceImage)
+        try Task.checkCancellation()
+        return TelegramCutoutDocument(sourceImage: sourceImage, initialMask: maskImage)
+    }
+
+    @concurrent static func temporaryOverlay(
+        from document: TelegramCutoutDocument,
+        strokes: [TelegramCutoutMaskStroke],
+    ) async throws -> TelegramStickerOverlay {
+        try Task.checkCancellation()
+        let cutoutImage = try TelegramCutoutMaskRendering.renderedCutout(
+            document: document,
+            strokes: strokes,
+        )
         try Task.checkCancellation()
         return try temporaryOverlay(from: cutoutImage)
     }

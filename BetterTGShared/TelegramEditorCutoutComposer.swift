@@ -11,22 +11,15 @@ struct TelegramEditorCutoutComposer: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
-                Image(systemName: "person.crop.rectangle")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-
-                Text("Choose a photo and BetterTG will isolate its main subject automatically.")
-                    .multilineTextAlignment(.center)
-
-                PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label("Choose Photo", systemImage: "photo.badge.plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isProcessing)
-
-                if isProcessing {
-                    ProgressView("Cutting out subject…")
+                if let document {
+                    TelegramCutoutEditorScreen(
+                        document: document,
+                        chooseDifferentPhoto: chooseDifferentPhoto,
+                        editorState: editorState,
+                    )
+                    .disabled(isFinishing)
+                } else {
+                    TelegramCutoutPhotoPrompt(isProcessing: isProcessing, photoItem: $photoItem)
                 }
 
                 if let errorMessage {
@@ -44,12 +37,23 @@ struct TelegramEditorCutoutComposer: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", role: .cancel) { dismiss() }
+                        .disabled(isProcessing || isFinishing)
+                }
+                if document != nil {
+                    ToolbarItem(placement: .confirmationAction) {
+                        if isFinishing {
+                            ProgressView()
+                        } else {
+                            Button("Add Cutout", action: finish)
+                        }
+                    }
                 }
             }
         }
         .task(id: photoItem) { await processPhoto() }
+        .interactiveDismissDisabled(isProcessing || isFinishing)
         #if os(macOS)
-        .frame(minWidth: 420, minHeight: 360)
+        .frame(minWidth: 520, minHeight: 620)
         #endif
     }
 
@@ -57,8 +61,11 @@ struct TelegramEditorCutoutComposer: View {
 
     @AccessibilityFocusState private var errorIsFocused: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var editorState = TelegramCutoutEditorState()
     @State private var photoItem: PhotosPickerItem?
+    @State private var document: TelegramCutoutDocument?
     @State private var isProcessing = false
+    @State private var isFinishing = false
     @State private var errorMessage: String?
 
     @MainActor private func processPhoto() async {
@@ -67,12 +74,38 @@ struct TelegramEditorCutoutComposer: View {
         defer { isProcessing = false }
         errorMessage = nil
         errorIsFocused = false
-        var createdOverlay: TelegramStickerOverlay?
         do {
             guard let data = try await photoItem.loadTransferable(type: Data.self) else {
                 throw TelegramGifEditorError.invalidCutoutImage
             }
-            let overlay = try await TelegramEditorCutoutProcessing.overlay(from: data)
+            let document = try await TelegramEditorCutoutProcessing.document(from: data)
+            try Task.checkCancellation()
+            editorState.prepareForNewPhoto()
+            self.document = document
+        } catch is CancellationError {
+            return
+        } catch {
+            self.photoItem = nil
+            await show(error)
+        }
+    }
+
+    private func finish() {
+        Task { await finishCutout() }
+    }
+
+    @MainActor private func finishCutout() async {
+        guard let document, !isFinishing else { return }
+        isFinishing = true
+        defer { isFinishing = false }
+        errorMessage = nil
+        errorIsFocused = false
+        var createdOverlay: TelegramStickerOverlay?
+        do {
+            let overlay = try await TelegramEditorCutoutProcessing.temporaryOverlay(
+                from: document,
+                strokes: editorState.strokes,
+            )
             createdOverlay = overlay
             try Task.checkCancellation()
             onSelected(overlay)
@@ -81,15 +114,24 @@ struct TelegramEditorCutoutComposer: View {
             if let createdOverlay {
                 try? FileManager.default.removeItem(at: createdOverlay.url)
             }
-            return
         } catch {
             if let createdOverlay {
                 try? FileManager.default.removeItem(at: createdOverlay.url)
             }
-            errorMessage = telegramErrorDescription(error)
-            self.photoItem = nil
-            await Task.yield()
-            errorIsFocused = true
+            await show(error)
         }
+    }
+
+    private func chooseDifferentPhoto() {
+        document = nil
+        photoItem = nil
+        errorMessage = nil
+        editorState.prepareForNewPhoto()
+    }
+
+    @MainActor private func show(_ error: any Swift.Error) async {
+        errorMessage = telegramErrorDescription(error)
+        await Task.yield()
+        errorIsFocused = true
     }
 }

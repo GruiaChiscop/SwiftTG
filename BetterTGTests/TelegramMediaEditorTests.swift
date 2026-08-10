@@ -339,9 +339,8 @@ import Testing
         writer.startSession(atSourceTime: .zero)
 
         for frameIndex in 0..<3 {
-            guard input.isReadyForMoreMediaData,
-                  let pool = adaptor.pixelBufferPool
-            else {
+            try await waitUntilReady(input, writer: writer)
+            guard let pool = adaptor.pixelBufferPool else {
                 throw TelegramMediaEditorTestError.writerNotReady
             }
             var optionalBuffer: CVPixelBuffer?
@@ -361,6 +360,30 @@ import Testing
         await writer.finishWriting()
         guard writer.status == .completed else {
             throw writer.error ?? TelegramMediaEditorTestError.writerFailed
+        }
+    }
+
+    private static func waitUntilReady(
+        _ input: AVAssetWriterInput,
+        writer: AVAssetWriter,
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !input.isReadyForMoreMediaData {
+            try Task.checkCancellation()
+            switch writer.status {
+            case .failed:
+                throw writer.error ?? TelegramMediaEditorTestError.writerFailed
+            case .cancelled, .completed:
+                throw writer.error ?? TelegramMediaEditorTestError.writerNotReady
+            case .unknown, .writing:
+                break
+            @unknown default:
+                throw TelegramMediaEditorTestError.writerNotReady
+            }
+            guard ContinuousClock.now < deadline else {
+                throw TelegramMediaEditorTestError.writerNotReady
+            }
+            await Task.yield()
         }
     }
 
