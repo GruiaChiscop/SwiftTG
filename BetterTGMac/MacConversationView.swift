@@ -125,27 +125,6 @@ struct MacConversationView: View {
                 model.saveCurrentDraft()
             }
         }
-        .sheet(isPresented: $showsStickersAndGifsPicker) {
-            TelegramStickersAndGifsPickerView(
-                service: model.service,
-                chatId: chat.chatId,
-                replyToMessageId: model.replyingToMessage?.id,
-                topicId: model.openedTopic,
-                onSent: {
-                    model.replyingToMessage = nil
-                    model.saveCurrentDraft()
-                },
-            ) { sticker in
-                MacStickerView(
-                    model: model,
-                    sticker: sticker,
-                    maxSide: 76,
-                    playsAnimation: false,
-                )
-            } gifPreview: { animation in
-                MacGifThumbnailView(model: model, animation: animation)
-            }
-        }
         .sheet(isPresented: Binding(
             get: { !model.selectedPhotoURLs.isEmpty || !model.selectedDocumentURLs.isEmpty },
             set: { isPresented in
@@ -523,10 +502,35 @@ struct MacConversationView: View {
                     .frame(minHeight: 32, idealHeight: 48, maxHeight: 112)
 
                     Button("Stickers and GIFs", systemImage: "face.smiling") {
-                        showsStickersAndGifsPicker = true
+                        showsStickersAndGifsPicker.toggle()
                     }
                     .labelStyle(.iconOnly)
                     .disabled(model.editingMessage != nil)
+                    .popover(isPresented: $showsStickersAndGifsPicker, arrowEdge: .bottom) {
+                        TelegramStickersAndGifsPickerView(
+                            service: model.service,
+                            chatId: chat.chatId,
+                            replyToMessageId: model.replyingToMessage?.id,
+                            topicId: model.openedTopic,
+                            onSent: {
+                                model.replyingToMessage = nil
+                                model.saveCurrentDraft()
+                            },
+                            onClose: {
+                                showsStickersAndGifsPicker = false
+                            },
+                        ) { sticker in
+                            MacStickerView(
+                                model: model,
+                                sticker: sticker,
+                                maxSide: 76,
+                                playsAnimation: false,
+                            )
+                        } gifPreview: { animation in
+                            MacGifThumbnailView(model: model, animation: animation)
+                        }
+                        .frame(width: 440, height: 500)
+                    }
 
                     if model.editingMessage == nil,
                        model.selectedDocumentURLs.isEmpty,

@@ -14,7 +14,15 @@ When using XcodeBuildMCP, call `session-set-defaults` at the start of every sess
 - `scheme`: `BetterTG`
 - `useLatestOS`: `true`
 
-`simulatorName` is user-specific and should be set individually per session.
+## Resource Usage
+
+- Never use the iOS Simulator for this project. Do not boot or open a simulator, set
+  `simulatorName`/`simulatorId`, or invoke simulator workflows such as `build_sim`, `test_sim`,
+  `build_run_sim`, or simulator UI automation.
+- Verify iOS changes with a non-simulator compile/build destination. If that is unavailable, report
+  the limitation instead of falling back to a simulator.
+- Do not run test suites or other prolonged high-CPU verification unless the user explicitly asks
+  for them. Prefer focused static checks and builds that are proportional to the change.
 
 ## Accessibility
 

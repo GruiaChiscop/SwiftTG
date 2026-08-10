@@ -93,7 +93,7 @@ enum TelegramAnimationSending {
 // MARK: - TelegramGifPickerContent
 
 /// Embedded by `TelegramStickersAndGifsPickerView` alongside `TelegramStickerPickerContent` under
-/// one shared `NavigationStack`/search field/tab switcher.
+/// one shared search field and tab switcher.
 struct TelegramGifPickerContent<Preview: View>: View {
     // MARK: Internal
 
@@ -135,7 +135,6 @@ struct TelegramGifPickerContent<Preview: View>: View {
     // MARK: Private
 
     @AccessibilityFocusState private var feedbackIsFocused: Bool
-    @Environment(\.dismiss) private var dismiss
     @State private var savedAnimations = [TDLibKit.Animation]()
     @State private var trendingResults = [GifPickerSearchResult]()
     @State private var searchResults = [GifPickerSearchResult]()
@@ -373,7 +372,6 @@ struct TelegramGifPickerContent<Preview: View>: View {
                     )
                 }
                 await onSent()
-                dismiss()
             } catch {
                 showFeedback("GIF couldn't be sent: \(telegramErrorDescription(error))")
             }

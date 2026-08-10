@@ -5,11 +5,13 @@ import TDLibKit
 
 // MARK: - TelegramStickersAndGifsPickerView
 
-/// One button, one sheet, matching how real Telegram's own composer works - a segmented switcher
-/// over the same search field, rather than two separate buttons each opening their own picker.
+/// One composer control with a segmented switcher over the same search field, rather than two
+/// separate buttons each opening their own picker.
 /// `TelegramStickerPickerContent`/`TelegramGifPickerContent` are the exact same content either
-/// picker uses standalone; only the shared chrome (`NavigationStack`, search field, tab switcher)
-/// lives here.
+/// picker uses standalone; only the shared chrome lives here. The picker deliberately owns no
+/// navigation stack or toolbar because it can be embedded directly inside an existing conversation
+/// navigation destination. Presentation is owned by the composer so the picker can be inline on
+/// iOS and a popover on macOS without obscuring the conversation.
 struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>: View {
     // MARK: Lifecycle
 
@@ -19,6 +21,7 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
         replyToMessageId: Int64?,
         topicId: MessageTopic? = nil,
         onSent: @escaping @MainActor () async -> Void,
+        onClose: @escaping () -> Void,
         @ViewBuilder stickerPreview: @escaping (Sticker) -> StickerPreview,
         @ViewBuilder gifPreview: @escaping (TDLibKit.Animation) -> GifPreview,
     ) {
@@ -27,6 +30,7 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
         self.replyToMessageId = replyToMessageId
         self.topicId = topicId
         self.onSent = onSent
+        self.onClose = onClose
         self.stickerPreview = stickerPreview
         self.gifPreview = gifPreview
     }
@@ -39,7 +43,30 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            ZStack {
+                Picker("Content Type", selection: $tab) {
+                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 200)
+
+                HStack {
+                    Spacer()
+                    Button("Close", action: onClose)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            TextField(tab == .stickers ? "Search stickers" : "Search GIFs", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
+            Divider()
+
             Group {
                 switch tab {
                 case .stickers:
@@ -49,7 +76,7 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
                         replyToMessageId: replyToMessageId,
                         topicId: topicId,
                         query: query,
-                        onSent: onSent,
+                        onSent: didSend,
                         preview: stickerPreview,
                     )
                 case .gifs:
@@ -59,35 +86,16 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
                         replyToMessageId: replyToMessageId,
                         topicId: topicId,
                         query: query,
-                        onSent: onSent,
+                        onSent: didSend,
                         preview: gifPreview,
                     )
                 }
             }
-            .navigationTitle(tab.rawValue)
-            #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-            #endif
-                .searchable(text: $query, prompt: tab == .stickers ? "Search stickers" : "Search GIFs")
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Picker("Content Type", selection: $tab) {
-                            ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 200)
-                    }
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                    }
-                }
         }
     }
 
     // MARK: Private
 
-    @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var tab = Tab.stickers
 
@@ -96,6 +104,12 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
     private let replyToMessageId: Int64?
     private let topicId: MessageTopic?
     private let onSent: @MainActor () async -> Void
+    private let onClose: () -> Void
     private let stickerPreview: (Sticker) -> StickerPreview
     private let gifPreview: (TDLibKit.Animation) -> GifPreview
+
+    @MainActor private func didSend() async {
+        await onSent()
+        onClose()
+    }
 }

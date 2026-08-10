@@ -88,27 +88,48 @@ struct ChatBottomArea: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            HStack(alignment: .bottom, spacing: 6) {
-                if chatVM.recordingVoiceNote {
-                    recordingIndicator
-                } else {
-                    leftSide
+            if !showsStickersAndGifsPicker {
+                HStack(alignment: .bottom, spacing: 6) {
+                    if chatVM.recordingVoiceNote {
+                        recordingIndicator
+                    } else {
+                        leftSide
 
-                    textField
+                        textField
 
-                    Button {
-                        showsStickersAndGifsPicker = true
-                    } label: {
-                        Label("Stickers and GIFs", systemImage: "face.smiling")
-                            .labelStyle(.iconOnly)
+                        Button {
+                            focused.wrappedValue = false
+                            withAnimation {
+                                showsStickersAndGifsPicker = true
+                            }
+                        } label: {
+                            Label("Stickers and GIFs", systemImage: "face.smiling")
+                                .labelStyle(.iconOnly)
+                        }
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .disabled(chatVM.editCustomMessage != nil || chatVM.isSubmittingMessage)
                     }
-                    .font(.system(size: 22))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .disabled(chatVM.editCustomMessage != nil || chatVM.isSubmittingMessage)
-                }
 
-                rightSide
+                    rightSide
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if showsStickersAndGifsPicker {
+                Divider()
+                    .padding(.top, 8)
+
+                ChatStickersAndGifsPicker(onClose: {
+                    withAnimation {
+                        showsStickersAndGifsPicker = false
+                    }
+                })
+                .containerRelativeFrame(.vertical) { availableHeight, _ in
+                    min(availableHeight * 0.42, 360)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .onDisappear { Task.background { [chatVM] in await chatVM.updateDraft() } }
@@ -215,37 +236,6 @@ struct ChatBottomArea: View {
                     try await shareLiveLocation(livePeriod: livePeriod)
                 },
             )
-        }
-        .sheet(isPresented: $showsStickersAndGifsPicker) {
-            TelegramStickersAndGifsPickerView(
-                service: chatVM.service,
-                chatId: chatVM.customChat.chat.id,
-                replyToMessageId: chatVM.replyMessage?.id,
-                topicId: chatVM.messageTopic,
-                onSent: {
-                    chatVM.replyMessage = nil
-                    await chatVM.updateDraft()
-                },
-            ) { sticker in
-                TelegramStickerView(
-                    sticker: sticker,
-                    service: chatVM.service,
-                    maxSide: 76,
-                    playsAnimation: false,
-                )
-            } gifPreview: { animation in
-                if let thumbnail = animation.thumbnail {
-                    AsyncTdImage(id: thumbnail.file.id) { image, _ in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(.black.opacity(0.15))
-                    }
-                } else {
-                    Rectangle().fill(.black.opacity(0.15))
-                }
-            }
         }
         .padding(.horizontal, 8)
         .background(.bar)
@@ -445,10 +435,13 @@ struct ChatBottomArea: View {
         }
         .onChange(of: focused.wrappedValue) {
             guard focused.wrappedValue else { return }
-            withAnimation { chatVM.showDetail = false }
+            withAnimation {
+                chatVM.showDetail = false
+                showsStickersAndGifsPicker = false
+            }
         }
     }
-    
+
     /// Stays mounted for the whole record gesture (touch-down through lock/cancel/send) —
     /// swapping it out mid-drag would tear down the DragGesture and lose touch tracking.
     var rightSide: some View {

@@ -45,7 +45,7 @@ enum TelegramStickerSending {
 // MARK: - TelegramStickerPickerContent
 
 /// Embedded by `TelegramStickersAndGifsPickerView` alongside `TelegramGifPickerContent` under one
-/// shared `NavigationStack`/search field/tab switcher.
+/// shared search field and tab switcher.
 struct TelegramStickerPickerContent<Preview: View>: View {
     // MARK: Internal
 
@@ -58,26 +58,39 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     let preview: (Sticker) -> Preview
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                if normalizedQuery.isEmpty {
-                    libraryContent
-                } else {
-                    searchContent
-                }
+        Group {
+            if let selectedStickerSet {
+                TelegramStickerSetPickerView(
+                    stickerSetInfo: selectedStickerSet,
+                    service: service,
+                    sendingStickerFileId: sendingStickerFileId,
+                    onBack: { self.selectedStickerSet = nil },
+                    onSelect: send,
+                    preview: preview,
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        if normalizedQuery.isEmpty {
+                            Button("Create Sticker", systemImage: "plus") {
+                                showsCreationComposer = true
+                            }
+                            .buttonStyle(.bordered)
 
-                if let feedbackMessage {
-                    Text(feedbackMessage)
-                        .foregroundStyle(.red)
-                        .accessibilityFocused($feedbackIsFocused)
+                            libraryContent
+                        } else {
+                            searchContent
+                        }
+
+                        if let feedbackMessage {
+                            Text(feedbackMessage)
+                                .foregroundStyle(.red)
+                                .accessibilityFocused($feedbackIsFocused)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Create Sticker") { showsCreationComposer = true }
             }
         }
         .task { await loadLibraryIfNeeded() }
@@ -98,7 +111,6 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     // MARK: Private
 
     @AccessibilityFocusState private var feedbackIsFocused: Bool
-    @Environment(\.dismiss) private var dismiss
     @State private var recentStickers = [Sticker]()
     @State private var stickerSets = [StickerSetInfo]()
     @State private var searchResults = [Sticker]()
@@ -110,6 +122,7 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     @State private var hasPremium: Bool?
     @State private var showsPremiumRequiredAlert = false
     @State private var showsCreationComposer = false
+    @State private var selectedStickerSet: StickerSetInfo?
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -132,14 +145,8 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                 sectionHeading("Sticker Packs")
                 LazyVStack(spacing: 8) {
                     ForEach(stickerSets) { stickerSet in
-                        NavigationLink {
-                            TelegramStickerSetPickerView(
-                                stickerSetInfo: stickerSet,
-                                service: service,
-                                sendingStickerFileId: sendingStickerFileId,
-                                onSelect: send,
-                                preview: preview,
-                            )
+                        Button {
+                            selectedStickerSet = stickerSet
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 3) {
@@ -337,7 +344,6 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                     topicId: topicId,
                 )
                 await onSent()
-                dismiss()
             } catch {
                 showFeedback("Sticker couldn't be sent: \(telegramErrorDescription(error))")
             }
@@ -362,61 +368,71 @@ private struct TelegramStickerSetPickerView<Preview: View>: View {
     let stickerSetInfo: StickerSetInfo
     let service: any TelegramService
     let sendingStickerFileId: Int?
+    let onBack: () -> Void
     let onSelect: (Sticker) -> Void
     let preview: (Sticker) -> Preview
 
     var body: some View {
-        Group {
-            if let stickerSet {
-                ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 12)],
-                        spacing: 12,
-                    ) {
-                        ForEach(stickerSet.stickers, id: \.sticker.id) { sticker in
-                            let presentation = TelegramStickerPresentation(sticker)
-                            Button {
-                                onSelect(sticker)
-                            } label: {
-                                ZStack(alignment: .topTrailing) {
-                                    preview(sticker)
-                                        .accessibilityHidden(true)
-                                    if presentation.isPremium {
-                                        TelegramPremiumStickerBadge()
-                                    }
-                                    if sendingStickerFileId == sticker.sticker.id {
-                                        ProgressView()
+        VStack(spacing: 0) {
+            HStack {
+                Button("Sticker Packs", systemImage: "chevron.left", action: onBack)
+                Spacer()
+                Text(stickerSetInfo.title)
+                    .bold()
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .padding()
+
+            Divider()
+
+            Group {
+                if let stickerSet {
+                    ScrollView {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 12)],
+                            spacing: 12,
+                        ) {
+                            ForEach(stickerSet.stickers, id: \.sticker.id) { sticker in
+                                let presentation = TelegramStickerPresentation(sticker)
+                                Button {
+                                    onSelect(sticker)
+                                } label: {
+                                    ZStack(alignment: .topTrailing) {
+                                        preview(sticker)
                                             .accessibilityHidden(true)
+                                        if presentation.isPremium {
+                                            TelegramPremiumStickerBadge()
+                                        }
+                                        if sendingStickerFileId == sticker.sticker.id {
+                                            ProgressView()
+                                                .accessibilityHidden(true)
+                                        }
                                     }
+                                    .frame(minHeight: 76)
+                                    .contentShape(.rect)
                                 }
-                                .frame(minHeight: 76)
-                                .contentShape(.rect)
+                                .buttonStyle(.plain)
+                                .disabled(sendingStickerFileId != nil)
+                                .accessibilityLabel(presentation.pickerAccessibilityLabel(
+                                    packTitle: stickerSet.title,
+                                ))
                             }
-                            .buttonStyle(.plain)
-                            .disabled(sendingStickerFileId != nil)
-                            .accessibilityLabel(presentation.pickerAccessibilityLabel(
-                                packTitle: stickerSet.title,
-                            ))
                         }
+                        .padding()
                     }
-                    .padding()
+                } else if let errorMessage {
+                    ContentUnavailableView(
+                        "Sticker Pack Unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(errorMessage),
+                    )
+                    .accessibilityFocused($errorIsFocused)
+                } else {
+                    ProgressView("Loading \(stickerSetInfo.title)")
                 }
-            } else if let errorMessage {
-                ContentUnavailableView(
-                    "Sticker Pack Unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(errorMessage),
-                )
-                .accessibilityFocused($errorIsFocused)
-            } else {
-                ProgressView("Loading \(stickerSetInfo.title)")
             }
         }
-        .navigationTitle(stickerSetInfo.title)
-        #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-        #endif
-            .task(id: stickerSetInfo.id) { await loadStickerSet() }
+        .task(id: stickerSetInfo.id) { await loadStickerSet() }
     }
 
     // MARK: Private
