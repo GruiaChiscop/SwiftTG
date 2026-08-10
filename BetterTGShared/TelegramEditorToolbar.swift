@@ -10,6 +10,7 @@ struct TelegramEditorToolbar: View {
     let addText: () -> Void
     let addEmoji: () -> Void
     let addSticker: () -> Void
+    let addCutout: () -> Void
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -28,6 +29,7 @@ struct TelegramEditorToolbar: View {
                 Button("Text", systemImage: "textformat", action: addText)
                 Button("Emoji", systemImage: "face.smiling", action: addEmoji)
                 Button("Sticker", systemImage: "photo.on.rectangle.angled", action: addSticker)
+                Button("Cutout", systemImage: "person.crop.rectangle", action: addCutout)
                 Button(
                     "Effects",
                     systemImage: "camera.filters",

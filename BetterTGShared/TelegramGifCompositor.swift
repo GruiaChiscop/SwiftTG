@@ -124,7 +124,7 @@ import SwiftUI
         from overlays: [TelegramMediaOverlay],
     ) throws -> [URL: CGImage] {
         let urls = Set(overlays.compactMap { overlay -> URL? in
-            guard case .sticker(let sticker) = overlay.content, sticker.format == .webp else { return nil }
+            guard case .sticker(let sticker) = overlay.content, sticker.format == .staticImage else { return nil }
             return sticker.url
         })
         var images = [URL: CGImage]()

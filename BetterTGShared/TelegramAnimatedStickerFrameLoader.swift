@@ -85,7 +85,7 @@ enum TelegramAnimatedStickerFrameLoader {
                 images: images,
                 frameRate: max(1, animation.frameRate),
             )
-        case .webp:
+        case .staticImage:
             throw TelegramGifEditorError.animatedStickerRenderingFailed
         }
     }

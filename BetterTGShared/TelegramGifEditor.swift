@@ -31,6 +31,7 @@ struct TelegramGifEditor: View {
                     addText: showTextPrompt,
                     addEmoji: showEmojiPrompt,
                     addSticker: showStickerPicker,
+                    addCutout: showCutoutComposer,
                 )
 
                 TelegramEditorInspector(editorState: editorState)
@@ -67,7 +68,7 @@ struct TelegramGifEditor: View {
         }
         .frame(maxWidth: 640)
         .task(id: animation.animation.id) { await load() }
-        .onDisappear { player?.pause() }
+        .onDisappear(perform: stopAndCleanup)
         .interactiveDismissDisabled(isSending)
         .alert("Add Text", isPresented: $showsTextPrompt) {
             TextField("Text", text: $draftText)
@@ -83,6 +84,9 @@ struct TelegramGifEditor: View {
         }
         .sheet(isPresented: $showsStickerPicker) {
             TelegramEditorStickerPicker(service: service, onSelected: addSticker)
+        }
+        .sheet(isPresented: $showsCutoutComposer) {
+            TelegramEditorCutoutComposer(onSelected: addCutout)
         }
     }
 
@@ -105,8 +109,10 @@ struct TelegramGifEditor: View {
     @State private var showsTextPrompt = false
     @State private var showsEmojiPrompt = false
     @State private var showsStickerPicker = false
+    @State private var showsCutoutComposer = false
     @State private var draftText = ""
     @State private var draftEmoji = ""
+    @State private var temporaryCutoutURLs = Set<URL>()
 
     private var canvasSize: CGSize {
         if let loadedCanvasSize {
@@ -174,6 +180,7 @@ struct TelegramGifEditor: View {
                 )
                 try await onSend(outputURL, caption, Int((endTime - startTime).rounded(.up)))
                 try? FileManager.default.removeItem(at: outputURL)
+                cleanupTemporaryCutouts()
                 dismiss()
             } catch {
                 try? FileManager.default.removeItem(at: outputURL)
@@ -197,6 +204,10 @@ struct TelegramGifEditor: View {
         showsStickerPicker = true
     }
 
+    private func showCutoutComposer() {
+        showsCutoutComposer = true
+    }
+
     private func addText() {
         editorState.addText(draftText)
         draftText = ""
@@ -211,8 +222,26 @@ struct TelegramGifEditor: View {
         editorState.addSticker(sticker)
     }
 
+    private func addCutout(_ cutout: TelegramStickerOverlay) {
+        temporaryCutoutURLs.insert(cutout.url)
+        editorState.addSticker(cutout)
+    }
+
     private func dismissEditor() {
+        cleanupTemporaryCutouts()
         dismiss()
+    }
+
+    private func stopAndCleanup() {
+        player?.pause()
+        cleanupTemporaryCutouts()
+    }
+
+    private func cleanupTemporaryCutouts() {
+        for url in temporaryCutoutURLs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        temporaryCutoutURLs.removeAll()
     }
 
     @MainActor private func loadCanvasSize(from asset: AVAsset) async {

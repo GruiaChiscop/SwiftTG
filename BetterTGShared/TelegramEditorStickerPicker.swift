@@ -134,7 +134,7 @@ struct TelegramEditorStickerPicker: View {
 
     private func overlayFormat(for sticker: Sticker) -> TelegramStickerOverlayFormat {
         switch sticker.format {
-        case .stickerFormatWebp: .webp
+        case .stickerFormatWebp: .staticImage
         case .stickerFormatTgs: .tgs
         case .stickerFormatWebm: .webm
         }

@@ -41,12 +41,13 @@ struct TelegramMediaOverlayItemView: View {
         switch overlay.content {
         case .text(let text): "Text overlay, \(text)"
         case .emoji(let emoji): "Emoji overlay, \(emoji)"
-        case .sticker: "Sticker overlay"
+        case .sticker(let sticker):
+            sticker.kind == .cutout ? "Cutout overlay" : "Sticker overlay"
         }
     }
 
     private var stickerURL: URL? {
-        guard case .sticker(let sticker) = overlay.content, sticker.format == .webp else { return nil }
+        guard case .sticker(let sticker) = overlay.content, sticker.format == .staticImage else { return nil }
         return sticker.url
     }
 
