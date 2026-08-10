@@ -28,6 +28,7 @@ struct TelegramMediaCrop: Equatable, Sendable {
     var horizontalOffset = 0.0
     var verticalOffset = 0.0
     var quarterTurnsCounterclockwise = 0
+    var rotationDegrees = 0.0
     var isMirrored = false
 
     var isIdentity: Bool {

@@ -64,6 +64,11 @@ import SwiftUI
         set { crop.verticalOffset = min(max(newValue, -1), 1) }
     }
 
+    var cropRotationDegrees: Double {
+        get { crop.rotationDegrees }
+        set { crop.rotationDegrees = min(max(newValue, -45), 45) }
+    }
+
     func addStroke(points: [TelegramEditorPoint]) {
         guard !points.isEmpty else { return }
         recordMutation()

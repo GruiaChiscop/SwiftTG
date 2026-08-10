@@ -28,6 +28,18 @@ struct TelegramCropInspector: View {
                 Slider(value: $editorState.cropVerticalOffset, in: -1...1, onEditingChanged: cropEditingChanged)
                     .frame(minWidth: 140)
             }
+            LabeledContent("Rotation") {
+                Text(editorState.cropRotationDegrees, format: .number.precision(.fractionLength(0)))
+                    .monospacedDigit()
+            }
+            Slider(
+                value: $editorState.cropRotationDegrees,
+                in: -45...45,
+                step: 1,
+                onEditingChanged: cropEditingChanged,
+            )
+            .accessibilityLabel("Rotation")
+            .accessibilityValue("\(Int(editorState.cropRotationDegrees.rounded())) degrees")
 
             HStack {
                 Button("Rotate Left", systemImage: "rotate.left", action: editorState.rotateCropCounterclockwise)

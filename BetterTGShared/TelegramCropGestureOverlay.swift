@@ -13,6 +13,7 @@ struct TelegramCropGestureOverlay: View {
                 .contentShape(.rect)
                 .gesture(dragGesture(in: proxy.size))
                 .simultaneousGesture(magnificationGesture)
+                .simultaneousGesture(rotationGesture)
         }
         .accessibilityHidden(true)
     }
@@ -21,8 +22,28 @@ struct TelegramCropGestureOverlay: View {
 
     @State private var dragStartOffsets: CGSize?
     @State private var magnificationStartZoom: Double?
+    @State private var rotationStartDegrees: Double?
     @State private var isDragging = false
     @State private var isMagnifying = false
+    @State private var isRotating = false
+
+    private var rotationGesture: some Gesture {
+        RotateGesture()
+            .onChanged { value in
+                if !isRotating {
+                    isRotating = true
+                    rotationStartDegrees = editorState.cropRotationDegrees
+                    editorState.beginInteraction()
+                }
+                editorState.cropRotationDegrees =
+                    (rotationStartDegrees ?? editorState.cropRotationDegrees) + value.rotation.degrees
+            }
+            .onEnded { _ in
+                rotationStartDegrees = nil
+                isRotating = false
+                endInteractionIfNeeded()
+            }
+    }
 
     private var magnificationGesture: some Gesture {
         MagnificationGesture()
@@ -64,7 +85,7 @@ struct TelegramCropGestureOverlay: View {
     }
 
     private func endInteractionIfNeeded() {
-        if !isDragging, !isMagnifying {
+        if !isDragging, !isMagnifying, !isRotating {
             editorState.endInteraction()
         }
     }

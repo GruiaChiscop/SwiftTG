@@ -244,6 +244,56 @@ import Testing
         #expect(state.crop.horizontalOffset == 0.75)
     }
 
+    @Test func `free crop rotation is clamped and participates in undo`() {
+        let state = TelegramMediaEditorState()
+        state.beginInteraction()
+        state.cropRotationDegrees = 27
+        state.endInteraction()
+
+        #expect(state.crop.rotationDegrees == 27)
+        state.undo()
+        #expect(state.crop.rotationDegrees == 0)
+        state.redo()
+        #expect(state.crop.rotationDegrees == 27)
+
+        state.cropRotationDegrees = 90
+        #expect(state.crop.rotationDegrees == 45)
+        state.cropRotationDegrees = -90
+        #expect(state.crop.rotationDegrees == -45)
+    }
+
+    @Test func `free crop rotation scales to cover the output without transparent corners`() throws {
+        let source = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
+            .cropped(to: CGRect(x: 0, y: 0, width: 80, height: 40))
+        let crop = TelegramMediaCrop(rotationDegrees: 30)
+        let rotated = TelegramMediaCropRendering.apply(
+            crop,
+            to: source,
+            canvasSize: CGSize(width: 80, height: 40),
+        )
+        let image = try #require(CIContext().createCGImage(rotated, from: rotated.extent))
+
+        #expect(rotated.extent.size == CGSize(width: 80, height: 40))
+        #expect(try Self.pixel(in: image, x: 1, y: 1).alpha > 200)
+        #expect(try Self.pixel(in: image, x: 78, y: 1).alpha > 200)
+        #expect(try Self.pixel(in: image, x: 1, y: 38).alpha > 200)
+        #expect(try Self.pixel(in: image, x: 78, y: 38).alpha > 200)
+    }
+
+    @Test func `free crop rotation coverage accounts for output aspect ratio`() {
+        let square = TelegramMediaCropRendering.rotationCoverageScale(
+            rotationDegrees: 45,
+            size: CGSize(width: 100, height: 100),
+        )
+        let landscape = TelegramMediaCropRendering.rotationCoverageScale(
+            rotationDegrees: 45,
+            size: CGSize(width: 100, height: 50),
+        )
+
+        #expect(abs(square - sqrt(2)) < 0.0001)
+        #expect(abs(landscape - (3 * sqrt(2) / 2)) < 0.0001)
+    }
+
     @Test func `square crop geometry pans to the requested edge`() {
         let crop = TelegramMediaCrop(
             aspectRatio: .square,

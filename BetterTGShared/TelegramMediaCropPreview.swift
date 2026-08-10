@@ -15,6 +15,11 @@ struct TelegramMediaCropPreview<Content: View>: View {
             let originalSize = crop.normalizedQuarterTurns.isMultiple(of: 2)
                 ? CGSize(width: rotatedWidth, height: rotatedHeight)
                 : CGSize(width: rotatedHeight, height: rotatedWidth)
+            let outputSize = TelegramMediaCropRendering.outputSize(crop, canvasSize: canvasSize)
+            let rotationScale = TelegramMediaCropRendering.rotationCoverageScale(
+                rotationDegrees: crop.rotationDegrees,
+                size: outputSize,
+            )
 
             content()
                 .frame(width: originalSize.width, height: originalSize.height)
@@ -26,6 +31,8 @@ struct TelegramMediaCropPreview<Content: View>: View {
                     y: -cropRect.minY * rotatedHeight,
                 )
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                .scaleEffect(rotationScale)
+                .rotationEffect(.degrees(crop.rotationDegrees))
         }
         .clipped()
     }

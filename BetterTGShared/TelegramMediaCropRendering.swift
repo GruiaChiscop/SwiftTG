@@ -37,6 +37,17 @@ enum TelegramMediaCropRendering {
         ))
     }
 
+    static func rotationCoverageScale(rotationDegrees: Double, size: CGSize) -> Double {
+        guard size.width > 0, size.height > 0 else { return 1 }
+        let radians = rotationDegrees * .pi / 180
+        let cosine = abs(cos(radians))
+        let sine = abs(sin(radians))
+        return max(
+            cosine + sine * size.height / size.width,
+            cosine + sine * size.width / size.height,
+        )
+    }
+
     static func apply(_ crop: TelegramMediaCrop, to source: CIImage, canvasSize: CGSize) -> CIImage {
         let normalizedSource = source.transformed(by: CGAffineTransform(
             translationX: -source.extent.minX,
@@ -65,7 +76,8 @@ enum TelegramMediaCropRendering {
             scaleX: outputSize.width / cropRect.width,
             y: outputSize.height / cropRect.height,
         ))
-        return scaled.cropped(to: CGRect(origin: .zero, size: outputSize))
+        let output = scaled.cropped(to: CGRect(origin: .zero, size: outputSize))
+        return applyFreeRotation(crop.rotationDegrees, to: output, outputSize: outputSize)
     }
 
     // MARK: Private
@@ -77,6 +89,22 @@ enum TelegramMediaCropRendering {
         case 3: image.oriented(.right)
         default: image
         }
+    }
+
+    private static func applyFreeRotation(
+        _ rotationDegrees: Double,
+        to image: CIImage,
+        outputSize: CGSize,
+    ) -> CIImage {
+        guard rotationDegrees != 0 else { return image }
+        let center = CGPoint(x: outputSize.width / 2, y: outputSize.height / 2)
+        let coverageScale = rotationCoverageScale(rotationDegrees: rotationDegrees, size: outputSize)
+        return image
+            .transformed(by: CGAffineTransform(translationX: -center.x, y: -center.y))
+            .transformed(by: CGAffineTransform(rotationAngle: -rotationDegrees * .pi / 180))
+            .transformed(by: CGAffineTransform(scaleX: coverageScale, y: coverageScale))
+            .transformed(by: CGAffineTransform(translationX: center.x, y: center.y))
+            .cropped(to: CGRect(origin: .zero, size: outputSize))
     }
 
     private static func evenSize(_ size: CGSize) -> CGSize {
