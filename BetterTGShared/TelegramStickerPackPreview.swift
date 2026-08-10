@@ -13,29 +13,34 @@ struct TelegramStickerPackPreview<Preview: View>: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let stickerSet {
-                    ScrollView {
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 12)],
-                            spacing: 12,
-                        ) {
-                            ForEach(stickerSet.stickers, id: \.sticker.id) { sticker in
-                                stickerButton(sticker, packTitle: stickerSet.title)
+            VStack(spacing: 0) {
+                Group {
+                    if let stickerSet {
+                        ScrollView {
+                            LazyVGrid(
+                                columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 12)],
+                                spacing: 12,
+                            ) {
+                                ForEach(stickerSet.stickers, id: \.sticker.id) { sticker in
+                                    stickerButton(sticker, packTitle: stickerSet.title)
+                                }
                             }
+                            .padding()
                         }
-                        .padding()
+                    } else if let loadErrorMessage {
+                        ContentUnavailableView(
+                            "Sticker Pack Unavailable",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(loadErrorMessage),
+                        )
+                        .accessibilityFocused($loadErrorIsFocused)
+                    } else {
+                        ProgressView("Loading sticker pack")
                     }
-                } else if let errorMessage {
-                    ContentUnavailableView(
-                        "Sticker Pack Unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(errorMessage),
-                    )
-                    .accessibilityFocused($errorIsFocused)
-                } else {
-                    ProgressView("Loading sticker pack")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                installationControls
             }
             .navigationTitle(stickerSet?.title ?? "Sticker Pack")
             .toolbar {
@@ -48,14 +53,60 @@ struct TelegramStickerPackPreview<Preview: View>: View {
         .frame(minWidth: 420, minHeight: 480)
         #endif
         .task(id: reference.id) { await loadStickerSet() }
+        .task(id: pendingInstallationAction) { await changeInstallationState() }
     }
 
     // MARK: Private
 
-    @AccessibilityFocusState private var errorIsFocused: Bool
+    @AccessibilityFocusState private var loadErrorIsFocused: Bool
+    @AccessibilityFocusState private var installationErrorIsFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var stickerSet: StickerSet?
-    @State private var errorMessage: String?
+    @State private var isInstalled: Bool?
+    @State private var loadErrorMessage: String?
+    @State private var installationErrorMessage: String?
+    @State private var pendingInstallationAction: TelegramStickerPackInstallationAction?
+
+    private var installationAction: TelegramStickerPackInstallationAction? {
+        guard let stickerSet else { return nil }
+        return TelegramStickerPackInstallationAction(
+            isInstalled: isInstalled ?? stickerSet.isInstalled,
+            isOwned: stickerSet.isOwned,
+            stickerCount: stickerSet.stickers.count,
+        )
+    }
+
+    @ViewBuilder private var installationControls: some View {
+        if let installationAction {
+            Divider()
+            VStack(spacing: 8) {
+                Button(role: installationAction.installs ? nil : .destructive) {
+                    installationErrorMessage = nil
+                    pendingInstallationAction = installationAction
+                } label: {
+                    HStack {
+                        if pendingInstallationAction != nil {
+                            ProgressView()
+                                .accessibilityHidden(true)
+                        }
+                        Text(installationAction.title)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(installationAction.installs ? Color.accentColor : Color.red)
+                .disabled(pendingInstallationAction != nil)
+
+                if let installationErrorMessage {
+                    Text(installationErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .accessibilityFocused($installationErrorIsFocused)
+                }
+            }
+            .padding()
+        }
+    }
 
     private func stickerButton(_ sticker: Sticker, packTitle: String) -> some View {
         let presentation = TelegramStickerPresentation(sticker)
@@ -74,18 +125,42 @@ struct TelegramStickerPackPreview<Preview: View>: View {
 
     @MainActor private func loadStickerSet() async {
         stickerSet = nil
-        errorMessage = nil
+        isInstalled = nil
+        loadErrorMessage = nil
+        installationErrorMessage = nil
         do {
             let loadedStickerSet = try await service.getStickerSet(setId: reference.id)
             guard !Task.isCancelled else { return }
             stickerSet = loadedStickerSet
+            isInstalled = loadedStickerSet.isInstalled
         } catch is CancellationError {
             return
         } catch {
             guard !Task.isCancelled else { return }
-            errorMessage = telegramErrorDescription(error)
+            loadErrorMessage = telegramErrorDescription(error)
             await Task.yield()
-            errorIsFocused = true
+            loadErrorIsFocused = true
+        }
+    }
+
+    @MainActor private func changeInstallationState() async {
+        guard let action = pendingInstallationAction else { return }
+        defer { pendingInstallationAction = nil }
+        do {
+            _ = try await service.changeStickerSet(
+                isArchived: false,
+                isInstalled: action.installs,
+                setId: reference.id,
+            )
+            guard !Task.isCancelled else { return }
+            isInstalled = action.installs
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            installationErrorMessage = "Sticker pack couldn't be updated: \(telegramErrorDescription(error))"
+            await Task.yield()
+            installationErrorIsFocused = true
         }
     }
 }

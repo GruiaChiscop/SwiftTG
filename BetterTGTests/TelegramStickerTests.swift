@@ -107,6 +107,29 @@ struct TelegramStickerTests {
         #expect(TelegramStickerPackReference(messageSticker: content)?.id == 84)
     }
 
+    @Test func `pack installation actions match Telegram behavior`() {
+        let install = TelegramStickerPackInstallationAction(
+            isInstalled: false,
+            isOwned: false,
+            stickerCount: 12,
+        )
+        let remove = TelegramStickerPackInstallationAction(
+            isInstalled: true,
+            isOwned: false,
+            stickerCount: 1,
+        )
+
+        #expect(install == .install(stickerCount: 12))
+        #expect(install?.title == "Add 12 Stickers")
+        #expect(remove == .remove(stickerCount: 1))
+        #expect(remove?.title == "Remove 1 Sticker")
+        #expect(TelegramStickerPackInstallationAction(
+            isInstalled: true,
+            isOwned: true,
+            stickerCount: 4,
+        ) == nil)
+    }
+
     @Test func `editor overlay selection maps every sticker format`() {
         let url = URL(filePath: "/tmp/sticker")
 
