@@ -10,12 +10,20 @@ struct TelegramEditorInspector: View {
     var body: some View {
         if editorState.tool == .draw {
             VStack(alignment: .leading) {
+                Picker("Brush", selection: $editorState.brushStyle) {
+                    ForEach(TelegramBrushStyle.allCases) { style in
+                        Text(style.title)
+                            .tag(style)
+                    }
+                }
                 ColorPicker("Brush color", selection: $editorState.brushColor, supportsOpacity: true)
                 LabeledContent("Brush size") {
                     Slider(value: $editorState.brushWidth, in: 0.003...0.05)
                         .frame(minWidth: 140)
                 }
             }
+        } else if editorState.tool == .effects {
+            TelegramEffectsInspector(editorState: editorState)
         } else if editorState.selectedOverlay != nil {
             VStack(alignment: .leading) {
                 LabeledContent("Scale") {

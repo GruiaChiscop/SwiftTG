@@ -15,20 +15,24 @@ import SwiftUI
         timeRange: CMTimeRange,
         outputURL: URL,
     ) async throws {
-        let hasArtwork = !snapshot.strokes.isEmpty || !snapshot.overlays.isEmpty
-        let preset = hasArtwork ? AVAssetExportPresetHighestQuality : AVAssetExportPresetPassthrough
+        let hasEdits = !snapshot.strokes.isEmpty || !snapshot.overlays.isEmpty || !snapshot.effects.isIdentity
+        let preset = hasEdits ? AVAssetExportPresetHighestQuality : AVAssetExportPresetPassthrough
         guard let exporter = AVAssetExportSession(asset: asset, presetName: preset) else {
             throw TelegramGifEditorError.exportUnavailable
         }
 
-        if hasArtwork {
+        if hasEdits {
             let resources = try await compositionResources(snapshot: snapshot, canvasSize: canvasSize)
             exporter.videoComposition = try await AVVideoComposition.videoComposition(with: asset) { request in
+                let effectedSource = TelegramMediaEffectsRendering.apply(
+                    snapshot.effects,
+                    to: request.sourceImage,
+                )
                 guard let coreImageOverlay = resources.overlayImage(
                     for: snapshot.overlays,
                     at: request.compositionTime.seconds,
                 ) else {
-                    request.finish(with: request.sourceImage, context: nil)
+                    request.finish(with: effectedSource, context: nil)
                     return
                 }
                 let sourceExtent = request.sourceImage.extent
@@ -44,7 +48,7 @@ import SwiftUI
                     .transformed(by: scale)
                     .transformed(by: translation)
                 let output = positionedOverlay
-                    .composited(over: request.sourceImage)
+                    .composited(over: effectedSource)
                     .cropped(to: sourceExtent)
                 request.finish(with: output, context: nil)
             }

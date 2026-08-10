@@ -16,6 +16,7 @@ struct TelegramExportOverlayView: View {
                     activePoints: [],
                     activeColor: .white,
                     activeWidth: 0,
+                    activeStyle: .pen,
                 )
                 ForEach(snapshot.overlays) { overlay in
                     TelegramMediaOverlayArtwork(

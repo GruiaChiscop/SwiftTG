@@ -14,6 +14,7 @@ struct TelegramDrawingCanvas: View {
                 activePoints: activePoints,
                 activeColor: TelegramEditorColor(editorState.brushColor),
                 activeWidth: editorState.brushWidth,
+                activeStyle: editorState.brushStyle,
             )
             .contentShape(.rect)
             .gesture(drawingGesture(in: proxy.size))

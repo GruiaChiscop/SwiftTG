@@ -16,8 +16,7 @@ struct TelegramGifEditorPreview: View {
         Group {
             if let player {
                 ZStack {
-                    VideoPlayer(player: player)
-                        .disabled(true)
+                    TelegramVideoEffectsPreview(player: player, effects: editorState.effects)
                     TelegramDrawingCanvas(editorState: editorState)
                     TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { _ in
                         TelegramOverlayCanvas(

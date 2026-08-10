@@ -9,13 +9,15 @@ import SwiftUI
     var tool = TelegramMediaEditorTool.select
     var brushColor = Color.white
     var brushWidth = 0.012
+    var brushStyle = TelegramBrushStyle.pen
+    var effects = TelegramMediaEffects()
     var timelineDuration = 0.0
     private(set) var strokes = [TelegramDrawingStroke]()
     private(set) var overlays = [TelegramMediaOverlay]()
     var selectedOverlayID: UUID?
 
     var snapshot: TelegramMediaEditorSnapshot {
-        TelegramMediaEditorSnapshot(strokes: strokes, overlays: overlays)
+        TelegramMediaEditorSnapshot(strokes: strokes, overlays: overlays, effects: effects)
     }
 
     var canUndo: Bool { !undoHistory.isEmpty }
@@ -49,7 +51,12 @@ import SwiftUI
     func addStroke(points: [TelegramEditorPoint]) {
         guard !points.isEmpty else { return }
         recordMutation()
-        strokes.append(.init(points: points, color: TelegramEditorColor(brushColor), width: brushWidth))
+        strokes.append(.init(
+            points: points,
+            color: TelegramEditorColor(brushColor),
+            width: brushWidth,
+            style: brushStyle,
+        ))
     }
 
     func addText(_ text: String) {
@@ -171,6 +178,12 @@ import SwiftUI
         restore(next)
     }
 
+    func resetEffects() {
+        guard !effects.isIdentity else { return }
+        recordMutation()
+        effects = .init()
+    }
+
     // MARK: Private
 
     private static let maximumHistoryCount = 50
@@ -212,6 +225,7 @@ import SwiftUI
     private func restore(_ snapshot: TelegramMediaEditorSnapshot) {
         strokes = snapshot.strokes
         overlays = snapshot.overlays
+        effects = snapshot.effects
         if let selectedOverlayID, !overlays.contains(where: { $0.id == selectedOverlayID }) {
             self.selectedOverlayID = nil
         }

@@ -3,6 +3,8 @@
 import SwiftUI
 
 struct TelegramEditorToolbar: View {
+    // MARK: Internal
+
     @Bindable var editorState: TelegramMediaEditorState
 
     let addText: () -> Void
@@ -26,6 +28,12 @@ struct TelegramEditorToolbar: View {
                 Button("Text", systemImage: "textformat", action: addText)
                 Button("Emoji", systemImage: "face.smiling", action: addEmoji)
                 Button("Sticker", systemImage: "photo.on.rectangle.angled", action: addSticker)
+                Button(
+                    "Effects",
+                    systemImage: "camera.filters",
+                    action: showEffects,
+                )
+                .tint(editorState.tool == .effects ? .accentColor : .secondary)
 
                 Divider()
                     .frame(height: 24)
@@ -38,5 +46,12 @@ struct TelegramEditorToolbar: View {
             .buttonStyle(.bordered)
         }
         .scrollIndicators(.hidden)
+    }
+
+    // MARK: Private
+
+    private func showEffects() {
+        editorState.tool = .effects
+        editorState.select(nil)
     }
 }

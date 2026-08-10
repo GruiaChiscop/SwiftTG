@@ -3,6 +3,7 @@
 import AVFoundation
 @testable import BetterTG
 import CoreGraphics
+import CoreImage
 import CoreVideo
 import Foundation
 import Testing
@@ -135,6 +136,63 @@ import Testing
         #expect(corner.alpha == 0)
     }
 
+    @Test func `brush styles change opacity and footprint`() throws {
+        let points = [TelegramEditorPoint(x: 0.1, y: 0.5), TelegramEditorPoint(x: 0.9, y: 0.5)]
+        let pen = try TelegramGifCompositor.renderOverlay(
+            snapshot: .init(
+                strokes: [.init(points: points, color: .white, width: 0.02, style: .pen)],
+                overlays: [],
+            ),
+            canvasSize: CGSize(width: 64, height: 64),
+        )
+        let highlighter = try TelegramGifCompositor.renderOverlay(
+            snapshot: .init(
+                strokes: [.init(points: points, color: .white, width: 0.02, style: .highlighter)],
+                overlays: [],
+            ),
+            canvasSize: CGSize(width: 64, height: 64),
+        )
+        let neon = try TelegramGifCompositor.renderOverlay(
+            snapshot: .init(
+                strokes: [.init(points: points, color: .white, width: 0.02, style: .neon)],
+                overlays: [],
+            ),
+            canvasSize: CGSize(width: 64, height: 64),
+        )
+
+        #expect(try Self.pixel(in: highlighter, x: 32, y: 32).alpha < Self.pixel(in: pen, x: 32, y: 32).alpha)
+        #expect(try Self.visiblePixelCount(in: neon) > Self.visiblePixelCount(in: pen))
+    }
+
+    @Test func `effect adjustments participate in undo redo and reset`() {
+        let state = TelegramMediaEditorState()
+        state.beginInteraction()
+        state.effects.brightness = 0.25
+        state.effects.contrast = 1.4
+        state.endInteraction()
+
+        #expect(state.effects.brightness == 0.25)
+        #expect(state.effects.contrast == 1.4)
+        state.undo()
+        #expect(state.effects.isIdentity)
+        state.redo()
+        #expect(state.effects.brightness == 0.25)
+        state.resetEffects()
+        #expect(state.effects.isIdentity)
+        state.undo()
+        #expect(state.effects.brightness == 0.25)
+    }
+
+    @Test func `Core Image effects brighten a dark frame`() throws {
+        let source = CIImage(color: CIColor(red: 0.1, green: 0.1, blue: 0.1))
+            .cropped(to: CGRect(x: 0, y: 0, width: 8, height: 8))
+        let effects = TelegramMediaEffects(brightness: 0.4, contrast: 1, saturation: 1, blurRadius: 0)
+        let output = TelegramMediaEffectsRendering.apply(effects, to: source)
+        let rendered = try #require(CIContext().createCGImage(output, from: output.extent))
+
+        #expect(try Self.pixel(in: rendered, x: 4, y: 4).red > 80)
+    }
+
     @Test func `export compositor paints the first and last video frames`() async throws {
         let sourceURL = Self.temporaryURL(label: "source")
         let outputURL = Self.temporaryURL(label: "output")
@@ -216,6 +274,33 @@ import Testing
         #expect(try Self.brightPixelCount(in: first) == 0)
         #expect(try Self.brightPixelCount(in: middle) > 0)
         #expect(try Self.brightPixelCount(in: last) == 0)
+    }
+
+    @Test func `video export applies effects without overlays`() async throws {
+        let sourceURL = Self.temporaryURL(label: "effects-source")
+        let outputURL = Self.temporaryURL(label: "effects-output")
+        defer {
+            try? FileManager.default.removeItem(at: sourceURL)
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+        try await Self.writeBlackVideo(to: sourceURL)
+        try await TelegramGifCompositor.export(
+            asset: AVURLAsset(url: sourceURL),
+            snapshot: .init(
+                strokes: [],
+                overlays: [],
+                effects: .init(brightness: 0.5, contrast: 1, saturation: 1, blurRadius: 0),
+            ),
+            canvasSize: CGSize(width: 64, height: 64),
+            timeRange: CMTimeRange(start: .zero, duration: CMTime(value: 3, timescale: 10)),
+            outputURL: outputURL,
+        )
+
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: outputURL))
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let frame = try await generator.image(at: CMTime(value: 1, timescale: 10)).image
+        #expect(try Self.pixel(in: frame, x: 32, y: 32).red > 80)
     }
 
     // MARK: Private
@@ -312,6 +397,11 @@ import Testing
         return stride(from: 0, to: data.count, by: 4).count { offset in
             data[offset] > 30 || data[offset + 1] > 30 || data[offset + 2] > 30
         }
+    }
+
+    private static func visiblePixelCount(in image: CGImage) throws -> Int {
+        let data = try rgbaData(from: image)
+        return stride(from: 3, to: data.count, by: 4).count { data[$0] > 0 }
     }
 
     private static func rgbaData(from image: CGImage) throws -> [UInt8] {
