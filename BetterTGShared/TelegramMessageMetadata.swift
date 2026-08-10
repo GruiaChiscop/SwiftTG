@@ -35,6 +35,7 @@ func telegramMessageFormattedText(_ message: Message) -> FormattedText? {
     case .messageText(let content): content.text.text.isEmpty ? nil : content.text
     case .messageVideo(let content): content.caption.text.isEmpty ? nil : content.caption
     case .messageVoiceNote(let content): content.caption.text.isEmpty ? nil : content.caption
+    case .messageAnimation(let content): content.caption.text.isEmpty ? nil : content.caption
     default: nil
     }
 }
@@ -57,6 +58,8 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
         telegramAudioDescription(content)
     case .messageVideo(let content):
         content.caption.text.isEmpty ? "Video" : "Video: \(content.caption.text)"
+    case .messageAnimation(let content):
+        content.caption.text.isEmpty ? "GIF" : "GIF: \(content.caption.text)"
     case .messageDocument(let content):
         content.caption.text.isEmpty
             ? "File: \(content.document.fileName)"

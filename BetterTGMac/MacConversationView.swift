@@ -125,8 +125,8 @@ struct MacConversationView: View {
                 model.saveCurrentDraft()
             }
         }
-        .sheet(isPresented: $showsStickerPicker) {
-            TelegramStickerPickerView(
+        .sheet(isPresented: $showsStickersAndGifsPicker) {
+            TelegramStickersAndGifsPickerView(
                 service: model.service,
                 chatId: chat.chatId,
                 replyToMessageId: model.replyingToMessage?.id,
@@ -142,6 +142,8 @@ struct MacConversationView: View {
                     maxSide: 76,
                     playsAnimation: false,
                 )
+            } gifPreview: { animation in
+                MacGifThumbnailView(model: model, animation: animation)
             }
         }
         .sheet(isPresented: Binding(
@@ -192,7 +194,7 @@ struct MacConversationView: View {
     @State private var checklistIsAvailable = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
-    @State private var showsStickerPicker = false
+    @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
 
     private var isViewingForumTopic: Bool {
@@ -520,8 +522,8 @@ struct MacConversationView: View {
                     )
                     .frame(minHeight: 32, idealHeight: 48, maxHeight: 112)
 
-                    Button("Stickers", systemImage: "face.smiling") {
-                        showsStickerPicker = true
+                    Button("Stickers and GIFs", systemImage: "face.smiling") {
+                        showsStickersAndGifsPicker = true
                     }
                     .labelStyle(.iconOnly)
                     .disabled(model.editingMessage != nil)

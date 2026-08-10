@@ -142,7 +142,7 @@ enum TelegramForumTopicSending {
 /// Create/edit sheet for a forum topic's name and icon - `existingTopic == nil` means create.
 /// Generic over `IconPreview` (rather than rendering stickers itself) because sticker rendering
 /// (`TelegramStickerView`) lives in the iOS-only app target and isn't visible from here - the
-/// same split `TelegramStickerPickerView` already uses for its own preview closure.
+/// same split `TelegramStickerPickerContent` already uses for its own preview closure.
 struct TelegramForumTopicComposerView<IconPreview: View>: View {
     // MARK: Lifecycle
 

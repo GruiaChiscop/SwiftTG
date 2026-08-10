@@ -57,6 +57,7 @@ struct MacMessageRow: View {
     @State private var photoImage: NSImage?
     @State private var photoPath: String?
     @State private var videoThumbnailImage: NSImage?
+    @State private var gifThumbnailImage: NSImage?
     @State private var voicePath: String?
     @State private var showDeleteOptions = false
     @State private var showReactionOptions = false
@@ -65,6 +66,7 @@ struct MacMessageRow: View {
     @State private var commentsErrorMessage: String?
     @State private var showPhotoPreview = false
     @State private var showVideoPreview = false
+    @State private var showGifPreview = false
     @State private var showForwardPicker = false
     @State private var selectedAlbumMessage: Message?
 
@@ -199,7 +201,7 @@ struct MacMessageRow: View {
 
     private var hasDefaultActivation: Bool {
         voiceFileId != nil || audioFileId != nil || documentFileId != nil || photoFileId != nil
-            || videoFileId != nil || messageContact != nil || locationPresentation != nil
+            || videoFileId != nil || gifFileId != nil || messageContact != nil || locationPresentation != nil
     }
 
     private var photoFileId: Int? {
@@ -227,6 +229,16 @@ struct MacMessageRow: View {
                 .id
         }
         return content.video.thumbnail?.file.id
+    }
+
+    private var gifFileId: Int? {
+        guard case .messageAnimation(let content) = message.content else { return nil }
+        return content.animation.animation.id
+    }
+
+    private var gifThumbnailFileId: Int? {
+        guard case .messageAnimation(let content) = message.content else { return nil }
+        return content.animation.thumbnail?.file.id
     }
 
     private var accessibilityDescription: String {
@@ -357,6 +369,9 @@ struct MacMessageRow: View {
         }
         if !isVisualAlbum, videoFileId != nil {
             items.append(.button(title: "Play Video", systemImage: "play.rectangle") { showVideoPreview = true })
+        }
+        if !isVisualAlbum, gifFileId != nil {
+            items.append(.button(title: "Play GIF", systemImage: "play.rectangle") { showGifPreview = true })
         }
         if let messageContact {
             let presentation = TelegramContactPresentation(messageContact)
@@ -521,6 +536,12 @@ struct MacMessageRow: View {
                             thumbnail: videoThumbnailImage,
                             onOpen: { showVideoPreview = true },
                         )
+                    } else if case .messageAnimation(let content) = message.content {
+                        MacGifMessageContent(
+                            content: content,
+                            thumbnail: gifThumbnailImage,
+                            onOpen: { showGifPreview = true },
+                        )
                     } else if case .messageVoiceNote(let content) = message.content {
                         MacVoiceMessageContent(
                             caption: content.caption,
@@ -678,6 +699,16 @@ struct MacMessageRow: View {
             videoThumbnailImage = await Self.decodedImage(atPath: path)
         }
         .task(id: presentationTaskID) {
+            guard !isVisualAlbum,
+                  let gifThumbnailFileId,
+                  let path = await model.localPhotoPath(fileId: gifThumbnailFileId)
+            else {
+                gifThumbnailImage = nil
+                return
+            }
+            gifThumbnailImage = await Self.decodedImage(atPath: path)
+        }
+        .task(id: presentationTaskID) {
             await model.loadCapabilities(for: message)
         }
         .task(id: presentationTaskID) {
@@ -729,6 +760,15 @@ struct MacMessageRow: View {
                     image: photoImage,
                     caption: content.caption.text,
                     fileURL: URL(filePath: photoPath),
+                )
+            }
+        }
+        .sheet(isPresented: $showGifPreview) {
+            if case .messageAnimation(let content) = message.content {
+                MacGifPreview(
+                    model: model,
+                    fileId: content.animation.animation.id,
+                    caption: content.caption.text,
                 )
             }
         }
@@ -1092,6 +1132,8 @@ struct MacMessageRow: View {
             showPhotoPreview = true
         } else if case .messageVideo = message.content {
             showVideoPreview = true
+        } else if case .messageAnimation = message.content {
+            showGifPreview = true
         } else if let messageContact {
             let presentation = TelegramContactPresentation(messageContact)
             if presentation.hasTelegramAccount {
@@ -1220,6 +1262,7 @@ private func copyableMessageText(_ message: Message) -> String? {
     case .messageText(let content): content.text.text.isEmpty ? nil : content.text.text
     case .messagePhoto(let content): content.caption.text.isEmpty ? nil : content.caption.text
     case .messageVideo(let content): content.caption.text.isEmpty ? nil : content.caption.text
+    case .messageAnimation(let content): content.caption.text.isEmpty ? nil : content.caption.text
     case .messageVoiceNote(let content): content.caption.text.isEmpty ? nil : content.caption.text
     case .messageAudio(let content): content.caption.text.isEmpty ? nil : content.caption.text
     case .messageDocument(let content): content.caption.text.isEmpty ? nil : content.caption.text
@@ -1232,6 +1275,7 @@ private func editableMessageText(_ message: Message) -> String? {
     case .messageText(let content): content.text.text
     case .messagePhoto(let content): content.caption.text
     case .messageVideo(let content): content.caption.text
+    case .messageAnimation(let content): content.caption.text
     case .messageVoiceNote(let content): content.caption.text
     case .messageAudio(let content): content.caption.text
     case .messageDocument(let content): content.caption.text

@@ -8,7 +8,7 @@ import TDLibKit
 /// Progressive-disclosure flow: pick a photo, crop it (`TelegramStickerCropView`), give the sticker
 /// an emoji, then create it. No pack name/title is ever asked - matches Telegram's own Sticker
 /// Editor, which silently creates (or reuses) a pack rather than prompting for one; see
-/// `TelegramStickerCreation.createOrAddSticker`. Presented from `TelegramStickerPickerView` on both
+/// `TelegramStickerCreation.createOrAddSticker`. Presented from `TelegramStickerPickerContent` on both
 /// platforms. Works in `CGImage`/`Data` throughout (never `UIImage`/`NSImage`), which is what keeps
 /// this file cross-platform without conditional compilation for the image type.
 struct TelegramStickerCreationComposerView: View {

@@ -51,6 +51,9 @@ private struct ChatViewAlbumRootView: View {
                             onLoad: recordVideo,
                         )
                         .tag(albumMessage.id)
+                    } else if case .messageAnimation(let messageAnimation) = albumMessage.content {
+                        ChatAnimationPage(animation: messageAnimation.animation)
+                            .tag(albumMessage.id)
                     }
                 }
             }
@@ -247,4 +250,50 @@ private struct ChatVideoPlayer: View {
 
     @State private var player: AVPlayer
     @State private var prepared = false
+}
+
+// MARK: - ChatAnimationPage
+
+private struct ChatAnimationPage: View {
+    let animation: TDLibKit.Animation
+
+    var body: some View {
+        AsyncTdFile(id: animation.animation.id) { file in
+            ChatAnimationPlayer(fileURL: URL(filePath: file.local.path))
+        } placeholder: {
+            ProgressView("Downloading GIF…")
+                .accessibilityAddTraits(.updatesFrequently)
+        }
+    }
+}
+
+// MARK: - ChatAnimationPlayer
+
+/// Telegram GIFs are silent looping video, not real GIF files (`Animation.mimeType` is
+/// "image/gif" or "video/mp4" - TDLib always hands back the latter) - `AVPlayerLooper` gives
+/// gapless looping for free instead of hand-rolling a seek-to-zero-on-end observer.
+private struct ChatAnimationPlayer: View {
+    // MARK: Lifecycle
+
+    init(fileURL: URL) {
+        let item = AVPlayerItem(url: fileURL)
+        let queuePlayer = AVQueuePlayer()
+        queuePlayer.isMuted = true
+        _player = State(initialValue: queuePlayer)
+        _looper = State(initialValue: AVPlayerLooper(player: queuePlayer, templateItem: item))
+    }
+
+    // MARK: Internal
+
+    var body: some View {
+        VideoPlayer(player: player)
+            .accessibilityLabel("GIF")
+            .onAppear { player.play() }
+            .onDisappear { player.pause() }
+    }
+
+    // MARK: Private
+
+    @State private var looper: AVPlayerLooper
+    @State private var player: AVQueuePlayer
 }

@@ -32,6 +32,8 @@ struct MessageContentView: View {
                         .scaledToFit()
                 case .messageVideo(let messageVideo):
                     makeMessageVideo(from: messageVideo)
+                case .messageAnimation(let messageAnimation):
+                    makeMessageAnimation(from: messageAnimation)
                 case .messageVoiceNote(let messageVoiceNote):
                     MessageVoiceNoteView(
                         voiceNote: messageVoiceNote.voiceNote,
@@ -104,5 +106,40 @@ struct MessageContentView: View {
         .accessibilityLabel("Video, duration \(telegramClockDuration(messageVideo.video.duration))")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onMediaTap(albumMessage) }
+    }
+
+    func makeMessageAnimation(from messageAnimation: MessageAnimation) -> some View {
+        ZStack {
+            if let thumbnail = messageAnimation.animation.thumbnail {
+                AsyncTdImage(id: thumbnail.file.id) { image, _ in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Rectangle().fill(.black.opacity(0.35))
+                }
+            } else {
+                Rectangle().fill(.black.opacity(0.35))
+            }
+
+            Text("GIF")
+                .font(.caption.bold())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.7), in: Capsule())
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(8)
+        }
+        .frame(minWidth: 220, minHeight: 150)
+        .clipShape(.rect(cornerRadius: 13))
+        .contentShape(.rect)
+        .onTapGesture { onMediaTap(nil) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            messageAnimation.caption.text.isEmpty ? "GIF" : "GIF: \(messageAnimation.caption.text)",
+        )
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onMediaTap(nil) }
     }
 }

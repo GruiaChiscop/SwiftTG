@@ -40,6 +40,10 @@ extension MacSessionModel {
         await downloadedLocalPath(fileId: fileId, priority: 32)
     }
 
+    func localAnimationPath(fileId: Int) async -> String? {
+        await downloadedLocalPath(fileId: fileId, priority: 32)
+    }
+
     func localStickerPath(fileId: Int) async -> String? {
         await downloadedLocalPath(fileId: fileId, priority: 24)
     }

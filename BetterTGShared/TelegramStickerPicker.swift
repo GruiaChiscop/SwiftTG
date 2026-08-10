@@ -42,74 +42,56 @@ enum TelegramStickerSending {
     }
 }
 
-// MARK: - TelegramStickerPickerView
+// MARK: - TelegramStickerPickerContent
 
-struct TelegramStickerPickerView<Preview: View>: View {
-    // MARK: Lifecycle
-
-    init(
-        service: any TelegramService,
-        chatId: Int64,
-        replyToMessageId: Int64?,
-        topicId: MessageTopic? = nil,
-        onSent: @escaping @MainActor () async -> Void,
-        @ViewBuilder preview: @escaping (Sticker) -> Preview,
-    ) {
-        self.service = service
-        self.chatId = chatId
-        self.replyToMessageId = replyToMessageId
-        self.topicId = topicId
-        self.onSent = onSent
-        self.preview = preview
-    }
-
+/// Embedded by `TelegramStickersAndGifsPickerView` alongside `TelegramGifPickerContent` under one
+/// shared `NavigationStack`/search field/tab switcher.
+struct TelegramStickerPickerContent<Preview: View>: View {
     // MARK: Internal
 
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
-                    if normalizedQuery.isEmpty {
-                        libraryContent
-                    } else {
-                        searchContent
-                    }
+    let service: any TelegramService
+    let chatId: Int64
+    let replyToMessageId: Int64?
+    let topicId: MessageTopic?
+    let query: String
+    let onSent: @MainActor () async -> Void
+    let preview: (Sticker) -> Preview
 
-                    if let feedbackMessage {
-                        Text(feedbackMessage)
-                            .foregroundStyle(.red)
-                            .accessibilityFocused($feedbackIsFocused)
-                    }
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                if normalizedQuery.isEmpty {
+                    libraryContent
+                } else {
+                    searchContent
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+
+                if let feedbackMessage {
+                    Text(feedbackMessage)
+                        .foregroundStyle(.red)
+                        .accessibilityFocused($feedbackIsFocused)
+                }
             }
-            .navigationTitle("Stickers")
-            #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-            #endif
-                .searchable(text: $query, prompt: "Search stickers")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Create Sticker") { showsCreationComposer = true }
-                    }
-                }
-                .task { await loadLibraryIfNeeded() }
-                .task(id: normalizedQuery) { await search() }
-                .refreshable { await loadLibrary(force: true) }
-                .alert("Telegram Premium Required", isPresented: $showsPremiumRequiredAlert) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text("Telegram Premium is required to send this sticker.")
-                }
-                .sheet(isPresented: $showsCreationComposer) {
-                    TelegramStickerCreationComposerView(service: service) { _ in
-                        await loadLibrary(force: true)
-                    }
-                }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Create Sticker") { showsCreationComposer = true }
+            }
+        }
+        .task { await loadLibraryIfNeeded() }
+        .task(id: normalizedQuery) { await search() }
+        .refreshable { await loadLibrary(force: true) }
+        .alert("Telegram Premium Required", isPresented: $showsPremiumRequiredAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Telegram Premium is required to send this sticker.")
+        }
+        .sheet(isPresented: $showsCreationComposer) {
+            TelegramStickerCreationComposerView(service: service) { _ in
+                await loadLibrary(force: true)
+            }
         }
     }
 
@@ -117,7 +99,6 @@ struct TelegramStickerPickerView<Preview: View>: View {
 
     @AccessibilityFocusState private var feedbackIsFocused: Bool
     @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
     @State private var recentStickers = [Sticker]()
     @State private var stickerSets = [StickerSetInfo]()
     @State private var searchResults = [Sticker]()
@@ -129,13 +110,6 @@ struct TelegramStickerPickerView<Preview: View>: View {
     @State private var hasPremium: Bool?
     @State private var showsPremiumRequiredAlert = false
     @State private var showsCreationComposer = false
-
-    private let service: any TelegramService
-    private let chatId: Int64
-    private let replyToMessageId: Int64?
-    private let topicId: MessageTopic?
-    private let onSent: @MainActor () async -> Void
-    private let preview: (Sticker) -> Preview
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -296,6 +270,11 @@ struct TelegramStickerPickerView<Preview: View>: View {
         }
     }
 
+    /// Merges two sources: `getStickers` (installed/recent/trending only) and `searchStickers`
+    /// (the public catalog) - the latter is emoji-driven, not free text, so the typed query is
+    /// resolved to matching emoji via `searchEmojis` first, the same way real Telegram clients do.
+    /// Each source is allowed to fail independently so one flaky call doesn't blank out the other's
+    /// results.
     @MainActor private func search() async {
         guard !normalizedQuery.isEmpty else {
             searchResults = []
@@ -305,22 +284,38 @@ struct TelegramStickerPickerView<Preview: View>: View {
         isSearching = true
         feedbackMessage = nil
         feedbackIsFocused = false
-        do {
-            let result = try await service.getStickers(
-                chatId: chatId,
-                limit: 100,
-                query: normalizedQuery,
-                stickerType: .stickerTypeRegular,
-            )
-            guard !Task.isCancelled else { return }
-            searchResults = telegramUniqueStickers(result.stickers)
-            isSearching = false
-        } catch {
-            guard !Task.isCancelled else { return }
-            searchResults = []
-            isSearching = false
-            showFeedback("Sticker search failed: \(telegramErrorDescription(error))")
+
+        async let installed = try? service.getStickers(
+            chatId: chatId,
+            limit: 100,
+            query: normalizedQuery,
+            stickerType: .stickerTypeRegular,
+        )
+        async let catalog = catalogSearch(query: normalizedQuery)
+        let (installedResult, catalogResult) = await (installed, catalog)
+        guard !Task.isCancelled else { return }
+
+        searchResults = telegramUniqueStickers((installedResult?.stickers ?? []) + (catalogResult ?? []))
+        isSearching = false
+        if installedResult == nil, catalogResult == nil {
+            showFeedback("Sticker search failed.")
         }
+    }
+
+    private func catalogSearch(query: String) async -> [Sticker]? {
+        let resolvedEmojis = await (try? service.searchEmojis(inputLanguageCodes: nil, text: query))?
+            .emojiKeywords
+            .map(\.emoji)
+            .joined(separator: " ") ?? ""
+        return try? await service.searchStickers(
+            emojis: resolvedEmojis,
+            inputLanguageCodes: nil,
+            limit: 50,
+            offset: 0,
+            query: query,
+            stickerType: .stickerTypeRegular,
+        )
+        .stickers
     }
 
     private func send(_ sticker: Sticker) {

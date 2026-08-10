@@ -171,6 +171,43 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         query: String?,
         stickerType: StickerType?,
     ) async throws -> Stickers
+    /// Searches the public sticker catalog, not just installed sets - unlike `getStickers`, which
+    /// only ever returns stickers from sets the user already has.
+    func searchStickers(
+        emojis: String?,
+        inputLanguageCodes: [String]?,
+        limit: Int?,
+        offset: Int?,
+        query: String?,
+        stickerType: StickerType?,
+    ) async throws -> Stickers
+    func searchInstalledStickerSets(limit: Int?, query: String?, stickerType: StickerType?) async throws -> StickerSets
+    /// `searchStickers` is fundamentally emoji-driven ("stickers... that correspond to any of the
+    /// given emoji") - real Telegram clients resolve a typed keyword to emoji with this call first,
+    /// the same way this app's own catalog sticker search needs to.
+    func searchEmojis(inputLanguageCodes: [String]?, text: String?) async throws -> EmojiKeywords
+    func getSavedAnimations() async throws -> Animations
+    func addSavedAnimation(animation: InputFile?) async throws -> Ok
+    func removeSavedAnimation(animation: InputFile?) async throws -> Ok
+    /// Queries an inline bot (e.g. Telegram's own GIF-search bot, whose username comes from
+    /// `getOption("animation_search_bot_username")`) the same way real Telegram clients back GIF
+    /// search - TDLib has no direct "search GIFs" call of its own.
+    func getInlineQueryResults(
+        botUserId: Int64?,
+        chatId: Int64?,
+        offset: String?,
+        query: String?,
+        userLocation: Location?,
+    ) async throws -> InlineQueryResults
+    func sendInlineQueryResultMessage(
+        chatId: Int64?,
+        hideViaBot: Bool?,
+        options: MessageSendOptions?,
+        queryId: TdInt64?,
+        replyTo: InputMessageReplyTo?,
+        resultId: String?,
+        topicId: MessageTopic?,
+    ) async throws -> Message
     func uploadStickerFile(sticker: InputFile?, stickerFormat: StickerFormat?, userId: Int64?) async throws -> File
     func getSuggestedStickerSetName(title: String?) async throws -> Text
     func checkStickerSetName(name: String?) async throws -> CheckStickerSetNameResult
@@ -1025,6 +1062,84 @@ extension TelegramSession: TelegramService {
             limit: limit,
             query: query,
             stickerType: stickerType,
+        )
+    }
+
+    func searchStickers(
+        emojis: String?,
+        inputLanguageCodes: [String]?,
+        limit: Int?,
+        offset: Int?,
+        query: String?,
+        stickerType: StickerType?,
+    ) async throws -> Stickers {
+        try await client.searchStickers(
+            emojis: emojis,
+            inputLanguageCodes: inputLanguageCodes,
+            limit: limit,
+            offset: offset,
+            query: query,
+            stickerType: stickerType,
+        )
+    }
+
+    func searchInstalledStickerSets(
+        limit: Int?,
+        query: String?,
+        stickerType: StickerType?,
+    ) async throws -> StickerSets {
+        try await client.searchInstalledStickerSets(limit: limit, query: query, stickerType: stickerType)
+    }
+
+    func searchEmojis(inputLanguageCodes: [String]?, text: String?) async throws -> EmojiKeywords {
+        try await client.searchEmojis(inputLanguageCodes: inputLanguageCodes, text: text)
+    }
+
+    func getSavedAnimations() async throws -> Animations {
+        try await client.getSavedAnimations()
+    }
+
+    func addSavedAnimation(animation: InputFile?) async throws -> Ok {
+        try await client.addSavedAnimation(animation: animation)
+    }
+
+    func removeSavedAnimation(animation: InputFile?) async throws -> Ok {
+        try await client.removeSavedAnimation(animation: animation)
+    }
+
+    func getInlineQueryResults(
+        botUserId: Int64?,
+        chatId: Int64?,
+        offset: String?,
+        query: String?,
+        userLocation: Location?,
+    ) async throws -> InlineQueryResults {
+        try await client.getInlineQueryResults(
+            botUserId: botUserId,
+            chatId: chatId,
+            offset: offset,
+            query: query,
+            userLocation: userLocation,
+        )
+    }
+
+    func sendInlineQueryResultMessage(
+        chatId: Int64?,
+        hideViaBot: Bool?,
+        options: MessageSendOptions?,
+        queryId: TdInt64?,
+        replyTo: InputMessageReplyTo?,
+        resultId: String?,
+        topicId: MessageTopic?,
+    ) async throws -> Message {
+        try await client.sendInlineQueryResultMessage(
+            chatId: chatId,
+            hideViaBot: hideViaBot,
+            options: options,
+            queryId: queryId,
+            replyTo: replyTo,
+            resultId: resultId,
+            topicId: topicId,
         )
     }
 

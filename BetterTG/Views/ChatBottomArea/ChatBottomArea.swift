@@ -97,9 +97,9 @@ struct ChatBottomArea: View {
                     textField
 
                     Button {
-                        showsStickerPicker = true
+                        showsStickersAndGifsPicker = true
                     } label: {
-                        Label("Stickers", systemImage: "face.smiling")
+                        Label("Stickers and GIFs", systemImage: "face.smiling")
                             .labelStyle(.iconOnly)
                     }
                     .font(.system(size: 22))
@@ -216,8 +216,8 @@ struct ChatBottomArea: View {
                 },
             )
         }
-        .sheet(isPresented: $showsStickerPicker) {
-            TelegramStickerPickerView(
+        .sheet(isPresented: $showsStickersAndGifsPicker) {
+            TelegramStickersAndGifsPickerView(
                 service: chatVM.service,
                 chatId: chatVM.customChat.chat.id,
                 replyToMessageId: chatVM.replyMessage?.id,
@@ -233,6 +233,18 @@ struct ChatBottomArea: View {
                     maxSide: 76,
                     playsAnimation: false,
                 )
+            } gifPreview: { animation in
+                if let thumbnail = animation.thumbnail {
+                    AsyncTdImage(id: thumbnail.file.id) { image, _ in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(.black.opacity(0.15))
+                    }
+                } else {
+                    Rectangle().fill(.black.opacity(0.15))
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -681,7 +693,7 @@ struct ChatBottomArea: View {
     @State private var showsLocationComposer = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
-    @State private var showsStickerPicker = false
+    @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
 
     @State private var hasBegunRecording = false
