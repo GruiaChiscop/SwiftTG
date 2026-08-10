@@ -14,6 +14,7 @@ struct ChatStickersAndGifsPicker: View {
             service: chatVM.service,
             chatId: chatVM.customChat.chat.id,
             replyToMessageId: chatVM.replyMessage?.id,
+            allowsSendWhenOnline: chatVM.customChat.user != nil,
             topicId: chatVM.messageTopic,
             onSent: {
                 chatVM.replyMessage = nil
@@ -26,6 +27,13 @@ struct ChatStickersAndGifsPicker: View {
                 service: chatVM.service,
                 maxSide: 76,
                 playsAnimation: false,
+            )
+        } stickerContextPreview: { sticker in
+            TelegramStickerView(
+                sticker: sticker,
+                service: chatVM.service,
+                maxSide: 200,
+                playsAnimation: true,
             )
         } gifPreview: { animation in
             if let thumbnail = animation.thumbnail {

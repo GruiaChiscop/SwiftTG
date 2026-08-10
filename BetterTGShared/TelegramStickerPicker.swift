@@ -24,6 +24,7 @@ enum TelegramStickerSending {
         chatId: Int64,
         replyToMessageId: Int64?,
         disableNotification: Bool = false,
+        schedulingState: MessageSchedulingState? = nil,
         topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let messages = try await TelegramMessageSending.send(
@@ -31,6 +32,7 @@ enum TelegramStickerSending {
             chatId: chatId,
             contents: [content(for: sticker)],
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            schedulingState: schedulingState,
             disableNotification: disableNotification,
             topicId: topicId,
             onAccepted: { messages in
@@ -48,16 +50,18 @@ enum TelegramStickerSending {
 
 /// Embedded by `TelegramStickersAndGifsPickerView` alongside `TelegramGifPickerContent` under one
 /// shared search field and tab switcher.
-struct TelegramStickerPickerContent<Preview: View>: View {
+struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
     // MARK: Internal
 
     let service: any TelegramService
     let chatId: Int64
     let replyToMessageId: Int64?
+    let allowsSendWhenOnline: Bool
     let topicId: MessageTopic?
     let query: String
     let onSent: @MainActor () async -> Void
     let preview: (Sticker) -> Preview
+    let contextPreview: (Sticker) -> ContextPreview
 
     var body: some View {
         Group {
@@ -67,16 +71,28 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                     service: service,
                     sendingStickerFileId: sendingStickerFileId,
                     favoriteStickerFileIds: favoriteStickerFileIds,
+                    chatId: chatId,
+                    topicId: topicId,
                     onBack: { self.selectedStickerSet = nil },
                     onSelect: { send($0) },
                     onSelectSilently: { send($0, disableNotification: true) },
+                    onSchedule: { stickerToSchedule = TelegramScheduledSticker(sticker: $0) },
                     onToggleFavorite: toggleFavorite,
                     preview: preview,
+                    contextPreview: contextPreview,
                 )
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 20) {
-                        if normalizedQuery.isEmpty {
+                        if normalizedQuery.isEmpty, !emojiCategories.isEmpty {
+                            TelegramEmojiCategoryBar(
+                                categories: emojiCategories,
+                                selectedCategory: selectedEmojiCategory,
+                                onSelect: { selectedEmojiCategory = $0 },
+                            )
+                        }
+
+                        if normalizedQuery.isEmpty, selectedEmojiCategory == nil {
                             Button("Create Sticker", systemImage: "plus") {
                                 showsCreationComposer = true
                             }
@@ -96,10 +112,20 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 }
+                .modifier(TelegramChoosingStickerActivityModifier(
+                    service: service,
+                    chatId: chatId,
+                    topicId: topicId,
+                ))
             }
         }
         .task { await loadLibraryIfNeeded() }
-        .task(id: normalizedQuery) { await search() }
+        .task(id: searchKey) { await search() }
+        .onChange(of: normalizedQuery) { _, newValue in
+            if !newValue.isEmpty {
+                selectedEmojiCategory = nil
+            }
+        }
         .refreshable { await loadLibrary(force: true) }
         .alert("Telegram Premium Required", isPresented: $showsPremiumRequiredAlert) {
             Button("OK", role: .cancel) {}
@@ -111,6 +137,11 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                 await loadLibrary(force: true)
             }
         }
+        .sheet(item: $stickerToSchedule) { request in
+            TelegramScheduleSendView(allowsSendWhenOnline: allowsSendWhenOnline) { state in
+                send(request.sticker, schedulingState: state)
+            }
+        }
     }
 
     // MARK: Private
@@ -118,9 +149,12 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     @AccessibilityFocusState private var feedbackIsFocused: Bool
     @State private var favoriteStickers = [Sticker]()
     @State private var recentStickers = [Sticker]()
+    @State private var peerStickerSet: StickerSet?
     @State private var stickerSets = [StickerSetInfo]()
     @State private var trendingStickerSets = [StickerSetInfo]()
     @State private var searchResults = [Sticker]()
+    @State private var emojiCategories = [EmojiCategory]()
+    @State private var selectedEmojiCategory: EmojiCategory?
     @State private var isLoadingLibrary = false
     @State private var isSearching = false
     @State private var hasLoadedLibrary = false
@@ -133,15 +167,23 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     @State private var selectedStickerSet: StickerSetInfo?
     @State private var installingStickerSetId: TdInt64?
     @State private var mutatingStickerFileId: Int?
+    @State private var stickerToSchedule: TelegramScheduledSticker?
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var searchKey: String {
+        "\(normalizedQuery)|\(selectedEmojiCategory?.name ?? "")"
     }
 
     private var setTitles: [TdInt64: String] {
         var titles = [TdInt64: String]()
         for stickerSet in stickerSets + trendingStickerSets {
             titles[stickerSet.id] = stickerSet.title
+        }
+        if let peerStickerSet {
+            titles[peerStickerSet.id] = peerStickerSet.title
         }
         return titles
     }
@@ -154,6 +196,11 @@ struct TelegramStickerPickerContent<Preview: View>: View {
         if isLoadingLibrary, !hasLoadedLibrary {
             ProgressView("Loading stickers")
         } else {
+            if let peerStickerSet, !peerStickerSet.stickers.isEmpty {
+                sectionHeading("\(peerStickerSet.title) · Group Stickers")
+                stickerGrid(peerStickerSet.stickers)
+            }
+
             if !trendingStickerSets.isEmpty {
                 sectionHeading("Featured Sticker Packs")
                 LazyVStack(spacing: 8) {
@@ -210,6 +257,7 @@ struct TelegramStickerPickerContent<Preview: View>: View {
 
             if favoriteStickers.isEmpty,
                recentStickers.isEmpty,
+               peerStickerSet == nil,
                stickerSets.isEmpty,
                trendingStickerSets.isEmpty,
                feedbackMessage == nil
@@ -228,10 +276,19 @@ struct TelegramStickerPickerContent<Preview: View>: View {
         if isSearching {
             ProgressView("Searching stickers")
         } else if searchResults.isEmpty, feedbackMessage == nil {
-            ContentUnavailableView.search(text: normalizedQuery)
+            if let selectedEmojiCategory {
+                ContentUnavailableView(
+                    "No Stickers",
+                    systemImage: "face.smiling",
+                    description: Text("No stickers were found in \(selectedEmojiCategory.name)."),
+                )
                 .frame(maxWidth: .infinity)
+            } else {
+                ContentUnavailableView.search(text: normalizedQuery)
+                    .frame(maxWidth: .infinity)
+            }
         } else if !searchResults.isEmpty {
-            sectionHeading("Search Results")
+            sectionHeading(selectedEmojiCategory?.name ?? "Search Results")
             stickerGrid(searchResults)
         }
     }
@@ -276,6 +333,10 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                         send(sticker, disableNotification: true)
                     }
 
+                    Button("Schedule Send…", systemImage: "clock") {
+                        stickerToSchedule = TelegramScheduledSticker(sticker: sticker)
+                    }
+
                     let isFavorite = favoriteStickerFileIds.contains(sticker.sticker.id)
                     Button(
                         isFavorite ? "Remove from Favorites" : "Add to Favorites",
@@ -291,6 +352,12 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                         }
                         .disabled(mutatingStickerFileId != nil)
                     }
+                } preview: {
+                    contextPreview(sticker)
+                        .frame(width: 200, height: 200)
+                }
+                .accessibilityAction(named: "Send Later") {
+                    stickerToSchedule = TelegramScheduledSticker(sticker: sticker)
                 }
             }
         }
@@ -312,6 +379,24 @@ struct TelegramStickerPickerContent<Preview: View>: View {
         if hasPremium == nil, let currentUser = try? await service.getMe() {
             hasPremium = currentUser.isPremium
         }
+
+        if let categories = try? await service.getEmojiCategories(type: .emojiCategoryTypeRegularStickers) {
+            emojiCategories = categories.categories.sorted { lhs, rhs in
+                lhs.isGreeting && !rhs.isGreeting
+            }
+        }
+
+        peerStickerSet =
+            if let chat = try? await service.getChat(chatId: chatId),
+            case .chatTypeSupergroup(let supergroup) = chat.type,
+            let fullInfo = try? await service
+                .getSupergroupFullInfo(supergroupId: supergroup.supergroupId),
+                fullInfo.stickerSetId != 0
+            {
+                try? await service.getStickerSet(setId: fullInfo.stickerSetId)
+            } else {
+                nil
+            }
 
         var errors = [String]()
         do {
@@ -383,7 +468,7 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     /// Each source is allowed to fail independently so one flaky call doesn't blank out the other's
     /// results.
     @MainActor private func search() async {
-        guard !normalizedQuery.isEmpty else {
+        guard !normalizedQuery.isEmpty || selectedEmojiCategory != nil else {
             searchResults = []
             isSearching = false
             return
@@ -392,13 +477,34 @@ struct TelegramStickerPickerContent<Preview: View>: View {
         feedbackMessage = nil
         feedbackIsFocused = false
 
+        if let selectedEmojiCategory, case .emojiCategorySourcePremium = selectedEmojiCategory.source {
+            do {
+                let premium = try await service.getPremiumStickers(limit: 100)
+                searchResults = telegramUniqueStickers(premium.stickers)
+                isSearching = false
+            } catch {
+                isSearching = false
+                showFeedback("Premium stickers couldn't be loaded: \(telegramErrorDescription(error))")
+            }
+            return
+        }
+
+        let categoryEmojis: [String] =
+            if let selectedEmojiCategory,
+            case .emojiCategorySourceSearch(let source) = selectedEmojiCategory.source {
+                source.emojis
+            } else {
+                []
+            }
+        let installedQuery = normalizedQuery.isEmpty ? categoryEmojis.joined(separator: " ") : normalizedQuery
+
         async let installed = try? service.getStickers(
             chatId: chatId,
             limit: 100,
-            query: normalizedQuery,
+            query: installedQuery,
             stickerType: .stickerTypeRegular,
         )
-        async let catalog = catalogSearch(query: normalizedQuery)
+        async let catalog = catalogSearch(query: normalizedQuery, categoryEmojis: categoryEmojis)
         let (installedResult, catalogResult) = await (installed, catalog)
         guard !Task.isCancelled else { return }
 
@@ -409,11 +515,16 @@ struct TelegramStickerPickerContent<Preview: View>: View {
         }
     }
 
-    private func catalogSearch(query: String) async -> [Sticker]? {
-        let resolvedEmojis = await (try? service.searchEmojis(inputLanguageCodes: nil, text: query))?
-            .emojiKeywords
-            .map(\.emoji)
-            .joined(separator: " ") ?? ""
+    private func catalogSearch(query: String, categoryEmojis: [String]) async -> [Sticker]? {
+        let resolvedEmojis =
+            if categoryEmojis.isEmpty {
+                await (try? service.searchEmojis(inputLanguageCodes: nil, text: query))?
+                    .emojiKeywords
+                    .map(\.emoji)
+                    .joined(separator: " ") ?? ""
+            } else {
+                categoryEmojis.joined(separator: " ")
+            }
         return try? await service.searchStickers(
             emojis: resolvedEmojis,
             inputLanguageCodes: nil,
@@ -425,7 +536,11 @@ struct TelegramStickerPickerContent<Preview: View>: View {
         .stickers
     }
 
-    private func send(_ sticker: Sticker, disableNotification: Bool = false) {
+    private func send(
+        _ sticker: Sticker,
+        disableNotification: Bool = false,
+        schedulingState: MessageSchedulingState? = nil,
+    ) {
         guard sendingStickerFileId == nil else { return }
         if TelegramStickerPresentation(sticker).isPremium, hasPremium == false {
             showsPremiumRequiredAlert = true
@@ -442,6 +557,7 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                     chatId: chatId,
                     replyToMessageId: replyToMessageId,
                     disableNotification: disableNotification,
+                    schedulingState: schedulingState,
                     topicId: topicId,
                 )
                 await onSent()
@@ -528,18 +644,22 @@ struct TelegramStickerPickerContent<Preview: View>: View {
 
 // MARK: - TelegramStickerSetPickerView
 
-private struct TelegramStickerSetPickerView<Preview: View>: View {
+private struct TelegramStickerSetPickerView<Preview: View, ContextPreview: View>: View {
     // MARK: Internal
 
     let stickerSetInfo: StickerSetInfo
     let service: any TelegramService
     let sendingStickerFileId: Int?
     let favoriteStickerFileIds: Set<Int>
+    let chatId: Int64
+    let topicId: MessageTopic?
     let onBack: () -> Void
     let onSelect: (Sticker) -> Void
     let onSelectSilently: (Sticker) -> Void
+    let onSchedule: (Sticker) -> Void
     let onToggleFavorite: (Sticker) -> Void
     let preview: (Sticker) -> Preview
+    let contextPreview: (Sticker) -> ContextPreview
 
     var body: some View {
         VStack(spacing: 0) {
@@ -590,6 +710,10 @@ private struct TelegramStickerSetPickerView<Preview: View>: View {
                                         onSelectSilently(sticker)
                                     }
 
+                                    Button("Schedule Send…", systemImage: "clock") {
+                                        onSchedule(sticker)
+                                    }
+
                                     let isFavorite = favoriteStickerFileIds.contains(sticker.sticker.id)
                                     Button(
                                         isFavorite ? "Remove from Favorites" : "Add to Favorites",
@@ -597,11 +721,22 @@ private struct TelegramStickerSetPickerView<Preview: View>: View {
                                     ) {
                                         onToggleFavorite(sticker)
                                     }
+                                } preview: {
+                                    contextPreview(sticker)
+                                        .frame(width: 200, height: 200)
+                                }
+                                .accessibilityAction(named: "Send Later") {
+                                    onSchedule(sticker)
                                 }
                             }
                         }
                         .padding()
                     }
+                    .modifier(TelegramChoosingStickerActivityModifier(
+                        service: service,
+                        chatId: chatId,
+                        topicId: topicId,
+                    ))
                 } else if let errorMessage {
                     ContentUnavailableView(
                         "Sticker Pack Unavailable",

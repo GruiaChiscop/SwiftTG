@@ -137,7 +137,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getCountryCode() async throws -> Text
     func getGroupsInCommon(limit: Int?, offsetChatId: Int64?, userId: Int64?) async throws -> Chats
     func getStorageStatisticsFast() async throws -> StorageStatisticsFast
+    func getEmojiCategories(type: EmojiCategoryType?) async throws -> EmojiCategories
     func getInstalledStickerSets(stickerType: StickerType?) async throws -> StickerSets
+    func getPremiumStickers(limit: Int?) async throws -> Stickers
     func getTrendingStickerSets(limit: Int?, offset: Int?, stickerType: StickerType?) async throws
         -> TrendingStickerSets
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message
@@ -1017,6 +1019,14 @@ extension TelegramSession: TelegramService {
 
     func getInstalledStickerSets(stickerType: StickerType?) async throws -> StickerSets {
         try await client.getInstalledStickerSets(stickerType: stickerType)
+    }
+
+    func getEmojiCategories(type: EmojiCategoryType?) async throws -> EmojiCategories {
+        try await client.getEmojiCategories(type: type)
+    }
+
+    func getPremiumStickers(limit: Int?) async throws -> Stickers {
+        try await client.getPremiumStickers(limit: limit)
     }
 
     func getTrendingStickerSets(

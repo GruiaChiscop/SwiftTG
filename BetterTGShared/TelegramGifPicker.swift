@@ -8,17 +8,22 @@ import SwiftUI
 enum TelegramAnimationSending {
     // MARK: Internal
 
-    static func content(for animation: TDLibKit.Animation) -> InputMessageContent {
+    static func content(
+        for animation: TDLibKit.Animation,
+        animationFile: InputFile? = nil,
+        caption: FormattedText? = nil,
+        duration: Int? = nil,
+    ) -> InputMessageContent {
         .inputMessageAnimation(.init(
             animation: .init(
                 addedStickerFileIds: [],
-                animation: .inputFileId(.init(id: animation.animation.id)),
-                duration: animation.duration,
+                animation: animationFile ?? .inputFileId(.init(id: animation.animation.id)),
+                duration: duration ?? animation.duration,
                 height: animation.height,
                 thumbnail: nil,
                 width: animation.width,
             ),
-            caption: nil,
+            caption: caption,
             hasSpoiler: false,
             showCaptionAboveMedia: false,
         ))
@@ -33,6 +38,7 @@ enum TelegramAnimationSending {
         chatId: Int64,
         replyToMessageId: Int64?,
         disableNotification: Bool = false,
+        schedulingState: MessageSchedulingState? = nil,
         topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let messages = try await TelegramMessageSending.send(
@@ -40,6 +46,7 @@ enum TelegramAnimationSending {
             chatId: chatId,
             contents: [content(for: animation)],
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            schedulingState: schedulingState,
             disableNotification: disableNotification,
             topicId: topicId,
             onAccepted: { messages in
@@ -64,18 +71,88 @@ enum TelegramAnimationSending {
         chatId: Int64,
         replyToMessageId: Int64?,
         disableNotification: Bool = false,
+        schedulingState: MessageSchedulingState? = nil,
         topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let message = try await service.sendInlineQueryResultMessage(
             chatId: chatId,
             hideViaBot: true,
-            options: TelegramMessageSending.sendOptions(disableNotification: disableNotification),
+            options: TelegramMessageSending.sendOptions(
+                schedulingState: schedulingState,
+                disableNotification: disableNotification,
+            ),
             queryId: queryId,
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
             resultId: resultId,
             topicId: topicId,
         )
         service.mergeMessages(chatId: chatId, messages: [message])
+        await remember(message, service: service)
+        return message
+    }
+
+    @discardableResult static func sendWithCaption(
+        _ animation: TDLibKit.Animation,
+        caption: String,
+        service: any TelegramService,
+        chatId: Int64,
+        replyToMessageId: Int64?,
+        topicId: MessageTopic? = nil,
+    ) async throws -> Message {
+        let file = try await service.downloadFile(
+            fileId: animation.animation.id,
+            limit: 0,
+            offset: 0,
+            priority: 32,
+            synchronous: true,
+        )
+        guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else {
+            throw TelegramAnimationSendingError.downloadFailed
+        }
+        return try await sendLocal(
+            animation,
+            fileURL: URL(filePath: file.local.path),
+            caption: caption,
+            duration: animation.duration,
+            service: service,
+            chatId: chatId,
+            replyToMessageId: replyToMessageId,
+            topicId: topicId,
+        )
+    }
+
+    @discardableResult static func sendLocal(
+        _ animation: TDLibKit.Animation,
+        fileURL: URL,
+        caption: String,
+        duration: Int,
+        service: any TelegramService,
+        chatId: Int64,
+        replyToMessageId: Int64?,
+        topicId: MessageTopic? = nil,
+    ) async throws -> Message {
+        let formattedCaption = await TelegramTextFormatting.addingAutomaticEntities(
+            service: service,
+            to: FormattedText(entities: [], text: caption),
+        )
+        let messages = try await TelegramMessageSending.send(
+            service: service,
+            chatId: chatId,
+            contents: [content(
+                for: animation,
+                animationFile: .inputFileLocal(.init(path: fileURL.path(percentEncoded: false))),
+                caption: formattedCaption,
+                duration: duration,
+            )],
+            replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            topicId: topicId,
+            onAccepted: { messages in
+                service.mergeMessages(chatId: chatId, messages: messages)
+            },
+        )
+        guard let message = messages.first else {
+            throw TelegramAnimationSendingError.noMessageReturned
+        }
         await remember(message, service: service)
         return message
     }
@@ -103,6 +180,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
     let service: any TelegramService
     let chatId: Int64
     let replyToMessageId: Int64?
+    let allowsSendWhenOnline: Bool
     let topicId: MessageTopic?
     let query: String
     let onSent: @MainActor () async -> Void
@@ -111,7 +189,15 @@ struct TelegramGifPickerContent<Preview: View>: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                if normalizedQuery.isEmpty {
+                if normalizedQuery.isEmpty, !emojiCategories.isEmpty {
+                    TelegramEmojiCategoryBar(
+                        categories: emojiCategories,
+                        selectedCategory: selectedEmojiCategory,
+                        onSelect: { selectedEmojiCategory = $0 },
+                    )
+                }
+
+                if normalizedQuery.isEmpty, selectedEmojiCategory == nil {
                     savedContent
                 } else {
                     searchContent
@@ -128,10 +214,51 @@ struct TelegramGifPickerContent<Preview: View>: View {
         }
         .task { await loadSavedIfNeeded() }
         .task { await loadTrendingIfNeeded() }
-        .task(id: normalizedQuery) { await search() }
+        .task { await loadEmojiCategories() }
+        .task(id: searchKey) { await search() }
+        .onChange(of: normalizedQuery) { _, newValue in
+            if !newValue.isEmpty {
+                selectedEmojiCategory = nil
+            }
+        }
         .refreshable {
             await loadSaved(force: true)
             await loadTrending(force: true)
+        }
+        .sheet(item: $itemToSchedule) { item in
+            TelegramScheduleSendView(allowsSendWhenOnline: allowsSendWhenOnline) { state in
+                send(item, schedulingState: state)
+            }
+        }
+        .sheet(item: $itemForCaption) { item in
+            TelegramGifCaptionComposer(
+                onSend: { caption in
+                    try await sendWithCaption(item, caption: caption)
+                },
+                preview: {
+                    preview(item.animation)
+                        .aspectRatio(item.aspectRatio, contentMode: .fit)
+                },
+            )
+        }
+        .sheet(item: $itemForEditing) { item in
+            TelegramGifEditor(
+                animation: item.animation,
+                service: service,
+                onSend: { url, caption, duration in
+                    _ = try await TelegramAnimationSending.sendLocal(
+                        item.animation,
+                        fileURL: url,
+                        caption: caption,
+                        duration: duration,
+                        service: service,
+                        chatId: chatId,
+                        replyToMessageId: replyToMessageId,
+                        topicId: topicId,
+                    )
+                    await onSent()
+                },
+            )
         }
     }
 
@@ -141,6 +268,8 @@ struct TelegramGifPickerContent<Preview: View>: View {
     @State private var savedAnimations = [TDLibKit.Animation]()
     @State private var trendingResults = [GifPickerSearchResult]()
     @State private var searchResults = [GifPickerSearchResult]()
+    @State private var emojiCategories = [EmojiCategory]()
+    @State private var selectedEmojiCategory: EmojiCategory?
     @State private var isLoadingSaved = false
     @State private var isLoadingTrending = false
     @State private var isSearching = false
@@ -152,9 +281,30 @@ struct TelegramGifPickerContent<Preview: View>: View {
     @State private var animationSearchBotId: Int64?
     @State private var nextSearchOffset = ""
     @State private var isLoadingMoreSearchResults = false
+    @State private var nextTrendingOffset = ""
+    @State private var isLoadingMoreTrendingResults = false
+    @State private var itemToSchedule: GifPickerItem?
+    @State private var itemForCaption: GifPickerItem?
+    @State private var itemForEditing: GifPickerItem?
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var activeSearchQuery: String {
+        if !normalizedQuery.isEmpty {
+            normalizedQuery
+        } else if let selectedEmojiCategory,
+                  case .emojiCategorySourceSearch(let source) = selectedEmojiCategory.source
+        {
+            source.emojis.joined(separator: " ")
+        } else {
+            ""
+        }
+    }
+
+    private var searchKey: String {
+        "\(normalizedQuery)|\(selectedEmojiCategory?.name ?? "")"
     }
 
     private var savedAnimationFileIds: Set<Int> {
@@ -188,6 +338,14 @@ struct TelegramGifPickerContent<Preview: View>: View {
                         isSaved: savedAnimationFileIds.contains($0.animation.animation.id),
                     )
                 })
+                if isLoadingMoreTrendingResults {
+                    ProgressView("Loading more trending GIFs")
+                } else if !nextTrendingOffset.isEmpty {
+                    Button("Load More Trending GIFs", systemImage: "arrow.down.circle") {
+                        Task { await loadMoreTrendingResults() }
+                    }
+                    .task(id: nextTrendingOffset) { await loadMoreTrendingResults() }
+                }
             }
         }
     }
@@ -196,10 +354,19 @@ struct TelegramGifPickerContent<Preview: View>: View {
         if isSearching {
             ProgressView("Searching GIFs")
         } else if searchResults.isEmpty, feedbackMessage == nil {
-            ContentUnavailableView.search(text: normalizedQuery)
+            if let selectedEmojiCategory {
+                ContentUnavailableView(
+                    "No GIFs",
+                    systemImage: "photo.on.rectangle",
+                    description: Text("No GIFs were found in \(selectedEmojiCategory.name)."),
+                )
                 .frame(maxWidth: .infinity)
+            } else {
+                ContentUnavailableView.search(text: normalizedQuery)
+                    .frame(maxWidth: .infinity)
+            }
         } else {
-            sectionHeading("Search Results")
+            sectionHeading(selectedEmojiCategory?.name ?? "Search Results")
             gifGrid(searchResults.map {
                 GifPickerItem(
                     id: "search:\($0.resultId)",
@@ -215,6 +382,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
                 Button("Load More GIFs", systemImage: "arrow.down.circle") {
                     Task { await loadMoreSearchResults() }
                 }
+                .task(id: nextSearchOffset) { await loadMoreSearchResults() }
             }
         }
     }
@@ -252,6 +420,20 @@ struct TelegramGifPickerContent<Preview: View>: View {
                     }
 
                     if item.isSaved {
+                        Button("Schedule Send…", systemImage: "clock") {
+                            itemToSchedule = item
+                        }
+                    }
+
+                    Button("Add Caption…", systemImage: "text.bubble") {
+                        itemForCaption = item
+                    }
+
+                    Button("Edit GIF…", systemImage: "slider.horizontal.3") {
+                        itemForEditing = item
+                    }
+
+                    if item.isSaved {
                         Button("Delete from Saved GIFs", systemImage: "trash", role: .destructive) {
                             updateSavedState(for: item)
                         }
@@ -261,6 +443,23 @@ struct TelegramGifPickerContent<Preview: View>: View {
                             updateSavedState(for: item)
                         }
                         .disabled(mutatingItemId != nil)
+                    }
+                } preview: {
+                    TelegramGifLoopingPreview(animation: item.animation, service: service)
+                        .aspectRatio(item.aspectRatio, contentMode: .fit)
+                        .frame(width: 240, height: 200)
+                }
+                .accessibilityActions {
+                    Button("Add Caption") {
+                        itemForCaption = item
+                    }
+                    Button("Edit GIF") {
+                        itemForEditing = item
+                    }
+                    if item.isSaved {
+                        Button("Send Later") {
+                            itemToSchedule = item
+                        }
                     }
                 }
             }
@@ -327,12 +526,41 @@ struct TelegramGifPickerContent<Preview: View>: View {
                 userLocation: nil,
             )
             trendingResults = Self.animationResults(from: results)
+            nextTrendingOffset = results.nextOffset
         } catch {
             // Trending is a nice-to-have on top of Saved - fail silently rather than blocking the
             // picker with an error over something that isn't the user's own data.
         }
         hasLoadedTrending = true
         isLoadingTrending = false
+    }
+
+    @MainActor private func loadMoreTrendingResults() async {
+        guard !isLoadingMoreTrendingResults,
+              !nextTrendingOffset.isEmpty,
+              let animationSearchBotId
+        else { return }
+        let requestedOffset = nextTrendingOffset
+        isLoadingMoreTrendingResults = true
+        defer { isLoadingMoreTrendingResults = false }
+        do {
+            let results = try await service.getInlineQueryResults(
+                botUserId: animationSearchBotId,
+                chatId: chatId,
+                offset: requestedOffset,
+                query: "",
+                userLocation: nil,
+            )
+            guard !Task.isCancelled else { return }
+            var existingIds = Set(trendingResults.map(\.resultId))
+            trendingResults += Self.animationResults(from: results).filter {
+                existingIds.insert($0.resultId).inserted
+            }
+            nextTrendingOffset = results.nextOffset
+        } catch {
+            guard !Task.isCancelled else { return }
+            showFeedback("More trending GIFs couldn't be loaded: \(telegramErrorDescription(error))")
+        }
     }
 
     @MainActor private func resolveSearchBotIfNeeded() async {
@@ -344,8 +572,20 @@ struct TelegramGifPickerContent<Preview: View>: View {
         animationSearchBotId = chat.id
     }
 
+    @MainActor private func loadEmojiCategories() async {
+        guard emojiCategories.isEmpty else { return }
+        guard let categories = try? await service.getEmojiCategories(type: .emojiCategoryTypeDefault) else { return }
+        emojiCategories = categories.categories.filter {
+            if case .emojiCategorySourceSearch = $0.source {
+                true
+            } else {
+                false
+            }
+        }
+    }
+
     @MainActor private func search() async {
-        guard !normalizedQuery.isEmpty else {
+        guard !activeSearchQuery.isEmpty else {
             searchResults = []
             nextSearchOffset = ""
             isSearching = false
@@ -371,7 +611,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
                 botUserId: animationSearchBotId,
                 chatId: chatId,
                 offset: "",
-                query: normalizedQuery,
+                query: activeSearchQuery,
                 userLocation: nil,
             )
             guard !Task.isCancelled else { return }
@@ -387,33 +627,51 @@ struct TelegramGifPickerContent<Preview: View>: View {
         }
     }
 
-    private func send(_ item: GifPickerItem, disableNotification: Bool = false) {
+    private func send(
+        _ item: GifPickerItem,
+        disableNotification: Bool = false,
+        schedulingState: MessageSchedulingState? = nil,
+    ) {
         guard sendingItemId == nil else { return }
         sendingItemId = item.id
         feedbackMessage = nil
         feedbackIsFocused = false
         Task {
             do {
-                switch item.source {
-                case .saved:
+                if schedulingState != nil, item.isSaved {
                     try await TelegramAnimationSending.send(
                         item.animation,
                         service: service,
                         chatId: chatId,
                         replyToMessageId: replyToMessageId,
                         disableNotification: disableNotification,
+                        schedulingState: schedulingState,
                         topicId: topicId,
                     )
-                case .searchResult(let queryId, let resultId):
-                    try await TelegramAnimationSending.sendSearchResult(
-                        queryId: queryId,
-                        resultId: resultId,
-                        service: service,
-                        chatId: chatId,
-                        replyToMessageId: replyToMessageId,
-                        disableNotification: disableNotification,
-                        topicId: topicId,
-                    )
+                } else {
+                    switch item.source {
+                    case .saved:
+                        try await TelegramAnimationSending.send(
+                            item.animation,
+                            service: service,
+                            chatId: chatId,
+                            replyToMessageId: replyToMessageId,
+                            disableNotification: disableNotification,
+                            schedulingState: schedulingState,
+                            topicId: topicId,
+                        )
+                    case .searchResult(let queryId, let resultId):
+                        try await TelegramAnimationSending.sendSearchResult(
+                            queryId: queryId,
+                            resultId: resultId,
+                            service: service,
+                            chatId: chatId,
+                            replyToMessageId: replyToMessageId,
+                            disableNotification: disableNotification,
+                            schedulingState: schedulingState,
+                            topicId: topicId,
+                        )
+                    }
                 }
                 await onSent()
             } catch {
@@ -423,12 +681,24 @@ struct TelegramGifPickerContent<Preview: View>: View {
         }
     }
 
+    @MainActor private func sendWithCaption(_ item: GifPickerItem, caption: String) async throws {
+        _ = try await TelegramAnimationSending.sendWithCaption(
+            item.animation,
+            caption: caption,
+            service: service,
+            chatId: chatId,
+            replyToMessageId: replyToMessageId,
+            topicId: topicId,
+        )
+        await onSent()
+    }
+
     @MainActor private func loadMoreSearchResults() async {
         guard !isLoadingMoreSearchResults,
               !nextSearchOffset.isEmpty,
               let animationSearchBotId
         else { return }
-        let requestedQuery = normalizedQuery
+        let requestedQuery = activeSearchQuery
         let requestedOffset = nextSearchOffset
         isLoadingMoreSearchResults = true
         defer { isLoadingMoreSearchResults = false }
@@ -440,7 +710,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
                 query: requestedQuery,
                 userLocation: nil,
             )
-            guard !Task.isCancelled, normalizedQuery == requestedQuery else { return }
+            guard !Task.isCancelled, activeSearchQuery == requestedQuery else { return }
             var existingIds = Set(searchResults.map(\.resultId))
             searchResults += Self.animationResults(from: results).filter {
                 existingIds.insert($0.resultId).inserted
@@ -510,11 +780,17 @@ private struct GifPickerSearchResult {
 // MARK: - TelegramAnimationSendingError
 
 private enum TelegramAnimationSendingError: LocalizedError {
+    case downloadFailed
     case noMessageReturned
 
     // MARK: Internal
 
     var errorDescription: String? {
-        "Telegram accepted the GIF but didn't return the sent message."
+        switch self {
+        case .downloadFailed:
+            "The GIF couldn't be downloaded for editing."
+        case .noMessageReturned:
+            "Telegram accepted the GIF but didn't return the sent message."
+        }
     }
 }

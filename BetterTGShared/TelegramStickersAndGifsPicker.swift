@@ -12,26 +12,30 @@ import TDLibKit
 /// navigation stack or toolbar because it can be embedded directly inside an existing conversation
 /// navigation destination. Presentation is owned by the composer so the picker can be inline on
 /// iOS and a popover on macOS without obscuring the conversation.
-struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>: View {
+struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPreview: View, GifPreview: View>: View {
     // MARK: Lifecycle
 
     init(
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        allowsSendWhenOnline: Bool,
         topicId: MessageTopic? = nil,
         onSent: @escaping @MainActor () async -> Void,
         onClose: @escaping () -> Void,
         @ViewBuilder stickerPreview: @escaping (Sticker) -> StickerPreview,
+        @ViewBuilder stickerContextPreview: @escaping (Sticker) -> StickerContextPreview,
         @ViewBuilder gifPreview: @escaping (TDLibKit.Animation) -> GifPreview,
     ) {
         self.service = service
         self.chatId = chatId
         self.replyToMessageId = replyToMessageId
+        self.allowsSendWhenOnline = allowsSendWhenOnline
         self.topicId = topicId
         self.onSent = onSent
         self.onClose = onClose
         self.stickerPreview = stickerPreview
+        self.stickerContextPreview = stickerContextPreview
         self.gifPreview = gifPreview
     }
 
@@ -74,16 +78,19 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
                         service: service,
                         chatId: chatId,
                         replyToMessageId: replyToMessageId,
+                        allowsSendWhenOnline: allowsSendWhenOnline,
                         topicId: topicId,
                         query: query,
                         onSent: didSend,
                         preview: stickerPreview,
+                        contextPreview: stickerContextPreview,
                     )
                 case .gifs:
                     TelegramGifPickerContent(
                         service: service,
                         chatId: chatId,
                         replyToMessageId: replyToMessageId,
+                        allowsSendWhenOnline: allowsSendWhenOnline,
                         topicId: topicId,
                         query: query,
                         onSent: didSend,
@@ -102,10 +109,12 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, GifPreview: View>
     private let service: any TelegramService
     private let chatId: Int64
     private let replyToMessageId: Int64?
+    private let allowsSendWhenOnline: Bool
     private let topicId: MessageTopic?
     private let onSent: @MainActor () async -> Void
     private let onClose: () -> Void
     private let stickerPreview: (Sticker) -> StickerPreview
+    private let stickerContextPreview: (Sticker) -> StickerContextPreview
     private let gifPreview: (TDLibKit.Animation) -> GifPreview
 
     @MainActor private func didSend() async {

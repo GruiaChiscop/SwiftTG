@@ -511,6 +511,7 @@ struct MacConversationView: View {
                             service: model.service,
                             chatId: chat.chatId,
                             replyToMessageId: model.replyingToMessage?.id,
+                            allowsSendWhenOnline: chat.kind == .privateChat,
                             topicId: model.openedTopic,
                             onSent: {
                                 model.replyingToMessage = nil
@@ -525,6 +526,13 @@ struct MacConversationView: View {
                                 sticker: sticker,
                                 maxSide: 76,
                                 playsAnimation: false,
+                            )
+                        } stickerContextPreview: { sticker in
+                            MacStickerView(
+                                model: model,
+                                sticker: sticker,
+                                maxSide: 200,
+                                playsAnimation: true,
                             )
                         } gifPreview: { animation in
                             MacGifThumbnailView(model: model, animation: animation)
