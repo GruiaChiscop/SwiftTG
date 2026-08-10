@@ -71,6 +71,7 @@ enum TelegramMessageSending {
         replyTo: InputMessageReplyTo?,
         uploadAction: ChatAction? = nil,
         schedulingState: MessageSchedulingState? = nil,
+        disableNotification: Bool = false,
         topicId: MessageTopic? = nil,
         onAccepted: (@Sendable ([Message]) -> Void)? = nil,
     ) async throws -> [Message] {
@@ -85,7 +86,10 @@ enum TelegramMessageSending {
                 topicId: topicId,
             )
         }
-        let options = sendOptions(schedulingState: schedulingState)
+        let options = sendOptions(
+            schedulingState: schedulingState,
+            disableNotification: disableNotification,
+        )
         do {
             // swiftformat:disable:next conditionalAssignment
             if contents.count == 1, let content = contents.first {
@@ -118,13 +122,14 @@ enum TelegramMessageSending {
         }
     }
 
-    // MARK: Private
-
-    private static func sendOptions(schedulingState: MessageSchedulingState?) -> MessageSendOptions? {
-        guard let schedulingState else { return nil }
+    static func sendOptions(
+        schedulingState: MessageSchedulingState? = nil,
+        disableNotification: Bool = false,
+    ) -> MessageSendOptions? {
+        guard schedulingState != nil || disableNotification else { return nil }
         return MessageSendOptions(
             allowPaidBroadcast: false,
-            disableNotification: false,
+            disableNotification: disableNotification,
             effectId: 0,
             fromBackground: false,
             onlyPreview: false,
@@ -136,6 +141,8 @@ enum TelegramMessageSending {
             updateOrderOfInstalledStickerSets: false,
         )
     }
+
+    // MARK: Private
 
     private static func cancelChatAction(
         service: any TelegramService,

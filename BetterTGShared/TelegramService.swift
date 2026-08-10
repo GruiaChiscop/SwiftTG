@@ -138,6 +138,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getGroupsInCommon(limit: Int?, offsetChatId: Int64?, userId: Int64?) async throws -> Chats
     func getStorageStatisticsFast() async throws -> StorageStatisticsFast
     func getInstalledStickerSets(stickerType: StickerType?) async throws -> StickerSets
+    func getTrendingStickerSets(limit: Int?, offset: Int?, stickerType: StickerType?) async throws
+        -> TrendingStickerSets
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message
     func getMessageAvailableReactions(
         chatId: Int64?,
@@ -160,6 +162,11 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         optionId: Int?,
     ) async throws -> PollVoters
     func getRecentStickers(isAttached: Bool?) async throws -> Stickers
+    func removeRecentSticker(isAttached: Bool?, sticker: InputFile?) async throws -> Ok
+    func clearRecentStickers(isAttached: Bool?) async throws -> Ok
+    func getFavoriteStickers() async throws -> Stickers
+    func addFavoriteSticker(sticker: InputFile?) async throws -> Ok
+    func removeFavoriteSticker(sticker: InputFile?) async throws -> Ok
     func getActiveSessions() async throws -> Sessions
     func terminateSession(sessionId: TdInt64?) async throws -> Ok
     func terminateAllOtherSessions() async throws -> Ok
@@ -222,6 +229,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     ) async throws -> StickerSet
     func addStickerToSet(name: String?, sticker: NewSticker?, userId: Int64?) async throws -> Ok
     func changeStickerSet(isArchived: Bool?, isInstalled: Bool?, setId: TdInt64?) async throws -> Ok
+    func viewTrendingStickerSets(stickerSetIds: [TdInt64]?) async throws -> Ok
     func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview
     func getMe() async throws -> User
@@ -1011,6 +1019,14 @@ extension TelegramSession: TelegramService {
         try await client.getInstalledStickerSets(stickerType: stickerType)
     }
 
+    func getTrendingStickerSets(
+        limit: Int?,
+        offset: Int?,
+        stickerType: StickerType?,
+    ) async throws -> TrendingStickerSets {
+        try await client.getTrendingStickerSets(limit: limit, offset: offset, stickerType: stickerType)
+    }
+
     func getMessage(chatId: Int64?, messageId: Int64?) async throws -> Message {
         try await client.getMessage(chatId: chatId, messageId: messageId)
     }
@@ -1029,6 +1045,26 @@ extension TelegramSession: TelegramService {
 
     func getRecentStickers(isAttached: Bool?) async throws -> Stickers {
         try await client.getRecentStickers(isAttached: isAttached)
+    }
+
+    func removeRecentSticker(isAttached: Bool?, sticker: InputFile?) async throws -> Ok {
+        try await client.removeRecentSticker(isAttached: isAttached, sticker: sticker)
+    }
+
+    func clearRecentStickers(isAttached: Bool?) async throws -> Ok {
+        try await client.clearRecentStickers(isAttached: isAttached)
+    }
+
+    func getFavoriteStickers() async throws -> Stickers {
+        try await client.getFavoriteStickers()
+    }
+
+    func addFavoriteSticker(sticker: InputFile?) async throws -> Ok {
+        try await client.addFavoriteSticker(sticker: sticker)
+    }
+
+    func removeFavoriteSticker(sticker: InputFile?) async throws -> Ok {
+        try await client.removeFavoriteSticker(sticker: sticker)
     }
 
     func getActiveSessions() async throws -> Sessions {
@@ -1181,6 +1217,10 @@ extension TelegramSession: TelegramService {
 
     func changeStickerSet(isArchived: Bool?, isInstalled: Bool?, setId: TdInt64?) async throws -> Ok {
         try await client.changeStickerSet(isArchived: isArchived, isInstalled: isInstalled, setId: setId)
+    }
+
+    func viewTrendingStickerSets(stickerSetIds: [TdInt64]?) async throws -> Ok {
+        try await client.viewTrendingStickerSets(stickerSetIds: stickerSetIds)
     }
 
     func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders {

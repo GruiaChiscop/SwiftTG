@@ -23,6 +23,7 @@ enum TelegramStickerSending {
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        disableNotification: Bool = false,
         topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let messages = try await TelegramMessageSending.send(
@@ -30,6 +31,7 @@ enum TelegramStickerSending {
             chatId: chatId,
             contents: [content(for: sticker)],
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            disableNotification: disableNotification,
             topicId: topicId,
             onAccepted: { messages in
                 service.mergeMessages(chatId: chatId, messages: messages)
@@ -64,8 +66,11 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                     stickerSetInfo: selectedStickerSet,
                     service: service,
                     sendingStickerFileId: sendingStickerFileId,
+                    favoriteStickerFileIds: favoriteStickerFileIds,
                     onBack: { self.selectedStickerSet = nil },
-                    onSelect: send,
+                    onSelect: { send($0) },
+                    onSelectSilently: { send($0, disableNotification: true) },
+                    onToggleFavorite: toggleFavorite,
                     preview: preview,
                 )
             } else {
@@ -111,8 +116,10 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     // MARK: Private
 
     @AccessibilityFocusState private var feedbackIsFocused: Bool
+    @State private var favoriteStickers = [Sticker]()
     @State private var recentStickers = [Sticker]()
     @State private var stickerSets = [StickerSetInfo]()
+    @State private var trendingStickerSets = [StickerSetInfo]()
     @State private var searchResults = [Sticker]()
     @State private var isLoadingLibrary = false
     @State private var isSearching = false
@@ -121,55 +128,92 @@ struct TelegramStickerPickerContent<Preview: View>: View {
     @State private var feedbackMessage: String?
     @State private var hasPremium: Bool?
     @State private var showsPremiumRequiredAlert = false
+    @State private var showsClearRecentConfirmation = false
     @State private var showsCreationComposer = false
     @State private var selectedStickerSet: StickerSetInfo?
+    @State private var installingStickerSetId: TdInt64?
+    @State private var mutatingStickerFileId: Int?
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var setTitles: [TdInt64: String] {
-        Dictionary(uniqueKeysWithValues: stickerSets.map { ($0.id, $0.title) })
+        var titles = [TdInt64: String]()
+        for stickerSet in stickerSets + trendingStickerSets {
+            titles[stickerSet.id] = stickerSet.title
+        }
+        return titles
+    }
+
+    private var favoriteStickerFileIds: Set<Int> {
+        Set(favoriteStickers.map(\.sticker.id))
     }
 
     @ViewBuilder private var libraryContent: some View {
         if isLoadingLibrary, !hasLoadedLibrary {
             ProgressView("Loading stickers")
         } else {
+            if !trendingStickerSets.isEmpty {
+                sectionHeading("Featured Sticker Packs")
+                LazyVStack(spacing: 8) {
+                    ForEach(trendingStickerSets) { stickerSet in
+                        TelegramStickerSetPickerRow(
+                            stickerSet: stickerSet,
+                            isInstalling: installingStickerSetId == stickerSet.id,
+                            showsInstallButton: true,
+                            onOpen: { selectedStickerSet = stickerSet },
+                            onInstall: { install(stickerSet) },
+                        )
+                    }
+                }
+            }
+
+            if !favoriteStickers.isEmpty {
+                sectionHeading("Favorites")
+                stickerGrid(favoriteStickers)
+            }
+
             if !recentStickers.isEmpty {
-                sectionHeading("Recent")
-                stickerGrid(recentStickers)
+                HStack {
+                    sectionHeading("Recent")
+                    Spacer()
+                    Button("Clear", role: .destructive) {
+                        showsClearRecentConfirmation = true
+                    }
+                    .confirmationDialog(
+                        "Clear Recent Stickers?",
+                        isPresented: $showsClearRecentConfirmation,
+                    ) {
+                        Button("Clear Recent Stickers", role: .destructive) {
+                            Task { await clearRecentStickers() }
+                        }
+                    }
+                }
+                stickerGrid(recentStickers, allowsRemovingFromRecent: true)
             }
 
             if !stickerSets.isEmpty {
                 sectionHeading("Sticker Packs")
                 LazyVStack(spacing: 8) {
                     ForEach(stickerSets) { stickerSet in
-                        Button {
-                            selectedStickerSet = stickerSet
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(stickerSet.title)
-                                    Text("\(stickerSet.size) stickers")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.secondary)
-                                    .accessibilityHidden(true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-                        }
-                        .buttonStyle(.plain)
+                        TelegramStickerSetPickerRow(
+                            stickerSet: stickerSet,
+                            isInstalling: false,
+                            showsInstallButton: false,
+                            onOpen: { selectedStickerSet = stickerSet },
+                            onInstall: {},
+                        )
                     }
                 }
             }
 
-            if recentStickers.isEmpty, stickerSets.isEmpty, feedbackMessage == nil {
+            if favoriteStickers.isEmpty,
+               recentStickers.isEmpty,
+               stickerSets.isEmpty,
+               trendingStickerSets.isEmpty,
+               feedbackMessage == nil
+            {
                 ContentUnavailableView(
                     "No Stickers",
                     systemImage: "face.smiling",
@@ -198,7 +242,7 @@ struct TelegramStickerPickerContent<Preview: View>: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private func stickerGrid(_ stickers: [Sticker]) -> some View {
+    private func stickerGrid(_ stickers: [Sticker], allowsRemovingFromRecent: Bool = false) -> some View {
         LazyVGrid(
             columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 12)],
             spacing: 12,
@@ -227,6 +271,27 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                 .accessibilityLabel(presentation.pickerAccessibilityLabel(
                     packTitle: setTitles[sticker.setId],
                 ))
+                .contextMenu {
+                    Button("Send Silently", systemImage: "bell.slash") {
+                        send(sticker, disableNotification: true)
+                    }
+
+                    let isFavorite = favoriteStickerFileIds.contains(sticker.sticker.id)
+                    Button(
+                        isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                        systemImage: isFavorite ? "star.slash" : "star",
+                    ) {
+                        toggleFavorite(sticker)
+                    }
+                    .disabled(mutatingStickerFileId != nil)
+
+                    if allowsRemovingFromRecent {
+                        Button("Remove from Recent", systemImage: "trash", role: .destructive) {
+                            removeFromRecent(sticker)
+                        }
+                        .disabled(mutatingStickerFileId != nil)
+                    }
+                }
             }
         }
         .padding(.vertical, 4)
@@ -250,6 +315,19 @@ struct TelegramStickerPickerContent<Preview: View>: View {
 
         var errors = [String]()
         do {
+            favoriteStickers = try await telegramUniqueStickers(
+                service.getFavoriteStickers().stickers,
+            )
+        } catch {
+            errors.append("Favorite stickers couldn't be loaded: \(telegramErrorDescription(error))")
+        }
+
+        guard !Task.isCancelled else {
+            isLoadingLibrary = false
+            return
+        }
+
+        do {
             recentStickers = try await telegramUniqueStickers(
                 service.getRecentStickers(isAttached: false).stickers,
             )
@@ -268,6 +346,28 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                 .filter(\.isInstalled)
         } catch {
             errors.append("Sticker packs couldn't be loaded: \(telegramErrorDescription(error))")
+        }
+
+        guard !Task.isCancelled else {
+            isLoadingLibrary = false
+            return
+        }
+
+        do {
+            let trending = try await service.getTrendingStickerSets(
+                limit: 20,
+                offset: 0,
+                stickerType: .stickerTypeRegular,
+            )
+            let installedIds = Set(stickerSets.map(\.id))
+            trendingStickerSets = trending.sets.filter { !installedIds.contains($0.id) }
+            let unseenIds = trendingStickerSets.filter { !$0.isViewed }.map(\.id)
+            if !unseenIds.isEmpty {
+                _ = try? await service.viewTrendingStickerSets(stickerSetIds: unseenIds)
+            }
+        } catch {
+            // Featured packs are additive; installed, favorite, and recent stickers remain usable.
+            trendingStickerSets = []
         }
 
         hasLoadedLibrary = true
@@ -325,7 +425,7 @@ struct TelegramStickerPickerContent<Preview: View>: View {
         .stickers
     }
 
-    private func send(_ sticker: Sticker) {
+    private func send(_ sticker: Sticker, disableNotification: Bool = false) {
         guard sendingStickerFileId == nil else { return }
         if TelegramStickerPresentation(sticker).isPremium, hasPremium == false {
             showsPremiumRequiredAlert = true
@@ -341,6 +441,7 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                     service: service,
                     chatId: chatId,
                     replyToMessageId: replyToMessageId,
+                    disableNotification: disableNotification,
                     topicId: topicId,
                 )
                 await onSent()
@@ -348,6 +449,71 @@ struct TelegramStickerPickerContent<Preview: View>: View {
                 showFeedback("Sticker couldn't be sent: \(telegramErrorDescription(error))")
             }
             sendingStickerFileId = nil
+        }
+    }
+
+    private func toggleFavorite(_ sticker: Sticker) {
+        guard mutatingStickerFileId == nil else { return }
+        let fileId = sticker.sticker.id
+        mutatingStickerFileId = fileId
+        Task {
+            do {
+                if favoriteStickerFileIds.contains(fileId) {
+                    _ = try await service.removeFavoriteSticker(sticker: .inputFileId(.init(id: fileId)))
+                    favoriteStickers.removeAll { $0.sticker.id == fileId }
+                } else {
+                    _ = try await service.addFavoriteSticker(sticker: .inputFileId(.init(id: fileId)))
+                    favoriteStickers = telegramUniqueStickers([sticker] + favoriteStickers)
+                }
+            } catch {
+                showFeedback("Favorites couldn't be updated: \(telegramErrorDescription(error))")
+            }
+            mutatingStickerFileId = nil
+        }
+    }
+
+    private func removeFromRecent(_ sticker: Sticker) {
+        guard mutatingStickerFileId == nil else { return }
+        let fileId = sticker.sticker.id
+        mutatingStickerFileId = fileId
+        Task {
+            do {
+                _ = try await service.removeRecentSticker(
+                    isAttached: false,
+                    sticker: .inputFileId(.init(id: fileId)),
+                )
+                recentStickers.removeAll { $0.sticker.id == fileId }
+            } catch {
+                showFeedback("The sticker couldn't be removed from Recent: \(telegramErrorDescription(error))")
+            }
+            mutatingStickerFileId = nil
+        }
+    }
+
+    @MainActor private func clearRecentStickers() async {
+        do {
+            _ = try await service.clearRecentStickers(isAttached: false)
+            recentStickers.removeAll()
+        } catch {
+            showFeedback("Recent stickers couldn't be cleared: \(telegramErrorDescription(error))")
+        }
+    }
+
+    private func install(_ stickerSet: StickerSetInfo) {
+        guard installingStickerSetId == nil else { return }
+        installingStickerSetId = stickerSet.id
+        Task {
+            do {
+                _ = try await service.changeStickerSet(
+                    isArchived: false,
+                    isInstalled: true,
+                    setId: stickerSet.id,
+                )
+                await loadLibrary(force: true)
+            } catch {
+                showFeedback("\(stickerSet.title) couldn't be installed: \(telegramErrorDescription(error))")
+            }
+            installingStickerSetId = nil
         }
     }
 
@@ -368,8 +534,11 @@ private struct TelegramStickerSetPickerView<Preview: View>: View {
     let stickerSetInfo: StickerSetInfo
     let service: any TelegramService
     let sendingStickerFileId: Int?
+    let favoriteStickerFileIds: Set<Int>
     let onBack: () -> Void
     let onSelect: (Sticker) -> Void
+    let onSelectSilently: (Sticker) -> Void
+    let onToggleFavorite: (Sticker) -> Void
     let preview: (Sticker) -> Preview
 
     var body: some View {
@@ -416,6 +585,19 @@ private struct TelegramStickerSetPickerView<Preview: View>: View {
                                 .accessibilityLabel(presentation.pickerAccessibilityLabel(
                                     packTitle: stickerSet.title,
                                 ))
+                                .contextMenu {
+                                    Button("Send Silently", systemImage: "bell.slash") {
+                                        onSelectSilently(sticker)
+                                    }
+
+                                    let isFavorite = favoriteStickerFileIds.contains(sticker.sticker.id)
+                                    Button(
+                                        isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                                        systemImage: isFavorite ? "star.slash" : "star",
+                                    ) {
+                                        onToggleFavorite(sticker)
+                                    }
+                                }
                             }
                         }
                         .padding()

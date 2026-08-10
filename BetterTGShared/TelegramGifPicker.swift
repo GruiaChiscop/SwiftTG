@@ -32,6 +32,7 @@ enum TelegramAnimationSending {
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        disableNotification: Bool = false,
         topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let messages = try await TelegramMessageSending.send(
@@ -39,6 +40,7 @@ enum TelegramAnimationSending {
             chatId: chatId,
             contents: [content(for: animation)],
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
+            disableNotification: disableNotification,
             topicId: topicId,
             onAccepted: { messages in
                 service.mergeMessages(chatId: chatId, messages: messages)
@@ -61,12 +63,13 @@ enum TelegramAnimationSending {
         service: any TelegramService,
         chatId: Int64,
         replyToMessageId: Int64?,
+        disableNotification: Bool = false,
         topicId: MessageTopic? = nil,
     ) async throws -> Message {
         let message = try await service.sendInlineQueryResultMessage(
             chatId: chatId,
             hideViaBot: true,
-            options: nil,
+            options: TelegramMessageSending.sendOptions(disableNotification: disableNotification),
             queryId: queryId,
             replyTo: TelegramMessageSending.replyTo(messageId: replyToMessageId),
             resultId: resultId,
@@ -144,11 +147,18 @@ struct TelegramGifPickerContent<Preview: View>: View {
     @State private var hasLoadedSaved = false
     @State private var hasLoadedTrending = false
     @State private var sendingItemId: String?
+    @State private var mutatingItemId: String?
     @State private var feedbackMessage: String?
     @State private var animationSearchBotId: Int64?
+    @State private var nextSearchOffset = ""
+    @State private var isLoadingMoreSearchResults = false
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var savedAnimationFileIds: Set<Int> {
+        Set(savedAnimations.map(\.animation.id))
     }
 
     @ViewBuilder private var savedContent: some View {
@@ -165,7 +175,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
             if !savedAnimations.isEmpty {
                 sectionHeading("Saved")
                 gifGrid(savedAnimations.map {
-                    GifPickerItem(id: "saved:\($0.animation.id)", animation: $0, source: .saved)
+                    GifPickerItem(id: "saved:\($0.animation.id)", animation: $0, source: .saved, isSaved: true)
                 })
             }
             if !trendingResults.isEmpty {
@@ -175,6 +185,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
                         id: "trending:\($0.resultId)",
                         animation: $0.animation,
                         source: .searchResult(queryId: $0.queryId, resultId: $0.resultId),
+                        isSaved: savedAnimationFileIds.contains($0.animation.animation.id),
                     )
                 })
             }
@@ -194,8 +205,17 @@ struct TelegramGifPickerContent<Preview: View>: View {
                     id: "search:\($0.resultId)",
                     animation: $0.animation,
                     source: .searchResult(queryId: $0.queryId, resultId: $0.resultId),
+                    isSaved: savedAnimationFileIds.contains($0.animation.animation.id),
                 )
             })
+
+            if isLoadingMoreSearchResults {
+                ProgressView("Loading more GIFs")
+            } else if !nextSearchOffset.isEmpty {
+                Button("Load More GIFs", systemImage: "arrow.down.circle") {
+                    Task { await loadMoreSearchResults() }
+                }
+            }
         }
     }
 
@@ -214,7 +234,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
                     ZStack {
                         preview(item.animation)
                             .accessibilityHidden(true)
-                        if sendingItemId == item.id {
+                        if sendingItemId == item.id || mutatingItemId == item.id {
                             ProgressView()
                                 .accessibilityHidden(true)
                         }
@@ -226,6 +246,23 @@ struct TelegramGifPickerContent<Preview: View>: View {
                 .buttonStyle(.plain)
                 .disabled(sendingItemId != nil)
                 .accessibilityLabel("GIF")
+                .contextMenu {
+                    Button("Send Silently", systemImage: "bell.slash") {
+                        send(item, disableNotification: true)
+                    }
+
+                    if item.isSaved {
+                        Button("Delete from Saved GIFs", systemImage: "trash", role: .destructive) {
+                            updateSavedState(for: item)
+                        }
+                        .disabled(mutatingItemId != nil)
+                    } else {
+                        Button("Save GIF", systemImage: "bookmark") {
+                            updateSavedState(for: item)
+                        }
+                        .disabled(mutatingItemId != nil)
+                    }
+                }
             }
         }
         .padding(.vertical, 4)
@@ -310,6 +347,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
     @MainActor private func search() async {
         guard !normalizedQuery.isEmpty else {
             searchResults = []
+            nextSearchOffset = ""
             isSearching = false
             return
         }
@@ -318,12 +356,14 @@ struct TelegramGifPickerContent<Preview: View>: View {
         }
         guard let animationSearchBotId else {
             searchResults = []
+            nextSearchOffset = ""
             isSearching = false
             showFeedback("GIF search isn't available right now.")
             return
         }
 
         isSearching = true
+        nextSearchOffset = ""
         feedbackMessage = nil
         feedbackIsFocused = false
         do {
@@ -336,16 +376,18 @@ struct TelegramGifPickerContent<Preview: View>: View {
             )
             guard !Task.isCancelled else { return }
             searchResults = Self.animationResults(from: results)
+            nextSearchOffset = results.nextOffset
             isSearching = false
         } catch {
             guard !Task.isCancelled else { return }
             searchResults = []
+            nextSearchOffset = ""
             isSearching = false
             showFeedback("GIF search failed: \(telegramErrorDescription(error))")
         }
     }
 
-    private func send(_ item: GifPickerItem) {
+    private func send(_ item: GifPickerItem, disableNotification: Bool = false) {
         guard sendingItemId == nil else { return }
         sendingItemId = item.id
         feedbackMessage = nil
@@ -359,6 +401,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
                         service: service,
                         chatId: chatId,
                         replyToMessageId: replyToMessageId,
+                        disableNotification: disableNotification,
                         topicId: topicId,
                     )
                 case .searchResult(let queryId, let resultId):
@@ -368,6 +411,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
                         service: service,
                         chatId: chatId,
                         replyToMessageId: replyToMessageId,
+                        disableNotification: disableNotification,
                         topicId: topicId,
                     )
                 }
@@ -376,6 +420,55 @@ struct TelegramGifPickerContent<Preview: View>: View {
                 showFeedback("GIF couldn't be sent: \(telegramErrorDescription(error))")
             }
             sendingItemId = nil
+        }
+    }
+
+    @MainActor private func loadMoreSearchResults() async {
+        guard !isLoadingMoreSearchResults,
+              !nextSearchOffset.isEmpty,
+              let animationSearchBotId
+        else { return }
+        let requestedQuery = normalizedQuery
+        let requestedOffset = nextSearchOffset
+        isLoadingMoreSearchResults = true
+        defer { isLoadingMoreSearchResults = false }
+        do {
+            let results = try await service.getInlineQueryResults(
+                botUserId: animationSearchBotId,
+                chatId: chatId,
+                offset: requestedOffset,
+                query: requestedQuery,
+                userLocation: nil,
+            )
+            guard !Task.isCancelled, normalizedQuery == requestedQuery else { return }
+            var existingIds = Set(searchResults.map(\.resultId))
+            searchResults += Self.animationResults(from: results).filter {
+                existingIds.insert($0.resultId).inserted
+            }
+            nextSearchOffset = results.nextOffset
+        } catch {
+            guard !Task.isCancelled else { return }
+            showFeedback("More GIFs couldn't be loaded: \(telegramErrorDescription(error))")
+        }
+    }
+
+    private func updateSavedState(for item: GifPickerItem) {
+        guard mutatingItemId == nil else { return }
+        mutatingItemId = item.id
+        Task {
+            do {
+                let file = InputFile.inputFileId(.init(id: item.animation.animation.id))
+                _ =
+                    if item.isSaved {
+                        try await service.removeSavedAnimation(animation: file)
+                    } else {
+                        try await service.addSavedAnimation(animation: file)
+                    }
+                await loadSaved(force: true)
+            } catch {
+                showFeedback("Saved GIFs couldn't be updated: \(telegramErrorDescription(error))")
+            }
+            mutatingItemId = nil
         }
     }
 
@@ -399,6 +492,7 @@ private struct GifPickerItem: Identifiable {
     let id: String
     let animation: TDLibKit.Animation
     let source: Source
+    let isSaved: Bool
 
     var aspectRatio: CGFloat {
         CGFloat(max(animation.width, 1)) / CGFloat(max(animation.height, 1))
