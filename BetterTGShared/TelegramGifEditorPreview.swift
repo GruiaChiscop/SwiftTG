@@ -2,30 +2,36 @@
 
 import AVKit
 import SwiftUI
-import TDLibKit
 
 struct TelegramGifEditorPreview: View {
     // MARK: Internal
 
-    let animation: TDLibKit.Animation
     let player: AVPlayer?
+    let canvasSize: CGSize
 
     @Bindable var editorState: TelegramMediaEditorState
 
     var body: some View {
         Group {
             if let player {
-                ZStack {
-                    TelegramVideoEffectsPreview(player: player, effects: editorState.effects)
-                    TelegramDrawingCanvas(editorState: editorState)
-                    TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { _ in
-                        TelegramOverlayCanvas(
-                            currentTime: player.currentTime().seconds,
-                            editorState: editorState,
-                        )
+                TelegramMediaCropPreview(crop: editorState.crop, canvasSize: canvasSize) {
+                    ZStack {
+                        TelegramVideoEffectsPreview(player: player, effects: editorState.effects)
+                        TelegramDrawingCanvas(editorState: editorState)
+                        TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { _ in
+                            TelegramOverlayCanvas(
+                                currentTime: player.currentTime().seconds,
+                                editorState: editorState,
+                            )
+                        }
                     }
                 }
                 .aspectRatio(aspectRatio, contentMode: .fit)
+                .overlay {
+                    if editorState.tool == .crop {
+                        TelegramCropGestureOverlay(editorState: editorState)
+                    }
+                }
             } else {
                 ProgressView("Loading GIF")
             }
@@ -39,7 +45,8 @@ struct TelegramGifEditorPreview: View {
     // MARK: Private
 
     private var aspectRatio: Double {
-        guard animation.width > 0, animation.height > 0 else { return 1 }
-        return Double(animation.width) / Double(animation.height)
+        let outputSize = TelegramMediaCropRendering.outputSize(editorState.crop, canvasSize: canvasSize)
+        guard outputSize.width > 0, outputSize.height > 0 else { return 1 }
+        return outputSize.width / outputSize.height
     }
 }

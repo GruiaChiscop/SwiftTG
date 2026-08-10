@@ -37,6 +37,13 @@ struct TelegramEditorToolbar: View {
                 )
                 .tint(editorState.tool == .effects ? .accentColor : .secondary)
 
+                Button(
+                    "Crop",
+                    systemImage: "crop.rotate",
+                    action: showCrop,
+                )
+                .tint(editorState.tool == .crop ? .accentColor : .secondary)
+
                 Divider()
                     .frame(height: 24)
 
@@ -54,6 +61,11 @@ struct TelegramEditorToolbar: View {
 
     private func showEffects() {
         editorState.tool = .effects
+        editorState.select(nil)
+    }
+
+    private func showCrop() {
+        editorState.tool = .crop
         editorState.select(nil)
     }
 }

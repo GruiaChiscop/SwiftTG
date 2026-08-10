@@ -193,6 +193,78 @@ import Testing
         #expect(try Self.pixel(in: rendered, x: 4, y: 4).red > 80)
     }
 
+    @Test func `crop changes are grouped for undo and redo`() {
+        let state = TelegramMediaEditorState()
+        state.setCropAspectRatio(.square)
+        state.beginInteraction()
+        state.cropZoom = 2
+        state.cropHorizontalOffset = 0.75
+        state.cropVerticalOffset = -0.25
+        state.endInteraction()
+        state.rotateCropCounterclockwise()
+        state.toggleCropMirroring()
+
+        #expect(state.crop.aspectRatio == .square)
+        #expect(state.crop.zoom == 2)
+        #expect(state.crop.horizontalOffset == 0.75)
+        #expect(state.crop.verticalOffset == -0.25)
+        #expect(state.crop.normalizedQuarterTurns == 1)
+        #expect(state.crop.isMirrored)
+
+        state.undo()
+        #expect(!state.crop.isMirrored)
+        state.undo()
+        #expect(state.crop.normalizedQuarterTurns == 0)
+        state.undo()
+        #expect(state.crop.zoom == 1)
+        #expect(state.crop.horizontalOffset == 0)
+        #expect(state.crop.verticalOffset == 0)
+        state.redo()
+        #expect(state.crop.zoom == 2)
+        #expect(state.crop.horizontalOffset == 0.75)
+    }
+
+    @Test func `square crop geometry pans to the requested edge`() {
+        let crop = TelegramMediaCrop(
+            aspectRatio: .square,
+            zoom: 1,
+            horizontalOffset: 1,
+            verticalOffset: 0,
+        )
+        let rect = TelegramMediaCropRendering.normalizedCropRect(
+            crop,
+            canvasSize: CGSize(width: 100, height: 50),
+        )
+
+        #expect(rect == CGRect(x: 0.5, y: 0, width: 0.5, height: 1))
+        #expect(TelegramMediaCropRendering.outputSize(crop, canvasSize: CGSize(width: 100, height: 50))
+            == CGSize(width: 50, height: 50))
+    }
+
+    @Test func `crop renderer mirrors pixels and rotates output dimensions`() throws {
+        let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
+            .cropped(to: CGRect(x: 0, y: 0, width: 40, height: 40))
+        let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+            .cropped(to: CGRect(x: 40, y: 0, width: 40, height: 40))
+        let source = blue.composited(over: red)
+        let mirrored = TelegramMediaCropRendering.apply(
+            TelegramMediaCrop(isMirrored: true),
+            to: source,
+            canvasSize: CGSize(width: 80, height: 40),
+        )
+        let mirroredImage = try #require(CIContext().createCGImage(mirrored, from: mirrored.extent))
+
+        #expect(try Self.pixel(in: mirroredImage, x: 10, y: 20).blue > 200)
+        #expect(try Self.pixel(in: mirroredImage, x: 70, y: 20).red > 200)
+
+        let rotated = TelegramMediaCropRendering.apply(
+            TelegramMediaCrop(quarterTurnsCounterclockwise: 1),
+            to: source,
+            canvasSize: CGSize(width: 80, height: 40),
+        )
+        #expect(rotated.extent.size == CGSize(width: 40, height: 80))
+    }
+
     @Test func `export compositor paints the first and last video frames`() async throws {
         let sourceURL = Self.temporaryURL(label: "source")
         let outputURL = Self.temporaryURL(label: "output")
@@ -303,6 +375,38 @@ import Testing
         #expect(try Self.pixel(in: frame, x: 32, y: 32).red > 80)
     }
 
+    @Test func `square crop export changes dimensions and keeps drawings`() async throws {
+        let sourceURL = Self.temporaryURL(label: "crop-source")
+        let outputURL = Self.temporaryURL(label: "crop-output")
+        defer {
+            try? FileManager.default.removeItem(at: sourceURL)
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+        try await Self.writeBlackVideo(to: sourceURL, width: 80, height: 40)
+        let snapshot = TelegramMediaEditorSnapshot(
+            strokes: [.init(
+                points: [.init(x: 0.1, y: 0.5), .init(x: 0.9, y: 0.5)],
+                color: .white,
+                width: 0.2,
+            )],
+            overlays: [],
+            crop: .init(aspectRatio: .square),
+        )
+        try await TelegramGifCompositor.export(
+            asset: AVURLAsset(url: sourceURL),
+            snapshot: snapshot,
+            canvasSize: CGSize(width: 80, height: 40),
+            timeRange: CMTimeRange(start: .zero, duration: CMTime(value: 3, timescale: 10)),
+            outputURL: outputURL,
+        )
+
+        let asset = AVURLAsset(url: outputURL)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        #expect(try await track.load(.naturalSize) == CGSize(width: 40, height: 40))
+        let frame = try await AVAssetImageGenerator(asset: asset).image(at: CMTime(value: 1, timescale: 10)).image
+        #expect(try Self.pixel(in: frame, x: 20, y: 20).red > 180)
+    }
+
     // MARK: Private
 
     private static let videoSide = 64
@@ -311,22 +415,26 @@ import Testing
         URL.temporaryDirectory.appending(path: "bettertg-editor-test-\(label)-\(UUID().uuidString).mp4")
     }
 
-    private static func writeBlackVideo(to url: URL) async throws {
+    private static func writeBlackVideo(
+        to url: URL,
+        width: Int = videoSide,
+        height: Int = videoSide,
+    ) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let input = AVAssetWriterInput(
             mediaType: .video,
             outputSettings: [
                 AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: videoSide,
-                AVVideoHeightKey: videoSide,
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height,
             ],
         )
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
             sourcePixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey as String: videoSide,
-                kCVPixelBufferHeightKey as String: videoSide,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height,
             ],
         )
         guard writer.canAdd(input) else {
@@ -349,7 +457,7 @@ import Testing
             else {
                 throw TelegramMediaEditorTestError.pixelBufferCreationFailed
             }
-            Self.fillBlack(buffer)
+            Self.fillBlack(buffer, width: width, height: height)
             guard adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(frameIndex), timescale: 10))
             else {
                 throw writer.error ?? TelegramMediaEditorTestError.writerFailed
@@ -387,14 +495,14 @@ import Testing
         }
     }
 
-    private static func fillBlack(_ buffer: CVPixelBuffer) {
+    private static func fillBlack(_ buffer: CVPixelBuffer, width: Int, height: Int) {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return }
         let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
-        for y in 0..<videoSide {
+        for y in 0..<height {
             let row = baseAddress.advanced(by: y * bytesPerRow).assumingMemoryBound(to: UInt8.self)
-            for x in 0..<videoSide {
+            for x in 0..<width {
                 let offset = x * 4
                 row[offset] = 0
                 row[offset + 1] = 0

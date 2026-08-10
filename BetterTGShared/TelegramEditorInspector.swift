@@ -24,6 +24,8 @@ struct TelegramEditorInspector: View {
             }
         } else if editorState.tool == .effects {
             TelegramEffectsInspector(editorState: editorState)
+        } else if editorState.tool == .crop {
+            TelegramCropInspector(editorState: editorState)
         } else if editorState.selectedOverlay != nil {
             VStack(alignment: .leading) {
                 LabeledContent("Scale") {

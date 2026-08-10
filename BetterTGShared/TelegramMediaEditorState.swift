@@ -11,13 +11,14 @@ import SwiftUI
     var brushWidth = 0.012
     var brushStyle = TelegramBrushStyle.pen
     var effects = TelegramMediaEffects()
+    var crop = TelegramMediaCrop()
     var timelineDuration = 0.0
     private(set) var strokes = [TelegramDrawingStroke]()
     private(set) var overlays = [TelegramMediaOverlay]()
     var selectedOverlayID: UUID?
 
     var snapshot: TelegramMediaEditorSnapshot {
-        TelegramMediaEditorSnapshot(strokes: strokes, overlays: overlays, effects: effects)
+        TelegramMediaEditorSnapshot(strokes: strokes, overlays: overlays, effects: effects, crop: crop)
     }
 
     var canUndo: Bool { !undoHistory.isEmpty }
@@ -46,6 +47,21 @@ import SwiftUI
     var selectedEndTime: Double {
         get { min(selectedOverlay?.endTime ?? timelineDuration, timelineDuration) }
         set { setSelectedEndTime(newValue) }
+    }
+
+    var cropZoom: Double {
+        get { crop.zoom }
+        set { crop.zoom = min(max(newValue, 1), 4) }
+    }
+
+    var cropHorizontalOffset: Double {
+        get { crop.horizontalOffset }
+        set { crop.horizontalOffset = min(max(newValue, -1), 1) }
+    }
+
+    var cropVerticalOffset: Double {
+        get { crop.verticalOffset }
+        set { crop.verticalOffset = min(max(newValue, -1), 1) }
     }
 
     func addStroke(points: [TelegramEditorPoint]) {
@@ -184,6 +200,31 @@ import SwiftUI
         effects = .init()
     }
 
+    func setCropAspectRatio(_ aspectRatio: TelegramMediaCropAspectRatio) {
+        guard crop.aspectRatio != aspectRatio else { return }
+        recordMutation()
+        crop.aspectRatio = aspectRatio
+        crop.zoom = 1
+        crop.horizontalOffset = 0
+        crop.verticalOffset = 0
+    }
+
+    func rotateCropCounterclockwise() {
+        recordMutation()
+        crop.quarterTurnsCounterclockwise = (crop.normalizedQuarterTurns + 1) % 4
+    }
+
+    func toggleCropMirroring() {
+        recordMutation()
+        crop.isMirrored.toggle()
+    }
+
+    func resetCrop() {
+        guard !crop.isIdentity else { return }
+        recordMutation()
+        crop = .init()
+    }
+
     // MARK: Private
 
     private static let maximumHistoryCount = 50
@@ -226,6 +267,7 @@ import SwiftUI
         strokes = snapshot.strokes
         overlays = snapshot.overlays
         effects = snapshot.effects
+        crop = snapshot.crop
         if let selectedOverlayID, !overlays.contains(where: { $0.id == selectedOverlayID }) {
             self.selectedOverlayID = nil
         }

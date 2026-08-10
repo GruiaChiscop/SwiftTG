@@ -21,8 +21,8 @@ struct TelegramGifEditor: View {
                     .accessibilityAddTraits(.isHeader)
 
                 TelegramGifEditorPreview(
-                    animation: animation,
                     player: player,
+                    canvasSize: canvasSize,
                     editorState: editorState,
                 )
 
