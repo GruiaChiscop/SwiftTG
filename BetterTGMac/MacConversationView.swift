@@ -441,6 +441,32 @@ struct MacConversationView: View {
                 linkPreviewAccessory(preview)
             }
 
+            TelegramStickerSuggestionBar(
+                service: model.service,
+                chatId: chat.chatId,
+                replyToMessageId: model.replyingToMessage?.id,
+                topicId: model.openedTopic,
+                text: model.messageText.string,
+                isEnabled: !showsStickersAndGifsPicker
+                    && !model.isRecordingVoice
+                    && model.editingMessage == nil
+                    && model.selectedPhotoURLs.isEmpty
+                    && model.selectedDocumentURLs.isEmpty,
+                onSendingChanged: { model.isSubmittingMessage = $0 },
+                onSent: {
+                    model.messageText = NSAttributedString(string: "")
+                    model.replyingToMessage = nil
+                    model.saveCurrentDraft()
+                },
+            ) { sticker in
+                MacStickerView(
+                    model: model,
+                    sticker: sticker,
+                    maxSide: 64,
+                    playsAnimation: false,
+                )
+            }
+
             if model.isRecordingVoice {
                 HStack(spacing: 10) {
                     Image(systemName: "waveform")

@@ -88,6 +88,32 @@ struct ChatBottomArea: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
+            TelegramStickerSuggestionBar(
+                service: chatVM.service,
+                chatId: chatVM.customChat.chat.id,
+                replyToMessageId: chatVM.replyMessage?.id,
+                topicId: chatVM.messageTopic,
+                text: chatVM.text.string,
+                isEnabled: !showsStickersAndGifsPicker
+                    && !chatVM.recordingVoiceNote
+                    && chatVM.editCustomMessage == nil
+                    && chatVM.displayedImages.isEmpty
+                    && chatVM.displayedDocuments.isEmpty,
+                onSendingChanged: { chatVM.isSubmittingMessage = $0 },
+                onSent: {
+                    chatVM.text = ""
+                    chatVM.replyMessage = nil
+                    await chatVM.updateDraft()
+                },
+            ) { sticker in
+                TelegramStickerView(
+                    sticker: sticker,
+                    service: chatVM.service,
+                    maxSide: 64,
+                    playsAnimation: false,
+                )
+            }
+
             if !showsStickersAndGifsPicker {
                 HStack(alignment: .bottom, spacing: 6) {
                     if chatVM.recordingVoiceNote {
