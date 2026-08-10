@@ -142,6 +142,15 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 send(request.sticker, schedulingState: state)
             }
         }
+        .sheet(item: $selectedStickerPackReference) { reference in
+            TelegramStickerPackPreview(
+                reference: reference,
+                service: service,
+                chatId: chatId,
+                onSelect: { send($0) },
+                preview: preview,
+            )
+        }
     }
 
     // MARK: Private
@@ -165,6 +174,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
     @State private var showsClearRecentConfirmation = false
     @State private var showsCreationComposer = false
     @State private var selectedStickerSet: StickerSetInfo?
+    @State private var selectedStickerPackReference: TelegramStickerPackReference?
     @State private var installingStickerSetId: TdInt64?
     @State private var mutatingStickerFileId: Int?
     @State private var stickerToSchedule: TelegramScheduledSticker?
@@ -306,6 +316,8 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
         ) {
             ForEach(stickers, id: \.sticker.id) { sticker in
                 let presentation = TelegramStickerPresentation(sticker)
+                let packReference = TelegramStickerPackReference(sticker: sticker)
+                let isFavorite = favoriteStickerFileIds.contains(sticker.sticker.id)
                 Button {
                     send(sticker)
                 } label: {
@@ -329,6 +341,12 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                     packTitle: setTitles[sticker.setId],
                 ))
                 .contextMenu {
+                    if let packReference {
+                        Button("View Sticker Pack", systemImage: "square.stack.3d.up") {
+                            selectedStickerPackReference = packReference
+                        }
+                    }
+
                     Button("Send Silently", systemImage: "bell.slash") {
                         send(sticker, disableNotification: true)
                     }
@@ -337,7 +355,6 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                         stickerToSchedule = TelegramScheduledSticker(sticker: sticker)
                     }
 
-                    let isFavorite = favoriteStickerFileIds.contains(sticker.sticker.id)
                     Button(
                         isFavorite ? "Remove from Favorites" : "Add to Favorites",
                         systemImage: isFavorite ? "star.slash" : "star",
@@ -356,8 +373,27 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                     contextPreview(sticker)
                         .frame(width: 200, height: 200)
                 }
-                .accessibilityAction(named: "Send Later") {
-                    stickerToSchedule = TelegramScheduledSticker(sticker: sticker)
+                .accessibilityActions {
+                    // SwiftUI presents custom actions in reverse declaration order.
+                    if allowsRemovingFromRecent {
+                        Button("Remove from Recent") { removeFromRecent(sticker) }
+                            .disabled(mutatingStickerFileId != nil)
+                    }
+                    Button(isFavorite ? "Remove from Favorites" : "Add to Favorites") {
+                        toggleFavorite(sticker)
+                    }
+                    .disabled(mutatingStickerFileId != nil)
+                    Button("Send Later") {
+                        stickerToSchedule = TelegramScheduledSticker(sticker: sticker)
+                    }
+                    Button("Send Silently") {
+                        send(sticker, disableNotification: true)
+                    }
+                    if let packReference {
+                        Button("View Sticker Pack") {
+                            selectedStickerPackReference = packReference
+                        }
+                    }
                 }
             }
         }

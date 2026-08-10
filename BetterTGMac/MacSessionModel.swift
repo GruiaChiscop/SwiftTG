@@ -16,6 +16,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     case .updateBasicGroup,
          .updateBasicGroupFullInfo,
          .updateChatAction,
+         .updateFavoriteStickers,
          .updateNotificationGroup,
          .updateSupergroup,
          .updateSupergroupFullInfo,
@@ -39,6 +40,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         self.linkPreviewComposer = TelegramLinkPreviewComposer(service: session)
         self.editLinkPreviewComposer = TelegramLinkPreviewComposer(service: session)
         self.conversationSearch = TelegramConversationSearchStore(service: session)
+        self.favoriteStickers = TelegramFavoriteStickersStore(service: session)
         self.pushNotifications = TelegramApplePushRegistration(
             service: session,
             isAppSandbox: Self.isAppSandbox,
@@ -146,6 +148,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     let linkPreviewComposer: TelegramLinkPreviewComposer
     let editLinkPreviewComposer: TelegramLinkPreviewComposer
     let conversationSearch: TelegramConversationSearchStore
+    let favoriteStickers: TelegramFavoriteStickersStore
 
     @ObservationIgnored var bootstrapTask: Task<Void, Never>?
     @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
@@ -399,6 +402,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 .sink { [weak self] update in
                     self?.handleNotificationUpdate(update)
                     self?.handleConversationHeaderUpdate(update)
+                    if case .updateFavoriteStickers(let value) = update {
+                        self?.favoriteStickers.apply(value)
+                    }
                 }
                 .store(in: &cancellables)
     }

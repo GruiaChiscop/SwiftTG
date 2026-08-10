@@ -110,6 +110,20 @@ struct TelegramStickerTests {
         #expect(input.sticker.width == 512)
     }
 
+    @Test func `favorite actions update identifiers and labels consistently`() {
+        let add = TelegramStickerFavoriteAction(isFavorite: false)
+        let added = add.applying(to: [11], stickerFileId: 22)
+        let remove = TelegramStickerFavoriteAction(isFavorite: added.contains(22))
+        let removed = remove.applying(to: added, stickerFileId: 22)
+
+        #expect(add.title == "Add to Favorites")
+        #expect(add.systemImage == "star")
+        #expect(added == [11, 22])
+        #expect(remove.title == "Remove from Favorites")
+        #expect(remove.systemImage == "star.slash")
+        #expect(removed == [11])
+    }
+
     @MainActor @Test func `sticker editor renders a Telegram sized PNG`() throws {
         let source = try #require(Self.solidColorImage(size: CGSize(width: 40, height: 20)))
         let pngData = try TelegramStickerEditorRendering.pngData(

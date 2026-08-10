@@ -24,6 +24,16 @@ extension ChatVM {
                 Task { @MainActor in self?.updateConversationStatus(update) }
             }
             .store(in: &cancellables)
+        service.updatePublisher
+            .compactMap { update -> UpdateFavoriteStickers? in
+                guard case .updateFavoriteStickers(let value) = update else { return nil }
+                return value
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] update in
+                Task { @MainActor in self?.favoriteStickers.apply(update) }
+            }
+            .store(in: &cancellables)
     }
 
     @MainActor private func updateConversationStatus(_ update: Update) {

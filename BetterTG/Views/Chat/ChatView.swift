@@ -74,7 +74,10 @@ struct ChatView: View {
 
             ScrollViewReader { scrollViewProxy in
                 bodyView
-                    .task { chatVM.start() }
+                    .task {
+                        chatVM.start()
+                        await chatVM.favoriteStickers.load()
+                    }
                     .onAppear {
                         chatVM.scrollViewProxy = scrollViewProxy
                         positionInitialMessagesIfNeeded()

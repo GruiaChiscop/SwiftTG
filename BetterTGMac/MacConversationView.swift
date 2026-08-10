@@ -142,6 +142,7 @@ struct MacConversationView: View {
             model.conversationSearchQueryDidChange()
         }
         .task(id: chat.chatId) {
+            await model.favoriteStickers.load()
             pollIsAvailable = false
             pollIsAvailable = await TelegramPollSending.isAvailable(
                 service: model.service,

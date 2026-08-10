@@ -297,6 +297,11 @@ struct MacMessageRow: View {
         return content.sticker
     }
 
+    private var favoriteStickerAction: TelegramStickerFavoriteAction? {
+        guard case .messageSticker(let content) = message.content else { return nil }
+        return model.favoriteStickers.action(for: content.sticker)
+    }
+
     private var isPollMessage: Bool {
         if case .messagePoll = message.content {
             true
@@ -369,6 +374,12 @@ struct MacMessageRow: View {
             items.append(.button(title: "View Sticker Pack", systemImage: "square.stack.3d.up") {
                 selectedStickerPack = stickerPackReference
             })
+        }
+        if let favoriteStickerAction {
+            items.append(.button(
+                title: favoriteStickerAction.title,
+                systemImage: favoriteStickerAction.systemImage,
+            ) { toggleStickerFavorite() })
         }
         if editableSticker != nil {
             items.append(.button(title: "Edit Sticker", systemImage: "pencil.and.outline") {
@@ -1013,6 +1024,22 @@ struct MacMessageRow: View {
         guard let text = copyableMessageText(message) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func toggleStickerFavorite() {
+        guard case .messageSticker(let content) = message.content,
+              favoriteStickerAction != nil
+        else { return }
+        model.messageActionError = nil
+        Task { @MainActor in
+            do {
+                try await model.favoriteStickers.toggle(content.sticker)
+            } catch is CancellationError {
+                return
+            } catch {
+                model.messageActionError = "Favorites couldn't be updated: \(telegramErrorDescription(error))"
+            }
+        }
     }
 
     @MainActor private func sendPendingStickerFromPack() async {

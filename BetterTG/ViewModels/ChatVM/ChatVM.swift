@@ -34,6 +34,7 @@ import TDLibKit
             topicId: messageTopic,
         )
         self.conversationSearch = TelegramConversationSearchStore(service: service)
+        self.favoriteStickers = TelegramFavoriteStickersStore(service: service)
         self.onlineStatus =
             if let user = customChat.user {
                 getOnlineStatus(from: user.status)
@@ -74,6 +75,7 @@ import TDLibKit
     let composer: MessageComposer
     let voiceRecorder: VoiceRecordingController
     let conversationSearch: TelegramConversationSearchStore
+    let favoriteStickers: TelegramFavoriteStickersStore
 
     var actionStatus = ""
     var isJoiningChat = false

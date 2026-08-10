@@ -71,6 +71,10 @@ extension MessageView {
         if stickerPackReference != nil {
             Button("View Sticker Pack", action: openStickerPack)
         }
+        if let favoriteStickerAction {
+            Button(favoriteStickerAction.title, action: toggleStickerFavorite)
+                .disabled(isMutatingStickerFavorite)
+        }
         if editableSticker != nil {
             Button("Edit Sticker", action: openStickerEditor)
         }
@@ -123,6 +127,12 @@ extension MessageView {
             Button(action: openStickerPack) {
                 Label("View Sticker Pack", systemImage: "square.stack.3d.up")
             }
+        }
+        if let favoriteStickerAction {
+            Button(action: toggleStickerFavorite) {
+                Label(favoriteStickerAction.title, systemImage: favoriteStickerAction.systemImage)
+            }
+            .disabled(isMutatingStickerFavorite)
         }
         if editableSticker != nil {
             Button(action: openStickerEditor) {
@@ -206,6 +216,16 @@ extension MessageView {
         return sticker
     }
 
+    var favoriteStickerAction: TelegramStickerFavoriteAction? {
+        guard let sticker = customMessage.messageSticker?.sticker else { return nil }
+        return chatVM.favoriteStickers.action(for: sticker)
+    }
+
+    var isMutatingStickerFavorite: Bool {
+        guard let fileId = customMessage.messageSticker?.sticker.sticker.id else { return false }
+        return chatVM.favoriteStickers.mutatingFileIds.contains(fileId)
+    }
+
     var contactActionTitle: String {
         guard let messageContact = customMessage.messageContact else { return "" }
         return TelegramContactPresentation(messageContact).hasTelegramAccount ? "Message" : "Add to Contacts"
@@ -224,6 +244,22 @@ extension MessageView {
 
     func openStickerEditor() {
         stickerToEdit = editableSticker
+    }
+
+    func toggleStickerFavorite() {
+        guard let sticker = customMessage.messageSticker?.sticker,
+              favoriteStickerAction != nil
+        else { return }
+        chatVM.messageActionError = nil
+        Task { @MainActor in
+            do {
+                try await chatVM.favoriteStickers.toggle(sticker)
+            } catch is CancellationError {
+                return
+            } catch {
+                chatVM.messageActionError = "Favorites couldn't be updated: \(telegramErrorDescription(error))"
+            }
+        }
     }
 
     @MainActor func sendPendingStickerFromPack() async {
