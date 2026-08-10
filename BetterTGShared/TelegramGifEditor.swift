@@ -11,6 +11,7 @@ struct TelegramGifEditor: View {
 
     let animation: TDLibKit.Animation
     let service: any TelegramService
+    let chatId: Int64
     let onSend: @MainActor (URL, String, Int) async throws -> Void
 
     var body: some View {
@@ -83,7 +84,7 @@ struct TelegramGifEditor: View {
             Button("Cancel", role: .cancel) { draftEmoji = "" }
         }
         .sheet(isPresented: $showsStickerPicker) {
-            TelegramEditorStickerPicker(service: service, onSelected: addSticker)
+            TelegramEditorStickerPicker(service: service, chatId: chatId, onSelected: addSticker)
         }
         .sheet(isPresented: $showsCutoutComposer) {
             TelegramEditorCutoutComposer(onSelected: addCutout)

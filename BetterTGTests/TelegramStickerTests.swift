@@ -2,6 +2,7 @@
 
 @testable import BetterTG
 import CoreGraphics
+import Foundation
 import TDLibKit
 import Testing
 
@@ -89,6 +90,50 @@ struct TelegramStickerTests {
         #expect(telegramUniqueStickers([first, duplicate, second]).map(\.sticker.id) == [11, 12])
     }
 
+    @Test func `editor overlay selection maps every sticker format`() {
+        let url = URL(filePath: "/tmp/sticker")
+
+        #expect(TelegramEditorOverlaySelection.sticker(
+            fileURL: url,
+            sticker: sticker(format: .stickerFormatWebp),
+        )
+        .format == .staticImage)
+        #expect(TelegramEditorOverlaySelection.sticker(
+            fileURL: url,
+            sticker: sticker(format: .stickerFormatTgs),
+        )
+        .format == .tgs)
+        #expect(TelegramEditorOverlaySelection.sticker(
+            fileURL: url,
+            sticker: sticker(format: .stickerFormatWebm),
+        )
+        .format == .webm)
+    }
+
+    @Test func `GIF overlay selection preserves dimensions and uses video rendering`() {
+        let overlay = TelegramEditorOverlaySelection.gif(
+            fileURL: URL(filePath: "/tmp/animation.mp4"),
+            width: 640,
+            height: 360,
+        )
+
+        #expect(overlay.pixelWidth == 640)
+        #expect(overlay.pixelHeight == 360)
+        #expect(overlay.format == .video)
+        #expect(overlay.format.isAnimated)
+    }
+
+    @Test func `duplicate GIFs are removed without changing order`() {
+        let first = animation(fileId: 41, width: 320, height: 180)
+        let duplicate = animation(fileId: 41, width: 640, height: 360)
+        let second = animation(fileId: 42, width: 200, height: 200)
+
+        let unique = telegramUniqueAnimations([first, duplicate, second])
+
+        #expect(unique.map(\.animation.id) == [41, 42])
+        #expect(unique.first?.width == 320)
+    }
+
     // MARK: Private
 
     private func presentation(
@@ -129,6 +174,20 @@ struct TelegramStickerTests {
             setId: 2,
             sticker: TDLibFixtures.file(id: fileId, downloadedSize: 0),
             thumbnail: thumbnail,
+            width: width,
+        )
+    }
+
+    private func animation(fileId: Int, width: Int, height: Int) -> TDLibKit.Animation {
+        TDLibKit.Animation(
+            animation: TDLibFixtures.file(id: fileId, downloadedSize: 0),
+            duration: 1,
+            fileName: "animation.mp4",
+            hasStickers: false,
+            height: height,
+            mimeType: "video/mp4",
+            minithumbnail: nil,
+            thumbnail: nil,
             width: width,
         )
     }

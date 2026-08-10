@@ -115,6 +115,26 @@ import Testing
         #expect(try Self.brightPixelCount(in: firstTgsFrame) > 0)
     }
 
+    @Test func `animated overlay loader decodes MP4 GIF frames`() async throws {
+        let videoURL = Self.temporaryURL(label: "gif-overlay")
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        try await Self.writeBlackVideo(to: videoURL)
+        let overlay = TelegramStickerOverlay(
+            url: videoURL,
+            pixelWidth: Self.videoSide,
+            pixelHeight: Self.videoSide,
+            format: .video,
+        )
+
+        let frames = try await TelegramAnimatedStickerFrameLoader.load(
+            stickers: [overlay],
+            canvasSize: CGSize(width: Self.videoSide, height: Self.videoSide),
+        )
+
+        #expect(frames[videoURL]?.images.count == 3)
+        #expect(frames[videoURL]?.frameRate == 10)
+    }
+
     @Test func `drawing renderer produces transparent and painted pixels`() throws {
         let snapshot = TelegramMediaEditorSnapshot(
             strokes: [.init(

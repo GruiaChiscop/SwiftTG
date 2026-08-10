@@ -22,6 +22,8 @@ struct TelegramAnimatedStickerOverlayView: View {
                 )
             case .webm:
                 TelegramStickerVideoView(fileURL: sticker.url, shouldPlay: shouldPlay)
+            case .video:
+                TelegramLoopingVideoView(fileURL: sticker.url, shouldPlay: shouldPlay)
             case .staticImage:
                 Color.clear
             }

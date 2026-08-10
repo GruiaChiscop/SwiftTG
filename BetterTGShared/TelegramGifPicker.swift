@@ -245,6 +245,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
             TelegramGifEditor(
                 animation: item.animation,
                 service: service,
+                chatId: chatId,
                 onSend: { url, caption, duration in
                     _ = try await TelegramAnimationSending.sendLocal(
                         item.animation,

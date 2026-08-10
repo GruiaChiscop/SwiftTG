@@ -1,5 +1,6 @@
 // TelegramAnimatedStickerFrameLoader.swift
 
+import AVFoundation
 import CoreGraphics
 import Foundation
 import RLottieKit
@@ -16,7 +17,7 @@ enum TelegramAnimatedStickerFrameLoader {
         for sticker in stickers where sticker.format.isAnimated && result[sticker.url] == nil {
             try Task.checkCancellation()
             let renderSize = boundedRenderSize(for: sticker, canvasSize: canvasSize)
-            let frames = try loadFrames(for: sticker, renderSize: renderSize)
+            let frames = try await loadFrames(for: sticker, renderSize: renderSize)
             result[sticker.url] = frames
         }
         return result
@@ -45,7 +46,7 @@ enum TelegramAnimatedStickerFrameLoader {
     private static func loadFrames(
         for sticker: TelegramStickerOverlay,
         renderSize: CGSize,
-    ) throws -> TelegramAnimatedStickerFrameSet {
+    ) async throws -> TelegramAnimatedStickerFrameSet {
         switch sticker.format {
         case .tgs:
             guard let animation = LottieAnimation(tgsFileURL: sticker.url) else {
@@ -85,8 +86,46 @@ enum TelegramAnimatedStickerFrameLoader {
                 images: images,
                 frameRate: max(1, animation.frameRate),
             )
+        case .video:
+            return try await loadVideoFrames(from: sticker.url, renderSize: renderSize)
         case .staticImage:
             throw TelegramGifEditorError.animatedStickerRenderingFailed
         }
+    }
+
+    private static func loadVideoFrames(
+        from url: URL,
+        renderSize: CGSize,
+    ) async throws -> TelegramAnimatedStickerFrameSet {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw TelegramGifEditorError.animatedStickerRenderingFailed
+        }
+        let duration = try await asset.load(.duration).seconds
+        let nominalFrameRate = try await Double(track.load(.nominalFrameRate))
+        guard duration.isFinite, duration > 0 else {
+            throw TelegramGifEditorError.animatedStickerRenderingFailed
+        }
+
+        let frameRate = min(30, max(1, nominalFrameRate.isFinite ? nominalFrameRate : 30))
+        let frameCount = min(maximumFrameCount, max(1, Int((duration * frameRate).rounded(.up))))
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = renderSize
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+
+        var images = [CGImage]()
+        images.reserveCapacity(frameCount)
+        for index in 0..<frameCount {
+            try Task.checkCancellation()
+            let time = CMTime(seconds: Double(index) / frameRate, preferredTimescale: 600)
+            let frame = try await generator.image(at: time).image
+            images.append(frame)
+        }
+        guard !images.isEmpty else {
+            throw TelegramGifEditorError.animatedStickerRenderingFailed
+        }
+        return TelegramAnimatedStickerFrameSet(images: images, frameRate: frameRate)
     }
 }
