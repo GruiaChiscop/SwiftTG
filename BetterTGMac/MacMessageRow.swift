@@ -603,6 +603,7 @@ struct MacMessageRow: View {
                         )
                     } else if case .messageVideoNote(let content) = message.content {
                         MacVideoNoteMessageContent(
+                            message: message,
                             content: content,
                             thumbnail: videoNoteThumbnailImage,
                             service: model.service,
@@ -1266,7 +1267,7 @@ struct MacMessageRow: View {
         if case .messageVideoNote(let content) = message.content {
             player.stop()
             audioPlayer.stop()
-            videoNotePlayer.toggle(videoNote: content.videoNote, service: model.service)
+            videoNotePlayer.toggle(message: message, content: content, service: model.service)
         } else if case .messageVoiceNote(let content) = message.content, let voicePath {
             videoNotePlayer.stop()
             audioPlayer.stop()

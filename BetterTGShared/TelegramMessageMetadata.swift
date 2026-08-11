@@ -61,6 +61,8 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
         content.caption.text.isEmpty ? "Video" : "Video: \(content.caption.text)"
     case .messageVideoNote:
         "Video message"
+    case .messageExpiredVideoNote:
+        "Video message expired"
     case .messageAnimation(let content):
         content.caption.text.isEmpty ? "GIF" : "GIF: \(content.caption.text)"
     case .messageDocument(let content):

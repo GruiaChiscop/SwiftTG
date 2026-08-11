@@ -14,6 +14,7 @@ struct MacConversationView: View {
     let chat: ChatListItemState
 
     var body: some View {
+        @Bindable var videoNotePlayer = TelegramVideoNotePlayer.shared
         VStack(spacing: 0) {
             MacConversationHeader(
                 title: isViewingScopedTopic ? (model.openedTopicTitle ?? chat.displayTitle) : chat.displayTitle,
@@ -56,6 +57,10 @@ struct MacConversationView: View {
         }
         .sheet(isPresented: $showsPinnedMessages) {
             MacPinnedMessagesView(model: model)
+        }
+        .sheet(isPresented: $videoNotePlayer.isPresentingViewOnce) {
+            TelegramViewOnceVideoNotePlayerView(player: videoNotePlayer)
+                .frame(minWidth: 520, minHeight: 520)
         }
         .sheet(isPresented: $showsScheduleSendPicker) {
             MacScheduleSendView(allowsSendWhenOnline: model.openedChat?.kind == .privateChat) { schedulingState in

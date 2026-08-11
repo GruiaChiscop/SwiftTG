@@ -6,6 +6,7 @@ import TDLibKit
 struct MessageVideoNoteView: View {
     // MARK: Internal
 
+    let message: Message
     let content: MessageVideoNote
     let service: any TelegramService
 
@@ -86,6 +87,6 @@ struct MessageVideoNoteView: View {
     private func togglePlayback() {
         Media.shared.stop()
         TelegramAudioPlayer.shared.stop()
-        player.toggle(videoNote: content.videoNote, service: service)
+        player.toggle(message: message, content: content, service: service)
     }
 }

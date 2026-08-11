@@ -60,6 +60,7 @@ struct ChatView: View {
     
     var body: some View {
         @Bindable var chatVM = chatVM
+        @Bindable var videoNotePlayer = TelegramVideoNotePlayer.shared
         VStack(spacing: 0) {
             if chatVM.isConversationSearchActive {
                 conversationSearchField
@@ -222,6 +223,9 @@ struct ChatView: View {
         .sheet(isPresented: $showsPinnedMessages) {
             PinnedMessagesView()
                 .environment(chatVM)
+        }
+        .fullScreenCover(isPresented: $videoNotePlayer.isPresentingViewOnce) {
+            TelegramViewOnceVideoNotePlayerView(player: videoNotePlayer)
         }
         .environment(chatVM)
     }

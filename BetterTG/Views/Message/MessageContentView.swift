@@ -34,6 +34,7 @@ struct MessageContentView: View {
                     makeMessageVideo(from: messageVideo)
                 case .messageVideoNote(let messageVideoNote):
                     MessageVideoNoteView(
+                        message: customMessage.message,
                         content: messageVideoNote,
                         service: service,
                         player: .shared,

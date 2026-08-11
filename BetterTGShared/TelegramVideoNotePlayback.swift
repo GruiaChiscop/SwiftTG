@@ -28,6 +28,9 @@ struct TelegramVideoNotePresentation: Equatable {
     let isViewed: Bool
     let isOutgoing: Bool
 
+    var usesDedicatedPresentation: Bool { isSecret }
+    var shouldOpenMessageContent: Bool { !isOutgoing }
+
     var accessibilityDescription: String {
         [isOutgoing ? "Your video message" : "Video message", accessibilityDetails]
             .joined(separator: ", ")
@@ -72,33 +75,67 @@ struct TelegramVideoNotePresentation: Equatable {
     private(set) var isPlaying = false
     private(set) var playbackError: String?
     private(set) var player: AVPlayer?
+    var isPresentingViewOnce = false
 
-    func toggle(videoNote: VideoNote, service: any TelegramService) {
+    func toggle(message: Message, content: MessageVideoNote, service: any TelegramService) {
+        let videoNote = content.videoNote
         let file = videoNote.video
+        let presentation = TelegramVideoNotePresentation(content, isOutgoing: message.isOutgoing)
         if currentFileId == file.id {
-            if isLoading {
+            if isLoading || presentation.usesDedicatedPresentation {
                 return
             }
-            if isPlaying {
-                pause()
-            } else {
-                if duration > 0, currentTime >= duration {
-                    seek(to: 0)
-                }
-                play()
-            }
+            toggleCurrentPlayback()
             return
         }
 
         resetPlayback()
         currentFileId = file.id
         duration = max(0, videoNote.duration)
-        if file.local.isDownloadingCompleted, !file.local.path.isEmpty {
-            configurePlayer(url: URL(filePath: file.local.path), fileId: file.id)
-            play()
+        isViewOncePlayback = presentation.usesDedicatedPresentation
+        pendingChatId = message.chatId
+        pendingMessageId = message.id
+        pendingService = service
+        shouldOpenMessageContent = presentation.shouldOpenMessageContent
+        preparePlayback(file: file, service: service)
+    }
+
+    func toggleCurrentPlayback() {
+        guard !isLoading else { return }
+        if isPlaying {
+            pause()
         } else {
-            downloadAndPlay(fileId: file.id, service: service)
+            if duration > 0, currentTime >= duration {
+                seek(to: 0)
+            }
+            play()
         }
+    }
+
+    func beginPresentedViewOncePlayback() async {
+        guard isPresentingViewOnce, isViewOncePlayback, !isOpeningViewOnce, !hasOpenedViewOnce,
+              let player, let service = pendingService, let chatId = pendingChatId, let messageId = pendingMessageId
+        else { return }
+        isOpeningViewOnce = true
+        defer { isOpeningViewOnce = false }
+
+        do {
+            if shouldOpenMessageContent {
+                _ = try await service.openMessageContent(chatId: chatId, messageId: messageId)
+            }
+            guard isPresentingViewOnce, self.player === player else { return }
+            hasOpenedViewOnce = true
+            isLoading = false
+            play()
+        } catch {
+            guard isPresentingViewOnce, self.player === player else { return }
+            isLoading = false
+            playbackError = "Video message couldn't be opened."
+        }
+    }
+
+    func dismissPresentedViewOncePlayback() {
+        resetPlayback()
     }
 
     func pauseIfCurrent(fileId: Int) {
@@ -113,7 +150,14 @@ struct TelegramVideoNotePresentation: Equatable {
     // MARK: Private
 
     @ObservationIgnored private var downloadTask: Task<Void, Never>?
+    @ObservationIgnored private var hasOpenedViewOnce = false
+    @ObservationIgnored private var isOpeningViewOnce = false
+    @ObservationIgnored private var isViewOncePlayback = false
     @ObservationIgnored private var playbackFinishedObserver: NSObjectProtocol?
+    @ObservationIgnored private var pendingChatId: Int64?
+    @ObservationIgnored private var pendingMessageId: Int64?
+    @ObservationIgnored private var pendingService: (any TelegramService)?
+    @ObservationIgnored private var shouldOpenMessageContent = false
     @ObservationIgnored private var timeObserver: Any?
 
     private func configurePlayer(url: URL, fileId: Int) {
@@ -138,34 +182,50 @@ struct TelegramVideoNotePresentation: Equatable {
                 guard let self, currentFileId == fileId else { return }
                 isPlaying = false
                 currentTime = duration
+                if isViewOncePlayback {
+                    isPresentingViewOnce = false
+                }
             }
         }
     }
 
-    private func downloadAndPlay(fileId: Int, service: any TelegramService) {
+    private func preparePlayback(file: File, service: any TelegramService) {
         isLoading = true
         downloadTask = Task { [weak self] in
             do {
-                let file = try await service.downloadFile(
-                    fileId: fileId,
-                    limit: 0,
-                    offset: 0,
-                    priority: 32,
-                    synchronous: true,
-                )
+                let resolvedFile =
+                    if file.local.isDownloadingCompleted, !file.local.path.isEmpty {
+                        file
+                    } else {
+                        try await service.downloadFile(
+                            fileId: file.id,
+                            limit: 0,
+                            offset: 0,
+                            priority: 32,
+                            synchronous: true,
+                        )
+                    }
                 try Task.checkCancellation()
-                guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else {
+                guard resolvedFile.local.isDownloadingCompleted, !resolvedFile.local.path.isEmpty else {
                     throw TelegramVideoNotePlaybackError.downloadFailed
                 }
-                guard let self, currentFileId == fileId else { return }
+                guard let self, currentFileId == file.id else { return }
                 downloadTask = nil
-                isLoading = false
-                configurePlayer(url: URL(filePath: file.local.path), fileId: fileId)
-                play()
+                configurePlayer(url: URL(filePath: resolvedFile.local.path), fileId: file.id)
+                if isViewOncePlayback {
+                    isPresentingViewOnce = true
+                } else {
+                    if shouldOpenMessageContent, let chatId = pendingChatId, let messageId = pendingMessageId {
+                        _ = try? await service.openMessageContent(chatId: chatId, messageId: messageId)
+                    }
+                    guard currentFileId == file.id else { return }
+                    isLoading = false
+                    play()
+                }
             } catch is CancellationError {
                 // A different video message replaced this one.
             } catch {
-                guard let self, currentFileId == fileId else { return }
+                guard let self, currentFileId == file.id else { return }
                 downloadTask = nil
                 isLoading = false
                 isPlaying = false
@@ -218,7 +278,15 @@ struct TelegramVideoNotePresentation: Equatable {
         duration = 0
         isLoading = false
         isPlaying = false
+        isPresentingViewOnce = false
         playbackError = nil
+        hasOpenedViewOnce = false
+        isOpeningViewOnce = false
+        isViewOncePlayback = false
+        pendingChatId = nil
+        pendingMessageId = nil
+        pendingService = nil
+        shouldOpenMessageContent = false
     }
 }
 

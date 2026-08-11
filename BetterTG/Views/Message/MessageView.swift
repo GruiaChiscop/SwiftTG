@@ -788,6 +788,10 @@ struct MessageView: View {
     private func toggleVideoMessage(_ messageVideoNote: MessageVideoNote) {
         Media.shared.stop()
         audioPlayer.stop()
-        videoNotePlayer.toggle(videoNote: messageVideoNote.videoNote, service: chatVM.service)
+        videoNotePlayer.toggle(
+            message: customMessage.message,
+            content: messageVideoNote,
+            service: chatVM.service,
+        )
     }
 }

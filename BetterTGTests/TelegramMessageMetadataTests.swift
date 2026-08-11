@@ -76,6 +76,11 @@ struct TelegramMessageMetadataTests {
             "Your video message, view once, duration 1 minute 5 seconds")
         #expect(TelegramVideoNotePresentation(viewOnce, isOutgoing: true).accessibilityDetails ==
             "view once, duration 1 minute 5 seconds")
+        #expect(TelegramVideoNotePresentation(regular, isOutgoing: false).usesDedicatedPresentation == false)
+        #expect(TelegramVideoNotePresentation(viewOnce, isOutgoing: false).usesDedicatedPresentation)
+        #expect(TelegramVideoNotePresentation(regular, isOutgoing: false).shouldOpenMessageContent)
+        #expect(TelegramVideoNotePresentation(regular, isOutgoing: true).shouldOpenMessageContent == false)
+        #expect(telegramMessageContentDescription(.messageExpiredVideoNote) == "Video message expired")
     }
 
     @Test func `quoted message excerpt normalizes whitespace and limits characters`() {

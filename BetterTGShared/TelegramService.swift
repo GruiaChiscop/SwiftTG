@@ -71,6 +71,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func deleteMessages(chatId: Int64?, messageIds: [Int64]?, revoke: Bool?) async throws -> Ok
     func downloadFile(fileId: Int?, limit: Int64?, offset: Int64?, priority: Int?, synchronous: Bool?) async throws
         -> File
+    func openMessageContent(chatId: Int64?, messageId: Int64?) async throws -> Ok
     func editMessageCaption(
         caption: FormattedText?,
         chatId: Int64?,
@@ -773,6 +774,10 @@ extension TelegramSession: TelegramService {
         )
         mergeInitialFile(file)
         return file
+    }
+
+    func openMessageContent(chatId: Int64?, messageId: Int64?) async throws -> Ok {
+        try await client.openMessageContent(chatId: chatId, messageId: messageId)
     }
 
     func editMessageCaption(
