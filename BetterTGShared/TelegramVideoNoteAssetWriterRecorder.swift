@@ -13,12 +13,16 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
         videoOutput.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
         ]
+        additionalVideoOutput.alwaysDiscardsLateVideoFrames = true
+        additionalVideoOutput.videoSettings = videoOutput.videoSettings
         videoOutput.setSampleBufferDelegate(self, queue: recordingQueue)
+        additionalVideoOutput.setSampleBufferDelegate(self, queue: recordingQueue)
         audioOutput.setSampleBufferDelegate(self, queue: recordingQueue)
     }
 
     deinit {
         videoOutput.setSampleBufferDelegate(nil, queue: nil)
+        additionalVideoOutput.setSampleBufferDelegate(nil, queue: nil)
         audioOutput.setSampleBufferDelegate(nil, queue: nil)
     }
 
@@ -58,7 +62,14 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
     }
 
     let videoOutput = AVCaptureVideoDataOutput()
+    let additionalVideoOutput = AVCaptureVideoDataOutput()
     let audioOutput = AVCaptureAudioDataOutput()
+
+    func selectCamera(position: AVCaptureDevice.Position) {
+        recordingQueue.async { [weak self] in
+            self?.selectedCameraPosition = position
+        }
+    }
 
     func start(
         to url: URL,
@@ -160,6 +171,7 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
         qos: .userInitiated,
     )
     private var context: SegmentContext?
+    private var selectedCameraPosition = AVCaptureDevice.Position.front
 
     private func appendVideo(_ sampleBuffer: CMSampleBuffer, to context: SegmentContext) {
         guard !context.isFinishing else { return }
@@ -267,10 +279,12 @@ extension TelegramVideoNoteAssetWriterRecorder: AVCaptureVideoDataOutputSampleBu
     func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,
-        from _: AVCaptureConnection,
+        from connection: AVCaptureConnection,
     ) {
         guard CMSampleBufferDataIsReady(sampleBuffer), let context else { return }
-        if output === videoOutput {
+        if output === videoOutput || output === additionalVideoOutput {
+            let position = connection.inputPorts.first?.sourceDevicePosition ?? selectedCameraPosition
+            guard position == selectedCameraPosition else { return }
             appendVideo(sampleBuffer, to: context)
         } else if output === audioOutput {
             appendAudio(sampleBuffer, to: context)

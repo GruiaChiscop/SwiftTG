@@ -64,6 +64,24 @@ struct TelegramVideoNoteTests {
         #expect(!TelegramVideoNoteCameraControls.usesScreenFlash(position: .back, isFlashEnabled: true))
     }
 
+    @Test func `dual camera is gated by support and capture costs`() {
+        #expect(TelegramVideoNoteCameraControls.shouldUseConcurrentCameras(
+            isSupported: true,
+            hardwareCost: 0.8,
+            systemPressureCost: 0.7,
+        ))
+        #expect(!TelegramVideoNoteCameraControls.shouldUseConcurrentCameras(
+            isSupported: false,
+            hardwareCost: 0.5,
+            systemPressureCost: 0.5,
+        ))
+        #expect(!TelegramVideoNoteCameraControls.shouldUseConcurrentCameras(
+            isSupported: true,
+            hardwareCost: 1.1,
+            systemPressureCost: 0.5,
+        ))
+    }
+
     @Test func `raw capture uses QuickTime while the sent artifact uses MP4`() {
         let staging = TelegramOutgoingFileStaging(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),

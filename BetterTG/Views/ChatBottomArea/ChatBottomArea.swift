@@ -641,9 +641,12 @@ struct ChatBottomArea: View {
             .accessibilityLabel("Cancel Recording")
 
             if recordingMode == .video, recordingActive {
-                TelegramVideoNoteCapturePreview(session: chatVM.videoRecorder.captureSession)
-                    .frame(width: 72, height: 72)
-                    .clipShape(Circle())
+                TelegramVideoNoteCapturePreview(
+                    session: chatVM.videoRecorder.captureSession,
+                    position: chatVM.videoRecorder.cameraPosition,
+                )
+                .frame(width: 72, height: 72)
+                .clipShape(Circle())
             } else {
                 Circle()
                     .fill(.red)

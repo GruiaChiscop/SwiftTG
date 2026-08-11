@@ -494,9 +494,12 @@ struct MacConversationView: View {
                 || model.videoRecorder.isFinalizing
             {
                 HStack(spacing: 10) {
-                    TelegramVideoNoteCapturePreview(session: model.videoRecorder.captureSession)
-                        .frame(width: 96, height: 96)
-                        .clipShape(Circle())
+                    TelegramVideoNoteCapturePreview(
+                        session: model.videoRecorder.captureSession,
+                        position: model.videoRecorder.cameraPosition,
+                    )
+                    .frame(width: 96, height: 96)
+                    .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 6) {
                         Text(videoRecordingStatus)
                             .monospacedDigit()
