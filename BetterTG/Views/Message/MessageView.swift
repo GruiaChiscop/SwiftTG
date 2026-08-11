@@ -77,6 +77,13 @@ struct MessageView: View {
         }
         if let voiceNote = customMessage.messageVoiceNote {
             let elapsed = media.savedMediaPath == voiceNoteLocalPath ? Int(media.currentTime) : 0
+            let presentation = TelegramVoiceNotePresentation(
+                message: customMessage.message,
+                content: voiceNote,
+            )
+            if presentation.isViewOnce {
+                parts.append("view once")
+            }
             parts.append(telegramVoicePlaybackDescription(duration: voiceNote.voiceNote.duration, elapsed: elapsed))
         }
         if let videoNote = customMessage.messageVideoNote {
@@ -486,6 +493,10 @@ struct MessageView: View {
                     onMediaTap: openAlbum,
                     onContactTap: activateContact,
                     onLocationTap: activateLocation,
+                    onVoiceNoteToggle: {
+                        guard let content = customMessage.messageVoiceNote else { return }
+                        toggleVoiceMessage(content)
+                    },
                     onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
                     onDocumentTransferStatusChange: { documentTransferStatus = $0 },
                     documentDownloadIsPaused: documentDownloadIsPaused,
@@ -777,7 +788,8 @@ struct MessageView: View {
     private func toggleVoiceMessage(_ messageVoiceNote: MessageVoiceNote) {
         Task { @MainActor in
             if let resolvedPath = await chatVM.toggleVoiceMessage(
-                messageVoiceNote,
+                message: customMessage.message,
+                content: messageVoiceNote,
                 knownLocalPath: voiceNoteLocalPath,
             ) {
                 voiceNoteLocalPath = resolvedPath

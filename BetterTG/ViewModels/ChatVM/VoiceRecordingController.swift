@@ -20,6 +20,7 @@ import TDLibKit
 
     var recordingVoiceNote = false
     var recordingLocked = false
+    var isViewOnce = false
     var recordingDragTranslation = CGSize.zero
     var errorShown = false
     var timerCount = 0.0
@@ -72,6 +73,7 @@ import TDLibKit
                 recordingVoiceNote = true
                 recordingLocked = false
                 recordingDragTranslation = .zero
+                isViewOnce = false
             }
             try? await tdSendChatAction(.chatActionRecordingVoiceNote)
         } catch {
@@ -87,14 +89,17 @@ import TDLibKit
             recordingVoiceNote = false
             recordingLocked = false
             recordingDragTranslation = .zero
+            isViewOnce = false
         }
         Task.main { try? await self.tdSendChatAction(.chatActionCancel) }
     }
 
     /// Finalizes the in-progress recording and returns its artifact for `ChatVM` to send, or
     /// `nil` if finalizing failed (in which case this already self-cancels and cleans up).
-    func mediaStopRecordingVoice(duration: Int, wave: [Float]) -> (url: URL, duration: Int, waveform: Data)? {
+    func mediaStopRecordingVoice(duration: Int, wave: [Float])
+    -> (url: URL, duration: Int, waveform: Data, isViewOnce: Bool)? {
         guard let audioRecorder else { return nil }
+        let sendsAsViewOnce = isViewOnce
         let encodedDuration: Int
         do {
             encodedDuration = try Int(ceil(audioRecorder.stopAndWrite(to: savedVoiceNoteUrl)))
@@ -108,11 +113,17 @@ import TDLibKit
             recordingVoiceNote = false
             recordingLocked = false
             recordingDragTranslation = .zero
+            self.isViewOnce = false
         }
         Task.main { try? await self.tdSendChatAction(.chatActionCancel) }
 
         let waveform = TelegramVoiceNoteSending.waveform(from: wave)
-        return (url: savedVoiceNoteUrl, duration: max(encodedDuration, duration), waveform: waveform)
+        return (
+            url: savedVoiceNoteUrl,
+            duration: max(encodedDuration, duration),
+            waveform: waveform,
+            isViewOnce: sendsAsViewOnce,
+        )
     }
 
     // MARK: Private

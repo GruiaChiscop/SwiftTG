@@ -619,7 +619,12 @@ struct MacMessageRow: View {
                         MacVoiceMessageContent(
                             caption: content.caption,
                             voiceNote: content.voiceNote,
+                            isViewOnce: message.selfDestructType == .messageSelfDestructTypeImmediately,
                             path: voicePath,
+                            onPlaybackToggle: {
+                                guard let voicePath else { return }
+                                Task { await activateVoiceMessage(content: content, path: voicePath) }
+                            },
                             player: player,
                         )
                     } else if case .messageAudio(let content) = message.content {
@@ -1269,13 +1274,7 @@ struct MacMessageRow: View {
             audioPlayer.stop()
             videoNotePlayer.toggle(message: message, content: content, service: model.service)
         } else if case .messageVoiceNote(let content) = message.content, let voicePath {
-            videoNotePlayer.stop()
-            audioPlayer.stop()
-            player.toggle(
-                fileId: content.voiceNote.voice.id,
-                path: voicePath,
-                duration: content.voiceNote.duration,
-            )
+            Task { await activateVoiceMessage(content: content, path: voicePath) }
         } else if case .messageAudio(let content) = message.content {
             videoNotePlayer.stop()
             player.stop()
@@ -1307,6 +1306,36 @@ struct MacMessageRow: View {
             guard let url = URL(string: "http://maps.apple.com/?ll=\(latitude),\(longitude)") else { return }
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private func activateVoiceMessage(content: MessageVoiceNote, path: String) async {
+        let presentation = TelegramVoiceNotePresentation(message: message, content: content)
+        if presentation.shouldOpenMessageContent {
+            if model.openedViewOnceVoiceNoteMessageIds.contains(message.id) {
+                guard player.currentFileId == content.voiceNote.voice.id else { return }
+            } else {
+                guard model.openingViewOnceVoiceNoteMessageIds.insert(message.id).inserted else { return }
+                defer { model.openingViewOnceVoiceNoteMessageIds.remove(message.id) }
+                do {
+                    _ = try await model.service.openMessageContent(chatId: message.chatId, messageId: message.id)
+                    guard !Task.isCancelled else { return }
+                    model.openedViewOnceVoiceNoteMessageIds.insert(message.id)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    model.messageActionError =
+                        "Voice message couldn't be opened: \(telegramErrorDescription(error))"
+                    return
+                }
+            }
+        }
+        videoNotePlayer.stop()
+        audioPlayer.stop()
+        player.toggle(
+            fileId: content.voiceNote.voice.id,
+            path: path,
+            duration: content.voiceNote.duration,
+            allowsSeeking: presentation.allowsSeeking,
+        )
     }
 }
 
@@ -1357,6 +1386,9 @@ struct MacMessageRow: View {
         parts.append(status)
     }
     if case .messageVoiceNote(let content) = message.content {
+        if message.selfDestructType == .messageSelfDestructTypeImmediately {
+            parts.append("view once")
+        }
         let elapsed = voicePlayer.currentFileId == content.voiceNote.voice.id
             ? voicePlayer.currentTime
             : 0

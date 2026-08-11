@@ -21,9 +21,9 @@ import Observation
     var currentTime: Int { engine.currentTime }
     var isPlaying: Bool { engine.isPlaying }
 
-    func toggle(fileId: Int, path: String, duration: Int) {
+    func toggle(fileId: Int, path: String, duration: Int, allowsSeeking: Bool = true) {
         currentFileId = fileId
-        engine.toggle(path: path, duration: duration)
+        engine.toggle(path: path, duration: duration, allowsSeeking: allowsSeeking)
     }
 
     func seekBackward() {

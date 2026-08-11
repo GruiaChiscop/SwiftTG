@@ -55,6 +55,8 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
         content.caption.text.isEmpty ? "Photo" : "Photo: \(content.caption.text)"
     case .messageVoiceNote(let content):
         content.caption.text.isEmpty ? "Voice message" : "Voice message: \(content.caption.text)"
+    case .messageExpiredVoiceNote:
+        "Voice message expired"
     case .messageAudio(let content):
         telegramAudioDescription(content)
     case .messageVideo(let content):

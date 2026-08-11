@@ -525,6 +525,7 @@ struct MacConversationView: View {
                         Button("Send Later…", systemImage: "clock") {
                             showsScheduleVideoPicker = true
                         }
+                        .disabled(model.videoRecorder.isViewOnce)
                     }
                 }
             } else if model.isRecordingVoice {
@@ -534,6 +535,10 @@ struct MacConversationView: View {
                         .accessibilityHidden(true)
                     Text(telegramClockDuration(Int(model.voiceRecordingDuration)))
                         .monospacedDigit()
+                    if chat.kind == .privateChat, !chat.isSavedMessages {
+                        Toggle("View Once", isOn: $model.voiceRecordingIsViewOnce)
+                            .toggleStyle(.checkbox)
+                    }
                     Spacer()
                     Button("Cancel Recording", systemImage: "xmark", role: .cancel) {
                         model.cancelVoiceRecording()
@@ -546,6 +551,7 @@ struct MacConversationView: View {
                         Button("Send Later…", systemImage: "clock") {
                             showsScheduleVoicePicker = true
                         }
+                        .disabled(model.voiceRecordingIsViewOnce)
                     }
                 }
             } else {

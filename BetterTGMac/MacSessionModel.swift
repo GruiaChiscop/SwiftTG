@@ -99,6 +99,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var detectedChatLanguage: String?
     var isChatTranslationEnabled = false
     var messageActionError: String?
+    var openedViewOnceVoiceNoteMessageIds = Set<Int64>()
+    var openingViewOnceVoiceNoteMessageIds = Set<Int64>()
     var isAddingContact = false
     var isSubmittingMessage = false
     var selectedDocumentURLs = [URL]()
@@ -124,6 +126,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var isLoadingLatestMessages = false
     var canLoadOlderMessages = true
     var isRecordingVoice = false
+    var voiceRecordingIsViewOnce = false
     var voiceRecordingDuration: TimeInterval = 0
     var searchQuery = ""
     var chatSearchResults = [MacChatSearchResult]()

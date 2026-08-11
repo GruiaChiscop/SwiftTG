@@ -15,6 +15,40 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
     let isViewOnce: Bool
 }
 
+// MARK: - TelegramVideoNoteCameraControls
+
+enum TelegramVideoNoteCameraControls {
+    static let maximumPreferredZoomFactor: CGFloat = 5
+    static let zoomStep: CGFloat = 0.5
+
+    static func clampedZoom(_ proposedZoom: CGFloat, maximumDeviceZoom: CGFloat) -> CGFloat {
+        min(max(proposedZoom, 1), min(max(maximumDeviceZoom, 1), maximumPreferredZoomFactor))
+    }
+
+    static func usesScreenFlash(
+        position: TelegramVideoNoteCameraPosition,
+        isFlashEnabled: Bool,
+    ) -> Bool {
+        position == .front && isFlashEnabled
+    }
+}
+
+// MARK: - TelegramVideoNoteCameraPosition
+
+enum TelegramVideoNoteCameraPosition: Sendable {
+    case back
+    case front
+
+    // MARK: Internal
+
+    var description: String {
+        switch self {
+        case .back: "Back camera"
+        case .front: "Front camera"
+        }
+    }
+}
+
 // MARK: - TelegramVideoNoteRecorder
 
 @MainActor @Observable final class TelegramVideoNoteRecorder: NSObject,
@@ -28,9 +62,30 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
     private(set) var isFinalizing = false
     private(set) var duration: TimeInterval = 0
     private(set) var errorMessage: String?
+    private(set) var cameraPosition = TelegramVideoNoteCameraPosition.front
+    private(set) var canSwitchCamera = false
+    private(set) var canUseFlash = false
+    private(set) var isFlashEnabled = false
+    private(set) var isChangingCamera = false
+    private(set) var zoomFactor: CGFloat = 1
+    private(set) var maximumZoomFactor: CGFloat = 1
     var isViewOnce = false
 
     let captureSession = AVCaptureSession()
+
+    var canZoomIn: Bool { zoomFactor < maximumZoomFactor }
+    var canZoomOut: Bool { zoomFactor > 1 }
+
+    var zoomDescription: String {
+        "Zoom \(Int((zoomFactor * 100).rounded())) percent"
+    }
+
+    var usesScreenFlash: Bool {
+        TelegramVideoNoteCameraControls.usesScreenFlash(
+            position: cameraPosition,
+            isFlashEnabled: isFlashEnabled,
+        )
+    }
 
     func start(
         onFinished: @escaping @MainActor (TelegramVideoNoteRecordingArtifact, MessageSchedulingState?) -> Void,
@@ -157,6 +212,32 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
         errorMessage = nil
     }
 
+    func switchCamera() {
+        #if os(iOS)
+        guard canSwitchCamera, !isChangingCamera, !isFinalizing else { return }
+        isChangingCamera = true
+        let target: TelegramVideoNoteCameraPosition = cameraPosition == .front ? .back : .front
+        performCameraControl(.switchCamera(target))
+        #endif
+    }
+
+    func toggleFlash() {
+        guard canUseFlash, !isChangingCamera, !isFinalizing else { return }
+        performCameraControl(.flash(!isFlashEnabled))
+    }
+
+    func zoomIn() {
+        setZoomFactor(zoomFactor + TelegramVideoNoteCameraControls.zoomStep)
+    }
+
+    func zoomOut() {
+        setZoomFactor(zoomFactor - TelegramVideoNoteCameraControls.zoomStep)
+    }
+
+    func resetZoom() {
+        setZoomFactor(1)
+    }
+
     nonisolated func fileOutput(
         _: AVCaptureFileOutput,
         didFinishRecordingTo outputFileURL: URL,
@@ -184,6 +265,25 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
 
     // MARK: Private
 
+    private enum CameraControlOperation: Sendable {
+        case flash(Bool)
+        case switchCamera(TelegramVideoNoteCameraPosition)
+        case zoom(CGFloat)
+    }
+
+    private struct CameraControlState: Sendable {
+        let position: TelegramVideoNoteCameraPosition
+        let canUseFlash: Bool
+        let isFlashEnabled: Bool
+        let zoomFactor: CGFloat
+        let maximumZoomFactor: CGFloat
+    }
+
+    private enum CameraControlResult: Sendable {
+        case failure(String)
+        case success(CameraControlState)
+    }
+
     #if os(iOS)
     @ObservationIgnored private let assetWriterRecorder = TelegramVideoNoteAssetWriterRecorder()
     @ObservationIgnored private var currentSegmentID: UUID?
@@ -201,7 +301,144 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
     @ObservationIgnored private var shouldDiscard = false
     @ObservationIgnored private var shouldPauseAfterCurrentSegment = false
     @ObservationIgnored private var captureSessionOperationTask: Task<Void, Never>?
+    #if os(iOS)
+    @ObservationIgnored private var initialScreenBrightness: CGFloat?
+    #endif
     @ObservationIgnored private var timerTask: Task<Void, Never>?
+
+    private nonisolated static func applyCameraControl(
+        _ operation: CameraControlOperation,
+        to session: AVCaptureSession,
+        videoOutput: AVCaptureVideoDataOutput?,
+        screenFlashEnabled: Bool,
+    ) -> CameraControlResult {
+        guard let currentInput = session.inputs
+            .compactMap({ $0 as? AVCaptureDeviceInput })
+            .first(where: { input in input.ports.contains(where: { $0.mediaType == .video }) })
+        else { return .failure("The active camera is unavailable.") }
+
+        var input = currentInput
+        var flashEnabledOverride: Bool?
+        switch operation {
+        case .switchCamera(let target):
+            #if os(iOS)
+            let position: AVCaptureDevice.Position = target == .front ? .front : .back
+            guard let device = cameraDevice(position: position) else {
+                return .failure("The requested camera is unavailable.")
+            }
+            do {
+                let newInput = try AVCaptureDeviceInput(device: device)
+                if currentInput.device.hasTorch, currentInput.device.torchMode == .on {
+                    try? currentInput.device.lockForConfiguration()
+                    currentInput.device.torchMode = .off
+                    currentInput.device.unlockForConfiguration()
+                }
+                session.beginConfiguration()
+                session.removeInput(currentInput)
+                if session.canAddInput(newInput) {
+                    session.addInput(newInput)
+                    input = newInput
+                } else {
+                    session.addInput(currentInput)
+                    session.commitConfiguration()
+                    return .failure("The camera could not be changed.")
+                }
+                session.commitConfiguration()
+                configureVideoConnection(videoOutput, position: position)
+                flashEnabledOverride = false
+            } catch {
+                return .failure("The camera could not be changed: \(error.localizedDescription)")
+            }
+            #else
+            return .failure("Camera switching isn't available on this platform.")
+            #endif
+        case .flash(let enabled):
+            let device = input.device
+            if device.position == .front {
+                flashEnabledOverride = enabled
+                break
+            }
+            guard device.hasTorch else {
+                return .failure("Flash isn't available for this camera.")
+            }
+            do {
+                try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                if enabled {
+                    try device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+                } else {
+                    device.torchMode = .off
+                }
+            } catch {
+                return .failure("Flash could not be changed: \(error.localizedDescription)")
+            }
+        case .zoom(let proposedZoom):
+            #if os(iOS)
+            let device = input.device
+            let zoom = TelegramVideoNoteCameraControls.clampedZoom(
+                proposedZoom,
+                maximumDeviceZoom: device.activeFormat.videoMaxZoomFactor,
+            )
+            do {
+                try device.lockForConfiguration()
+                device.videoZoomFactor = zoom
+                device.unlockForConfiguration()
+            } catch {
+                return .failure("Zoom could not be changed: \(error.localizedDescription)")
+            }
+            #else
+            return .failure("Camera zoom isn't available on this platform.")
+            #endif
+        }
+
+        let device = input.device
+        #if os(iOS)
+        let maximumZoom = TelegramVideoNoteCameraControls.clampedZoom(
+            device.activeFormat.videoMaxZoomFactor,
+            maximumDeviceZoom: device.activeFormat.videoMaxZoomFactor,
+        )
+        return .success(.init(
+            position: device.position == .back ? .back : .front,
+            canUseFlash: device.position == .front || device.hasTorch,
+            isFlashEnabled: device.position == .front
+                ? (flashEnabledOverride ?? screenFlashEnabled)
+                : device.torchMode == .on,
+            zoomFactor: TelegramVideoNoteCameraControls.clampedZoom(
+                device.videoZoomFactor,
+                maximumDeviceZoom: maximumZoom,
+            ),
+            maximumZoomFactor: maximumZoom,
+        ))
+        #else
+        return .success(.init(
+            position: .front,
+            canUseFlash: false,
+            isFlashEnabled: false,
+            zoomFactor: 1,
+            maximumZoomFactor: 1,
+        ))
+        #endif
+    }
+
+    #if os(iOS)
+    private nonisolated static func cameraDevice(position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+    }
+
+    private nonisolated static func configureVideoConnection(
+        _ output: AVCaptureVideoDataOutput?,
+        position: AVCaptureDevice.Position,
+    ) {
+        guard let connection = output?.connection(with: .video) else { return }
+        if connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+        if connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = position == .front
+        }
+    }
+    #endif
 
     #if os(iOS)
     private func configureAudioSessionForRecording() throws {
@@ -260,11 +497,7 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
         captureSession.addOutput(assetWriterRecorder.videoOutput)
         captureSession.addOutput(assetWriterRecorder.audioOutput)
         captureSession.automaticallyConfiguresApplicationAudioSession = false
-        if let connection = assetWriterRecorder.videoOutput.connection(with: .video),
-           connection.isVideoRotationAngleSupported(90)
-        {
-            connection.videoRotationAngle = 90
-        }
+        Self.configureVideoConnection(assetWriterRecorder.videoOutput, position: videoDevice.position)
         #else
         guard captureSession.canAddOutput(output) else {
             throw TelegramVideoNoteRecorderError.captureSessionUnavailable
@@ -272,6 +505,101 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
         captureSession.addOutput(output)
         #endif
         configured = true
+        updateCameraControlState(for: videoDevice)
+    }
+
+    private func updateCameraControlState(for device: AVCaptureDevice) {
+        #if os(iOS)
+        cameraPosition = device.position == .back ? .back : .front
+        canSwitchCamera = Self.cameraDevice(position: .front) != nil
+            && Self.cameraDevice(position: .back) != nil
+        canUseFlash = device.position == .front || device.hasTorch
+        #else
+        cameraPosition = .front
+        canSwitchCamera = false
+        canUseFlash = false
+        isFlashEnabled = device.torchMode == .on
+        zoomFactor = 1
+        maximumZoomFactor = 1
+        #endif
+        #if os(iOS)
+        isFlashEnabled = device.torchMode == .on
+        maximumZoomFactor = TelegramVideoNoteCameraControls.clampedZoom(
+            device.activeFormat.videoMaxZoomFactor,
+            maximumDeviceZoom: device.activeFormat.videoMaxZoomFactor,
+        )
+        zoomFactor = TelegramVideoNoteCameraControls.clampedZoom(
+            device.videoZoomFactor,
+            maximumDeviceZoom: maximumZoomFactor,
+        )
+        #endif
+    }
+
+    private func setZoomFactor(_ proposedZoom: CGFloat) {
+        guard !isChangingCamera, !isFinalizing else { return }
+        let zoom = TelegramVideoNoteCameraControls.clampedZoom(
+            proposedZoom,
+            maximumDeviceZoom: maximumZoomFactor,
+        )
+        guard zoom != zoomFactor else { return }
+        performCameraControl(.zoom(zoom))
+    }
+
+    private func performCameraControl(_ operation: CameraControlOperation) {
+        let previousTask = captureSessionOperationTask
+        let session = captureSession
+        let screenFlashEnabled = usesScreenFlash
+        #if os(iOS)
+        let videoOutput: AVCaptureVideoDataOutput? = assetWriterRecorder.videoOutput
+        #else
+        let videoOutput: AVCaptureVideoDataOutput? = nil
+        #endif
+        let operationTask = Task.detached(priority: .userInitiated) {
+            await previousTask?.value
+            return Self.applyCameraControl(
+                operation,
+                to: session,
+                videoOutput: videoOutput,
+                screenFlashEnabled: screenFlashEnabled,
+            )
+        }
+        captureSessionOperationTask = Task {
+            _ = await operationTask.value
+        }
+        Task { [weak self] in
+            let result = await operationTask.value
+            guard let self else { return }
+            isChangingCamera = false
+            switch result {
+            case .failure(let message):
+                errorMessage = message
+            case .success(let state):
+                cameraPosition = state.position
+                canUseFlash = state.canUseFlash
+                isFlashEnabled = state.isFlashEnabled
+                zoomFactor = state.zoomFactor
+                maximumZoomFactor = state.maximumZoomFactor
+                updateScreenBrightness()
+            }
+        }
+    }
+
+    private func updateScreenBrightness() {
+        #if os(iOS)
+        let windowScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let screen = windowScenes.first(where: { $0.activationState == .foregroundActive })?.screen
+            ?? windowScenes.first?.screen
+        else { return }
+        if usesScreenFlash {
+            if initialScreenBrightness == nil {
+                initialScreenBrightness = screen.brightness
+            }
+            screen.brightness = 1
+        } else if let initialScreenBrightness {
+            self.initialScreenBrightness = nil
+            screen.brightness = initialScreenBrightness
+        }
+        #endif
     }
 
     private func startSegment() throws {
@@ -520,6 +848,9 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
     }
 
     private func cleanupSession() {
+        if isFlashEnabled {
+            performCameraControl(.flash(false))
+        }
         isPreparing = false
         isRecording = false
         isPaused = false
@@ -536,6 +867,7 @@ struct TelegramVideoNoteRecordingArtifact: Sendable {
         shouldDiscard = false
         shouldPauseAfterCurrentSegment = false
         isViewOnce = false
+        updateScreenBrightness()
         enqueueCaptureSessionOperation(shouldRun: false)
     }
 

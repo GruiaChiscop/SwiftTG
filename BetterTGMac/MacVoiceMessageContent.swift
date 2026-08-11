@@ -8,37 +8,43 @@ struct MacVoiceMessageContent: View {
 
     let caption: FormattedText
     let voiceNote: VoiceNote
+    let isViewOnce: Bool
     let path: String?
+    let onPlaybackToggle: () -> Void
 
     @Bindable var player: MacVoicePlayer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Button("Back 5 Seconds", systemImage: "gobackward.5") {
-                    player.seekBackward()
+                if !isViewOnce {
+                    Button("Back 5 Seconds", systemImage: "gobackward.5") {
+                        player.seekBackward()
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(!isCurrent)
                 }
-                .labelStyle(.iconOnly)
-                .disabled(!isCurrent)
 
                 Button(
                     isPlaying ? "Pause Voice Message" : "Play Voice Message",
                     systemImage: isPlaying
                         ? "pause.fill"
-                        : "play.fill",
+                        : isViewOnce ? "1.circle.fill" : "play.fill",
                 ) {
-                    guard let path else { return }
+                    guard path != nil else { return }
                     TelegramAudioPlayer.shared.stop()
-                    player.toggle(fileId: voiceNote.voice.id, path: path, duration: voiceNote.duration)
+                    onPlaybackToggle()
                 }
                 .labelStyle(.iconOnly)
                 .disabled(path == nil)
 
-                Button("Forward 5 Seconds", systemImage: "goforward.5") {
-                    player.seekForward()
+                if !isViewOnce {
+                    Button("Forward 5 Seconds", systemImage: "goforward.5") {
+                        player.seekForward()
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(!isCurrent)
                 }
-                .labelStyle(.iconOnly)
-                .disabled(!isCurrent)
 
                 ProgressView(value: Double(elapsed), total: Double(max(1, voiceNote.duration)))
                     .frame(minWidth: 100)

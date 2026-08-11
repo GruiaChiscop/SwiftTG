@@ -528,7 +528,7 @@ struct ChatBottomArea: View {
         .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
         .disabled(chatVM.isSubmittingMessage)
         .modify {
-            if chatVM.recordingLocked {
+            if chatVM.recordingLocked, !currentRecordingIsViewOnce {
                 $0.contextMenu {
                     Button("Send Later…", systemImage: "clock") { showsScheduleVoicePicker = true }
                 }
@@ -575,7 +575,7 @@ struct ChatBottomArea: View {
         // The context menus above need a long-press VoiceOver users can't reliably perform;
         // this surfaces the same "Send Later" entry points through the rotor's actions instead.
         .modify {
-            if chatVM.recordingLocked {
+            if chatVM.recordingLocked, !currentRecordingIsViewOnce {
                 $0.accessibilityAction(named: "Send Later") { showsScheduleVoicePicker = true }
             } else if chatVM.showSendButton, chatVM.editCustomMessage == nil {
                 $0.accessibilityAction(named: "Send Later") { showsScheduleSendPicker = true }
@@ -660,14 +660,20 @@ struct ChatBottomArea: View {
                     action: toggleVideoRecordingPause,
                 )
                 .labelStyle(.iconOnly)
+
+                videoCameraControls
             }
 
-            if recordingMode == .video, chatVM.customChat.user != nil {
+            if viewOnceRecordingIsAvailable {
                 Button(
-                    chatVM.videoRecorder.isViewOnce ? "Send Normally" : "View Once",
-                    systemImage: chatVM.videoRecorder.isViewOnce ? "1.circle.fill" : "1.circle",
+                    currentRecordingIsViewOnce ? "Send Normally" : "View Once",
+                    systemImage: currentRecordingIsViewOnce ? "1.circle.fill" : "1.circle",
                 ) {
-                    chatVM.videoRecorder.isViewOnce.toggle()
+                    if recordingMode == .voice {
+                        chatVM.voiceNoteIsViewOnce.toggle()
+                    } else {
+                        chatVM.videoRecorder.isViewOnce.toggle()
+                    }
                 }
                 .labelStyle(.iconOnly)
             }
@@ -687,6 +693,36 @@ struct ChatBottomArea: View {
             }
         }
         .padding(.bottom, 6)
+    }
+
+    var videoCameraControls: some View {
+        let recorder = chatVM.videoRecorder
+        return Menu("Camera Controls", systemImage: "camera.badge.ellipsis") {
+            if recorder.canSwitchCamera {
+                Button(
+                    recorder.cameraPosition == .front ? "Switch to Back Camera" : "Switch to Front Camera",
+                    systemImage: "camera.rotate",
+                    action: recorder.switchCamera,
+                )
+            }
+            if recorder.canUseFlash {
+                Button(
+                    recorder.isFlashEnabled ? "Turn Off Flash" : "Turn On Flash",
+                    systemImage: recorder.isFlashEnabled ? "bolt.slash.fill" : "bolt.fill",
+                    action: recorder.toggleFlash,
+                )
+            }
+            Divider()
+            Button("Zoom Out", systemImage: "minus.magnifyingglass", action: recorder.zoomOut)
+                .disabled(!recorder.canZoomOut)
+            Button("Zoom In", systemImage: "plus.magnifyingglass", action: recorder.zoomIn)
+                .disabled(!recorder.canZoomIn)
+            Button("Reset Zoom", systemImage: "1.magnifyingglass", action: recorder.resetZoom)
+                .disabled(!recorder.canZoomOut)
+        }
+        .labelStyle(.iconOnly)
+        .disabled(recorder.isChangingCamera)
+        .accessibilityValue("\(recorder.cameraPosition.description), \(recorder.zoomDescription)")
     }
 
     func linkPreviewAccessory(_ preview: LinkPreview) -> some View {
@@ -775,6 +811,14 @@ struct ChatBottomArea: View {
     private var formattedRecordingDuration: String {
         let duration = recordingMode == .voice ? chatVM.timerCount : chatVM.videoRecordingDuration
         return telegramClockDuration(Int(duration))
+    }
+
+    private var currentRecordingIsViewOnce: Bool {
+        recordingMode == .voice ? chatVM.voiceNoteIsViewOnce : chatVM.videoRecorder.isViewOnce
+    }
+
+    private var viewOnceRecordingIsAvailable: Bool {
+        chatVM.customChat.user != nil && !chatVM.customChat.isSavedMessages
     }
 
     private func startSelectedRecording() async {

@@ -10,6 +10,7 @@ struct MessageContentView: View {
     let onMediaTap: (Message?) -> Void
     var onContactTap: () -> Void = {}
     var onLocationTap: () -> Void = {}
+    var onVoiceNoteToggle: () -> Void = {}
     var onVoiceNoteLocalPathResolved: (String) -> Void = { _ in }
     var onDocumentTransferStatusChange: (String?) -> Void = { _ in }
     var documentDownloadIsPaused = false
@@ -44,6 +45,8 @@ struct MessageContentView: View {
                 case .messageVoiceNote(let messageVoiceNote):
                     MessageVoiceNoteView(
                         voiceNote: messageVoiceNote.voiceNote,
+                        isViewOnce: customMessage.message.selfDestructType == .messageSelfDestructTypeImmediately,
+                        onPlaybackToggle: onVoiceNoteToggle,
                         onLocalPathResolved: onVoiceNoteLocalPathResolved,
                     )
                 case .messageAudio(let messageAudio):

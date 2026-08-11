@@ -98,6 +98,11 @@ extension ChatVM {
         set { voiceRecorder.recordingVoiceNote = newValue }
     }
 
+    var voiceNoteIsViewOnce: Bool {
+        get { voiceRecorder.isViewOnce }
+        set { voiceRecorder.isViewOnce = newValue }
+    }
+
     var recordingLocked: Bool {
         get { voiceRecorder.recordingLocked }
         set { voiceRecorder.recordingLocked = newValue }
@@ -254,6 +259,7 @@ extension ChatVM {
                     url: artifact.url,
                     duration: artifact.duration,
                     waveform: artifact.waveform,
+                    isViewOnce: artifact.isViewOnce,
                     schedulingState: schedulingState,
                 )
             } catch {

@@ -19,6 +19,7 @@ import SwiftOGG
     private(set) var isPlaying = false
     private(set) var currentTime = 0
     private(set) var currentPath: String?
+    private(set) var allowsSeeking = true
     var duration = 0
 
     /// Diagnostic hook; no-op by default. iOS wires this to `voicePlaybackTrace`.
@@ -37,9 +38,10 @@ import SwiftOGG
     /// Whether a decoded buffer is ready to play (as opposed to still downloading/decoding).
     var isReady: Bool { audioBuffer != nil }
 
-    func toggle(path: String, duration: Int) {
+    func toggle(path: String, duration: Int, allowsSeeking: Bool = true) {
         trace("toggle newPath=\(currentPath != path) duration=\(duration)")
         self.duration = duration
+        self.allowsSeeking = allowsSeeking
         if currentPath != path {
             stop()
             currentPath = path
@@ -84,6 +86,7 @@ import SwiftOGG
         isPlaying = false
         currentTime = 0
         currentPath = nil
+        allowsSeeking = true
         stopProgressTimer()
         playerNode.stop()
         engine.stop()
@@ -92,7 +95,7 @@ import SwiftOGG
     }
 
     func seek(to seconds: TimeInterval) {
-        guard let audioBuffer else { return }
+        guard allowsSeeking, let audioBuffer else { return }
         let wasPlaying = isPlaying
         let targetFrame = AVAudioFramePosition(max(0, min(seconds, Double(duration))) * sampleRate)
         schedule(buffer: audioBuffer, from: targetFrame)

@@ -161,7 +161,23 @@ struct TelegramSharedPoliciesTests {
         #expect(TelegramVoiceNoteSending.waveform(from: silentWave).isEmpty)
     }
 
-    @Test func `voice note staging removes a file after send succeeds`() throws {
+    @Test func `view once voice note uses immediate self destruction`() {
+        let content = TelegramVoiceNoteSending.content(
+            url: URL(filePath: "/tmp/voice.ogg"),
+            caption: FormattedText(entities: [], text: ""),
+            duration: 12,
+            waveform: Data(),
+            isViewOnce: true,
+        )
+        guard case .inputMessageVoiceNote(let input) = content else {
+            Issue.record("Expected a voice note")
+            return
+        }
+
+        #expect(input.selfDestructType == .messageSelfDestructTypeImmediately)
+    }
+
+    @Test func `default staging removes a file after send succeeds`() throws {
         let directory = FileManager.default
             .temporaryDirectory
             .appending(path: "BetterTGVoiceNoteStagingTests-\(UUID().uuidString)")

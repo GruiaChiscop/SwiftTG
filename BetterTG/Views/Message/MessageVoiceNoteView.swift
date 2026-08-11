@@ -7,6 +7,8 @@ struct MessageVoiceNoteView: View {
     // MARK: Internal
 
     let voiceNote: VoiceNote
+    let isViewOnce: Bool
+    var onPlaybackToggle: () -> Void = {}
     var onLocalPathResolved: (String) -> Void = { _ in }
 
     @State var media = Media.shared
@@ -31,17 +33,19 @@ struct MessageVoiceNoteView: View {
     var voiceNoteView: some View {
         VStack(spacing: 5) {
             HStack(spacing: 10) {
-                Button {
-                    media.seekBackward()
-                } label: {
-                    Image(systemName: "gobackward.5")
+                if !isViewOnce {
+                    Button {
+                        media.seekBackward()
+                    } label: {
+                        Image(systemName: "gobackward.5")
+                    }
+                    .disabled(!isCurrentVoiceActive)
                 }
-                .disabled(!isCurrentVoiceActive)
 
                 Button {
-                    guard let voiceLocalPath else { return }
+                    guard voiceLocalPath != nil else { return }
                     TelegramAudioPlayer.shared.stop()
-                    media.toggle(with: voiceLocalPath, duration: voiceNote.duration)
+                    onPlaybackToggle()
                 } label: {
                     Circle()
                         .fill(.white)
@@ -52,7 +56,7 @@ struct MessageVoiceNoteView: View {
                                     Image(systemName: "pause.fill")
                                         .transition(.scale)
                                 } else {
-                                    Image(systemName: "play.fill")
+                                    Image(systemName: isViewOnce ? "1.circle.fill" : "play.fill")
                                         .transition(.scale)
                                 }
                             }
@@ -62,12 +66,14 @@ struct MessageVoiceNoteView: View {
                 }
                 .accessibilityValue(formattedDuration(from: voiceNote.duration))
 
-                Button {
-                    media.seekForward()
-                } label: {
-                    Image(systemName: "goforward.5")
+                if !isViewOnce {
+                    Button {
+                        media.seekForward()
+                    } label: {
+                        Image(systemName: "goforward.5")
+                    }
+                    .disabled(!isCurrentVoiceActive)
                 }
-                .disabled(!isCurrentVoiceActive)
             }
             .font(.system(size: 24))
 

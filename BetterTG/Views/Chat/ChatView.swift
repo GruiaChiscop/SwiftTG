@@ -109,6 +109,13 @@ struct ChatView: View {
                         .padding(8)
                 }
             }
+            .overlay {
+                if chatVM.videoRecorder.usesScreenFlash {
+                    Color.white
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             // `.overlay` alone doesn't create a new accessibility grouping level - without this,
             // VoiceOver still treats the button as a sibling of the composer below (since overlaid
             // content is flattened to the same level as its base view), regardless of which SwiftUI

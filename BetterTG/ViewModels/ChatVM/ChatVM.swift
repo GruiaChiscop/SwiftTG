@@ -134,6 +134,8 @@ import TDLibKit
     /// out from under a newer one (cancellation doesn't stop a network call already in flight).
     @ObservationIgnored var loadingMessagesGeneration = 0
     @ObservationIgnored var preparingVoiceNoteFileIds = Set<Int>()
+    @ObservationIgnored var openedViewOnceVoiceNoteMessageIds = Set<Int64>()
+    @ObservationIgnored var openingViewOnceVoiceNoteMessageIds = Set<Int64>()
     // Scroll
     @ObservationIgnored var isAtBottom = true
     var showScrollToBottomButton = false

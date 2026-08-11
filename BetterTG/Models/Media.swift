@@ -50,8 +50,10 @@ import Observation
         MainActor.assumeIsolated { engine.seekBackward() }
     }
 
-    func toggle(with path: String, duration: Int) {
-        MainActor.assumeIsolated { engine.toggle(path: path, duration: duration) }
+    func toggle(with path: String, duration: Int, allowsSeeking: Bool = true) {
+        MainActor.assumeIsolated {
+            engine.toggle(path: path, duration: duration, allowsSeeking: allowsSeeking)
+        }
     }
 
     func setAudioSessionRecord() {

@@ -51,6 +51,19 @@ struct TelegramVideoNoteTests {
         #expect(TelegramVideoNoteRecordingLimits.remainingDuration(after: 63) == 0)
     }
 
+    @Test func `camera zoom respects one times and device limits`() {
+        #expect(TelegramVideoNoteCameraControls.clampedZoom(0.5, maximumDeviceZoom: 4) == 1)
+        #expect(TelegramVideoNoteCameraControls.clampedZoom(2.5, maximumDeviceZoom: 4) == 2.5)
+        #expect(TelegramVideoNoteCameraControls.clampedZoom(8, maximumDeviceZoom: 4) == 4)
+        #expect(TelegramVideoNoteCameraControls.clampedZoom(8, maximumDeviceZoom: 12) == 5)
+    }
+
+    @Test func `front camera flash uses the screen only while enabled`() {
+        #expect(TelegramVideoNoteCameraControls.usesScreenFlash(position: .front, isFlashEnabled: true))
+        #expect(!TelegramVideoNoteCameraControls.usesScreenFlash(position: .front, isFlashEnabled: false))
+        #expect(!TelegramVideoNoteCameraControls.usesScreenFlash(position: .back, isFlashEnabled: true))
+    }
+
     @Test func `raw capture uses QuickTime while the sent artifact uses MP4`() {
         let staging = TelegramOutgoingFileStaging(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),

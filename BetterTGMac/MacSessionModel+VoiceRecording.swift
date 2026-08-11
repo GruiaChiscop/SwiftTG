@@ -30,6 +30,7 @@ extension MacSessionModel {
         voiceRecordingStartedAt = Foundation.Date()
         voiceRecordingDuration = 0
         voiceRecordingWave = []
+        voiceRecordingIsViewOnce = false
         isRecordingVoice = true
         recordingTimer?.cancel()
         recordingTimer = Task { [weak self] in
@@ -92,6 +93,7 @@ extension MacSessionModel {
         }
 
         let waveform = TelegramVoiceNoteSending.waveform(from: voiceRecordingWave)
+        let isViewOnce = voiceRecordingIsViewOnce
         let replyTo = TelegramMessageSending.replyTo(messageId: replyingToMessage?.id)
         let replyMessageId = replyingToMessage?.id
         let topicId = openedTopic
@@ -109,6 +111,7 @@ extension MacSessionModel {
                     caption: FormattedText(entities: [], text: ""),
                     duration: duration,
                     waveform: waveform,
+                    isViewOnce: isViewOnce,
                     replyTo: replyTo,
                     schedulingState: schedulingState,
                     topicId: topicId,
@@ -134,6 +137,7 @@ extension MacSessionModel {
         voiceRecordingStartedAt = nil
         voiceRecordingDuration = 0
         voiceRecordingWave = []
+        voiceRecordingIsViewOnce = false
         isRecordingVoice = false
     }
 }

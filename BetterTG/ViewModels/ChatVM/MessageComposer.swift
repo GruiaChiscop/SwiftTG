@@ -279,6 +279,7 @@ import TDLibKit
         url: URL,
         duration: Int,
         waveform: Data,
+        isViewOnce: Bool = false,
         schedulingState: MessageSchedulingState? = nil,
     ) async throws {
         try await TelegramVoiceNoteSending.send(
@@ -291,6 +292,7 @@ import TDLibKit
             ),
             duration: duration,
             waveform: waveform,
+            isViewOnce: isViewOnce,
             replyTo: getMessageReplyTo(from: replyMessage),
             schedulingState: schedulingState,
             topicId: topicId,
