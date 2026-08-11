@@ -78,6 +78,10 @@ enum TelegramVideoNoteCameraPosition: Sendable {
     private(set) var usesConcurrentCameras = false
     private(set) var zoomFactor: CGFloat = 1
     private(set) var maximumZoomFactor: CGFloat = 1
+    private(set) var previewSourceURLs = [URL]()
+    var trimStart: Double = 0
+    var trimEnd: Double = 0
+    var isMuted = false
     var isViewOnce = false
 
     let captureSession: AVCaptureSession = {
@@ -91,6 +95,15 @@ enum TelegramVideoNoteCameraPosition: Sendable {
 
     var canZoomIn: Bool { zoomFactor < maximumZoomFactor }
     var canZoomOut: Bool { zoomFactor > 1 }
+    var hasPreview: Bool { isPaused && !previewSourceURLs.isEmpty }
+
+    var normalizedTrimRange: Range<Double> {
+        TelegramVideoNoteEditing.normalizedTrimRange(
+            start: trimStart,
+            end: trimEnd,
+            duration: accumulatedDuration,
+        )
+    }
 
     var zoomDescription: String {
         "Zoom \(Int((zoomFactor * 100).rounded())) percent"
@@ -160,6 +173,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         guard isPaused, !isFinalizing,
               TelegramVideoNoteRecordingLimits.remainingDuration(after: accumulatedDuration) > 0
         else { return }
+        previewSourceURLs.removeAll()
         do {
             try startSegment()
         } catch {
@@ -252,6 +266,12 @@ enum TelegramVideoNoteCameraPosition: Sendable {
 
     func resetZoom() {
         setZoomFactor(1)
+    }
+
+    func normalizeTrimValues() {
+        let range = normalizedTrimRange
+        trimStart = range.lowerBound
+        trimEnd = range.upperBound
     }
 
     nonisolated func fileOutput(
@@ -857,6 +877,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
                 isRecording = false
                 isPaused = true
                 isFinalizing = false
+                preparePreview()
                 return
             }
             if isFinalizing {
@@ -889,6 +910,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             isRecording = false
             isPaused = true
             isFinalizing = false
+            preparePreview()
             return
         }
 
@@ -928,6 +950,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
                 isRecording = false
                 isPaused = true
                 isFinalizing = false
+                preparePreview()
                 return
             }
             fail("Video recording failed: \(error.localizedDescription)")
@@ -949,6 +972,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
                 isRecording = false
                 isPaused = true
                 isFinalizing = false
+                preparePreview()
                 return
             }
 
@@ -973,6 +997,8 @@ enum TelegramVideoNoteCameraPosition: Sendable {
                 sourceURLs: rawRecordingURLs,
                 outputURL: outputURL,
                 side: 480,
+                trimRange: normalizedTrimRange,
+                muted: isMuted,
             )
             discardRawRecordings()
             if shouldDiscard {
@@ -1020,6 +1046,10 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         isFinalizing = false
         duration = 0
         accumulatedDuration = 0
+        previewSourceURLs.removeAll()
+        trimStart = 0
+        trimEnd = 0
+        isMuted = false
         recordingStartedAt = nil
         #if os(iOS)
         currentSegmentID = nil
@@ -1043,6 +1073,13 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             TelegramOutgoingFileStaging.shared.discard(fileURL: currentRawRecordingURL)
             self.currentRawRecordingURL = nil
         }
+    }
+
+    private func preparePreview() {
+        previewSourceURLs = rawRecordingURLs
+        trimStart = 0
+        trimEnd = accumulatedDuration
+        isMuted = false
     }
 
     @discardableResult private func enqueueCaptureSessionOperation(shouldRun: Bool) -> Task<Void, Never> {
@@ -1078,31 +1115,14 @@ enum TelegramVideoNoteTranscoder {
         try await exportSquareVideo(sourceURLs: [sourceURL], outputURL: outputURL, side: side)
     }
 
-    static func exportSquareVideo(sourceURLs: [URL], outputURL: URL, side: Int) async throws -> Int {
-        guard !sourceURLs.isEmpty else { throw TelegramVideoNoteRecorderError.exportUnavailable }
-
-        let asset: AVAsset
-        if sourceURLs.count == 1, let sourceURL = sourceURLs.first {
-            asset = AVURLAsset(url: sourceURL)
-        } else {
-            let combinedAsset = AVMutableComposition()
-            var insertionTime = CMTime.zero
-            for sourceURL in sourceURLs {
-                let segment = AVURLAsset(url: sourceURL)
-                let segmentDuration = try await segment.load(.duration)
-                guard segmentDuration.isValid, segmentDuration.isNumeric, segmentDuration > .zero else {
-                    continue
-                }
-                try await combinedAsset.insertTimeRange(
-                    CMTimeRange(start: .zero, duration: segmentDuration),
-                    of: segment,
-                    at: insertionTime,
-                )
-                insertionTime = insertionTime + segmentDuration
-            }
-            guard insertionTime > .zero else { throw TelegramVideoNoteRecorderError.exportUnavailable }
-            asset = combinedAsset
-        }
+    static func exportSquareVideo(
+        sourceURLs: [URL],
+        outputURL: URL,
+        side: Int,
+        trimRange: Range<Double>? = nil,
+        muted: Bool = false,
+    ) async throws -> Int {
+        let asset = try await TelegramVideoNoteEditing.combinedAsset(sourceURLs: sourceURLs)
 
         let duration = try await asset.load(.duration)
         guard duration.seconds.isFinite, duration.seconds > 0,
@@ -1123,9 +1143,31 @@ enum TelegramVideoNoteTranscoder {
         composition.renderSize = CGSize(width: outputSide, height: outputSide)
         composition.frameDuration = CMTime(value: 1, timescale: 30)
         exporter.videoComposition = composition
+        let effectiveTrimRange = TelegramVideoNoteEditing.normalizedTrimRange(
+            start: trimRange?.lowerBound ?? 0,
+            end: trimRange?.upperBound ?? duration.seconds,
+            duration: duration.seconds,
+        )
+        exporter.timeRange = CMTimeRange(
+            start: CMTime(seconds: effectiveTrimRange.lowerBound, preferredTimescale: 600),
+            duration: CMTime(
+                seconds: effectiveTrimRange.upperBound - effectiveTrimRange.lowerBound,
+                preferredTimescale: 600,
+            ),
+        )
+        if muted {
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            let audioMix = AVMutableAudioMix()
+            audioMix.inputParameters = audioTracks.map { track in
+                let parameters = AVMutableAudioMixInputParameters(track: track)
+                parameters.setVolume(0, at: .zero)
+                return parameters
+            }
+            exporter.audioMix = audioMix
+        }
         exporter.shouldOptimizeForNetworkUse = true
         try await exporter.export(to: outputURL, as: .mp4)
-        return min(max(1, Int(ceil(duration.seconds))), 60)
+        return min(max(1, Int(ceil(effectiveTrimRange.upperBound - effectiveTrimRange.lowerBound))), 60)
     }
 }
 

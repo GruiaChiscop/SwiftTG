@@ -82,6 +82,13 @@ struct TelegramVideoNoteTests {
         ))
     }
 
+    @Test func `video message trim range remains ordered and in bounds`() {
+        #expect(TelegramVideoNoteEditing.normalizedTrimRange(start: -2, end: 20, duration: 10) == 0..<10)
+        #expect(TelegramVideoNoteEditing.normalizedTrimRange(start: 8, end: 7, duration: 10) == 8..<8.5)
+        #expect(TelegramVideoNoteEditing.normalizedTrimRange(start: 12, end: 20, duration: 10) == 9.5..<10)
+        #expect(TelegramVideoNoteEditing.normalizedTrimRange(start: 0, end: 1, duration: 0) == 0..<0)
+    }
+
     @Test func `raw capture uses QuickTime while the sent artifact uses MP4`() {
         let staging = TelegramOutgoingFileStaging(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),

@@ -493,42 +493,89 @@ struct MacConversationView: View {
             if model.videoRecorder.isPreparing || model.videoRecorder.isRecording || model.videoRecorder.isPaused
                 || model.videoRecorder.isFinalizing
             {
-                HStack(spacing: 10) {
-                    TelegramVideoNoteCapturePreview(
-                        session: model.videoRecorder.captureSession,
-                        position: model.videoRecorder.cameraPosition,
-                    )
-                    .frame(width: 96, height: 96)
-                    .clipShape(Circle())
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(videoRecordingStatus)
-                            .monospacedDigit()
-                        if chat.kind == .privateChat {
-                            Toggle("View Once", isOn: $videoRecorder.isViewOnce)
-                                .toggleStyle(.checkbox)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        if videoRecorder.hasPreview {
+                            TelegramVideoNotePlaybackPreview(
+                                sourceURLs: videoRecorder.previewSourceURLs,
+                                trimRange: videoRecorder.normalizedTrimRange,
+                                isMuted: videoRecorder.isMuted,
+                            )
+                            .frame(width: 96, height: 96)
+                            .clipShape(Circle())
+                        } else {
+                            TelegramVideoNoteCapturePreview(
+                                session: videoRecorder.captureSession,
+                                position: videoRecorder.cameraPosition,
+                            )
+                            .frame(width: 96, height: 96)
+                            .clipShape(Circle())
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(videoRecordingStatus)
+                                .monospacedDigit()
+                            if chat.kind == .privateChat {
+                                Toggle("View Once", isOn: $videoRecorder.isViewOnce)
+                                    .toggleStyle(.checkbox)
+                            }
+                        }
+                        Spacer()
+                        Button("Cancel Recording", systemImage: "xmark", role: .cancel) {
+                            model.cancelVideoRecording()
+                        }
+                        Button(
+                            videoRecorder.hasPreview ? "Record More" : "Pause Recording",
+                            systemImage: videoRecorder.hasPreview ? "record.circle" : "pause.fill",
+                        ) {
+                            model.toggleVideoRecordingPause()
+                        }
+                        .disabled(videoRecorder.isPreparing || videoRecorder.isFinalizing)
+                        if videoRecorder.hasPreview {
+                            Button(
+                                videoRecorder.isMuted ? "Restore Sound" : "Mute Video Message",
+                                systemImage: videoRecorder.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill",
+                            ) {
+                                videoRecorder.isMuted.toggle()
+                            }
+                        }
+                        Button("Send Video Message", systemImage: "paperplane.fill") {
+                            model.sendVideoRecording()
+                        }
+                        .keyboardShortcut(.return, modifiers: [.command])
+                        .disabled(!videoRecorder.isRecording && !videoRecorder.isPaused)
+                        .contextMenu {
+                            Button("Send Later…", systemImage: "clock") {
+                                showsScheduleVideoPicker = true
+                            }
+                            .disabled(videoRecorder.isViewOnce)
                         }
                     }
-                    Spacer()
-                    Button("Cancel Recording", systemImage: "xmark", role: .cancel) {
-                        model.cancelVideoRecording()
-                    }
-                    Button(
-                        model.videoRecorder.isPaused ? "Resume Recording" : "Pause Recording",
-                        systemImage: model.videoRecorder.isPaused ? "record.circle" : "pause.fill",
-                    ) {
-                        model.toggleVideoRecordingPause()
-                    }
-                    .disabled(model.videoRecorder.isPreparing || model.videoRecorder.isFinalizing)
-                    Button("Send Video Message", systemImage: "paperplane.fill") {
-                        model.sendVideoRecording()
-                    }
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(!model.videoRecorder.isRecording && !model.videoRecorder.isPaused)
-                    .contextMenu {
-                        Button("Send Later…", systemImage: "clock") {
-                            showsScheduleVideoPicker = true
+
+                    if videoRecorder.hasPreview {
+                        let duration = max(0, videoRecorder.duration)
+                        let minimumDuration = min(TelegramVideoNoteEditing.minimumTrimDuration, duration)
+                        LabeledContent("Trim Start") {
+                            Slider(
+                                value: $videoRecorder.trimStart,
+                                in: 0...max(0, duration - minimumDuration),
+                                step: 0.1,
+                            )
+                            .accessibilityValue(
+                                "\(videoRecorder.trimStart.formatted(.number.precision(.fractionLength(1)))) seconds",
+                            )
                         }
-                        .disabled(model.videoRecorder.isViewOnce)
+                        LabeledContent("Trim End") {
+                            Slider(
+                                value: $videoRecorder.trimEnd,
+                                in: minimumDuration...max(minimumDuration, duration),
+                                step: 0.1,
+                            )
+                            .accessibilityValue(
+                                "\(videoRecorder.trimEnd.formatted(.number.precision(.fractionLength(1)))) seconds",
+                            )
+                        }
+                        .onChange(of: videoRecorder.trimStart) { videoRecorder.normalizeTrimValues() }
+                        .onChange(of: videoRecorder.trimEnd) { videoRecorder.normalizeTrimValues() }
                     }
                 }
             } else if model.isRecordingVoice {
