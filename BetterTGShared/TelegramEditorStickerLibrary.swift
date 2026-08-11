@@ -187,8 +187,9 @@ struct TelegramEditorStickerLibrary: View {
         }
 
         do {
-            recentStickers = try await telegramUniqueStickers(
+            recentStickers = try await telegramRecentStickers(
                 service.getRecentStickers(isAttached: false).stickers,
+                excluding: favoriteStickers,
             )
         } catch is CancellationError {
             isLoading = false

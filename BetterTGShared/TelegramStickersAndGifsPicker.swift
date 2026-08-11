@@ -68,33 +68,26 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
 
             Divider()
 
-            Group {
-                switch selectedTab {
-                case .stickers:
-                    TelegramStickerPickerContent(
-                        service: service,
-                        chatId: chatId,
-                        replyToMessageId: replyToMessageId,
-                        allowsSendWhenOnline: allowsSendWhenOnline,
-                        topicId: topicId,
-                        query: query,
-                        onSent: didSend,
-                        preview: stickerPreview,
-                        contextPreview: stickerContextPreview,
+            if let sendPermission {
+                if let restrictionMessage = sendPermission.message(for: selectedTab) {
+                    ContentUnavailableView(
+                        "Sending Restricted",
+                        systemImage: "nosign",
+                        description: Text(restrictionMessage),
                     )
-                case .gifs:
-                    TelegramGifPickerContent(
-                        service: service,
-                        chatId: chatId,
-                        replyToMessageId: replyToMessageId,
-                        allowsSendWhenOnline: allowsSendWhenOnline,
-                        topicId: topicId,
-                        query: query,
-                        onSent: didSend,
-                        preview: gifPreview,
-                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    pickerContent
                 }
+            } else {
+                ProgressView("Checking permissions")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .task(id: "\(chatId):\(permissionRevision)") { await loadSendPermission() }
+        .onReceive(service.updatePublisher) { update in
+            guard TelegramMediaSendPermission.shouldReload(after: update, chatID: chatId) else { return }
+            permissionRevision &+= 1
         }
     }
 
@@ -102,7 +95,9 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
 
     @AppStorage(TelegramMediaPickerTab.defaultsKey) private var selectedTabRawValue = TelegramMediaPickerTab.stickers
         .rawValue
+    @State private var permissionRevision: UInt = 0
     @State private var query = ""
+    @State private var sendPermission: TelegramMediaSendPermission?
 
     private let service: any TelegramService
     private let chatId: Int64
@@ -117,6 +112,48 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
 
     private var selectedTab: TelegramMediaPickerTab {
         TelegramMediaPickerTab.selection(storedValue: selectedTabRawValue)
+    }
+
+    @ViewBuilder private var pickerContent: some View {
+        switch selectedTab {
+        case .stickers:
+            TelegramStickerPickerContent(
+                service: service,
+                chatId: chatId,
+                replyToMessageId: replyToMessageId,
+                allowsSendWhenOnline: allowsSendWhenOnline,
+                topicId: topicId,
+                query: query,
+                onSent: didSend,
+                preview: stickerPreview,
+                contextPreview: stickerContextPreview,
+            )
+        case .gifs:
+            TelegramGifPickerContent(
+                service: service,
+                chatId: chatId,
+                replyToMessageId: replyToMessageId,
+                allowsSendWhenOnline: allowsSendWhenOnline,
+                topicId: topicId,
+                query: query,
+                onSent: didSend,
+                preview: gifPreview,
+            )
+        }
+    }
+
+    @MainActor private func loadSendPermission() async {
+        do {
+            let permission = try await TelegramMediaSendPermission.resolve(service: service, chatID: chatId)
+            guard !Task.isCancelled else { return }
+            sendPermission = permission
+        } catch is CancellationError {
+            return
+        } catch {
+            // Permission loading is advisory. If it fails, let TDLib make the authoritative send
+            // decision and surface its existing user-facing error rather than blocking the picker.
+            sendPermission = .allowed
+        }
     }
 
     @MainActor private func didSend() async {

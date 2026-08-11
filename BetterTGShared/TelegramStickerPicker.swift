@@ -1,5 +1,6 @@
 // TelegramStickerPicker.swift
 
+import Combine
 import SwiftUI
 import TDLibKit
 
@@ -121,6 +122,10 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
         }
         .task { await loadLibraryIfNeeded() }
         .task(id: searchKey) { await search() }
+        .onReceive(service.updatePublisher.compactMap(TelegramMediaLibraryUpdate.init)) { update in
+            guard update.affectsStickers else { return }
+            scheduleLiveRefresh()
+        }
         .onChange(of: normalizedQuery) { _, newValue in
             if !newValue.isEmpty {
                 selectedEmojiCategory = nil
@@ -151,6 +156,10 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 preview: preview,
             )
         }
+        .onDisappear {
+            liveRefreshTask?.cancel()
+            liveRefreshTask = nil
+        }
     }
 
     // MARK: Private
@@ -166,6 +175,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
     @State private var selectedEmojiCategory: EmojiCategory?
     @State private var isLoadingLibrary = false
     @State private var isSearching = false
+    @State private var liveRefreshTask: Task<Void, Never>?
     @State private var hasLoadedLibrary = false
     @State private var sendingStickerFileId: Int?
     @State private var feedbackMessage: String?
@@ -405,6 +415,25 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
         await loadLibrary(force: false)
     }
 
+    private func scheduleLiveRefresh() {
+        liveRefreshTask?.cancel()
+        liveRefreshTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+                while isLoadingLibrary {
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                await loadLibrary(force: true)
+                guard !Task.isCancelled else { return }
+                liveRefreshTask = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+        }
+    }
+
     @MainActor private func loadLibrary(force: Bool) async {
         guard force || !hasLoadedLibrary else { return }
         guard !isLoadingLibrary else { return }
@@ -449,8 +478,9 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
         }
 
         do {
-            recentStickers = try await telegramUniqueStickers(
+            recentStickers = try await telegramRecentStickers(
                 service.getRecentStickers(isAttached: false).stickers,
+                excluding: favoriteStickers,
             )
         } catch {
             errors.append("Recent stickers couldn't be loaded: \(telegramErrorDescription(error))")
@@ -616,6 +646,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 } else {
                     _ = try await service.addFavoriteSticker(sticker: .inputFileId(.init(id: fileId)))
                     favoriteStickers = telegramUniqueStickers([sticker] + favoriteStickers)
+                    recentStickers.removeAll { $0.sticker.id == fileId }
                 }
             } catch {
                 showFeedback("Favorites couldn't be updated: \(telegramErrorDescription(error))")
@@ -836,4 +867,9 @@ private enum TelegramStickerSendingError: LocalizedError {
 func telegramUniqueStickers(_ stickers: [Sticker]) -> [Sticker] {
     var seenFileIds = Set<Int>()
     return stickers.filter { seenFileIds.insert($0.sticker.id).inserted }
+}
+
+func telegramRecentStickers(_ stickers: [Sticker], excluding favorites: [Sticker]) -> [Sticker] {
+    let favoriteFileIds = Set(favorites.map(\.sticker.id))
+    return telegramUniqueStickers(stickers).filter { !favoriteFileIds.contains($0.sticker.id) }
 }

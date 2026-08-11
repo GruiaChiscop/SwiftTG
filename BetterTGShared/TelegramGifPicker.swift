@@ -1,5 +1,6 @@
 // TelegramGifPicker.swift
 
+import Combine
 import SwiftUI
 @preconcurrency import TDLibKit
 
@@ -216,6 +217,10 @@ struct TelegramGifPickerContent<Preview: View>: View {
         .task { await loadTrendingIfNeeded() }
         .task { await loadEmojiCategories() }
         .task(id: searchKey) { await search() }
+        .onReceive(service.updatePublisher.compactMap(TelegramMediaLibraryUpdate.init)) { update in
+            guard update.affectsGIFs else { return }
+            scheduleLiveRefresh()
+        }
         .onChange(of: normalizedQuery) { _, newValue in
             if !newValue.isEmpty {
                 selectedEmojiCategory = nil
@@ -261,6 +266,10 @@ struct TelegramGifPickerContent<Preview: View>: View {
                 },
             )
         }
+        .onDisappear {
+            liveRefreshTask?.cancel()
+            liveRefreshTask = nil
+        }
     }
 
     // MARK: Private
@@ -274,6 +283,7 @@ struct TelegramGifPickerContent<Preview: View>: View {
     @State private var isLoadingSaved = false
     @State private var isLoadingTrending = false
     @State private var isSearching = false
+    @State private var liveRefreshTask: Task<Void, Never>?
     @State private var hasLoadedSaved = false
     @State private var hasLoadedTrending = false
     @State private var sendingItemId: String?
@@ -482,6 +492,25 @@ struct TelegramGifPickerContent<Preview: View>: View {
     @MainActor private func loadSavedIfNeeded() async {
         guard !hasLoadedSaved else { return }
         await loadSaved(force: false)
+    }
+
+    private func scheduleLiveRefresh() {
+        liveRefreshTask?.cancel()
+        liveRefreshTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+                while isLoadingSaved {
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                await loadSaved(force: true)
+                guard !Task.isCancelled else { return }
+                liveRefreshTask = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+        }
     }
 
     @MainActor private func loadSaved(force: Bool) async {

@@ -153,6 +153,27 @@ enum TDLibFixtures {
         )
     }
 
+    static func permissions(canSendOtherMessages: Bool) -> ChatPermissions {
+        ChatPermissions(
+            canAddLinkPreviews: true,
+            canChangeInfo: false,
+            canCreateTopics: false,
+            canEditTag: false,
+            canInviteUsers: false,
+            canPinMessages: false,
+            canReactToMessages: true,
+            canSendAudios: true,
+            canSendBasicMessages: true,
+            canSendDocuments: true,
+            canSendOtherMessages: canSendOtherMessages,
+            canSendPhotos: true,
+            canSendPolls: true,
+            canSendVideoNotes: true,
+            canSendVideos: true,
+            canSendVoiceNotes: true,
+        )
+    }
+
     static func position(order: Int64, list: ChatList = .chatListMain) -> ChatPosition {
         ChatPosition(isPinned: false, list: list, order: TdInt64(order), source: nil)
     }
@@ -178,22 +199,5 @@ enum TDLibFixtures {
         useDefaultStorySound: true,
     )
 
-    private static let permissions = ChatPermissions(
-        canAddLinkPreviews: true,
-        canChangeInfo: false,
-        canCreateTopics: false,
-        canEditTag: false,
-        canInviteUsers: false,
-        canPinMessages: false,
-        canReactToMessages: true,
-        canSendAudios: true,
-        canSendBasicMessages: true,
-        canSendDocuments: true,
-        canSendOtherMessages: true,
-        canSendPhotos: true,
-        canSendPolls: true,
-        canSendVideoNotes: true,
-        canSendVideos: true,
-        canSendVoiceNotes: true,
-    )
+    private static let permissions = permissions(canSendOtherMessages: true)
 }

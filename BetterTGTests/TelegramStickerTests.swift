@@ -145,6 +145,20 @@ struct TelegramStickerTests {
         #expect(telegramUniqueStickers([first, duplicate, second]).map(\.sticker.id) == [11, 12])
     }
 
+    @Test func `favorite stickers are omitted from recents without changing order`() {
+        let favorite = sticker(format: .stickerFormatWebp, fileId: 11)
+        let firstRecent = sticker(format: .stickerFormatTgs, fileId: 12)
+        let duplicateFavorite = sticker(format: .stickerFormatWebm, fileId: 11)
+        let secondRecent = sticker(format: .stickerFormatWebp, fileId: 13)
+
+        let recents = telegramRecentStickers(
+            [firstRecent, duplicateFavorite, secondRecent],
+            excluding: [favorite],
+        )
+
+        #expect(recents.map(\.sticker.id) == [12, 13])
+    }
+
     @Test func `pack references require a real sticker set`() {
         let stickerWithPack = sticker(format: .stickerFormatWebp, setId: 42)
         let stickerWithoutPack = sticker(format: .stickerFormatWebp, setId: 0)

@@ -79,6 +79,10 @@ struct ChatBottomArea: View {
             && chatVM.activeLinkPreviewComposer.preview != nil
     }
 
+    var composerInputMode: TelegramComposerInputMode {
+        showsStickersAndGifsPicker ? .media : .text
+    }
+
     var body: some View {
         @Bindable var chatVM = chatVM
         VStack(spacing: 0) {
@@ -114,33 +118,31 @@ struct ChatBottomArea: View {
                 )
             }
 
-            if !showsStickersAndGifsPicker {
-                HStack(alignment: .bottom, spacing: 6) {
-                    if chatVM.recordingVoiceNote {
-                        recordingIndicator
-                    } else {
-                        leftSide
+            HStack(alignment: .bottom, spacing: 6) {
+                if chatVM.recordingVoiceNote {
+                    recordingIndicator
+                } else {
+                    leftSide
+                        .disabled(!composerInputMode.allowsTextControls)
 
-                        textField
+                    textField
+                        .disabled(!composerInputMode.allowsTextControls)
 
-                        Button {
-                            focused.wrappedValue = false
-                            withAnimation {
-                                showsStickersAndGifsPicker = true
-                            }
-                        } label: {
-                            Label("Stickers and GIFs", systemImage: "face.smiling")
-                                .labelStyle(.iconOnly)
-                        }
-                        .font(.system(size: 22))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .disabled(chatVM.editCustomMessage != nil || chatVM.isSubmittingMessage)
+                    Button(action: toggleMediaInput) {
+                        Label(
+                            composerInputMode.mediaButtonTitle,
+                            systemImage: composerInputMode.mediaButtonSystemImage,
+                        )
+                        .labelStyle(.iconOnly)
                     }
-
-                    rightSide
+                    .font(.system(size: 22))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .disabled(chatVM.editCustomMessage != nil || chatVM.isSubmittingMessage)
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+
+                rightSide
+                    .disabled(!composerInputMode.allowsTextControls)
             }
 
             if showsStickersAndGifsPicker {
@@ -697,6 +699,16 @@ struct ChatBottomArea: View {
                 Image(systemName: "xmark")
             }
             .accessibilityLabel(type == .edit ? "Cancel Edit" : "Cancel Reply")
+        }
+    }
+
+    func toggleMediaInput() {
+        if showsStickersAndGifsPicker {
+            withAnimation { showsStickersAndGifsPicker = false }
+            focused.wrappedValue = true
+        } else {
+            focused.wrappedValue = false
+            withAnimation { showsStickersAndGifsPicker = true }
         }
     }
 
