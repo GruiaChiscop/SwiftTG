@@ -41,16 +41,13 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
 
     // MARK: Internal
 
-    enum Tab: String, CaseIterable {
-        case stickers = "Stickers"
-        case gifs = "GIFs"
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Picker("Content Type", selection: $tab) {
-                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Picker("Content Type", selection: $selectedTabRawValue) {
+                    ForEach(TelegramMediaPickerTab.allCases) { tab in
+                        Text(tab.title).tag(tab.rawValue)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -64,7 +61,7 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
             .padding(.horizontal)
             .padding(.vertical, 8)
 
-            TextField(tab == .stickers ? "Search stickers" : "Search GIFs", text: $query)
+            TextField(selectedTab == .stickers ? "Search stickers" : "Search GIFs", text: $query)
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal)
                 .padding(.bottom, 8)
@@ -72,7 +69,7 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
             Divider()
 
             Group {
-                switch tab {
+                switch selectedTab {
                 case .stickers:
                     TelegramStickerPickerContent(
                         service: service,
@@ -103,8 +100,9 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
 
     // MARK: Private
 
+    @AppStorage(TelegramMediaPickerTab.defaultsKey) private var selectedTabRawValue = TelegramMediaPickerTab.stickers
+        .rawValue
     @State private var query = ""
-    @State private var tab = Tab.stickers
 
     private let service: any TelegramService
     private let chatId: Int64
@@ -116,6 +114,10 @@ struct TelegramStickersAndGifsPickerView<StickerPreview: View, StickerContextPre
     private let stickerPreview: (Sticker) -> StickerPreview
     private let stickerContextPreview: (Sticker) -> StickerContextPreview
     private let gifPreview: (TDLibKit.Animation) -> GifPreview
+
+    private var selectedTab: TelegramMediaPickerTab {
+        TelegramMediaPickerTab.selection(storedValue: selectedTabRawValue)
+    }
 
     @MainActor private func didSend() async {
         await onSent()
