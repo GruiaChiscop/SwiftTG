@@ -34,7 +34,7 @@ struct MacMessageRow: View {
     /// "React" and "Delete" are still special-cased below since each renders differently per surface
     /// (a reactions submenu vs. a single toggle; a destructive button with a leading divider vs. plain).
     private enum MacRowAction {
-        case button(title: String, systemImage: String, action: () -> Void)
+        case button(title: String, systemImage: String, isEnabled: Bool = true, action: () -> Void)
         case reactions
     }
 
@@ -72,6 +72,7 @@ struct MacMessageRow: View {
     @State private var selectedStickerPack: TelegramStickerPackReference?
     @State private var pendingStickerFromPack: Sticker?
     @State private var stickerToEdit: Sticker?
+    @State private var isSavingGif = false
 
     private var capabilities: MacMessageCapabilities? {
         model.messageCapabilities[message.id]
@@ -302,6 +303,10 @@ struct MacMessageRow: View {
         return model.favoriteStickers.action(for: content.sticker)
     }
 
+    private var savableGifFileID: Int? {
+        TelegramMessageGifSaving.fileID(from: message)
+    }
+
     private var isPollMessage: Bool {
         if case .messagePoll = message.content {
             true
@@ -385,6 +390,14 @@ struct MacMessageRow: View {
             items.append(.button(title: "Edit Sticker", systemImage: "pencil.and.outline") {
                 stickerToEdit = editableSticker
             })
+        }
+        if savableGifFileID != nil {
+            items.append(.button(
+                title: "Save to GIFs",
+                systemImage: "photo.on.rectangle.angled",
+                isEnabled: !isSavingGif,
+                action: saveGif,
+            ))
         }
         if canCopy {
             items.append(.button(title: "Copy", systemImage: "doc.on.doc") { copyMessageText() })
@@ -877,8 +890,9 @@ struct MacMessageRow: View {
     @ViewBuilder private var messageActions: some View {
         ForEach(Array(rowActions.enumerated()), id: \.offset) { _, item in
             switch item {
-            case .button(let title, let systemImage, let action):
+            case .button(let title, let systemImage, let isEnabled, let action):
                 Button(title, systemImage: systemImage, action: action)
+                    .disabled(!isEnabled)
             case .reactions:
                 Menu("React", systemImage: "face.smiling") {
                     ForEach(reactionChoices, id: \.self) { reaction in
@@ -906,8 +920,9 @@ struct MacMessageRow: View {
             : [])
         ForEach(Array(items.reversed().enumerated()), id: \.offset) { _, item in
             switch item {
-            case .button(let title, _, let action):
+            case .button(let title, _, let isEnabled, let action):
                 Button(title, action: action)
+                    .disabled(!isEnabled)
             case .reactions:
                 Button("React") { showReactionOptions = true }
             }
@@ -1038,6 +1053,22 @@ struct MacMessageRow: View {
                 return
             } catch {
                 model.messageActionError = "Favorites couldn't be updated: \(telegramErrorDescription(error))"
+            }
+        }
+    }
+
+    private func saveGif() {
+        guard let fileID = savableGifFileID, !isSavingGif else { return }
+        isSavingGif = true
+        model.messageActionError = nil
+        Task { @MainActor in
+            defer { isSavingGif = false }
+            do {
+                try await TelegramMessageGifSaving.save(fileID: fileID, service: model.service)
+            } catch is CancellationError {
+                return
+            } catch {
+                model.messageActionError = "GIF couldn't be saved: \(telegramErrorDescription(error))"
             }
         }
     }

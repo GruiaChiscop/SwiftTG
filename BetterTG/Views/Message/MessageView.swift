@@ -21,6 +21,7 @@ struct MessageView: View {
     @State var resolvedComments: TelegramResolvedCommentsThread?
     @State var commentsErrorMessage: String?
     @State var isSavingDocument = false
+    @State var isSavingGif = false
     @State var isAddingContact = false
     @State var documentTransferStatus: String?
     @State var documentDownloadIsPaused = false

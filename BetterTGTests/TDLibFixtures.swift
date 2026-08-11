@@ -96,6 +96,7 @@ enum TDLibFixtures {
         text: String = "Message",
         editDate: Int = 0,
         isOutgoing: Bool = false,
+        canBeSaved: Bool = true,
         sendingState: MessageSendingState? = nil,
         linkPreview: LinkPreview? = nil,
         mediaAlbumId: TdInt64 = 0,
@@ -104,7 +105,7 @@ enum TDLibFixtures {
         Message(
             authorSignature: "",
             autoDeleteIn: 0,
-            canBeSaved: true,
+            canBeSaved: canBeSaved,
             chatId: chatId,
             containsUnreadMention: false,
             containsUnreadPollVotes: false,

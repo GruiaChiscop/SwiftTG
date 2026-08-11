@@ -68,6 +68,10 @@ extension MessageView {
         if customMessage.messageDocument != nil {
             Button("Save to Files", action: saveDocument)
         }
+        if savableGifFileID != nil {
+            Button("Save to GIFs", action: saveGif)
+                .disabled(isSavingGif)
+        }
         if stickerPackReference != nil {
             Button("View Sticker Pack", action: openStickerPack)
         }
@@ -161,6 +165,12 @@ extension MessageView {
             }
             .disabled(isSavingDocument)
         }
+        if savableGifFileID != nil {
+            Button(action: saveGif) {
+                Label("Save to GIFs", systemImage: "photo.on.rectangle.angled")
+            }
+            .disabled(isSavingGif)
+        }
         if customMessage.messageContact != nil {
             Button(action: activateContact) {
                 Label(contactActionTitle, systemImage: contactActionSystemImage)
@@ -226,6 +236,10 @@ extension MessageView {
         return chatVM.favoriteStickers.mutatingFileIds.contains(fileId)
     }
 
+    var savableGifFileID: Int? {
+        TelegramMessageGifSaving.fileID(from: customMessage.message)
+    }
+
     var contactActionTitle: String {
         guard let messageContact = customMessage.messageContact else { return "" }
         return TelegramContactPresentation(messageContact).hasTelegramAccount ? "Message" : "Add to Contacts"
@@ -258,6 +272,22 @@ extension MessageView {
                 return
             } catch {
                 chatVM.messageActionError = "Favorites couldn't be updated: \(telegramErrorDescription(error))"
+            }
+        }
+    }
+
+    func saveGif() {
+        guard let fileID = savableGifFileID, !isSavingGif else { return }
+        isSavingGif = true
+        chatVM.messageActionError = nil
+        Task { @MainActor in
+            defer { isSavingGif = false }
+            do {
+                try await TelegramMessageGifSaving.save(fileID: fileID, service: chatVM.service)
+            } catch is CancellationError {
+                return
+            } catch {
+                chatVM.messageActionError = "GIF couldn't be saved: \(telegramErrorDescription(error))"
             }
         }
     }
