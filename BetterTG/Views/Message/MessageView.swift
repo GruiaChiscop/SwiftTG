@@ -569,9 +569,9 @@ struct MessageView: View {
                     service: chatVM.service,
                     chatId: customMessage.message.chatId,
                     actionTitle: "Send",
-                    onSave: { pngData, emojis in
+                    onSave: { output, emojis in
                         try await TelegramStickerEditing.sendEditedSticker(
-                            pngData: pngData,
+                            output: output,
                             emojis: emojis,
                             service: chatVM.service,
                             chatId: customMessage.message.chatId,

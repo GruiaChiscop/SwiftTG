@@ -96,7 +96,7 @@ LIBVPX_SOURCE="$TELEGRAM_SOURCE/third-party/libvpx/libvpx"
 LIBVPX_BUILD_SCRIPT="$TELEGRAM_SOURCE/third-party/libvpx/build-libvpx-bazel.sh"
 LIBVPX_SIMULATOR_PATCH="$TELEGRAM_SOURCE/third-party/libvpx/0001-Support-arm64-simulator.patch"
 LIBVPX_DEPLOYMENT_PATCH="$PACKAGE_DIR/Patches/libvpx-macos-deployment-target.patch"
-LIBVPX_DECODER_PATCH="$PACKAGE_DIR/Patches/libvpx-decoder-only.patch"
+LIBVPX_CODEC_PATCH="$PACKAGE_DIR/Patches/libvpx-vp9-codec.patch"
 
 if [[ ! -f "$FFMPEG_SOURCE/configure" || ! -f "$LIBVPX_SOURCE/configure" ]]; then
     echo "Required Telegram-iOS sources not found at: $TELEGRAM_SOURCE" >&2
@@ -144,7 +144,7 @@ build_slice() {
         patch -d "$vpx_source_copy" -p1 < "$LIBVPX_SIMULATOR_PATCH"
         patch -d "$vpx_source_copy" -p1 < "$LIBVPX_DEPLOYMENT_PATCH"
         cp "$LIBVPX_BUILD_SCRIPT" "$vpx_build_script"
-        patch "$vpx_build_script" < "$LIBVPX_DECODER_PATCH"
+        patch "$vpx_build_script" < "$LIBVPX_CODEC_PATCH"
         bash "$vpx_build_script" "$vpx_arch" "$vpx_source_copy" "$vpx_build"
     fi
 
@@ -190,7 +190,9 @@ build_slice() {
         --enable-avutil \
         --enable-libvpx \
         --enable-decoder=libvpx_vp9 \
+        --enable-encoder=libvpx_vp9 \
         --enable-demuxer=matroska \
+        --enable-muxer=webm \
         --enable-protocol=file \
         --enable-bsf=vp9_superframe \
         --extra-cflags="-arch arm64 $minimum_flag --target=$target" \

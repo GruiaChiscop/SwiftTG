@@ -23,6 +23,23 @@ enum TelegramAnimatedStickerFrameLoader {
         return result
     }
 
+    @concurrent static func loadSource(
+        _ sticker: TelegramStickerOverlay,
+    ) async throws -> TelegramAnimatedStickerFrameSet {
+        let requestedSize = CGSize(
+            width: max(1, sticker.pixelWidth),
+            height: max(1, sticker.pixelHeight),
+        )
+        let scale = min(1, 512 / max(requestedSize.width, requestedSize.height))
+        return try await loadFrames(
+            for: sticker,
+            renderSize: CGSize(
+                width: max(1, (requestedSize.width * scale).rounded()),
+                height: max(1, (requestedSize.height * scale).rounded()),
+            ),
+        )
+    }
+
     // MARK: Private
 
     private static let maximumFrameCount = 600

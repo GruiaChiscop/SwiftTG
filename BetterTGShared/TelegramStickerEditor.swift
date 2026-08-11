@@ -12,7 +12,7 @@ struct TelegramStickerEditor: View {
         service: any TelegramService,
         chatId: Int64,
         actionTitle: String,
-        onSave: @escaping @MainActor (Data, String) async throws -> Void,
+        onSave: @escaping @MainActor (TelegramStickerEditorOutput, String) async throws -> Void,
     ) {
         self.sticker = sticker
         self.service = service
@@ -28,14 +28,14 @@ struct TelegramStickerEditor: View {
     let service: any TelegramService
     let chatId: Int64
     let actionTitle: String
-    let onSave: @MainActor (Data, String) async throws -> Void
+    let onSave: @MainActor (TelegramStickerEditorOutput, String) async throws -> Void
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let sourceImage {
-                        TelegramStickerEditorPreview(sourceImage: sourceImage, editorState: editorState)
+                    if let source {
+                        TelegramStickerEditorPreview(source: source, editorState: editorState)
 
                         TelegramEditorToolbar(
                             editorState: editorState,
@@ -79,9 +79,10 @@ struct TelegramStickerEditor: View {
                     ToolbarItem(placement: .confirmationAction) {
                         if isSaving {
                             ProgressView()
+                                .accessibilityLabel("Saving sticker")
                         } else {
                             Button(actionTitle, action: save)
-                                .disabled(sourceImage == nil || !draft.isValid)
+                                .disabled(source == nil || !draft.isValid)
                         }
                     }
                 }
@@ -117,7 +118,7 @@ struct TelegramStickerEditor: View {
     @AccessibilityFocusState private var errorIsFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var editorState = TelegramMediaEditorState()
-    @State private var sourceImage: CGImage?
+    @State private var source: TelegramStickerEditorSource?
     @State private var draft: TelegramStickerCreationDraft
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -142,13 +143,23 @@ struct TelegramStickerEditor: View {
             guard file.local.isDownloadingCompleted, !file.local.path.isEmpty else {
                 throw TelegramStickerEditorError.downloadFailed
             }
-            guard let source = CGImageSourceCreateWithURL(URL(filePath: file.local.path) as CFURL, nil),
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-            else {
-                throw TelegramStickerEditorError.imageDecodingFailed
+            let fileURL = URL(filePath: file.local.path)
+            switch sticker.format {
+            case .stickerFormatWebp:
+                guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+                      let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+                else {
+                    throw TelegramStickerEditorError.imageDecodingFailed
+                }
+                try Task.checkCancellation()
+                source = .image(image)
+            case .stickerFormatTgs, .stickerFormatWebm:
+                let overlay = TelegramEditorOverlaySelection.sticker(fileURL: fileURL, sticker: sticker)
+                let frames = try await TelegramAnimatedStickerFrameLoader.loadSource(overlay)
+                try Task.checkCancellation()
+                source = .animation(frames)
+                editorState.timelineDuration = min(3, frames.duration)
             }
-            try Task.checkCancellation()
-            sourceImage = image
         } catch is CancellationError {
             return
         } catch {
@@ -161,18 +172,20 @@ struct TelegramStickerEditor: View {
     }
 
     @MainActor private func saveEditedSticker() async {
-        guard let sourceImage, !isSaving else { return }
+        guard let source, !isSaving else { return }
         isSaving = true
         defer { isSaving = false }
         errorMessage = nil
         errorIsFocused = false
         do {
             let emojis = try draft.validate()
-            let pngData = try TelegramStickerEditorRendering.pngData(
-                sourceImage: sourceImage,
-                snapshot: editorState.snapshot,
-            )
-            try await onSave(pngData, emojis)
+            let output = try await renderedOutput(source: source)
+            defer {
+                if case .video(let fileURL, _, _, _) = output {
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
+            }
+            try await onSave(output, emojis)
             cleanupTemporaryCutouts()
             dismiss()
         } catch is CancellationError {
@@ -211,9 +224,8 @@ struct TelegramStickerEditor: View {
     }
 
     private func addSticker(_ overlay: TelegramStickerOverlay) {
-        guard !overlay.format.isAnimated else {
-            Task { await show(TelegramStickerEditorError.animatedOverlayUnsupported) }
-            return
+        if overlay.format.isAnimated, editorState.timelineDuration == 0 {
+            editorState.timelineDuration = 3
         }
         editorState.addSticker(overlay)
     }
@@ -239,5 +251,40 @@ struct TelegramStickerEditor: View {
         errorMessage = telegramErrorDescription(error)
         await Task.yield()
         errorIsFocused = true
+    }
+
+    @MainActor private func renderedOutput(
+        source: TelegramStickerEditorSource,
+    ) async throws -> TelegramStickerEditorOutput {
+        let snapshot = editorState.snapshot
+        if TelegramStickerVideoRendering.requiresVideo(source: source, snapshot: snapshot) {
+            let outputURL = URL.temporaryDirectory
+                .appending(path: "bettertg-edited-sticker-\(UUID().uuidString)")
+                .appendingPathExtension("webm")
+            do {
+                let metadata = try await TelegramStickerVideoRendering.export(
+                    source: source,
+                    snapshot: snapshot,
+                    outputURL: outputURL,
+                )
+                return .video(
+                    fileURL: outputURL,
+                    width: metadata.width,
+                    height: metadata.height,
+                    duration: metadata.duration,
+                )
+            } catch {
+                try? FileManager.default.removeItem(at: outputURL)
+                throw error
+            }
+        }
+
+        guard let sourceImage = source.image(at: 0) else {
+            throw TelegramStickerEditorError.imageDecodingFailed
+        }
+        return try .image(TelegramStickerEditorRendering.pngData(
+            sourceImage: sourceImage,
+            snapshot: snapshot,
+        ))
     }
 }

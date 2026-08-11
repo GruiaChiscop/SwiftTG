@@ -61,7 +61,7 @@ struct TelegramStickerPresentation: Equatable {
     }
 
     var isEditable: Bool {
-        kind == .image && !isPremium
+        !isPremium
     }
 
     func pickerAccessibilityLabel(packTitle: String?) -> String {

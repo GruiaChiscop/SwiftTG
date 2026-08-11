@@ -19,6 +19,6 @@ From the BetterTG repository root, run:
 ```
 
 Pass `--force` to recreate the XCFramework from cached slices or `--clean`
-to rebuild every slice. BetterTG enables only the Matroska demuxer, the
-libvpx VP9 decoder, the file protocol, and the VP9 superframe bitstream
-filter required for Telegram video stickers.
+to rebuild every slice. BetterTG enables only the Matroska demuxer, WebM
+muxer, libvpx VP9 decoder and encoder, file protocol, and VP9 superframe
+bitstream filter required to read and export Telegram video stickers.

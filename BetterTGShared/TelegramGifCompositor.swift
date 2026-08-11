@@ -91,6 +91,46 @@ import SwiftUI
         return image
     }
 
+    static func compositionResources(
+        snapshot: TelegramMediaEditorSnapshot,
+        canvasSize: CGSize,
+    ) async throws -> TelegramGifCompositionResources {
+        let animatedStickers = snapshot.overlays.compactMap { overlay -> TelegramStickerOverlay? in
+            guard case .sticker(let sticker) = overlay.content, sticker.format.isAnimated else { return nil }
+            return sticker
+        }
+        let animatedFrames = try await TelegramAnimatedStickerFrameLoader.load(
+            stickers: animatedStickers,
+            canvasSize: canvasSize,
+        )
+        let drawingLayer: CIImage? =
+            if snapshot.strokes.isEmpty {
+                nil
+            } else {
+                try CIImage(cgImage: renderOverlay(
+                    snapshot: .init(strokes: snapshot.strokes, overlays: []),
+                    canvasSize: canvasSize,
+                ))
+            }
+        var staticLayers = [UUID: CIImage]()
+        for overlay in snapshot.overlays {
+            if case .sticker(let sticker) = overlay.content, sticker.format.isAnimated {
+                continue
+            }
+            let image = try renderOverlay(
+                snapshot: .init(strokes: [], overlays: [overlay]),
+                canvasSize: canvasSize,
+            )
+            staticLayers[overlay.id] = CIImage(cgImage: image)
+        }
+        return TelegramGifCompositionResources(
+            canvasSize: canvasSize,
+            drawingLayer: drawingLayer,
+            staticOverlayLayers: staticLayers,
+            animatedFrames: animatedFrames,
+        )
+    }
+
     // MARK: Private
 
     private static func exportTransformed(
@@ -267,46 +307,6 @@ import SwiftUI
             }
             try await Task.sleep(for: .milliseconds(2))
         }
-    }
-
-    private static func compositionResources(
-        snapshot: TelegramMediaEditorSnapshot,
-        canvasSize: CGSize,
-    ) async throws -> TelegramGifCompositionResources {
-        let animatedStickers = snapshot.overlays.compactMap { overlay -> TelegramStickerOverlay? in
-            guard case .sticker(let sticker) = overlay.content, sticker.format.isAnimated else { return nil }
-            return sticker
-        }
-        let animatedFrames = try await TelegramAnimatedStickerFrameLoader.load(
-            stickers: animatedStickers,
-            canvasSize: canvasSize,
-        )
-        let drawingLayer: CIImage? =
-            if snapshot.strokes.isEmpty {
-                nil
-            } else {
-                try CIImage(cgImage: renderOverlay(
-                    snapshot: .init(strokes: snapshot.strokes, overlays: []),
-                    canvasSize: canvasSize,
-                ))
-            }
-        var staticLayers = [UUID: CIImage]()
-        for overlay in snapshot.overlays {
-            if case .sticker(let sticker) = overlay.content, sticker.format.isAnimated {
-                continue
-            }
-            let image = try renderOverlay(
-                snapshot: .init(strokes: [], overlays: [overlay]),
-                canvasSize: canvasSize,
-            )
-            staticLayers[overlay.id] = CIImage(cgImage: image)
-        }
-        return TelegramGifCompositionResources(
-            canvasSize: canvasSize,
-            drawingLayer: drawingLayer,
-            staticOverlayLayers: staticLayers,
-            animatedFrames: animatedFrames,
-        )
     }
 
     private static func loadStickerImages(

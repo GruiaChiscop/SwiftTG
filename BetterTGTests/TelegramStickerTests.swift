@@ -64,11 +64,61 @@ struct TelegramStickerTests {
         #expect(presentation.pickerAccessibilityLabel(packTitle: "Hot Cherry") == "Premium sticker, 💃, from Hot Cherry")
     }
 
-    @Test func `editing is offered only for static nonpremium stickers`() {
+    @Test func `editing is offered for every nonpremium sticker format`() {
         #expect(presentation(format: .stickerFormatWebp).isEditable)
-        #expect(!presentation(format: .stickerFormatTgs).isEditable)
-        #expect(!presentation(format: .stickerFormatWebm).isEditable)
+        #expect(presentation(format: .stickerFormatTgs).isEditable)
+        #expect(presentation(format: .stickerFormatWebm).isEditable)
         #expect(!presentation(format: .stickerFormatWebp, isPremium: true).isEditable)
+        #expect(!presentation(format: .stickerFormatTgs, isPremium: true).isEditable)
+    }
+
+    @Test func `animated sources and overlays promote sticker output to video`() throws {
+        let image = try #require(Self.solidColorImage(size: CGSize(width: 80, height: 40)))
+        let staticSource = TelegramStickerEditorSource.image(image)
+        let animatedSource = TelegramStickerEditorSource.animation(.init(images: [image], frameRate: 2))
+        let animatedOverlay = TelegramStickerOverlay(
+            url: URL(filePath: "/tmp/overlay.tgs"),
+            pixelWidth: 80,
+            pixelHeight: 40,
+            format: .tgs,
+        )
+
+        #expect(!TelegramStickerVideoRendering.requiresVideo(
+            source: staticSource,
+            snapshot: .init(strokes: [], overlays: []),
+        ))
+        #expect(TelegramStickerVideoRendering.requiresVideo(
+            source: animatedSource,
+            snapshot: .init(strokes: [], overlays: []),
+        ))
+        #expect(TelegramStickerVideoRendering.requiresVideo(
+            source: staticSource,
+            snapshot: .init(
+                strokes: [],
+                overlays: [.init(content: .sticker(animatedOverlay))],
+            ),
+        ))
+    }
+
+    @Test func `animated sticker output uses Telegram WebM dimensions and format`() {
+        let original = TelegramStickerVideoRendering.outputSize(
+            crop: .init(),
+            canvasSize: CGSize(width: 80, height: 40),
+        )
+        let square = TelegramStickerVideoRendering.outputSize(
+            crop: .init(aspectRatio: .square),
+            canvasSize: CGSize(width: 80, height: 40),
+        )
+        let output = TelegramStickerEditorOutput.video(
+            fileURL: URL(filePath: "/tmp/sticker.webm"),
+            width: 512,
+            height: 256,
+            duration: 1,
+        )
+
+        #expect(original == CGSize(width: 512, height: 256))
+        #expect(square == CGSize(width: 512, height: 512))
+        #expect(output.format == .stickerFormatWebm)
     }
 
     @Test func `sending reuses the existing sticker file and metadata`() {

@@ -62,11 +62,11 @@ struct TelegramStickerPackPreview<Preview: View>: View {
                     service: service,
                     chatId: chatId,
                     actionTitle: "Save",
-                    onSave: { pngData, emojis in
+                    onSave: { output, emojis in
                         try await TelegramStickerEditing.replaceSticker(
                             sticker,
                             inPackNamed: stickerSet.name,
-                            pngData: pngData,
+                            output: output,
                             emojis: emojis,
                             service: service,
                         )

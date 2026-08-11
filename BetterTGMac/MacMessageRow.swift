@@ -857,9 +857,9 @@ struct MacMessageRow: View {
                 service: model.service,
                 chatId: message.chatId,
                 actionTitle: "Send",
-                onSave: { pngData, emojis in
+                onSave: { output, emojis in
                     try await TelegramStickerEditing.sendEditedSticker(
-                        pngData: pngData,
+                        output: output,
                         emojis: emojis,
                         service: model.service,
                         chatId: message.chatId,

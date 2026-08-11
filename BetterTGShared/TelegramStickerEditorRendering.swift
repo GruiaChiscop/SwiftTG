@@ -7,16 +7,6 @@ import CoreImage
         sourceImage: CGImage,
         snapshot: TelegramMediaEditorSnapshot,
     ) throws -> Data {
-        guard !snapshot.overlays.contains(where: { overlay in
-            if case .sticker(let sticker) = overlay.content {
-                sticker.format.isAnimated
-            } else {
-                false
-            }
-        }) else {
-            throw TelegramStickerEditorError.animatedOverlayUnsupported
-        }
-
         let canvasSize = CGSize(width: sourceImage.width, height: sourceImage.height)
         var composited = TelegramMediaEffectsRendering.apply(
             snapshot.effects,
