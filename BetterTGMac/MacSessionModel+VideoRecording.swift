@@ -21,7 +21,16 @@ extension MacSessionModel {
         TelegramVideoNotePlayer.shared.stop()
         let replyMessageId = replyingToMessage?.id
         let topicId = openedTopic
-        await videoRecorder.start { [weak self] artifact, schedulingState in
+        let allowsLiveUpload =
+            if case .some(.chatTypeSecret) = openedChatType {
+                false
+            } else {
+                true
+            }
+        await videoRecorder.start(
+            service: service,
+            allowsLiveUpload: allowsLiveUpload,
+        ) { [weak self] artifact, deliveryOptions in
             guard let self else { return }
             isSubmittingMessage = true
             messageActionError = nil
@@ -32,11 +41,15 @@ extension MacSessionModel {
                         service: service,
                         chatId: chatId,
                         url: artifact.url,
+                        thumbnail: artifact.thumbnail,
+                        preliminaryUploadFileId: artifact.preliminaryUploadFileId,
                         duration: artifact.duration,
                         length: artifact.length,
                         isViewOnce: artifact.isViewOnce,
                         replyTo: TelegramMessageSending.replyTo(messageId: replyMessageId),
-                        schedulingState: schedulingState,
+                        schedulingState: deliveryOptions.schedulingState,
+                        disableNotification: deliveryOptions.disableNotification,
+                        effectId: deliveryOptions.effectId,
                         topicId: topicId,
                     )
                     clearDraft(chatId: chatId)
@@ -85,8 +98,16 @@ extension MacSessionModel {
         }
     }
 
-    func sendVideoRecording(schedulingState: MessageSchedulingState? = nil) {
-        videoRecorder.stop(schedulingState: schedulingState)
+    func sendVideoRecording(
+        schedulingState: MessageSchedulingState? = nil,
+        disableNotification: Bool = false,
+        effectId: TdInt64 = 0,
+    ) {
+        videoRecorder.stop(
+            schedulingState: schedulingState,
+            disableNotification: disableNotification,
+            effectId: effectId,
+        )
         cancelVideoRecordingChatAction()
     }
 

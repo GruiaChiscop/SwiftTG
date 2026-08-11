@@ -45,6 +45,10 @@ final class TelegramSession: @unchecked Sendable {
         updateStore.unreadChatCountPublisher
     }
 
+    var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> {
+        updateStore.availableMessageEffectsPublisher
+    }
+
     var updatePublisher: AnyPublisher<Update, Never> {
         updateStore.updatePublisher
     }

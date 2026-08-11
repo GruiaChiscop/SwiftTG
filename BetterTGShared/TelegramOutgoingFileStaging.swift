@@ -113,6 +113,12 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
         return videoDirectory.appending(path: "raw_\(identifier.uuidString).mp4")
     }
 
+    func videoNoteThumbnailFileURL(identifier: UUID = UUID()) -> URL {
+        let videoDirectory = directory.appending(path: "VideoNotes", directoryHint: .isDirectory)
+        try? fileManager.createDirectory(at: videoDirectory, withIntermediateDirectories: true)
+        return videoDirectory.appending(path: "thumbnail_\(identifier.uuidString).jpeg")
+    }
+
     /// Unlike documents, a picked photo has no source URL to stage from - the picker only hands
     /// over decoded image data, which has to be written somewhere before it can be referenced.
     /// Writing it under this same managed directory means it's covered by the stale-file sweep
@@ -187,12 +193,29 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
         temporaryMessageId: Int64,
         successfulSendCleanup: SuccessfulSendCleanup = .removeImmediately,
     ) {
-        let entry = Entry(fileURL: fileURL, successfulSendCleanup: successfulSendCleanup)
+        register(
+            fileURLs: [fileURL],
+            chatId: chatId,
+            temporaryMessageId: temporaryMessageId,
+            successfulSendCleanup: successfulSendCleanup,
+        )
+    }
+
+    func register(
+        fileURLs: [URL],
+        chatId: Int64,
+        temporaryMessageId: Int64,
+        successfulSendCleanup: SuccessfulSendCleanup = .removeImmediately,
+    ) {
+        guard !fileURLs.isEmpty else { return }
+        let entry = Entry(fileURLs: fileURLs, successfulSendCleanup: successfulSendCleanup)
         let previousEntry = lock.withLock {
             stagedFiles.updateValue(entry, forKey: Key(chatId: chatId, messageId: temporaryMessageId))
         }
-        if let previousEntry, previousEntry.fileURL != fileURL {
-            removeStagedItem(at: previousEntry.fileURL)
+        if let previousEntry {
+            for previousURL in previousEntry.fileURLs where !fileURLs.contains(previousURL) {
+                removeStagedItem(at: previousURL)
+            }
         }
     }
 
@@ -201,7 +224,7 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
             stagedFiles.removeValue(forKey: Key(chatId: chatId, messageId: oldMessageId))
         }
         if let entry, entry.successfulSendCleanup == .removeImmediately {
-            removeStagedItem(at: entry.fileURL)
+            entry.fileURLs.forEach(removeStagedItem)
         }
     }
 
@@ -216,8 +239,9 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
     func messagesDeleted(chatId: Int64, messageIds: [Int64]) {
         let fileURLs = lock.withLock {
             messageIds.compactMap { messageId in
-                stagedFiles.removeValue(forKey: Key(chatId: chatId, messageId: messageId))?.fileURL
+                stagedFiles.removeValue(forKey: Key(chatId: chatId, messageId: messageId))?.fileURLs
             }
+            .flatMap(\.self)
         }
         for fileURL in fileURLs {
             removeStagedItem(at: fileURL)
@@ -226,7 +250,14 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
 
     func discard(fileURL: URL) {
         lock.withLock {
-            stagedFiles = stagedFiles.filter { $0.value.fileURL != fileURL }
+            stagedFiles = stagedFiles.compactMapValues { entry in
+                let remainingURLs = entry.fileURLs.filter { $0 != fileURL }
+                guard !remainingURLs.isEmpty else { return nil }
+                return Entry(
+                    fileURLs: remainingURLs,
+                    successfulSendCleanup: entry.successfulSendCleanup,
+                )
+            }
         }
         removeStagedItem(at: fileURL)
     }
@@ -239,7 +270,7 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
     }
 
     private struct Entry {
-        let fileURL: URL
+        let fileURLs: [URL]
         let successfulSendCleanup: SuccessfulSendCleanup
     }
 

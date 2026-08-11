@@ -73,8 +73,16 @@ struct MacConversationView: View {
             }
         }
         .sheet(isPresented: $showsScheduleVideoPicker) {
-            MacScheduleSendView(allowsSendWhenOnline: model.openedChat?.kind == .privateChat) { schedulingState in
+            MacScheduleSendView(
+                allowsSendWhenOnline: model.openedChat?.kind == .privateChat,
+                allowsRepeat: true,
+            ) { schedulingState in
                 model.sendVideoRecording(schedulingState: schedulingState)
+            }
+        }
+        .sheet(isPresented: $showsVideoEffectPicker) {
+            TelegramMessageEffectPicker(service: model.service) { effectId in
+                model.sendVideoRecording(effectId: effectId)
             }
         }
         .sheet(isPresented: $showsPollComposer) {
@@ -185,6 +193,7 @@ struct MacConversationView: View {
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
     @State private var showsScheduleVideoPicker = false
+    @State private var showsVideoEffectPicker = false
     @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
 
@@ -532,7 +541,7 @@ struct MacConversationView: View {
                         .disabled(videoRecorder.isPreparing || videoRecorder.isFinalizing)
                         if videoRecorder.hasPreview {
                             Button(
-                                videoRecorder.isMuted ? "Restore Sound" : "Mute Video Message",
+                                videoRecorder.isMuted ? "Unmute Preview" : "Mute Preview",
                                 systemImage: videoRecorder.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill",
                             ) {
                                 videoRecorder.isMuted.toggle()
@@ -544,6 +553,14 @@ struct MacConversationView: View {
                         .keyboardShortcut(.return, modifiers: [.command])
                         .disabled(!videoRecorder.isRecording && !videoRecorder.isPaused)
                         .contextMenu {
+                            Button("Send Silently", systemImage: "bell.slash") {
+                                model.sendVideoRecording(disableNotification: true)
+                            }
+                            if chat.kind == .privateChat {
+                                Button("Send with Effect…", systemImage: "sparkles") {
+                                    showsVideoEffectPicker = true
+                                }
+                            }
                             Button("Send Later…", systemImage: "clock") {
                                 showsScheduleVideoPicker = true
                             }

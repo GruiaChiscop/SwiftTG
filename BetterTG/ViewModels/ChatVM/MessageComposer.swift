@@ -307,16 +307,22 @@ import TDLibKit
     func sendMessageVideoNote(
         artifact: TelegramVideoNoteRecordingArtifact,
         schedulingState: MessageSchedulingState? = nil,
+        disableNotification: Bool = false,
+        effectId: TdInt64 = 0,
     ) async throws {
         try await TelegramVideoNoteSending.send(
             service: service,
             chatId: chatId,
             url: artifact.url,
+            thumbnail: artifact.thumbnail,
+            preliminaryUploadFileId: artifact.preliminaryUploadFileId,
             duration: artifact.duration,
             length: artifact.length,
             isViewOnce: artifact.isViewOnce,
             replyTo: getMessageReplyTo(from: replyMessage),
             schedulingState: schedulingState,
+            disableNotification: disableNotification,
+            effectId: effectId,
             topicId: topicId,
         )
         await main {

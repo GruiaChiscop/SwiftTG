@@ -267,6 +267,11 @@ struct ChatBottomArea: View {
                 },
             )
         }
+        .sheet(isPresented: $showsVideoEffectPicker) {
+            TelegramMessageEffectPicker(service: chatVM.service) { effectId in
+                sendCurrentRecording(effectId: effectId)
+            }
+        }
         .padding(.horizontal, 8)
         .background(.bar)
         .clipShape(.rect(cornerRadius: 15))
@@ -530,6 +535,16 @@ struct ChatBottomArea: View {
         .modify {
             if chatVM.recordingLocked, !currentRecordingIsViewOnce {
                 $0.contextMenu {
+                    if recordingMode == .video {
+                        Button("Send Silently", systemImage: "bell.slash") {
+                            sendCurrentRecording(disableNotification: true)
+                        }
+                        if chatVM.customChat.user != nil {
+                            Button("Send with Effect…", systemImage: "sparkles") {
+                                showsVideoEffectPicker = true
+                            }
+                        }
+                    }
                     Button("Send Later…", systemImage: "clock") { showsScheduleVoicePicker = true }
                 }
             } else if chatVM.showSendButton, chatVM.editCustomMessage == nil {
@@ -547,7 +562,10 @@ struct ChatBottomArea: View {
             }
         }
         .sheet(isPresented: $showsScheduleVoicePicker) {
-            ScheduleSendView(allowsSendWhenOnline: chatVM.customChat.user != nil) { schedulingState in
+            ScheduleSendView(
+                allowsSendWhenOnline: chatVM.customChat.user != nil,
+                allowsRepeat: recordingMode == .video,
+            ) { schedulingState in
                 sendCurrentRecording(schedulingState: schedulingState)
             }
         }
@@ -576,7 +594,27 @@ struct ChatBottomArea: View {
         // this surfaces the same "Send Later" entry points through the rotor's actions instead.
         .modify {
             if chatVM.recordingLocked, !currentRecordingIsViewOnce {
-                $0.accessibilityAction(named: "Send Later") { showsScheduleVoicePicker = true }
+                $0
+                    .modify {
+                        if recordingMode == .video {
+                            $0
+                                .accessibilityAction(named: "Send Silently") {
+                                    sendCurrentRecording(disableNotification: true)
+                                }
+                                .modify {
+                                    if chatVM.customChat.user != nil {
+                                        $0.accessibilityAction(named: "Send with Effect") {
+                                            showsVideoEffectPicker = true
+                                        }
+                                    } else {
+                                        $0
+                                    }
+                                }
+                        } else {
+                            $0
+                        }
+                    }
+                    .accessibilityAction(named: "Send Later") { showsScheduleVoicePicker = true }
             } else if chatVM.showSendButton, chatVM.editCustomMessage == nil {
                 $0.accessibilityAction(named: "Send Later") { showsScheduleSendPicker = true }
             } else {
@@ -665,7 +703,7 @@ struct ChatBottomArea: View {
                         Button("Record More", systemImage: "record.circle", action: toggleVideoRecordingPause)
                             .labelStyle(.iconOnly)
                         Button(
-                            chatVM.videoRecorder.isMuted ? "Restore Sound" : "Mute Video Message",
+                            chatVM.videoRecorder.isMuted ? "Unmute Preview" : "Mute Preview",
                             systemImage: chatVM.videoRecorder.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill",
                         ) {
                             chatVM.videoRecorder.isMuted.toggle()
@@ -843,6 +881,7 @@ struct ChatBottomArea: View {
     @State private var showsLocationComposer = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
+    @State private var showsVideoEffectPicker = false
     @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
 
@@ -896,7 +935,11 @@ struct ChatBottomArea: View {
         }
     }
 
-    private func sendCurrentRecording(schedulingState: MessageSchedulingState? = nil) {
+    private func sendCurrentRecording(
+        schedulingState: MessageSchedulingState? = nil,
+        disableNotification: Bool = false,
+        effectId: TdInt64 = 0,
+    ) {
         if recordingMode == .voice {
             chatVM.mediaStopRecordingVoice(
                 duration: Int(chatVM.timerCount),
@@ -906,7 +949,11 @@ struct ChatBottomArea: View {
         } else if chatVM.preparingVideoNote {
             chatVM.cancelRecordingVideo()
         } else {
-            chatVM.mediaStopRecordingVideo(schedulingState: schedulingState)
+            chatVM.mediaStopRecordingVideo(
+                schedulingState: schedulingState,
+                disableNotification: disableNotification,
+                effectId: effectId,
+            )
         }
         chatVM.recordingLocked = false
     }

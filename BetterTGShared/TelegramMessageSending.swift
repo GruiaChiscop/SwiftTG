@@ -72,6 +72,7 @@ enum TelegramMessageSending {
         uploadAction: ChatAction? = nil,
         schedulingState: MessageSchedulingState? = nil,
         disableNotification: Bool = false,
+        effectId: TdInt64 = 0,
         topicId: MessageTopic? = nil,
         onAccepted: (@Sendable ([Message]) -> Void)? = nil,
     ) async throws -> [Message] {
@@ -89,6 +90,7 @@ enum TelegramMessageSending {
         let options = sendOptions(
             schedulingState: schedulingState,
             disableNotification: disableNotification,
+            effectId: effectId,
         )
         do {
             // swiftformat:disable:next conditionalAssignment
@@ -125,12 +127,13 @@ enum TelegramMessageSending {
     static func sendOptions(
         schedulingState: MessageSchedulingState? = nil,
         disableNotification: Bool = false,
+        effectId: TdInt64 = 0,
     ) -> MessageSendOptions? {
-        guard schedulingState != nil || disableNotification else { return nil }
+        guard schedulingState != nil || disableNotification || effectId != 0 else { return nil }
         return MessageSendOptions(
             allowPaidBroadcast: false,
             disableNotification: disableNotification,
-            effectId: 0,
+            effectId: effectId,
             fromBackground: false,
             onlyPreview: false,
             paidMessageStarCount: 0,

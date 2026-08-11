@@ -14,6 +14,7 @@ struct MacScheduleSendView: View {
     /// Only offered for private chats, where TDLib can resolve "when the other user comes online";
     /// the caller is responsible for that check.
     var allowsSendWhenOnline: Bool
+    var allowsRepeat = false
     var onSchedule: (MessageSchedulingState) -> Void
 
     var body: some View {
@@ -34,13 +35,21 @@ struct MacScheduleSendView: View {
                 displayedComponents: [.date, .hourAndMinute],
             )
 
+            if allowsRepeat {
+                Picker("Repeat", selection: $repeatPeriod) {
+                    ForEach(TelegramMessageRepeatPeriod.allCases) { period in
+                        Text(period.title).tag(period)
+                    }
+                }
+            }
+
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Schedule") {
                     schedule(.messageSchedulingStateSendAtDate(.init(
-                        repeatPeriod: 0,
+                        repeatPeriod: repeatPeriod.rawValue,
                         sendDate: Int(sendDate.timeIntervalSince1970),
                     )))
                 }
@@ -57,6 +66,7 @@ struct MacScheduleSendView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var sendDate = Date().addingTimeInterval(60 * 60)
+    @State private var repeatPeriod = TelegramMessageRepeatPeriod.never
 
     private func schedule(_ schedulingState: MessageSchedulingState) {
         dismiss()

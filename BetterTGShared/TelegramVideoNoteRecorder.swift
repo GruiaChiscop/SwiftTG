@@ -10,9 +10,19 @@ import SwiftUI
 
 struct TelegramVideoNoteRecordingArtifact: Sendable {
     let url: URL
+    let thumbnail: TelegramVideoNoteThumbnail?
+    let preliminaryUploadFileId: Int?
     let duration: Int
     let length: Int
     let isViewOnce: Bool
+}
+
+// MARK: - TelegramVideoNoteDeliveryOptions
+
+struct TelegramVideoNoteDeliveryOptions {
+    var schedulingState: MessageSchedulingState?
+    var disableNotification = false
+    var effectId: TdInt64 = 0
 }
 
 // MARK: - TelegramVideoNoteCameraControls
@@ -59,9 +69,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
 
 // MARK: - TelegramVideoNoteRecorder
 
-@MainActor @Observable final class TelegramVideoNoteRecorder: NSObject,
-    AVCaptureFileOutputRecordingDelegate
-{
+@MainActor @Observable final class TelegramVideoNoteRecorder: NSObject {
     // MARK: Internal
 
     private(set) var isPreparing = false
@@ -117,7 +125,9 @@ enum TelegramVideoNoteCameraPosition: Sendable {
     }
 
     func start(
-        onFinished: @escaping @MainActor (TelegramVideoNoteRecordingArtifact, MessageSchedulingState?) -> Void,
+        service _: any TelegramService,
+        allowsLiveUpload _: Bool = true,
+        onFinished: @escaping @MainActor (TelegramVideoNoteRecordingArtifact, TelegramVideoNoteDeliveryOptions) -> Void,
     ) async {
         guard !isPreparing, !isRecording, !isPaused, !isFinalizing else { return }
         isPreparing = true
@@ -162,11 +172,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         updateDuration()
         shouldPauseAfterCurrentSegment = true
         stopTimer()
-        #if os(iOS)
         assetWriterRecorder.stop()
-        #else
-        output.stopRecording()
-        #endif
     }
 
     func resume() {
@@ -182,9 +188,17 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         }
     }
 
-    func stop(schedulingState: MessageSchedulingState? = nil) {
+    func stop(
+        schedulingState: MessageSchedulingState? = nil,
+        disableNotification: Bool = false,
+        effectId: TdInt64 = 0,
+    ) {
         guard isRecording || isPaused else { return }
-        pendingSchedulingState = schedulingState
+        pendingDeliveryOptions = TelegramVideoNoteDeliveryOptions(
+            schedulingState: schedulingState,
+            disableNotification: disableNotification,
+            effectId: effectId,
+        )
         shouldPauseAfterCurrentSegment = false
         shouldDiscard = false
         updateDuration()
@@ -192,21 +206,11 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         isPaused = false
         isFinalizing = true
         stopTimer()
-        #if os(iOS)
         if currentSegmentID != nil {
             assetWriterRecorder.stop()
         } else {
             Task { await finalizeRecording() }
         }
-        #else
-        if currentRawRecordingURL != nil {
-            if output.isRecording {
-                output.stopRecording()
-            }
-        } else {
-            Task { await finalizeRecording() }
-        }
-        #endif
     }
 
     func cancel() {
@@ -216,7 +220,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         shouldDiscard = true
         shouldPauseAfterCurrentSegment = false
         completion = nil
-        pendingSchedulingState = nil
+        pendingDeliveryOptions = TelegramVideoNoteDeliveryOptions()
         if isFinalizing {
             return
         }
@@ -225,17 +229,9 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         isPaused = false
         isFinalizing = false
         stopTimer()
-        #if os(iOS)
         assetWriterRecorder.cancel()
         currentSegmentID = nil
         cleanupSession()
-        #else
-        if output.isRecording {
-            output.stopRecording()
-        } else if currentRawRecordingURL == nil {
-            cleanupSession()
-        }
-        #endif
     }
 
     func clearError() {
@@ -274,31 +270,6 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         trimEnd = range.upperBound
     }
 
-    nonisolated func fileOutput(
-        _: AVCaptureFileOutput,
-        didFinishRecordingTo outputFileURL: URL,
-        from _: [AVCaptureConnection],
-        error: (any Swift.Error)?,
-    ) {
-        #if os(macOS)
-        Task { @MainActor [weak self] in
-            await self?.finishRecording(at: outputFileURL, error: error)
-        }
-        #endif
-    }
-
-    nonisolated func fileOutput(
-        _: AVCaptureFileOutput,
-        didStartRecordingTo outputFileURL: URL,
-        from _: [AVCaptureConnection],
-    ) {
-        #if os(macOS)
-        Task { @MainActor [weak self] in
-            self?.recordingDidStart(at: outputFileURL)
-        }
-        #endif
-    }
-
     // MARK: Private
 
     private enum CameraControlOperation: Sendable {
@@ -321,16 +292,12 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         case success(CameraControlState)
     }
 
-    #if os(iOS)
     @ObservationIgnored private let assetWriterRecorder = TelegramVideoNoteAssetWriterRecorder()
     @ObservationIgnored private var currentSegmentID: UUID?
-    #else
-    @ObservationIgnored private let output = AVCaptureMovieFileOutput()
-    #endif
     @ObservationIgnored private var completion:
-        (@MainActor (TelegramVideoNoteRecordingArtifact, MessageSchedulingState?) -> Void)?
+        (@MainActor (TelegramVideoNoteRecordingArtifact, TelegramVideoNoteDeliveryOptions) -> Void)?
     @ObservationIgnored private var configured = false
-    @ObservationIgnored private var pendingSchedulingState: MessageSchedulingState?
+    @ObservationIgnored private var pendingDeliveryOptions = TelegramVideoNoteDeliveryOptions()
     @ObservationIgnored private var rawRecordingURLs = [URL]()
     @ObservationIgnored private var currentRawRecordingURL: URL?
     @ObservationIgnored private var accumulatedDuration: TimeInterval = 0
@@ -663,6 +630,10 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             throw TelegramVideoNoteRecorderError.cameraUnavailable
         }
         captureSession.addInput(videoInput)
+        guard captureSession.canAddOutput(assetWriterRecorder.videoOutput) else {
+            throw TelegramVideoNoteRecorderError.captureSessionUnavailable
+        }
+        captureSession.addOutput(assetWriterRecorder.videoOutput)
 
         guard let audioDevice = AVCaptureDevice.default(for: .audio) else {
             throw TelegramVideoNoteRecorderError.microphoneUnavailable
@@ -672,10 +643,11 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             throw TelegramVideoNoteRecorderError.microphoneUnavailable
         }
         captureSession.addInput(audioInput)
-        guard captureSession.canAddOutput(output) else {
+        guard captureSession.canAddOutput(assetWriterRecorder.audioOutput) else {
             throw TelegramVideoNoteRecorderError.captureSessionUnavailable
         }
-        captureSession.addOutput(output)
+        captureSession.addOutput(assetWriterRecorder.audioOutput)
+        assetWriterRecorder.selectCamera(position: videoDevice.position)
         #endif
         configured = true
         updateCameraControlState(for: videoDevice)
@@ -724,11 +696,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         let screenFlashEnabled = usesScreenFlash
         let primaryPosition = cameraPosition
         let concurrentCamerasEnabled = usesConcurrentCameras
-        #if os(iOS)
         let videoOutput: AVCaptureVideoDataOutput? = assetWriterRecorder.videoOutput
-        #else
-        let videoOutput: AVCaptureVideoDataOutput? = nil
-        #endif
         let operationTask = Task.detached(priority: .userInitiated) {
             await previousTask?.value
             return Self.applyCameraControl(
@@ -794,43 +762,26 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             return
         }
 
-        #if os(iOS)
         let url = TelegramOutgoingFileStaging.shared.videoNoteAssetWriterFileURL()
-        #else
-        let url = TelegramOutgoingFileStaging.shared.videoNoteFileURL(isRawRecording: true)
-        #endif
         currentRawRecordingURL = url
         recordingStartedAt = .now
         shouldPauseAfterCurrentSegment = false
         isPaused = false
         isRecording = true
-        #if os(iOS)
         do {
-            currentSegmentID = try assetWriterRecorder.start(to: url) { [weak self] id, result in
-                await self?.finishAssetWriterSegment(id: id, result: result)
-            }
+            currentSegmentID = try assetWriterRecorder.start(
+                to: url,
+                completion: { [weak self] id, result in
+                    await self?.finishAssetWriterSegment(id: id, result: result)
+                },
+            )
         } catch {
             currentRawRecordingURL = nil
             recordingStartedAt = nil
             isRecording = false
             throw error
         }
-        #else
-        recordingStartedAt = nil
-        output.maxRecordedDuration = CMTime(seconds: remainingDuration, preferredTimescale: 600)
-        output.startRecording(to: url, recordingDelegate: self)
-        #endif
         startTimer()
-    }
-
-    private func recordingDidStart(at url: URL) {
-        #if os(macOS)
-        guard currentRawRecordingURL == url else { return }
-        recordingStartedAt = .now
-        if shouldDiscard || shouldPauseAfterCurrentSegment || isFinalizing {
-            output.stopRecording()
-        }
-        #endif
     }
 
     private func startTimer() {
@@ -861,66 +812,6 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         )
     }
 
-    private func finishRecording(at rawURL: URL, error: (any Swift.Error)?) async {
-        stopTimer()
-        isPreparing = false
-        if shouldDiscard {
-            TelegramOutgoingFileStaging.shared.discard(fileURL: rawURL)
-            cleanupSession()
-            return
-        }
-        if let error, !FileManager.default.fileExists(atPath: rawURL.path) {
-            currentRawRecordingURL = nil
-            recordingStartedAt = nil
-            if shouldPauseAfterCurrentSegment {
-                shouldPauseAfterCurrentSegment = false
-                isRecording = false
-                isPaused = true
-                isFinalizing = false
-                preparePreview()
-                return
-            }
-            if isFinalizing {
-                if rawRecordingURLs.isEmpty {
-                    cleanupSession()
-                } else {
-                    await finalizeRecording()
-                }
-                return
-            }
-            fail("Video recording failed: \(error.localizedDescription)")
-            cleanupSession()
-            return
-        }
-
-        let currentDuration = recordingStartedAt.map { Date.now.timeIntervalSince($0) } ?? 0
-        accumulatedDuration = TelegramVideoNoteRecordingLimits.totalDuration(
-            completed: accumulatedDuration,
-            current: currentDuration,
-        )
-        duration = accumulatedDuration
-        recordingStartedAt = nil
-        currentRawRecordingURL = nil
-        rawRecordingURLs.append(rawURL)
-
-        if shouldPauseAfterCurrentSegment,
-           TelegramVideoNoteRecordingLimits.remainingDuration(after: accumulatedDuration) > 0
-        {
-            shouldPauseAfterCurrentSegment = false
-            isRecording = false
-            isPaused = true
-            isFinalizing = false
-            preparePreview()
-            return
-        }
-
-        isRecording = false
-        isPaused = false
-        isFinalizing = true
-        await finalizeRecording()
-    }
-
-    #if os(iOS)
     private func finishAssetWriterSegment(
         id: UUID,
         result: Result<
@@ -982,7 +873,6 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             await finalizeRecording()
         }
     }
-    #endif
 
     private func finalizeRecording() async {
         guard !rawRecordingURLs.isEmpty else {
@@ -990,35 +880,89 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             cleanupSession()
             return
         }
+        guard TelegramVideoNoteEditing.isSendableDuration(accumulatedDuration) else {
+            fail("Video messages must be at least one second long.")
+            cleanupSession()
+            return
+        }
+
+        let trimRange = normalizedTrimRange
+        if TelegramVideoNoteRecordedFileReusePolicy.canReuse(
+            segmentCount: rawRecordingURLs.count,
+            trimRange: trimRange,
+            duration: accumulatedDuration,
+        ), let sourceURL = rawRecordingURLs.first {
+            let thumbnailURL = TelegramOutgoingFileStaging.shared.videoNoteThumbnailFileURL()
+            let thumbnail = try? await TelegramVideoNoteEditing.generateThumbnail(
+                videoURL: sourceURL,
+                outputURL: thumbnailURL,
+            )
+            if thumbnail == nil {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: thumbnailURL)
+            }
+            guard !shouldDiscard else {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: sourceURL)
+                cleanupSession()
+                return
+            }
+
+            rawRecordingURLs.removeAll()
+            let artifact = TelegramVideoNoteRecordingArtifact(
+                url: sourceURL,
+                thumbnail: thumbnail,
+                preliminaryUploadFileId: nil,
+                duration: min(max(1, Int(ceil(trimRange.upperBound - trimRange.lowerBound))), 60),
+                length: 480,
+                isViewOnce: isViewOnce,
+            )
+            let deliveryOptions = pendingDeliveryOptions
+            let completion = completion
+            cleanupSession()
+            completion?(artifact, deliveryOptions)
+            return
+        }
 
         let outputURL = TelegramOutgoingFileStaging.shared.videoNoteFileURL()
+        let thumbnailURL = TelegramOutgoingFileStaging.shared.videoNoteThumbnailFileURL()
         do {
             let duration = try await TelegramVideoNoteTranscoder.exportSquareVideo(
                 sourceURLs: rawRecordingURLs,
                 outputURL: outputURL,
                 side: 480,
                 trimRange: normalizedTrimRange,
-                muted: isMuted,
             )
+            let thumbnail = try? await TelegramVideoNoteEditing.generateThumbnail(
+                videoURL: outputURL,
+                outputURL: thumbnailURL,
+            )
+            if thumbnail == nil {
+                TelegramOutgoingFileStaging.shared.discard(fileURL: thumbnailURL)
+            }
             discardRawRecordings()
             if shouldDiscard {
                 TelegramOutgoingFileStaging.shared.discard(fileURL: outputURL)
+                if let thumbnail {
+                    TelegramOutgoingFileStaging.shared.discard(fileURL: thumbnail.url)
+                }
                 cleanupSession()
                 return
             }
             let artifact = TelegramVideoNoteRecordingArtifact(
                 url: outputURL,
+                thumbnail: thumbnail,
+                preliminaryUploadFileId: nil,
                 duration: duration,
                 length: 480,
                 isViewOnce: isViewOnce,
             )
-            let schedulingState = pendingSchedulingState
+            let deliveryOptions = pendingDeliveryOptions
             let completion = completion
             cleanupSession()
-            completion?(artifact, schedulingState)
+            completion?(artifact, deliveryOptions)
         } catch {
             discardRawRecordings()
             TelegramOutgoingFileStaging.shared.discard(fileURL: outputURL)
+            TelegramOutgoingFileStaging.shared.discard(fileURL: thumbnailURL)
             if shouldDiscard {
                 cleanupSession()
                 return
@@ -1051,11 +995,9 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         trimEnd = 0
         isMuted = false
         recordingStartedAt = nil
-        #if os(iOS)
         currentSegmentID = nil
-        #endif
         discardRawRecordings()
-        pendingSchedulingState = nil
+        pendingDeliveryOptions = TelegramVideoNoteDeliveryOptions()
         completion = nil
         shouldDiscard = false
         shouldPauseAfterCurrentSegment = false
@@ -1079,7 +1021,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         previewSourceURLs = rawRecordingURLs
         trimStart = 0
         trimEnd = accumulatedDuration
-        isMuted = false
+        isMuted = true
     }
 
     @discardableResult private func enqueueCaptureSessionOperation(shouldRun: Bool) -> Task<Void, Never> {
@@ -1120,7 +1062,6 @@ enum TelegramVideoNoteTranscoder {
         outputURL: URL,
         side: Int,
         trimRange: Range<Double>? = nil,
-        muted: Bool = false,
     ) async throws -> Int {
         let asset = try await TelegramVideoNoteEditing.combinedAsset(sourceURLs: sourceURLs)
 
@@ -1155,16 +1096,6 @@ enum TelegramVideoNoteTranscoder {
                 preferredTimescale: 600,
             ),
         )
-        if muted {
-            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-            let audioMix = AVMutableAudioMix()
-            audioMix.inputParameters = audioTracks.map { track in
-                let parameters = AVMutableAudioMixInputParameters(track: track)
-                parameters.setVolume(0, at: .zero)
-                return parameters
-            }
-            exporter.audioMix = audioMix
-        }
         exporter.shouldOptimizeForNetworkUse = true
         try await exporter.export(to: outputURL, as: .mp4)
         return min(max(1, Int(ceil(effectiveTrimRange.upperBound - effectiveTrimRange.lowerBound))), 60)

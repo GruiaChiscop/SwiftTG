@@ -17,6 +17,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     var chatListPublisher: AnyPublisher<ChatListSnapshot, Never> { get }
     var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> { get }
     var unreadChatCountPublisher: AnyPublisher<UpdateUnreadChatCount?, Never> { get }
+    var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> { get }
     var updatePublisher: AnyPublisher<Update, Never> { get }
 
     func filePublisher(fileId: Int) -> AnyPublisher<File, Never>
@@ -242,6 +243,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getBlockedMessageSenders(blockList: BlockList?, limit: Int?, offset: Int?) async throws -> MessageSenders
     func getLinkPreview(linkPreviewOptions: LinkPreviewOptions?, text: FormattedText?) async throws -> LinkPreview
     func getMe() async throws -> User
+    func getMessageEffect(effectId: TdInt64?) async throws -> MessageEffect
     func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings
     func getSupergroup(supergroupId: Int64?) async throws -> Supergroup
     func getSupergroupFullInfo(supergroupId: Int64?) async throws -> SupergroupFullInfo
@@ -267,6 +269,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func pinChatMessage(chatId: Int64?, disableNotification: Bool?, messageId: Int64?, onlyForSelf: Bool?) async throws
         -> Ok
     func processPushNotification(payload: String?) async throws -> Ok
+    func preliminaryUploadFile(file: InputFile?, fileType: FileType?, priority: Int?) async throws -> File
+    func cancelPreliminaryUploadFile(fileId: Int?) async throws -> Ok
     func registerDevice(deviceToken: DeviceToken?, otherUserIds: [Int64]?) async throws -> PushReceiverId
     func sendChatAction(
         action: ChatAction?,
@@ -511,6 +515,14 @@ extension TelegramSession: TelegramService {
 
     func processPushNotification(payload: String?) async throws -> Ok {
         try await client.processPushNotification(payload: payload)
+    }
+
+    func preliminaryUploadFile(file: InputFile?, fileType: FileType?, priority: Int?) async throws -> File {
+        try await client.preliminaryUploadFile(file: file, fileType: fileType, priority: priority)
+    }
+
+    func cancelPreliminaryUploadFile(fileId: Int?) async throws -> Ok {
+        try await client.cancelPreliminaryUploadFile(fileId: fileId)
     }
 
     func registerDevice(deviceToken: DeviceToken?, otherUserIds: [Int64]?) async throws -> PushReceiverId {
@@ -1268,6 +1280,10 @@ extension TelegramSession: TelegramService {
 
     func getMe() async throws -> User {
         try await client.getMe()
+    }
+
+    func getMessageEffect(effectId: TdInt64?) async throws -> MessageEffect {
+        try await client.getMessageEffect(effectId: effectId)
     }
 
     func getScopeNotificationSettings(scope: NotificationSettingsScope?) async throws -> ScopeNotificationSettings {

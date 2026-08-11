@@ -178,13 +178,24 @@ extension ChatVM {
         Media.shared.stop()
         TelegramAudioPlayer.shared.stop()
         TelegramVideoNotePlayer.shared.stop()
-        await videoRecorder.start { [weak self] artifact, schedulingState in
+        let allowsLiveUpload =
+            if case .chatTypeSecret = customChat.chat.type {
+                false
+            } else {
+                true
+            }
+        await videoRecorder.start(
+            service: service,
+            allowsLiveUpload: allowsLiveUpload,
+        ) { [weak self] artifact, deliveryOptions in
             guard let self else { return }
             Task {
                 do {
                     try await composer.sendMessageVideoNote(
                         artifact: artifact,
-                        schedulingState: schedulingState,
+                        schedulingState: deliveryOptions.schedulingState,
+                        disableNotification: deliveryOptions.disableNotification,
+                        effectId: deliveryOptions.effectId,
                     )
                 } catch {
                     guard !Task.isCancelled else { return }
@@ -239,8 +250,16 @@ extension ChatVM {
         }
     }
 
-    func mediaStopRecordingVideo(schedulingState: MessageSchedulingState? = nil) {
-        videoRecorder.stop(schedulingState: schedulingState)
+    func mediaStopRecordingVideo(
+        schedulingState: MessageSchedulingState? = nil,
+        disableNotification: Bool = false,
+        effectId: TdInt64 = 0,
+    ) {
+        videoRecorder.stop(
+            schedulingState: schedulingState,
+            disableNotification: disableNotification,
+            effectId: effectId,
+        )
         Task {
             _ = try? await service.sendChatAction(
                 action: .chatActionCancel,

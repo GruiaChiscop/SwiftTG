@@ -12,40 +12,40 @@ struct TelegramVideoNotePlaybackPreview: View {
 
     var body: some View {
         VideoPlayer(player: player)
-            .task(id: sourceURLs) {
+            .task(id: PlaybackConfiguration(sourceURLs: sourceURLs, trimRange: trimRange)) {
                 do {
-                    let asset = try await TelegramVideoNoteEditing.combinedAsset(sourceURLs: sourceURLs)
+                    let asset = try await TelegramVideoNoteEditing.trimmedAsset(
+                        sourceURLs: sourceURLs,
+                        trimRange: trimRange,
+                    )
                     guard !Task.isCancelled else { return }
-                    player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
-                    configurePlayback()
+                    looper = nil
+                    player.removeAllItems()
+                    looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(asset: asset))
+                    player.isMuted = isMuted
+                    player.play()
                 } catch {
-                    player.replaceCurrentItem(with: nil)
+                    looper = nil
+                    player.removeAllItems()
                 }
-            }
-            .onChange(of: trimRange) {
-                configurePlayback()
             }
             .onChange(of: isMuted) {
                 player.isMuted = isMuted
             }
             .onDisappear {
                 player.pause()
-                player.replaceCurrentItem(with: nil)
+                looper = nil
+                player.removeAllItems()
             }
     }
 
     // MARK: Private
 
-    @State private var player = AVPlayer()
-
-    private func configurePlayback() {
-        guard let item = player.currentItem else { return }
-        player.isMuted = isMuted
-        item.forwardPlaybackEndTime = CMTime(seconds: trimRange.upperBound, preferredTimescale: 600)
-        player.seek(
-            to: CMTime(seconds: trimRange.lowerBound, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero,
-        )
+    private struct PlaybackConfiguration: Hashable {
+        let sourceURLs: [URL]
+        let trimRange: Range<Double>
     }
+
+    @State private var player = AVQueuePlayer()
+    @State private var looper: AVPlayerLooper?
 }

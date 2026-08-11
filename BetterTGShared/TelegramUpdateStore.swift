@@ -44,6 +44,10 @@ final class TelegramUpdateStore: @unchecked Sendable {
         unreadChatCountSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
+    var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> {
+        availableMessageEffectsSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     func messagePublisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
         messageStore.publisher(chatId: chatId)
     }
@@ -76,7 +80,8 @@ final class TelegramUpdateStore: @unchecked Sendable {
     }
 
     func publish(_ update: Update) {
-        queue.async { [updateSubject, chatFoldersSubject, unreadChatCountSubject] in
+        queue.async {
+            [updateSubject, chatFoldersSubject, unreadChatCountSubject, availableMessageEffectsSubject] in
             dispatchPrecondition(condition: .onQueue(self.queue))
             self.chatListStore.reduce(update)
             self.fileStore.reduce(update)
@@ -87,6 +92,9 @@ final class TelegramUpdateStore: @unchecked Sendable {
             if case .updateUnreadChatCount(let value) = update, value.chatList == .chatListMain {
                 unreadChatCountSubject.send(value)
             }
+            if case .updateAvailableMessageEffects(let value) = update {
+                availableMessageEffectsSubject.send(value)
+            }
             updateSubject.send(update)
         }
     }
@@ -95,6 +103,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
 
     private let chatFoldersSubject = CurrentValueSubject<UpdateChatFolders?, Never>(nil)
     private let unreadChatCountSubject = CurrentValueSubject<UpdateUnreadChatCount?, Never>(nil)
+    private let availableMessageEffectsSubject = CurrentValueSubject<UpdateAvailableMessageEffects?, Never>(nil)
     private let chatListStore = TelegramChatListStore()
     private let fileStore = TelegramFileStore()
     private let messageStore = TelegramMessageStore()
