@@ -233,6 +233,16 @@ struct MacConversationView: View {
         (model.editingMessage == nil ? model.messageText : model.editMessageText).string
     }
 
+    private var videoRecordingStatus: String {
+        if model.videoRecorder.isFinalizing {
+            "Preparing video message…"
+        } else if model.videoRecorder.isPaused {
+            "Paused, \(telegramClockDuration(Int(model.videoRecorder.duration)))"
+        } else {
+            telegramClockDuration(Int(model.videoRecorder.duration))
+        }
+    }
+
     private var pinnedMessageSummary: String {
         guard let message = model.currentPinnedMessage else { return "" }
         return telegramQuotedMessageExcerpt(telegramMessageContentDescription(message))
@@ -480,18 +490,16 @@ struct MacConversationView: View {
                 )
             }
 
-            if model.videoRecorder.isPreparing || model.videoRecorder.isRecording || model.videoRecorder.isFinalizing {
+            if model.videoRecorder.isPreparing || model.videoRecorder.isRecording || model.videoRecorder.isPaused
+                || model.videoRecorder.isFinalizing
+            {
                 HStack(spacing: 10) {
                     TelegramVideoNoteCapturePreview(session: model.videoRecorder.captureSession)
                         .frame(width: 96, height: 96)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(
-                            model.videoRecorder.isFinalizing
-                                ? "Preparing video message…"
-                                : telegramClockDuration(Int(model.videoRecorder.duration)),
-                        )
-                        .monospacedDigit()
+                        Text(videoRecordingStatus)
+                            .monospacedDigit()
                         if chat.kind == .privateChat {
                             Toggle("View Once", isOn: $videoRecorder.isViewOnce)
                                 .toggleStyle(.checkbox)
@@ -501,11 +509,18 @@ struct MacConversationView: View {
                     Button("Cancel Recording", systemImage: "xmark", role: .cancel) {
                         model.cancelVideoRecording()
                     }
+                    Button(
+                        model.videoRecorder.isPaused ? "Resume Recording" : "Pause Recording",
+                        systemImage: model.videoRecorder.isPaused ? "record.circle" : "pause.fill",
+                    ) {
+                        model.toggleVideoRecordingPause()
+                    }
+                    .disabled(model.videoRecorder.isPreparing || model.videoRecorder.isFinalizing)
                     Button("Send Video Message", systemImage: "paperplane.fill") {
                         model.sendVideoRecording()
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(!model.videoRecorder.isRecording)
+                    .disabled(!model.videoRecorder.isRecording && !model.videoRecorder.isPaused)
                     .contextMenu {
                         Button("Send Later…", systemImage: "clock") {
                             showsScheduleVideoPicker = true

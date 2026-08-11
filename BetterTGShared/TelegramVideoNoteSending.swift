@@ -52,6 +52,10 @@ enum TelegramVideoNoteSending {
                         fileURL: url,
                         chatId: chatId,
                         temporaryMessageId: message.id,
+                        // TDLib's successful-send update can keep referencing the upload source
+                        // for the rest of this process. Removing it immediately makes a freshly
+                        // sent video note unplayable until the conversation is reloaded.
+                        successfulSendCleanup: .retainUntilStale,
                     )
                 },
             )

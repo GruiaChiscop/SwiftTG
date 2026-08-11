@@ -8,6 +8,7 @@ extension MacSessionModel {
         guard !isRecordingVoice,
               !videoRecorder.isPreparing,
               !videoRecorder.isRecording,
+              !videoRecorder.isPaused,
               !videoRecorder.isFinalizing,
               selectedDocumentURLs.isEmpty,
               selectedPhotoURLs.isEmpty,
@@ -63,6 +64,25 @@ extension MacSessionModel {
     func cancelVideoRecording() {
         videoRecorder.cancel()
         cancelVideoRecordingChatAction()
+    }
+
+    func toggleVideoRecordingPause() {
+        if videoRecorder.isPaused {
+            videoRecorder.resume()
+            guard videoRecorder.isRecording, let chatId = openedChatId else { return }
+            let topicId = openedTopic
+            Task {
+                _ = try? await service.sendChatAction(
+                    action: .chatActionRecordingVideoNote,
+                    businessConnectionId: nil,
+                    chatId: chatId,
+                    topicId: topicId,
+                )
+            }
+        } else {
+            videoRecorder.pause()
+            cancelVideoRecordingChatAction()
+        }
     }
 
     func sendVideoRecording(schedulingState: MessageSchedulingState? = nil) {

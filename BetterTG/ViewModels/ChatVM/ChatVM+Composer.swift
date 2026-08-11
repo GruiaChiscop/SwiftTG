@@ -121,6 +121,7 @@ extension ChatVM {
     }
 
     var recordingVideoNote: Bool { videoRecorder.isRecording }
+    var pausedVideoNote: Bool { videoRecorder.isPaused }
     var preparingVideoNote: Bool { videoRecorder.isPreparing }
     var finalizingVideoNote: Bool { videoRecorder.isFinalizing }
     var videoRecordingDuration: TimeInterval { videoRecorder.duration }
@@ -201,6 +202,31 @@ extension ChatVM {
         Task {
             _ = try? await service.sendChatAction(
                 action: .chatActionCancel,
+                businessConnectionId: nil,
+                chatId: chatId,
+                topicId: messageTopic,
+            )
+        }
+    }
+
+    func pauseRecordingVideo() {
+        videoRecorder.pause()
+        Task {
+            _ = try? await service.sendChatAction(
+                action: .chatActionCancel,
+                businessConnectionId: nil,
+                chatId: chatId,
+                topicId: messageTopic,
+            )
+        }
+    }
+
+    func resumeRecordingVideo() {
+        videoRecorder.resume()
+        guard videoRecorder.isRecording else { return }
+        Task {
+            _ = try? await service.sendChatAction(
+                action: .chatActionRecordingVideoNote,
                 businessConnectionId: nil,
                 chatId: chatId,
                 topicId: messageTopic,

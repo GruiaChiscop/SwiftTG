@@ -158,7 +158,7 @@ struct ChatBottomArea: View {
             }
         }
         .onDisappear {
-            if chatVM.recordingVideoNote || chatVM.preparingVideoNote {
+            if chatVM.recordingVideoNote || chatVM.pausedVideoNote || chatVM.preparingVideoNote {
                 chatVM.cancelRecordingVideo()
             }
             Task.background { [chatVM] in await chatVM.updateDraft() }
@@ -653,6 +653,15 @@ struct ChatBottomArea: View {
                 .foregroundStyle(.white)
                 .monospacedDigit()
 
+            if recordingMode == .video, recordingActive {
+                Button(
+                    chatVM.pausedVideoNote ? "Resume Recording" : "Pause Recording",
+                    systemImage: chatVM.pausedVideoNote ? "record.circle" : "pause.fill",
+                    action: toggleVideoRecordingPause,
+                )
+                .labelStyle(.iconOnly)
+            }
+
             if recordingMode == .video, chatVM.customChat.user != nil {
                 Button(
                     chatVM.videoRecorder.isViewOnce ? "Send Normally" : "View Once",
@@ -760,7 +769,7 @@ struct ChatBottomArea: View {
     @State private var recordingMode = RecordingMode.voice
 
     private var recordingActive: Bool {
-        chatVM.recordingVoiceNote || chatVM.recordingVideoNote
+        chatVM.recordingVoiceNote || chatVM.recordingVideoNote || chatVM.pausedVideoNote
     }
 
     private var formattedRecordingDuration: String {
@@ -787,6 +796,15 @@ struct ChatBottomArea: View {
             chatVM.cancelRecordingVideo()
         }
         chatVM.recordingLocked = false
+    }
+
+    private func toggleVideoRecordingPause() {
+        if chatVM.pausedVideoNote {
+            chatVM.resumeRecordingVideo()
+        } else {
+            chatVM.recordingLocked = true
+            chatVM.pauseRecordingVideo()
+        }
     }
 
     private func sendCurrentRecording(schedulingState: MessageSchedulingState? = nil) {
