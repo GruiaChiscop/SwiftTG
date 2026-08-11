@@ -92,6 +92,18 @@ struct ReplyMessageView: View {
         case .messageVideo(let messageVideo):
             TdVideoThumbnail(messageVideo: messageVideo, contentMode: .fit)
                 .frame(width: 30, height: 30)
+        case .messageVideoNote(let messageVideoNote):
+            if let thumbnail = messageVideoNote.videoNote.thumbnail {
+                AsyncTdImage(id: thumbnail.file.id) { image, _ in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Circle().fill(.secondary.opacity(0.3))
+                }
+                .frame(width: 30, height: 30)
+                .clipShape(Circle())
+            }
         default:
             EmptyView()
         }
@@ -113,6 +125,8 @@ struct ReplyMessageView: View {
             } else {
                 Text(getAttributedString(from: messageVideo.caption))
             }
+        case .messageVideoNote:
+            Text("Video message")
         case .messageVoiceNote(let messageVoiceNote):
             HStack(alignment: .bottom, spacing: 0) {
                 Text("Voice")

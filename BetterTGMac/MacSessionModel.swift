@@ -41,6 +41,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         self.editLinkPreviewComposer = TelegramLinkPreviewComposer(service: session)
         self.conversationSearch = TelegramConversationSearchStore(service: session)
         self.favoriteStickers = TelegramFavoriteStickersStore(service: session)
+        self.videoRecorder = TelegramVideoNoteRecorder()
         self.pushNotifications = TelegramApplePushRegistration(
             service: session,
             isAppSandbox: Self.isAppSandbox,
@@ -149,6 +150,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     let editLinkPreviewComposer: TelegramLinkPreviewComposer
     let conversationSearch: TelegramConversationSearchStore
     let favoriteStickers: TelegramFavoriteStickersStore
+    let videoRecorder: TelegramVideoNoteRecorder
 
     @ObservationIgnored var bootstrapTask: Task<Void, Never>?
     @ObservationIgnored var loadedChatFolderIds = Set<MacChatFolderID>()
@@ -249,6 +251,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         isStopping = true
         pushNotifications.stop()
         cancelVoiceRecording()
+        videoRecorder.cancel()
         historyRequestGeneration &+= 1
         conversationHeaderTask?.cancel()
         selectedPhotoURLs = []

@@ -33,6 +33,7 @@ import TDLibKit
             service: service,
             topicId: messageTopic,
         )
+        self.videoRecorder = TelegramVideoNoteRecorder()
         self.conversationSearch = TelegramConversationSearchStore(service: service)
         self.favoriteStickers = TelegramFavoriteStickersStore(service: service)
         self.onlineStatus =
@@ -74,6 +75,7 @@ import TDLibKit
 
     let composer: MessageComposer
     let voiceRecorder: VoiceRecordingController
+    let videoRecorder: TelegramVideoNoteRecorder
     let conversationSearch: TelegramConversationSearchStore
     let favoriteStickers: TelegramFavoriteStickersStore
 

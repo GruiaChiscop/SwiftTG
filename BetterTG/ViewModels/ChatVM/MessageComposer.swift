@@ -302,6 +302,27 @@ import TDLibKit
         await updateDraft()
     }
 
+    func sendMessageVideoNote(
+        artifact: TelegramVideoNoteRecordingArtifact,
+        schedulingState: MessageSchedulingState? = nil,
+    ) async throws {
+        try await TelegramVideoNoteSending.send(
+            service: service,
+            chatId: chatId,
+            url: artifact.url,
+            duration: artifact.duration,
+            length: artifact.length,
+            isViewOnce: artifact.isViewOnce,
+            replyTo: getMessageReplyTo(from: replyMessage),
+            schedulingState: schedulingState,
+            topicId: topicId,
+        )
+        await main {
+            self.replyMessage = nil
+        }
+        await updateDraft()
+    }
+
     func updateDraft() async {
         let draftMessage = TelegramDrafts.make(
             formattedText: FormattedText(

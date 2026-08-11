@@ -67,6 +67,11 @@ struct MacConversationView: View {
                 model.sendVoiceRecording(schedulingState: schedulingState)
             }
         }
+        .sheet(isPresented: $showsScheduleVideoPicker) {
+            MacScheduleSendView(allowsSendWhenOnline: model.openedChat?.kind == .privateChat) { schedulingState in
+                model.sendVideoRecording(schedulingState: schedulingState)
+            }
+        }
         .sheet(isPresented: $showsPollComposer) {
             TelegramPollComposerView { draft in
                 guard let chatId = model.openedChatId else { return }
@@ -174,6 +179,7 @@ struct MacConversationView: View {
     @State private var checklistIsAvailable = false
     @State private var showsScheduleSendPicker = false
     @State private var showsScheduleVoicePicker = false
+    @State private var showsScheduleVideoPicker = false
     @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
 
@@ -258,27 +264,27 @@ struct MacConversationView: View {
 
     private var chatTranslationBanner: some View {
         HStack(spacing: 8) {
-            if model.isChatTranslationEnabled {
-                Text("Translated from \(detectedChatLanguageName)")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Show Original") {
-                    model.disableChatTranslation()
-                }
-            } else {
-                Text("Translate from \(detectedChatLanguageName)?")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            Text(model.isChatTranslationEnabled
+                ? "Translated from \(detectedChatLanguageName)"
+                : "Translate from \(detectedChatLanguageName)?")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if !model.isChatTranslationEnabled {
                 Button("Dismiss") {
                     model.dismissChatTranslationSuggestion()
                 }
-                Button("Translate") {
+            }
+
+            Button(model.isChatTranslationEnabled ? "Show Original" : "Translate") {
+                if model.isChatTranslationEnabled {
+                    model.disableChatTranslation()
+                } else {
                     model.enableChatTranslation()
                 }
-                .keyboardShortcut(.defaultAction)
             }
+            .keyboardShortcut(model.isChatTranslationEnabled ? nil : .defaultAction)
         }
         .padding(10)
         .background(.bar)
@@ -415,7 +421,8 @@ struct MacConversationView: View {
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        @Bindable var videoRecorder = model.videoRecorder
+        return VStack(alignment: .leading, spacing: 8) {
             if let contextMessage = model.editingMessage ?? model.replyingToMessage {
                 HStack(spacing: 8) {
                     Image(systemName: model.editingMessage == nil ? "arrowshape.turn.up.left" : "square.and.pencil")
@@ -468,7 +475,39 @@ struct MacConversationView: View {
                 )
             }
 
-            if model.isRecordingVoice {
+            if model.videoRecorder.isPreparing || model.videoRecorder.isRecording || model.videoRecorder.isFinalizing {
+                HStack(spacing: 10) {
+                    TelegramVideoNoteCapturePreview(session: model.videoRecorder.captureSession)
+                        .frame(width: 96, height: 96)
+                        .clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(
+                            model.videoRecorder.isFinalizing
+                                ? "Preparing video message…"
+                                : telegramClockDuration(Int(model.videoRecorder.duration)),
+                        )
+                        .monospacedDigit()
+                        if chat.kind == .privateChat {
+                            Toggle("View Once", isOn: $videoRecorder.isViewOnce)
+                                .toggleStyle(.checkbox)
+                        }
+                    }
+                    Spacer()
+                    Button("Cancel Recording", systemImage: "xmark", role: .cancel) {
+                        model.cancelVideoRecording()
+                    }
+                    Button("Send Video Message", systemImage: "paperplane.fill") {
+                        model.sendVideoRecording()
+                    }
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(!model.videoRecorder.isRecording)
+                    .contextMenu {
+                        Button("Send Later…", systemImage: "clock") {
+                            showsScheduleVideoPicker = true
+                        }
+                    }
+                }
+            } else if model.isRecordingVoice {
                 HStack(spacing: 10) {
                     Image(systemName: "waveform")
                         .foregroundStyle(.red)
@@ -574,6 +613,10 @@ struct MacConversationView: View {
                     {
                         Button("Record Voice Message", systemImage: "mic.fill") {
                             Task { await model.startVoiceRecording() }
+                        }
+                        .labelStyle(.iconOnly)
+                        Button("Record Video Message", systemImage: "video.fill") {
+                            Task { await model.startVideoRecording() }
                         }
                         .labelStyle(.iconOnly)
                     } else {

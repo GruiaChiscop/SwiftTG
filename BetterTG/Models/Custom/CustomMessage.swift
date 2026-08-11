@@ -97,6 +97,13 @@ import TDLibKit
         return nil
     }
 
+    var messageVideoNote: MessageVideoNote? {
+        if case .messageVideoNote(let messageVideoNote) = message.content {
+            return messageVideoNote
+        }
+        return nil
+    }
+
     var messageDocument: MessageDocument? {
         if case .messageDocument(let messageDocument) = message.content {
             return messageDocument

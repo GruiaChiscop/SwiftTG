@@ -32,6 +32,12 @@ struct MessageContentView: View {
                         .scaledToFit()
                 case .messageVideo(let messageVideo):
                     makeMessageVideo(from: messageVideo)
+                case .messageVideoNote(let messageVideoNote):
+                    MessageVideoNoteView(
+                        content: messageVideoNote,
+                        service: service,
+                        player: .shared,
+                    )
                 case .messageAnimation(let messageAnimation):
                     makeMessageAnimation(from: messageAnimation)
                 case .messageVoiceNote(let messageVoiceNote):

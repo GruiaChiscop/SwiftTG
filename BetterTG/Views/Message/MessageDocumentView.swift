@@ -3,7 +3,6 @@
 import QuickLook
 import SwiftUI
 import TDLibKit
-import UIKit
 
 struct MessageDocumentView: View {
     // MARK: Internal
@@ -134,10 +133,6 @@ struct MessageDocumentView: View {
         isPreparingPreview = true
         previewError = nil
         onTransferStatusChange("Preparing preview for \(document.fileName)")
-        UIAccessibility.post(
-            notification: .announcement,
-            argument: "Preparing preview for \(document.fileName)",
-        )
         Task { @MainActor in
             defer {
                 isPreparingPreview = false

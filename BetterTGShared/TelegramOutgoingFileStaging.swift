@@ -94,6 +94,13 @@ final class TelegramOutgoingFileStaging: @unchecked Sendable {
         return voiceDirectory.appending(path: "voice_\(identifier.uuidString).ogg")
     }
 
+    func videoNoteFileURL(identifier: UUID = UUID(), isRawRecording: Bool = false) -> URL {
+        let videoDirectory = directory.appending(path: "VideoNotes", directoryHint: .isDirectory)
+        try? fileManager.createDirectory(at: videoDirectory, withIntermediateDirectories: true)
+        let prefix = isRawRecording ? "raw" : "video"
+        return videoDirectory.appending(path: "\(prefix)_\(identifier.uuidString).mp4")
+    }
+
     /// Unlike documents, a picked photo has no source URL to stage from - the picker only hands
     /// over decoded image data, which has to be written somewhere before it can be referenced.
     /// Writing it under this same managed directory means it's covered by the stale-file sweep

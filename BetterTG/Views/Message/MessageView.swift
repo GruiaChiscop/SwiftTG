@@ -13,6 +13,7 @@ struct MessageView: View {
     @State var shownAlbum: CustomMessageAlbum?
     @State var media = Media.shared
     @State var audioPlayer = TelegramAudioPlayer.shared
+    @State var videoNotePlayer = TelegramVideoNotePlayer.shared
     @State var voiceNoteLocalPath: String?
     @State var showDeleteOptions = false
     @State var showReactionOptions = false
@@ -77,6 +78,12 @@ struct MessageView: View {
         if let voiceNote = customMessage.messageVoiceNote {
             let elapsed = media.savedMediaPath == voiceNoteLocalPath ? Int(media.currentTime) : 0
             parts.append(telegramVoicePlaybackDescription(duration: voiceNote.voiceNote.duration, elapsed: elapsed))
+        }
+        if let videoNote = customMessage.messageVideoNote {
+            parts.append(TelegramVideoNotePresentation(
+                videoNote,
+                isOutgoing: customMessage.message.isOutgoing,
+            ).accessibilityDetails)
         }
         if let messageAudio = customMessage.messageAudio {
             let elapsed = audioPlayer.currentFileId == messageAudio.audio.audio.id
@@ -463,6 +470,7 @@ struct MessageView: View {
         if customMessage.messageDocument != nil
             || customMessage.messagePhoto != nil
             || customMessage.messageVideo != nil
+            || customMessage.messageVideoNote != nil
             || customMessage.messageVoiceNote != nil
             || customMessage.messageAudio != nil
             || customMessage.messageSticker != nil
@@ -671,6 +679,13 @@ struct MessageView: View {
             .accessibilityLabel(accessibilityDescription)
             .accessibilityValue(documentTransferStatus ?? "")
             .modify {
+                if let messageVideoNote = customMessage.messageVideoNote {
+                    $0
+                        .onTapGesture { toggleVideoMessage(messageVideoNote) }
+                        .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .modify {
                 if let messageVoiceNote = customMessage.messageVoiceNote {
                     $0
                         .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
@@ -768,5 +783,11 @@ struct MessageView: View {
                 voiceNoteLocalPath = resolvedPath
             }
         }
+    }
+
+    private func toggleVideoMessage(_ messageVideoNote: MessageVideoNote) {
+        Media.shared.stop()
+        audioPlayer.stop()
+        videoNotePlayer.toggle(videoNote: messageVideoNote.videoNote, service: chatVM.service)
     }
 }

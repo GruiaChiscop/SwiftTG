@@ -222,7 +222,7 @@ extension ChatVM {
                 messageText.text
             case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
                 telegramMessageFormattedText(message)
-            case .messagePoll, .messageSticker:
+            case .messagePoll, .messageSticker, .messageVideoNote:
                 nil
             default:
                 FormattedText(entities: [], text: telegramMessageContentDescription(message))

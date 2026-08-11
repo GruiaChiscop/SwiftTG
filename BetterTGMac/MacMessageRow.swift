@@ -47,6 +47,7 @@ struct MacMessageRow: View {
     @Environment(\.telegramBubbleCornerRadius) private var bubbleCornerRadius
     @State private var player = MacVoicePlayer.shared
     @State private var audioPlayer = TelegramAudioPlayer.shared
+    @State private var videoNotePlayer = TelegramVideoNotePlayer.shared
     @State private var documentPath: String?
     @State private var documentPreviewURL: URL?
     @State private var documentDownloadFile: File?
@@ -57,6 +58,7 @@ struct MacMessageRow: View {
     @State private var photoImage: NSImage?
     @State private var photoPath: String?
     @State private var videoThumbnailImage: NSImage?
+    @State private var videoNoteThumbnailImage: NSImage?
     @State private var gifThumbnailImage: NSImage?
     @State private var voicePath: String?
     @State private var showDeleteOptions = false
@@ -205,7 +207,8 @@ struct MacMessageRow: View {
 
     private var hasDefaultActivation: Bool {
         voiceFileId != nil || audioFileId != nil || documentFileId != nil || photoFileId != nil
-            || videoFileId != nil || gifFileId != nil || messageContact != nil || locationPresentation != nil
+            || videoFileId != nil || videoNoteFileId != nil || gifFileId != nil || messageContact != nil
+            || locationPresentation != nil
     }
 
     private var photoFileId: Int? {
@@ -233,6 +236,16 @@ struct MacMessageRow: View {
                 .id
         }
         return content.video.thumbnail?.file.id
+    }
+
+    private var videoNoteFileId: Int? {
+        guard case .messageVideoNote(let content) = message.content else { return nil }
+        return content.videoNote.video.id
+    }
+
+    private var videoNoteThumbnailFileId: Int? {
+        guard case .messageVideoNote(let content) = message.content else { return nil }
+        return content.videoNote.thumbnail?.file.id
     }
 
     private var gifFileId: Int? {
@@ -419,6 +432,9 @@ struct MacMessageRow: View {
         if !isVisualAlbum, videoFileId != nil {
             items.append(.button(title: "Play Video", systemImage: "play.rectangle") { showVideoPreview = true })
         }
+        if videoNoteFileId != nil {
+            items.append(.button(title: "Play Video Message", systemImage: "video.circle") { activateMessage() })
+        }
         if !isVisualAlbum, gifFileId != nil {
             items.append(.button(title: "Play GIF", systemImage: "play.rectangle") { showGifPreview = true })
         }
@@ -585,6 +601,13 @@ struct MacMessageRow: View {
                             thumbnail: videoThumbnailImage,
                             onOpen: { showVideoPreview = true },
                         )
+                    } else if case .messageVideoNote(let content) = message.content {
+                        MacVideoNoteMessageContent(
+                            content: content,
+                            thumbnail: videoNoteThumbnailImage,
+                            service: model.service,
+                            player: videoNotePlayer,
+                        )
                     } else if case .messageAnimation(let content) = message.content {
                         MacGifMessageContent(
                             content: content,
@@ -746,6 +769,15 @@ struct MacMessageRow: View {
                 return
             }
             videoThumbnailImage = await Self.decodedImage(atPath: path)
+        }
+        .task(id: presentationTaskID) {
+            guard let videoNoteThumbnailFileId,
+                  let path = await model.localPhotoPath(fileId: videoNoteThumbnailFileId)
+            else {
+                videoNoteThumbnailImage = nil
+                return
+            }
+            videoNoteThumbnailImage = await Self.decodedImage(atPath: path)
         }
         .task(id: presentationTaskID) {
             guard !isVisualAlbum,
@@ -1110,7 +1142,6 @@ struct MacMessageRow: View {
         isLoadingDocument = true
         model.messageActionError = nil
         documentTransferPhase = documentPath == nil ? .downloading : .preparingPreview
-        announceDocumentTransferStatus()
         Task { @MainActor in
             defer {
                 if documentTransferID == transferID {
@@ -1138,7 +1169,6 @@ struct MacMessageRow: View {
                 }
                 if documentTransferPhase != .preparingPreview {
                     documentTransferPhase = .preparingPreview
-                    announceDocumentTransferStatus(prefix: "Download complete. ")
                 }
                 documentPreviewURL = try await TelegramDocumentExport.previewURL(
                     sourceURL: URL(filePath: resolvedPath),
@@ -1157,7 +1187,6 @@ struct MacMessageRow: View {
         documentTransferID = nil
         isLoadingDocument = false
         documentTransferPhase = .paused
-        announceDocumentTransferStatus()
         let service = model.service
         documentDownloadCancellationTask = Task {
             _ = try? await service.cancelDownloadFile(
@@ -1165,20 +1194,6 @@ struct MacMessageRow: View {
                 onlyIfPending: false,
             )
         }
-    }
-
-    private func announceDocumentTransferStatus(prefix: String = "") {
-        guard let documentTransferStatus,
-              let window = NSApp.keyWindow ?? NSApp.mainWindow
-        else { return }
-        NSAccessibility.post(
-            element: window,
-            notification: .announcementRequested,
-            userInfo: [
-                .announcement: prefix + documentTransferStatus,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ],
-        )
     }
 
     private func saveDocument() {
@@ -1248,7 +1263,12 @@ struct MacMessageRow: View {
     }
 
     private func activateMessage() {
-        if case .messageVoiceNote(let content) = message.content, let voicePath {
+        if case .messageVideoNote(let content) = message.content {
+            player.stop()
+            audioPlayer.stop()
+            videoNotePlayer.toggle(videoNote: content.videoNote, service: model.service)
+        } else if case .messageVoiceNote(let content) = message.content, let voicePath {
+            videoNotePlayer.stop()
             audioPlayer.stop()
             player.toggle(
                 fileId: content.voiceNote.voice.id,
@@ -1256,6 +1276,7 @@ struct MacMessageRow: View {
                 duration: content.voiceNote.duration,
             )
         } else if case .messageAudio(let content) = message.content {
+            videoNotePlayer.stop()
             player.stop()
             audioPlayer.toggle(
                 audio: content.audio,
@@ -1267,8 +1288,10 @@ struct MacMessageRow: View {
         } else if case .messagePhoto = message.content, photoImage != nil {
             showPhotoPreview = true
         } else if case .messageVideo = message.content {
+            videoNotePlayer.stop()
             showVideoPreview = true
         } else if case .messageAnimation = message.content {
+            videoNotePlayer.stop()
             showGifPreview = true
         } else if let messageContact {
             let presentation = TelegramContactPresentation(messageContact)
@@ -1340,6 +1363,12 @@ struct MacMessageRow: View {
             duration: content.voiceNote.duration,
             elapsed: elapsed,
         ))
+    }
+    if case .messageVideoNote(let content) = message.content {
+        parts.append(TelegramVideoNotePresentation(
+            content,
+            isOutgoing: message.isOutgoing,
+        ).accessibilityDetails)
     }
     if case .messageAudio(let content) = message.content {
         let elapsed = audioPlayer.currentFileId == content.audio.audio.id

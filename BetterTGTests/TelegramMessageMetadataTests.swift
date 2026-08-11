@@ -54,6 +54,30 @@ struct TelegramMessageMetadataTests {
             "Duration 1 minute 5 seconds, played 12 seconds")
     }
 
+    @Test func `video messages have Telegram-style descriptions`() {
+        let videoNote = VideoNote(
+            duration: 65,
+            length: 240,
+            minithumbnail: nil,
+            speechRecognitionResult: nil,
+            thumbnail: nil,
+            video: TDLibFixtures.file(id: 17, downloadedSize: 0),
+            waveform: Data(),
+        )
+        let regular = MessageVideoNote(isSecret: false, isViewed: false, videoNote: videoNote)
+        let viewOnce = MessageVideoNote(isSecret: true, isViewed: false, videoNote: videoNote)
+
+        #expect(telegramMessageContentDescription(.messageVideoNote(regular)) == "Video message")
+        #expect(TelegramVideoNotePresentation(regular, isOutgoing: false).accessibilityDescription ==
+            "Video message, duration 1 minute 5 seconds")
+        #expect(TelegramVideoNotePresentation(regular, isOutgoing: false).accessibilityDetails ==
+            "duration 1 minute 5 seconds")
+        #expect(TelegramVideoNotePresentation(viewOnce, isOutgoing: true).accessibilityDescription ==
+            "Your video message, view once, duration 1 minute 5 seconds")
+        #expect(TelegramVideoNotePresentation(viewOnce, isOutgoing: true).accessibilityDetails ==
+            "view once, duration 1 minute 5 seconds")
+    }
+
     @Test func `quoted message excerpt normalizes whitespace and limits characters`() {
         #expect(telegramQuotedMessageExcerpt("First\n  second", characterLimit: 20) == "First second")
         #expect(telegramQuotedMessageExcerpt("123456789", characterLimit: 5) == "12345…")

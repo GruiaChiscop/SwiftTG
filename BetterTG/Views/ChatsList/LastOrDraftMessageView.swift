@@ -128,6 +128,8 @@ private struct LastMesssageView: View {
                     Text(getAttributedString(from: messageVideo.caption, .gray))
                 }
             }
+        case .messageVideoNote:
+            Label("Video message", systemImage: "video.circle")
         case .messageVoiceNote(let messageVoiceNote):
             HStack(alignment: .bottom, spacing: 0) {
                 Text("Voice")
