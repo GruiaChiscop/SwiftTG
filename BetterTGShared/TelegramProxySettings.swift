@@ -1,7 +1,43 @@
 // TelegramProxySettings.swift
 
+import Observation
 import SwiftUI
 @preconcurrency import TDLibKit
+
+// MARK: - TelegramProxyShortcutStatus
+
+struct TelegramProxyShortcutStatus: Equatable, Sendable {
+    let value: String
+
+    static func resolve(proxies: [AddedProxy]) -> Self? {
+        guard !proxies.isEmpty else { return nil }
+        guard let enabledProxy = proxies.first(where: \.isEnabled) else {
+            return TelegramProxyShortcutStatus(value: "Disabled")
+        }
+        return TelegramProxyShortcutStatus(value: TelegramProxyType(enabledProxy.proxy.type).title)
+    }
+}
+
+// MARK: - TelegramProxyStatusStore
+
+@MainActor @Observable final class TelegramProxyStatusStore {
+    static let shared = TelegramProxyStatusStore()
+
+    private(set) var shortcutStatus: TelegramProxyShortcutStatus?
+
+    func refresh(service: any TelegramService) async {
+        do {
+            let proxies = try await service.getProxies().proxies
+            update(proxies)
+        } catch {
+            shortcutStatus = nil
+        }
+    }
+
+    func update(_ proxies: [AddedProxy]) {
+        shortcutStatus = TelegramProxyShortcutStatus.resolve(proxies: proxies)
+    }
+}
 
 // MARK: - TelegramProxyType
 
@@ -153,6 +189,7 @@ struct TelegramProxySettingsView: View {
     @State private var proxies = [AddedProxy]()
 
     private let service: any TelegramService
+    private let statusStore = TelegramProxyStatusStore.shared
 
     private var hasEnabledProxy: Bool { proxies.contains { $0.isEnabled } }
 
@@ -170,6 +207,7 @@ struct TelegramProxySettingsView: View {
     @MainActor private func loadProxies() async {
         do {
             proxies = try await service.getProxies().proxies
+            statusStore.update(proxies)
         } catch {
             errorMessage = telegramErrorDescription(error)
         }

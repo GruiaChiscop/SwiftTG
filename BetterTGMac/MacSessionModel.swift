@@ -1,9 +1,7 @@
 // MacSessionModel.swift
 
-import AppKit
 import AVFoundation
 import Combine
-import Foundation
 import SwiftUI
 import TDLibKit
 import UniformTypeIdentifiers

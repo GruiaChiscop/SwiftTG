@@ -700,8 +700,10 @@ struct ChatBottomArea: View {
 
                 if recordingMode == .video, recordingActive {
                     if chatVM.videoRecorder.hasPreview {
-                        Button("Record More", systemImage: "record.circle", action: toggleVideoRecordingPause)
-                            .labelStyle(.iconOnly)
+                        Button("Record More", systemImage: "record.circle") {
+                            Task { await toggleVideoRecordingPause() }
+                        }
+                        .labelStyle(.iconOnly)
                         Button(
                             chatVM.videoRecorder.isMuted ? "Unmute Preview" : "Mute Preview",
                             systemImage: chatVM.videoRecorder.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill",
@@ -710,8 +712,10 @@ struct ChatBottomArea: View {
                         }
                         .labelStyle(.iconOnly)
                     } else {
-                        Button("Pause Recording", systemImage: "pause.fill", action: toggleVideoRecordingPause)
-                            .labelStyle(.iconOnly)
+                        Button("Pause Recording", systemImage: "pause.fill") {
+                            Task { await toggleVideoRecordingPause() }
+                        }
+                        .labelStyle(.iconOnly)
                         videoCameraControls
                     }
                 }
@@ -926,9 +930,9 @@ struct ChatBottomArea: View {
         chatVM.recordingLocked = false
     }
 
-    private func toggleVideoRecordingPause() {
+    private func toggleVideoRecordingPause() async {
         if chatVM.pausedVideoNote {
-            chatVM.resumeRecordingVideo()
+            await chatVM.resumeRecordingVideo()
         } else {
             chatVM.recordingLocked = true
             chatVM.pauseRecordingVideo()

@@ -70,42 +70,56 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
         selectedCameraLock.unlock()
     }
 
+    /// Non-blocking by design: never call this synchronously from `@MainActor`. `writerQueue` can be
+    /// occupied for a while by `waitUntilReady`'s backpressure wait, and a blocking `.sync` there would
+    /// freeze the caller's thread for as long as that wait takes.
     func start(
         to url: URL,
         completion: @escaping @MainActor @Sendable (UUID, Result<SegmentResult, RecordingError>) async -> Void,
-    ) throws -> UUID {
-        try writerQueue.sync {
-            guard context == nil else { throw RecordingError.alreadyRecording }
-            guard let audioSettings = audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mp4) else {
-                throw RecordingError.audioSettingsUnavailable
-            }
+    ) async throws -> UUID {
+        try await withCheckedThrowingContinuation { continuation in
+            writerQueue.async { [self] in
+                do {
+                    guard context == nil else { throw RecordingError.alreadyRecording }
+                    guard let audioSettings = audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mp4)
+                    else {
+                        throw RecordingError.audioSettingsUnavailable
+                    }
 
-            try? FileManager.default.removeItem(at: url)
-            let writer: AVAssetWriter
-            do {
-                writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-                writer.shouldOptimizeForNetworkUse = false
-            } catch {
-                throw RecordingError.writerInitializationFailed(error.localizedDescription)
-            }
+                    try? FileManager.default.removeItem(at: url)
+                    let writer: AVAssetWriter
+                    do {
+                        writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+                        writer.shouldOptimizeForNetworkUse = false
+                    } catch {
+                        throw RecordingError.writerInitializationFailed(error.localizedDescription)
+                    }
 
-            let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-            audioInput.expectsMediaDataInRealTime = true
-            guard writer.canAdd(audioInput) else {
-                throw RecordingError.writerInitializationFailed("The encoded audio track could not be added.")
-            }
-            writer.add(audioInput)
+                    let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+                    audioInput.expectsMediaDataInRealTime = true
+                    guard writer.canAdd(audioInput) else {
+                        throw RecordingError.writerInitializationFailed("The encoded audio track could not be added.")
+                    }
+                    writer.add(audioInput)
 
-            let id = UUID()
-            context = SegmentContext(
-                id: id,
-                url: url,
-                writer: writer,
-                audioInput: audioInput,
-                requestedStartTime: Self.hostTime(),
-                completion: completion,
-            )
-            return id
+                    let id = UUID()
+                    let newContext = SegmentContext(
+                        id: id,
+                        url: url,
+                        writer: writer,
+                        audioInput: audioInput,
+                        requestedStartTime: Self.hostTime(),
+                        completion: completion,
+                    )
+                    context = newContext
+                    activeContextLock.lock()
+                    activeContextForCancellation = newContext
+                    activeContextLock.unlock()
+                    continuation.resume(returning: id)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 
@@ -120,10 +134,23 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
         }
     }
 
+    /// Marks the active segment cancelled immediately, off `writerQueue`, so a concurrently running
+    /// `waitUntilReady` backpressure wait notices within one poll instead of waiting for this method's
+    /// own `writerQueue.async` block - which would otherwise be stuck behind that same wait.
     func cancel() {
+        activeContextLock.lock()
+        let contextToCancel = activeContextForCancellation
+        activeContextLock.unlock()
+        contextToCancel?.requestCancellation()
+
         writerQueue.async { [weak self] in
             guard let self, let context else { return }
             self.context = nil
+            activeContextLock.lock()
+            if activeContextForCancellation === context {
+                activeContextForCancellation = nil
+            }
+            activeContextLock.unlock()
             context.isFinishing = true
             context.writer.cancelWriting()
             try? FileManager.default.removeItem(at: context.url)
@@ -167,7 +194,28 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
         var startedSession = false
         var hasAllVideoBuffers = false
         var hasAllAudioBuffers = false
+        /// Only ever read/written from `writerQueue`; safe to leave as a plain `var`.
         var isFinishing = false
+
+        // MARK: Private
+
+        private let cancellationLock = NSLock()
+        private var isCancelledStorage = false
+
+        /// Set from `cancel()`, which may run on any thread (including `@MainActor`) while
+        /// `writerQueue` is busy. Guarded by `cancellationLock` since it's read from `writerQueue`
+        /// (inside the backpressure spin-wait) concurrently with that write.
+        var isCancelled: Bool {
+            cancellationLock.lock()
+            defer { cancellationLock.unlock() }
+            return isCancelledStorage
+        }
+
+        func requestCancellation() {
+            cancellationLock.lock()
+            isCancelledStorage = true
+            cancellationLock.unlock()
+        }
     }
 
     private final class SquareFrameProcessor {
@@ -259,6 +307,10 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
 
     private static let outputSide = 480
     private static let timeScale = CMTimeScale(NSEC_PER_SEC)
+    /// Upper bound on how long `waitUntilReady` will spin for a stalled `AVAssetWriterInput` before
+    /// giving up and failing the segment. Guards against a genuinely wedged encoder (not just a
+    /// pending cancel/stop, which `SegmentContext.isCancelled` already resolves promptly).
+    private static let maxBackpressureWait: TimeInterval = 5
 
     private let videoCaptureQueue = DispatchQueue(
         label: "com.gruiachiscop.BetterTG.video-note-capture",
@@ -276,6 +328,11 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
     private let selectedCameraLock = NSLock()
     private var context: SegmentContext?
     private var selectedCameraPosition = AVCaptureDevice.Position.front
+
+    /// Mirrors `context` for `cancel()`'s benefit only, so it can signal cancellation without
+    /// waiting for a turn on `writerQueue`. Always updated alongside `context` under `activeContextLock`.
+    private let activeContextLock = NSLock()
+    private var activeContextForCancellation: SegmentContext?
 
     private static func hostTime() -> CMTime {
         CMTime(seconds: CACurrentMediaTime(), preferredTimescale: timeScale)
@@ -397,8 +454,11 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
     }
 
     private func waitUntilReady(_ input: AVAssetWriterInput, context: SegmentContext) -> Bool {
+        let deadline = DispatchTime.now() + Self.maxBackpressureWait
         while !input.isReadyForMoreMediaData {
-            guard !context.isFinishing, context.writer.status == .writing else { return false }
+            guard !context.isFinishing, !context.isCancelled, context.writer.status == .writing,
+                  DispatchTime.now() < deadline
+            else { return false }
             Thread.sleep(forTimeInterval: 0.005)
         }
         return true
@@ -448,6 +508,11 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
     private func complete(_ context: SegmentContext, with result: Result<SegmentResult, RecordingError>) {
         guard self.context === context else { return }
         self.context = nil
+        activeContextLock.lock()
+        if activeContextForCancellation === context {
+            activeContextForCancellation = nil
+        }
+        activeContextLock.unlock()
         let id = context.id
         let completion = context.completion
         Task { @MainActor in

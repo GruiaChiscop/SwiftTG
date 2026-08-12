@@ -6,16 +6,13 @@ import SwiftUI
 
 private enum MacSettingsSection: String, CaseIterable, Identifiable {
     case profile
-    case blockedUsers
-    case activeSessions
-    case notifications
-    case appearance
-    case privacy
-    case twoStepVerification
-    case appLock
-    case storage
     case proxy
+    case activeSessions
     case chatFolders
+    case notifications
+    case privacy
+    case dataAndStorage
+    case appearance
 
     // MARK: Internal
 
@@ -24,32 +21,26 @@ private enum MacSettingsSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .profile: "Profile"
-        case .blockedUsers: "Blocked Users"
-        case .activeSessions: "Devices"
-        case .notifications: "Notifications and Sounds"
-        case .appearance: "Appearance"
-        case .privacy: "Privacy"
-        case .twoStepVerification: "Two-Step Verification"
-        case .appLock: "App Lock"
-        case .storage: "Storage"
         case .proxy: "Proxy"
+        case .activeSessions: "Devices"
         case .chatFolders: "Chat Folders"
+        case .notifications: "Notifications and Sounds"
+        case .privacy: "Privacy and Security"
+        case .dataAndStorage: "Data and Storage"
+        case .appearance: "Appearance"
         }
     }
 
     var systemImage: String {
         switch self {
         case .profile: "person.crop.circle"
-        case .blockedUsers: "hand.raised.slash"
-        case .activeSessions: "checkmark.shield"
-        case .notifications: "bell"
-        case .appearance: "paintpalette"
-        case .privacy: "hand.raised"
-        case .twoStepVerification: "lock.shield"
-        case .appLock: "lock"
-        case .storage: "internaldrive"
         case .proxy: "network"
+        case .activeSessions: "checkmark.shield"
         case .chatFolders: "folder"
+        case .notifications: "bell"
+        case .privacy: "hand.raised"
+        case .dataAndStorage: "internaldrive"
+        case .appearance: "paintpalette"
         }
     }
 }
@@ -63,7 +54,7 @@ struct MacSettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(MacSettingsSection.allCases, selection: $selection) { section in
+            List(visibleSections, selection: $selection) { section in
                 Label(section.title, systemImage: section.systemImage)
                     .tag(section)
             }
@@ -73,26 +64,26 @@ struct MacSettingsView: View {
             switch selection ?? .profile {
             case .profile:
                 EditProfileView(service: service)
-            case .blockedUsers:
-                BlockedUsersView(service: service)
-            case .activeSessions:
-                ActiveSessionsView(service: service)
-            case .notifications:
-                TelegramNotificationsView(service: service)
-            case .appearance:
-                TelegramAppearanceSettingsView()
-            case .privacy:
-                TelegramPrivacyView(service: service)
-            case .twoStepVerification:
-                TelegramTwoStepVerificationView(service: service)
-            case .appLock:
-                TelegramAppLockSettingsView()
-            case .storage:
-                TelegramStorageSettingsView(service: service)
             case .proxy:
                 TelegramProxySettingsView(service: service)
+            case .activeSessions:
+                ActiveSessionsView(service: service)
             case .chatFolders:
                 TelegramChatFoldersView(service: service)
+            case .notifications:
+                TelegramNotificationsView(service: service)
+            case .privacy:
+                TelegramPrivacyView(service: service)
+            case .dataAndStorage:
+                TelegramStorageSettingsView(service: service)
+            case .appearance:
+                TelegramAppearanceSettingsView()
+            }
+        }
+        .task { await proxyStatusStore.refresh(service: service) }
+        .onChange(of: proxyStatusStore.shortcutStatus) { _, status in
+            if status == nil, selection == .proxy {
+                selection = .profile
             }
         }
     }
@@ -100,4 +91,12 @@ struct MacSettingsView: View {
     // MARK: Private
 
     @State private var selection: MacSettingsSection? = .profile
+
+    private let proxyStatusStore = TelegramProxyStatusStore.shared
+
+    private var visibleSections: [MacSettingsSection] {
+        MacSettingsSection.allCases.filter { section in
+            section != .proxy || proxyStatusStore.shortcutStatus != nil
+        }
+    }
 }

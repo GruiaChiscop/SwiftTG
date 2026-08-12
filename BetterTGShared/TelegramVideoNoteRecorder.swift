@@ -161,7 +161,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             accumulatedDuration = 0
             duration = 0
             isPreparing = false
-            try startSegment()
+            try await startSegment()
         } catch {
             fail("Video recording could not start: \(error.localizedDescription)")
         }
@@ -175,13 +175,13 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         assetWriterRecorder.stop()
     }
 
-    func resume() {
+    func resume() async {
         guard isPaused, !isFinalizing,
               TelegramVideoNoteRecordingLimits.remainingDuration(after: accumulatedDuration) > 0
         else { return }
         previewSourceURLs.removeAll()
         do {
-            try startSegment()
+            try await startSegment()
         } catch {
             fail("Video recording could not resume: \(error.localizedDescription)")
             cleanupSession()
@@ -753,7 +753,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         #endif
     }
 
-    private func startSegment() throws {
+    private func startSegment() async throws {
         let remainingDuration = TelegramVideoNoteRecordingLimits.remainingDuration(after: accumulatedDuration)
         guard remainingDuration > 0 else {
             isPaused = false
@@ -769,12 +769,20 @@ enum TelegramVideoNoteCameraPosition: Sendable {
         isPaused = false
         isRecording = true
         do {
-            currentSegmentID = try assetWriterRecorder.start(
+            let segmentID = try await assetWriterRecorder.start(
                 to: url,
                 completion: { [weak self] id, result in
                     await self?.finishAssetWriterSegment(id: id, result: result)
                 },
             )
+            // `stop()`/`cancel()` may have run while the writer was starting up (this is an
+            // await point, so the recorder is reentrant here). If they did, `isRecording` is
+            // already false; tear down the segment we just created instead of adopting it.
+            guard isRecording else {
+                assetWriterRecorder.cancel()
+                return
+            }
+            currentSegmentID = segmentID
         } catch {
             currentRawRecordingURL = nil
             recordingStartedAt = nil

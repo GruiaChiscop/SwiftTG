@@ -237,8 +237,8 @@ extension ChatVM {
         }
     }
 
-    func resumeRecordingVideo() {
-        videoRecorder.resume()
+    func resumeRecordingVideo() async {
+        await videoRecorder.resume()
         guard videoRecorder.isRecording else { return }
         Task {
             _ = try? await service.sendChatAction(

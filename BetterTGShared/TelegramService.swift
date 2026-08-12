@@ -390,6 +390,17 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
     func getUserPrivacySettingRules(setting: UserPrivacySetting?) async throws -> UserPrivacySettingRules
     func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok
+    func getConnectedWebsites() async throws -> ConnectedWebsites
+    func disconnectWebsite(websiteId: TdInt64?) async throws -> Ok
+    func disconnectAllWebsites() async throws -> Ok
+    func getAccountTtl() async throws -> AccountTtl
+    func setAccountTtl(ttl: AccountTtl?) async throws -> Ok
+    func getArchiveChatListSettings() async throws -> ArchiveChatListSettings
+    func setArchiveChatListSettings(settings: ArchiveChatListSettings?) async throws -> Ok
+    func getLoginPasskeys() async throws -> Passkeys
+    func removeLoginPasskey(passkeyId: String?) async throws -> Ok
+    func getNewChatPrivacySettings() async throws -> NewChatPrivacySettings
+    func setNewChatPrivacySettings(settings: NewChatPrivacySettings?) async throws -> Ok
     func setScopeNotificationSettings(
         notificationSettings: ScopeNotificationSettings?,
         scope: NotificationSettingsScope?,
@@ -1539,6 +1550,50 @@ extension TelegramSession: TelegramService {
 
     func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok {
         try await client.setUserPrivacySettingRules(rules: rules, setting: setting)
+    }
+
+    func getConnectedWebsites() async throws -> ConnectedWebsites {
+        try await client.getConnectedWebsites()
+    }
+
+    func disconnectWebsite(websiteId: TdInt64?) async throws -> Ok {
+        try await client.disconnectWebsite(websiteId: websiteId)
+    }
+
+    func disconnectAllWebsites() async throws -> Ok {
+        try await client.disconnectAllWebsites()
+    }
+
+    func getAccountTtl() async throws -> AccountTtl {
+        try await client.getAccountTtl()
+    }
+
+    func setAccountTtl(ttl: AccountTtl?) async throws -> Ok {
+        try await client.setAccountTtl(ttl: ttl)
+    }
+
+    func getArchiveChatListSettings() async throws -> ArchiveChatListSettings {
+        try await client.getArchiveChatListSettings()
+    }
+
+    func setArchiveChatListSettings(settings: ArchiveChatListSettings?) async throws -> Ok {
+        try await client.setArchiveChatListSettings(settings: settings)
+    }
+
+    func getLoginPasskeys() async throws -> Passkeys {
+        try await client.getLoginPasskeys()
+    }
+
+    func removeLoginPasskey(passkeyId: String?) async throws -> Ok {
+        try await client.removeLoginPasskey(passkeyId: passkeyId)
+    }
+
+    func getNewChatPrivacySettings() async throws -> NewChatPrivacySettings {
+        try await client.getNewChatPrivacySettings()
+    }
+
+    func setNewChatPrivacySettings(settings: NewChatPrivacySettings?) async throws -> Ok {
+        try await client.setNewChatPrivacySettings(settings: settings)
     }
 
     func setScopeNotificationSettings(

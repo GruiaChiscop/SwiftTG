@@ -79,9 +79,9 @@ extension MacSessionModel {
         cancelVideoRecordingChatAction()
     }
 
-    func toggleVideoRecordingPause() {
+    func toggleVideoRecordingPause() async {
         if videoRecorder.isPaused {
-            videoRecorder.resume()
+            await videoRecorder.resume()
             guard videoRecorder.isRecording, let chatId = openedChatId else { return }
             let topicId = openedTopic
             Task {

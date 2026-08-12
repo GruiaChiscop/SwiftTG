@@ -536,7 +536,7 @@ struct MacConversationView: View {
                             videoRecorder.hasPreview ? "Record More" : "Pause Recording",
                             systemImage: videoRecorder.hasPreview ? "record.circle" : "pause.fill",
                         ) {
-                            model.toggleVideoRecordingPause()
+                            Task { await model.toggleVideoRecordingPause() }
                         }
                         .disabled(videoRecorder.isPreparing || videoRecorder.isFinalizing)
                         if videoRecorder.hasPreview {
