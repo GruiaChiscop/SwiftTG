@@ -187,6 +187,7 @@ struct ChatView: View {
                             }
                         }
                     }
+                    .accessibilityLabel(backButtonAccessibilityLabel)
                 }
                 ToolbarItem(placement: .principal) { principal }
             }
