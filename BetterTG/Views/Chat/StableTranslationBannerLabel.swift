@@ -6,6 +6,7 @@ import UIKit
 // MARK: - StableTranslationBannerLabel
 
 /// Keeps one native accessibility element mounted while message rows finish rendering below it.
+/// See `StableIconButton` for the root cause and the equivalent fix for tappable icons.
 struct StableTranslationBannerLabel: UIViewRepresentable {
     let text: String
 

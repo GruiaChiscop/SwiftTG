@@ -269,7 +269,7 @@ final class PermissionsManager: Sendable {
     }
 
     func requestPostLoginPermissions() async {
-        guard let contactsSync else { return }
+        guard let contactsSync, TelegramContactsSyncPreference.isEnabled else { return }
         guard await contactsAreAllowed() else { return }
         guard let records = await Self.fetchContactsConcurrently(access: contactsAccess) else { return }
 

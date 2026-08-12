@@ -417,6 +417,24 @@ struct TelegramPrivacyView: View {
                 }
                 .disabled(isSavingAccountDeletion)
             }
+
+            Section {
+                #if os(iOS)
+                    NavigationLink {
+                        TelegramDataPrivacySettingsView(service: service)
+                    } label: {
+                        Text("Data Settings")
+                    }
+                #else
+                    Button {
+                        presentedSecurityItem = .dataSettings
+                    } label: {
+                        Text("Data Settings")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                #endif
+            }
         }
         .navigationTitle("Privacy and Security")
         .task {
@@ -464,6 +482,7 @@ struct TelegramPrivacyView: View {
     private enum SecurityItem: String, Identifiable {
         case appLock
         case blockedUsers
+        case dataSettings
         case passkeys
         case twoStepVerification
         case webSessions
@@ -479,6 +498,8 @@ struct TelegramPrivacyView: View {
             TelegramAppLockSettingsView()
         case .blockedUsers:
             BlockedUsersView(service: service)
+        case .dataSettings:
+            TelegramDataPrivacySettingsView(service: service)
         case .passkeys:
             TelegramPasskeysView(service: service) { passkeyCount = $0 }
         case .twoStepVerification:

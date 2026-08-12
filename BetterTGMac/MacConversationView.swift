@@ -26,12 +26,19 @@ struct MacConversationView: View {
             if model.isConversationSearchActive {
                 conversationSearchField
                 Divider()
-            } else if model.showsChatTranslationBanner || model.isChatTranslationEnabled {
-                chatTranslationBanner
-                Divider()
-            } else if model.currentPinnedMessage != nil {
-                pinnedMessageBanner
-                Divider()
+            } else {
+                // Pinned-message state is known as soon as the chat opens, while the translation
+                // banner only appears later, once background language detection resolves. Pinned
+                // first keeps its position stable when translation shows up afterward - appended
+                // below instead of inserted above an already-visible banner.
+                if model.currentPinnedMessage != nil {
+                    pinnedMessageBanner
+                    Divider()
+                }
+                if model.showsChatTranslationBanner || model.isChatTranslationEnabled {
+                    chatTranslationBanner
+                    Divider()
+                }
             }
             messages
             Divider()

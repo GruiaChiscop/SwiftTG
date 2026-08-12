@@ -11,12 +11,19 @@ struct ChatTopBannerView: View {
     let chatVM: ChatVM
     let onShowAllPinnedMessages: () -> Void
 
+    /// Pinned-message state is known as soon as the chat opens, while the translation banner only
+    /// appears later - once background language detection resolves, seconds after the initial
+    /// messages render (see `ChatVM.refreshDetectedChatLanguage`). Rendering the pinned banner
+    /// first keeps its on-screen position stable when the translation banner shows up afterward:
+    /// it's appended below instead of being inserted above and pushing an already-visible (and
+    /// possibly VoiceOver-focused) banner down.
     var body: some View {
+        if chatVM.currentPinnedMessage != nil {
+            pinnedMessageBanner
+            Divider()
+        }
         if chatVM.showsChatTranslationBanner || chatVM.isChatTranslationEnabled {
             translationBanner
-            Divider()
-        } else if chatVM.currentPinnedMessage != nil {
-            pinnedMessageBanner
             Divider()
         }
     }
@@ -41,10 +48,12 @@ struct ChatTopBannerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if !chatVM.isChatTranslationEnabled {
-                Button("Dismiss", systemImage: "xmark") {
-                    chatVM.dismissChatTranslationSuggestion()
-                }
-                .labelStyle(.iconOnly)
+                StableIconButton(
+                    systemImageName: "xmark",
+                    accessibilityLabel: "Dismiss",
+                    action: { chatVM.dismissChatTranslationSuggestion() },
+                )
+                .frame(width: 30, height: 30)
             }
 
             Button(chatVM.isChatTranslationEnabled ? "Show Original" : "Translate") {
@@ -80,9 +89,12 @@ struct ChatTopBannerView: View {
             }
             .buttonStyle(.plain)
 
-            Button("Show All Pinned Messages", systemImage: "chevron.right", action: onShowAllPinnedMessages)
-                .labelStyle(.iconOnly)
-                .frame(width: 44, height: 44)
+            StableIconButton(
+                systemImageName: "chevron.right",
+                accessibilityLabel: "Show All Pinned Messages",
+                action: onShowAllPinnedMessages,
+            )
+            .frame(width: 44, height: 44)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

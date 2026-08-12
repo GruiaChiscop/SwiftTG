@@ -187,7 +187,6 @@ struct ChatView: View {
                             }
                         }
                     }
-                    .accessibilityLabel(backButtonAccessibilityLabel)
                 }
                 ToolbarItem(placement: .principal) { principal }
             }
@@ -489,8 +488,21 @@ struct ChatView: View {
             .glassEffect(.regular.interactive())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
+        // `.combine` re-derives this element from its children, and the animated status Text
+        // above is inserted/removed (not just updated) whenever actionStatus/onlineStatus
+        // changes - a structural accessibility-tree change VoiceOver treats as noteworthy enough
+        // to move focus here, stealing it away from wherever the user actually was (e.g. mid-way
+        // through "Show All Pinned Messages"). An explicit, always-present label sidesteps that:
+        // the same element just gets a new string, which VoiceOver applies silently in place.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(principalAccessibilityLabel)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var principalAccessibilityLabel: String {
+        let title = titleOverride ?? chatVM.customChat.displayTitle
+        let status = chatVM.actionStatus.isEmpty ? chatVM.onlineStatus : chatVM.actionStatus
+        return status.isEmpty ? title : "\(title), \(status)"
     }
 
     private func positionInitialMessagesIfNeeded() {

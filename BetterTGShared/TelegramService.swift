@@ -134,6 +134,11 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getChats(chatList: ChatList?, limit: Int?) async throws -> Chats
     func loadChats(chatList: ChatList?, limit: Int?) async throws -> Ok
     func getContacts() async throws -> Users
+    func removeContacts(userIds: [Int64]?) async throws -> Ok
+    func getTopChats(category: TopChatCategory?, limit: Int?) async throws -> Chats
+    func removeTopChat(category: TopChatCategory?, chatId: Int64?) async throws -> Ok
+    func deleteSavedOrderInfo() async throws -> Ok
+    func deleteSavedCredentials() async throws -> Ok
     func getAuthorizationState() async throws -> AuthorizationState
     func getCountries() async throws -> Countries
     func getCountryCode() async throws -> Text
@@ -546,6 +551,26 @@ extension TelegramSession: TelegramService {
 
     func getContacts() async throws -> Users {
         try await client.getContacts()
+    }
+
+    func removeContacts(userIds: [Int64]?) async throws -> Ok {
+        try await client.removeContacts(userIds: userIds)
+    }
+
+    func getTopChats(category: TopChatCategory?, limit: Int?) async throws -> Chats {
+        try await client.getTopChats(category: category, limit: limit)
+    }
+
+    func removeTopChat(category: TopChatCategory?, chatId: Int64?) async throws -> Ok {
+        try await client.removeTopChat(category: category, chatId: chatId)
+    }
+
+    func deleteSavedOrderInfo() async throws -> Ok {
+        try await client.deleteSavedOrderInfo()
+    }
+
+    func deleteSavedCredentials() async throws -> Ok {
+        try await client.deleteSavedCredentials()
     }
 
     func importContacts(contacts: [ImportedContact]?) async throws -> ImportedContacts {
