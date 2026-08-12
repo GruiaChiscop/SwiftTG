@@ -50,6 +50,16 @@ extension RootVM {
                 self?.apply(snapshot)
             }
             .store(in: &cancellables)
+        service.updatePublisher
+            .compactMap { update -> UpdateNotificationGroup? in
+                guard case .updateNotificationGroup(let group) = update else { return nil }
+                return group
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] group in
+                self?.handleNotificationGroupUpdate(group)
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Snapshot application

@@ -163,6 +163,14 @@ final class TelegramSession: @unchecked Sendable {
                     useSecretChats: true,
                     useTestDc: false,
                 )
+                // TDLib's notification manager defaults `notification_group_count_max` to 0
+                // (`NotificationManager::DEFAULT_GROUP_COUNT_MAX`), which disables it outright -
+                // it never emits `updateNotificationGroup` at all until told otherwise. 25 matches
+                // Unigram's own TDLib client setup (another TDLib-based client, checked directly).
+                _ = try? await client.setOption(
+                    name: "notification_group_count_max",
+                    value: .optionValueInteger(.init(value: 25)),
+                )
             } catch {
                 self?.resetConfigurationAttempt()
                 print("TDLib configuration failed: \(error)")

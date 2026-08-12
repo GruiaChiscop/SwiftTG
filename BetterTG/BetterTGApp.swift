@@ -118,12 +118,19 @@ import UserNotifications
         }
     }
 
+    /// `willPresent` only ever fires while the app is genuinely foregrounded - a backgrounded or
+    /// killed app never reaches this delegate method at all, so the raw system push (pre-rendered
+    /// server-side, since there's no live TDLib connection to consult in that state) still shows
+    /// exactly as before. While foregrounded, TDLib *is* alive and already knows which chat is open
+    /// and what's actually still unread - `RootVM.handleNotificationGroupUpdate` uses that to decide
+    /// whether to show the app's own in-app banner instead, mirroring how Telegram-iOS's own
+    /// `willPresent` never calls its completion handler for the active account either.
     nonisolated func userNotificationCenter(
         _: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
     ) {
-        completionHandler([.banner, .list, .sound, .badge])
+        completionHandler([])
         nonisolated(unsafe) let userInfo = notification.request.content.userInfo
         Task { @MainActor in
             _ = await PushNotificationsManager.shared.process(userInfo: userInfo)

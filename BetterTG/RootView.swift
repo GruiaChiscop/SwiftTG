@@ -15,6 +15,10 @@ struct RootView: View {
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         TelegramAudioPlayerBar()
                     }
+                    .overlay(alignment: .top) {
+                        TelegramInAppNotificationBannerView()
+                    }
+                    .animation(.default, value: rootVM.inAppNotificationBanner)
             } else {
                 LoginView()
             }
