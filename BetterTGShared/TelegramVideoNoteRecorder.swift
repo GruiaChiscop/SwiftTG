@@ -543,8 +543,7 @@ enum TelegramVideoNoteCameraPosition: Sendable {
             policy: .default,
             options: options,
         )
-        // See `Media.setAudioSessionRecord()`'s matching comment - suppresses system sounds/
-        // haptics (including VoiceOver's own earcons) for the duration of the recording.
+        // Documented to suppress system sounds/haptics for the duration of the recording.
         try audioSession.setAllowHapticsAndSystemSoundsDuringRecording(false)
         try audioSession.setActive(true)
     }

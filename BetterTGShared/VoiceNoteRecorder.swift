@@ -21,12 +21,9 @@ final class VoiceNoteRecorder: @unchecked Sendable {
         encodingQueue.sync { peakPower }
     }
 
-    /// Mirrors Telegram-iOS's own voice recorder (`ManagedAudioRecorder`), which plays a short
-    /// tone right as recording starts and only flips its `processSamples` gate once that tone
-    /// finishes - so whatever transient noise the system/audio session produces right at startup
-    /// never reaches the encoder. The mic is already running during `warmupDuration` (the real
-    /// duration of whatever cue `VoiceRecordingController` is playing alongside this call, not a
-    /// guessed constant); nothing captured in that window is written anywhere.
+    /// Mirrors Telegram-iOS's own voice recorder (`ManagedAudioRecorder`): the mic is already
+    /// running during `warmupDuration`, but nothing captured in that window gets encoded, so
+    /// whatever transient noise recording startup causes never reaches the saved file.
     func start(warmupDuration: TimeInterval) throws {
         let input = engine.inputNode
         let inputFormat = input.inputFormat(forBus: 0)
