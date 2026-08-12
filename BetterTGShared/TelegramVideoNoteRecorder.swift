@@ -529,20 +529,23 @@ enum TelegramVideoNoteCameraPosition: Sendable {
     #if os(iOS)
     private func configureAudioSessionForRecording() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        var options: AVAudioSession.CategoryOptions = [
+        // No `.mixWithOthers`, ever - see `Media.setAudioSessionRecord()`'s matching comment.
+        // Letting other audio keep playing through the speaker while recording risks it bleeding
+        // into the recorded video note itself.
+        let options: AVAudioSession.CategoryOptions = [
             .allowBluetoothHFP,
             .defaultToSpeaker,
             .overrideMutedMicrophoneInterruption,
         ]
-        if UIAccessibility.isVoiceOverRunning {
-            options.insert(.mixWithOthers)
-        }
         try audioSession.setCategory(
             .playAndRecord,
             mode: .videoRecording,
             policy: .default,
             options: options,
         )
+        // See `Media.setAudioSessionRecord()`'s matching comment - suppresses system sounds/
+        // haptics (including VoiceOver's own earcons) for the duration of the recording.
+        try audioSession.setAllowHapticsAndSystemSoundsDuringRecording(false)
         try audioSession.setActive(true)
     }
     #endif

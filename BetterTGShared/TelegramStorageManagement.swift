@@ -84,11 +84,23 @@ struct TelegramStorageSettingsView: View {
                     } label: {
                         Label("Automatic Media Download", systemImage: "arrow.down.circle")
                     }
+                    NavigationLink {
+                        TelegramAutoSaveSettingsView(service: service)
+                    } label: {
+                        Label("Auto-Save Media", systemImage: "square.and.arrow.down")
+                    }
                 #else
                     Button {
                         presentedDataSetting = .automaticMediaDownload
                     } label: {
                         Label("Automatic Media Download", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                    Button {
+                        presentedDataSetting = .autoSaveMedia
+                    } label: {
+                        Label("Auto-Save Media", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.primary)
@@ -187,6 +199,7 @@ struct TelegramStorageSettingsView: View {
     #if os(macOS)
     private enum DataSetting: String, Identifiable {
         case automaticMediaDownload
+        case autoSaveMedia
         case proxy
 
         // MARK: Internal
@@ -198,6 +211,8 @@ struct TelegramStorageSettingsView: View {
         switch item {
         case .automaticMediaDownload:
             TelegramAutoDownloadSettingsView(service: service)
+        case .autoSaveMedia:
+            TelegramAutoSaveSettingsView(service: service)
         case .proxy:
             TelegramProxySettingsView(service: service)
         }

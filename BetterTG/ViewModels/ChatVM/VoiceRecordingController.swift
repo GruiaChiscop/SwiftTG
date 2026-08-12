@@ -67,7 +67,7 @@ import TDLibKit
 
         do {
             let recorder = VoiceNoteRecorder()
-            try recorder.start()
+            try recorder.start(warmupDuration: 0)
             audioRecorder = recorder
             withAnimation {
                 recordingVoiceNote = true

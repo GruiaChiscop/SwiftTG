@@ -1,5 +1,6 @@
 // RootVM+Notifications.swift
 
+import AudioToolbox
 import Foundation
 import TDLibKit
 import UIKit
@@ -165,13 +166,18 @@ extension RootVM {
     /// singleton vs. each Mac window's own `MacSessionModel.service`), not because the logic itself
     /// should ever actually differ between platforms.
     private static func inAppNotificationBody(_ notification: TDLibKit.Notification) -> String? {
+        let showsPreview = TelegramInAppNotificationPreferences.previewsEnabled
         switch notification.type {
         case .notificationTypeNewMessage(let value):
             guard !value.message.isOutgoing else { return nil }
-            return value.showPreview ? telegramMessageContentDescription(value.message) : "You have a new message."
+            return value.showPreview && showsPreview
+                ? telegramMessageContentDescription(value.message)
+                : "You have a new message."
         case .notificationTypeNewPushMessage(let value):
             guard !value.isOutgoing else { return nil }
-            return value.senderName.isEmpty ? "You have a new message." : "New message from \(value.senderName)."
+            return showsPreview && !value.senderName.isEmpty
+                ? "New message from \(value.senderName)."
+                : "You have a new message."
         case .notificationTypeNewCall, .notificationTypeNewSecretChat:
             return nil
         }
@@ -190,7 +196,12 @@ extension RootVM {
 
     @MainActor private func presentInAppNotification(_ banner: TelegramInAppNotificationBanner) {
         inAppNotificationBanner = banner
-        ServiceSoundManager.shared.playIncomingMessageIfAppropriate(isMuted: banner.isSilent)
+        if TelegramInAppNotificationPreferences.soundEnabled {
+            ServiceSoundManager.shared.playIncomingMessageIfAppropriate(isMuted: banner.isSilent)
+        }
+        if !banner.isSilent, TelegramInAppNotificationPreferences.vibrateEnabled {
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+        }
         inAppNotificationDismissTask?.cancel()
         inAppNotificationDismissTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.inAppNotificationDisplayDuration)

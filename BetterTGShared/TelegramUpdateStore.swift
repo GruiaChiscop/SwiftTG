@@ -48,6 +48,13 @@ final class TelegramUpdateStore: @unchecked Sendable {
         availableMessageEffectsSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
+    /// Same `CurrentValueSubject` reasoning as `chatFoldersPublisher` - TDLib pushes
+    /// `updateReactionNotificationSettings` once early in the session with no matching getter, so a
+    /// Notifications screen opened afterward needs the value replayed, not just future changes.
+    var reactionNotificationSettingsPublisher: AnyPublisher<ReactionNotificationSettings?, Never> {
+        reactionNotificationSettingsSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     func messagePublisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
         messageStore.publisher(chatId: chatId)
     }
@@ -81,7 +88,10 @@ final class TelegramUpdateStore: @unchecked Sendable {
 
     func publish(_ update: Update) {
         queue.async {
-            [updateSubject, chatFoldersSubject, unreadChatCountSubject, availableMessageEffectsSubject] in
+            [
+                updateSubject, chatFoldersSubject, unreadChatCountSubject, availableMessageEffectsSubject,
+                reactionNotificationSettingsSubject,
+            ] in
             dispatchPrecondition(condition: .onQueue(self.queue))
             self.chatListStore.reduce(update)
             self.fileStore.reduce(update)
@@ -95,6 +105,9 @@ final class TelegramUpdateStore: @unchecked Sendable {
             if case .updateAvailableMessageEffects(let value) = update {
                 availableMessageEffectsSubject.send(value)
             }
+            if case .updateReactionNotificationSettings(let value) = update {
+                reactionNotificationSettingsSubject.send(value.notificationSettings)
+            }
             updateSubject.send(update)
         }
     }
@@ -104,6 +117,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
     private let chatFoldersSubject = CurrentValueSubject<UpdateChatFolders?, Never>(nil)
     private let unreadChatCountSubject = CurrentValueSubject<UpdateUnreadChatCount?, Never>(nil)
     private let availableMessageEffectsSubject = CurrentValueSubject<UpdateAvailableMessageEffects?, Never>(nil)
+    private let reactionNotificationSettingsSubject = CurrentValueSubject<ReactionNotificationSettings?, Never>(nil)
     private let chatListStore = TelegramChatListStore()
     private let fileStore = TelegramFileStore()
     private let messageStore = TelegramMessageStore()

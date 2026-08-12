@@ -21,7 +21,13 @@ final class VoiceNoteRecorder: @unchecked Sendable {
         encodingQueue.sync { peakPower }
     }
 
-    func start() throws {
+    /// Mirrors Telegram-iOS's own voice recorder (`ManagedAudioRecorder`), which plays a short
+    /// tone right as recording starts and only flips its `processSamples` gate once that tone
+    /// finishes - so whatever transient noise the system/audio session produces right at startup
+    /// never reaches the encoder. The mic is already running during `warmupDuration` (the real
+    /// duration of whatever cue `VoiceRecordingController` is playing alongside this call, not a
+    /// guessed constant); nothing captured in that window is written anywhere.
+    func start(warmupDuration: TimeInterval) throws {
         let input = engine.inputNode
         let inputFormat = input.inputFormat(forBus: 0)
         guard let outputFormat = AVAudioFormat(
@@ -43,6 +49,7 @@ final class VoiceNoteRecorder: @unchecked Sendable {
         compressedData = Data()
         encodedFrameCount = 0
         peakPower = -160
+        isPastWarmup = false
 
         input.installTap(onBus: 0, bufferSize: 960, format: inputFormat) { [weak self] buffer, _ in
             guard let self else { return }
@@ -52,6 +59,9 @@ final class VoiceNoteRecorder: @unchecked Sendable {
         }
         engine.prepare()
         try engine.start()
+        encodingQueue.asyncAfter(deadline: .now() + warmupDuration) { [weak self] in
+            self?.isPastWarmup = true
+        }
     }
 
     func stopAndWrite(to url: URL) throws -> TimeInterval {
@@ -93,9 +103,10 @@ final class VoiceNoteRecorder: @unchecked Sendable {
     private var compressedData = Data()
     private var encodedFrameCount: Int64 = 0
     private var peakPower: Float = -160
+    private var isPastWarmup = false
 
     private func encode(_ inputBuffer: AVAudioPCMBuffer, outputFormat: AVAudioFormat) {
-        guard let converter, let encoder else { return }
+        guard isPastWarmup, let converter, let encoder else { return }
         let ratio = outputFormat.sampleRate / inputBuffer.format.sampleRate
         let capacity = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength) * ratio)) + 32
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return }

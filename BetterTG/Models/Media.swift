@@ -58,22 +58,41 @@ import Observation
 
     func setAudioSessionRecord() {
         do {
-            var options: AVAudioSession.CategoryOptions = [
+            // No `.mixWithOthers`, ever, for any reason - letting other audio (music, etc.) keep
+            // playing through the speaker while the microphone is recording risks it bleeding into
+            // the recorded message itself, which matters far more than any on-device side effect of
+            // interrupting it instead (including VoiceOver's own interruption earcon - tried several
+            // ways to avoid that without reintroducing the bleed risk; none of them held up, so this
+            // is deliberately the plain, unconditional version).
+            let options: AVAudioSession.CategoryOptions = [
                 .allowAirPlay,
                 .allowBluetoothHFP,
                 .allowBluetoothA2DP,
                 .defaultToSpeaker,
                 .overrideMutedMicrophoneInterruption,
             ]
-            if MainActor.assumeIsolated({ UIAccessibility.isVoiceOverRunning }) {
-                options.insert(.mixWithOthers)
-            }
-            // Deactivating the shared session here interrupts VoiceOver before recording starts
-            // and makes it play its context-change earcon when its audio resumes.
             try audioSession.setCategory(.playAndRecord, mode: .default, policy: .default, options: options)
+            // Documented to suppress system sounds/haptics - including VoiceOver's own earcons -
+            // for the duration of the recording; `false` is already AVAudioSession's default, but
+            // setting it explicitly (rather than relying on the implicit default) is untested here
+            // and worth trying against the live "Screen refreshed" earcon on recording start.
+            try audioSession.setAllowHapticsAndSystemSoundsDuringRecording(false)
             try audioSession.setActive(true)
         } catch {
             log("Error setting audioSessionRecord: \(error)")
+        }
+    }
+
+    /// Deactivates the session right when a recording ends, instead of leaving it active in
+    /// `.playAndRecord` until the *next* recording starts. Without this, that next
+    /// `setAudioSessionRecord()` has to tear down a still-live session first, which is exactly the
+    /// kind of deactivation that interrupts VoiceOver's own audio and makes it play its
+    /// context-change earcon on resume - so only the first recording in a session was ever silent.
+    func endAudioSessionRecord() {
+        do {
+            try audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+        } catch {
+            log("Error ending audioSessionRecord: \(error)")
         }
     }
 

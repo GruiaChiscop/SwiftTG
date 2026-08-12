@@ -89,10 +89,9 @@ struct TelegramDataPrivacySettingsView: View {
             hasLoaded = true
             await loadFrequentContactsSetting()
         }
-        .confirmationDialog(
+        .alert(
             "Delete synced contacts?",
             isPresented: $confirmsDeleteContacts,
-            titleVisibility: .visible,
         ) {
             Button("Delete", role: .destructive) { Task { await deleteSyncedContacts() } }
             Button("Cancel", role: .cancel) {}
@@ -102,30 +101,27 @@ struct TelegramDataPrivacySettingsView: View {
                     "If \"Sync Contacts\" is enabled, contacts will be re-synced.",
             )
         }
-        .confirmationDialog(
+        .alert(
             "Delete frequent contacts data?",
             isPresented: $confirmsDeleteFrequentContacts,
-            titleVisibility: .visible,
         ) {
             Button("Delete", role: .destructive) { Task { await deleteFrequentContacts() } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will delete all data about the people you message frequently as well the inline bots you are likely to use.")
         }
-        .confirmationDialog(
+        .alert(
             "Delete all cloud drafts?",
             isPresented: $confirmsDeleteDrafts,
-            titleVisibility: .visible,
         ) {
             Button("Delete", role: .destructive) { Task { await deleteAllCloudDrafts() } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Drafts will be removed from all your chats.")
         }
-        .confirmationDialog(
+        .alert(
             "Clear payment & shipping info?",
             isPresented: $confirmsClearPaymentInfo,
-            titleVisibility: .visible,
         ) {
             Button("Clear Payment Info", role: .destructive) {
                 Task { await clearPaymentInfo(paymentInfo: true, shippingInfo: false) }

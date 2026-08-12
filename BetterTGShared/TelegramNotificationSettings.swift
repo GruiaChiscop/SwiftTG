@@ -65,6 +65,59 @@ extension ScopeNotificationSettings {
     }
 }
 
+extension ReactionNotificationSettings {
+    /// `storyReactionSource` is left at `.reactionNotificationSourceNone` since SwiftTG doesn't
+    /// implement Stories - there's no UI to ever turn it on, so it should never silently read as
+    /// enabled. Mirrors Telegram-iOS's own `ReactionNotificationSettingsController`, which likewise
+    /// only ever exposes `messageReactionSource` as a toggle (no separate poll-vote row) -
+    /// `pollVoteSource` is kept in sync with it here instead of exposing a third control.
+    static let defaultSettings = ReactionNotificationSettings(
+        messageReactionSource: .reactionNotificationSourceAll,
+        pollVoteSource: .reactionNotificationSourceAll,
+        showPreview: true,
+        soundId: -1,
+        storyReactionSource: .reactionNotificationSourceNone,
+    )
+
+    var isEnabled: Bool {
+        if case .reactionNotificationSourceNone = messageReactionSource { return false }
+        return true
+    }
+
+    func withEnabled(_ isEnabled: Bool) -> ReactionNotificationSettings {
+        let source: ReactionNotificationSource = isEnabled
+            ? .reactionNotificationSourceAll
+            : .reactionNotificationSourceNone
+        return ReactionNotificationSettings(
+            messageReactionSource: source,
+            pollVoteSource: source,
+            showPreview: showPreview,
+            soundId: soundId,
+            storyReactionSource: storyReactionSource,
+        )
+    }
+
+    func withShowPreview(_ showPreview: Bool) -> ReactionNotificationSettings {
+        ReactionNotificationSettings(
+            messageReactionSource: messageReactionSource,
+            pollVoteSource: pollVoteSource,
+            showPreview: showPreview,
+            soundId: soundId,
+            storyReactionSource: storyReactionSource,
+        )
+    }
+
+    func withSoundId(_ soundId: TdInt64) -> ReactionNotificationSettings {
+        ReactionNotificationSettings(
+            messageReactionSource: messageReactionSource,
+            pollVoteSource: pollVoteSource,
+            showPreview: showPreview,
+            soundId: soundId,
+            storyReactionSource: storyReactionSource,
+        )
+    }
+}
+
 // MARK: - TelegramNotificationScopeItem
 
 struct TelegramNotificationScopeItem: Identifiable {
@@ -119,6 +172,53 @@ struct TelegramNotificationsView: View {
                         .buttonStyle(.plain)
                     #endif
                 }
+
+                #if os(iOS)
+                    NavigationLink {
+                        TelegramReactionNotificationDetailContent(
+                            service: service,
+                            settings: reactionSettings ?? .defaultSettings,
+                        ) { newSettings in
+                            reactionSettings = newSettings
+                        }
+                        .navigationTitle("Reactions")
+                        .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        LabeledContent("Reactions", value: reactionStatusText)
+                    }
+                #else
+                    Button {
+                        showsReactionDetail = true
+                    } label: {
+                        LabeledContent("Reactions", value: reactionStatusText)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                #endif
+            }
+
+            Section {
+                Toggle("Notify When Contacts Join Telegram", isOn: contactJoinedBinding)
+                    .disabled(!hasLoadedContactJoinedSetting || isSavingContactJoinedSetting)
+            }
+
+            #if os(iOS)
+            Section {
+                Toggle("Sounds", isOn: inAppSoundBinding)
+                Toggle("Vibrate", isOn: inAppVibrateBinding)
+                Toggle("Show Previews", isOn: inAppPreviewBinding)
+            } header: {
+                Text("In-App Notifications")
+            } footer: {
+                Text("Controls the banner shown for new messages while SwiftTG is open, not push notifications.")
+            }
+            #endif
+
+            Section {
+                Button("Reset All Notifications", role: .destructive) {
+                    confirmsReset = true
+                }
+                .disabled(isResetting)
             }
         }
         .navigationTitle("Notifications")
@@ -126,7 +226,12 @@ struct TelegramNotificationsView: View {
             guard !hasLoaded else { return }
             hasLoaded = true
             await loadSettings()
+            await loadContactJoinedSetting()
         }
+        // No `getReactionNotificationSettings` exists - TDLib only ever pushes the current value via
+        // `updateReactionNotificationSettings`, replayed to late subscribers by
+        // `reactionNotificationSettingsPublisher` (a `CurrentValueSubject`, like `chatFoldersPublisher`).
+        .onReceive(service.reactionNotificationSettingsPublisher) { reactionSettings = $0 }
         #if os(macOS)
         .sheet(item: $selectedItem) { item in
             TelegramNotificationScopeDetailView(
@@ -137,7 +242,33 @@ struct TelegramNotificationsView: View {
                 settings[item.scope] = newSettings
             }
         }
+        .sheet(isPresented: $showsReactionDetail) {
+            NavigationStack {
+                TelegramReactionNotificationDetailContent(
+                    service: service,
+                    settings: reactionSettings ?? .defaultSettings,
+                ) { newSettings in
+                    reactionSettings = newSettings
+                }
+                .navigationTitle("Reactions")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { showsReactionDetail = false }
+                    }
+                }
+            }
+            .frame(minWidth: 360, minHeight: 320)
+        }
         #endif
+        .alert(
+            "Reset all notification settings?",
+            isPresented: $confirmsReset,
+        ) {
+            Button("Reset", role: .destructive) { Task { await resetAllNotifications() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This resets custom notification settings for every chat back to their defaults.")
+        }
         .alert("Couldn't Load Notification Settings", isPresented: errorIsPresented) {
                 Button("OK") {}
             } message: {
@@ -147,12 +278,24 @@ struct TelegramNotificationsView: View {
 
     // MARK: Private
 
+    @State private var confirmsReset = false
+    @State private var contactJoinedEnabled = true
     @State private var errorMessage: String?
     @State private var hasLoaded = false
+    @State private var hasLoadedContactJoinedSetting = false
+    @State private var isResetting = false
+    @State private var isSavingContactJoinedSetting = false
+    @State private var reactionSettings: ReactionNotificationSettings?
     #if os(macOS)
     @State private var selectedItem: TelegramNotificationScopeItem?
+    @State private var showsReactionDetail = false
     #endif
     @State private var settings = [NotificationSettingsScope: ScopeNotificationSettings]()
+    #if os(iOS)
+    @State private var inAppSoundEnabled = TelegramInAppNotificationPreferences.soundEnabled
+    @State private var inAppVibrateEnabled = TelegramInAppNotificationPreferences.vibrateEnabled
+    @State private var inAppPreviewsEnabled = TelegramInAppNotificationPreferences.previewsEnabled
+    #endif
 
     private let service: any TelegramService
 
@@ -167,8 +310,88 @@ struct TelegramNotificationsView: View {
         )
     }
 
+    private var reactionStatusText: String {
+        (reactionSettings ?? .defaultSettings).isEnabled ? "On" : "Off"
+    }
+
+    private var contactJoinedBinding: Binding<Bool> {
+        Binding(
+            get: { contactJoinedEnabled },
+            set: { newValue in
+                let previousValue = contactJoinedEnabled
+                contactJoinedEnabled = newValue
+                isSavingContactJoinedSetting = true
+                Task {
+                    defer { isSavingContactJoinedSetting = false }
+                    do {
+                        _ = try await service.setOption(
+                            name: "disable_contact_registered_notifications",
+                            value: .optionValueBoolean(OptionValueBoolean(value: !newValue)),
+                        )
+                    } catch {
+                        contactJoinedEnabled = previousValue
+                        errorMessage = telegramErrorDescription(error)
+                    }
+                }
+            },
+        )
+    }
+
+    #if os(iOS)
+    private var inAppSoundBinding: Binding<Bool> {
+        Binding(
+            get: { inAppSoundEnabled },
+            set: { newValue in
+                inAppSoundEnabled = newValue
+                TelegramInAppNotificationPreferences.soundEnabled = newValue
+            },
+        )
+    }
+
+    private var inAppVibrateBinding: Binding<Bool> {
+        Binding(
+            get: { inAppVibrateEnabled },
+            set: { newValue in
+                inAppVibrateEnabled = newValue
+                TelegramInAppNotificationPreferences.vibrateEnabled = newValue
+            },
+        )
+    }
+
+    private var inAppPreviewBinding: Binding<Bool> {
+        Binding(
+            get: { inAppPreviewsEnabled },
+            set: { newValue in
+                inAppPreviewsEnabled = newValue
+                TelegramInAppNotificationPreferences.previewsEnabled = newValue
+            },
+        )
+    }
+    #endif
+
     private func statusText(for scope: NotificationSettingsScope) -> String {
         (settings[scope] ?? .defaultSettings).isEnabled ? "On" : "Off"
+    }
+
+    @MainActor private func loadContactJoinedSetting() async {
+        defer { hasLoadedContactJoinedSetting = true }
+        guard case .optionValueBoolean(let disabled) = try? await service.getOption(
+            name: "disable_contact_registered_notifications",
+        ) else { return }
+        contactJoinedEnabled = !disabled.value
+    }
+
+    @MainActor private func resetAllNotifications() async {
+        isResetting = true
+        defer { isResetting = false }
+        do {
+            _ = try await service.resetAllNotificationSettings()
+            settings.removeAll()
+            reactionSettings = nil
+            await loadSettings()
+        } catch {
+            errorMessage = telegramErrorDescription(error)
+        }
     }
 
     @MainActor private func loadSettings() async {
@@ -410,6 +633,134 @@ private struct TelegramNotificationScopeDetailContent: View {
             defer { isSaving = false }
             do {
                 _ = try await service.setScopeNotificationSettings(notificationSettings: newSettings, scope: item.scope)
+                onSaved(newSettings)
+            } catch {
+                settings = previousSettings
+                errorMessage = telegramErrorDescription(error)
+            }
+        }
+    }
+}
+
+// MARK: - TelegramReactionNotificationDetailContent
+
+/// Mirrors `TelegramNotificationScopeDetailContent`'s shape (Enabled/Show Preview/Sound) - no
+/// mentions/pinned section here since those aren't reaction-specific concepts.
+private struct TelegramReactionNotificationDetailContent: View {
+    // MARK: Internal
+
+    let service: any TelegramService
+    @State var settings: ReactionNotificationSettings
+
+    let onSaved: (ReactionNotificationSettings) -> Void
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enabled", isOn: enabledBinding)
+                Toggle("Show Preview", isOn: showPreviewBinding)
+                    .disabled(!settings.isEnabled)
+                #if os(iOS)
+                    NavigationLink {
+                        TelegramNotificationSoundPickerView(
+                            service: service,
+                            selectedSoundId: settings.soundId,
+                        ) { newSoundId in
+                            save(settings.withSoundId(newSoundId))
+                        }
+                    } label: {
+                        LabeledContent("Sound", value: soundDisplayName)
+                    }
+                    .disabled(!settings.isEnabled)
+                #else
+                    Button {
+                        showsSoundPicker = true
+                    } label: {
+                        LabeledContent("Sound", value: soundDisplayName)
+                            .foregroundStyle(.primary)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!settings.isEnabled)
+                #endif
+            } footer: {
+                Text("Notified when someone reacts to your messages or votes in your polls.")
+            }
+        }
+        .task(id: settings.soundId) {
+            guard settings.soundId > 0 else {
+                soundTitle = nil
+                return
+            }
+            soundTitle = try? await service.getSavedNotificationSound(notificationSoundId: settings.soundId).title
+        }
+        .alert("Couldn't Update Notification Settings", isPresented: errorIsPresented) {
+            Button("OK") {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        #if os(macOS)
+        .sheet(isPresented: $showsSoundPicker) {
+            TelegramNotificationSoundPickerSheet(service: service, selectedSoundId: settings.soundId) { newSoundId in
+                save(settings.withSoundId(newSoundId))
+            }
+        }
+        #endif
+    }
+
+    // MARK: Private
+
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+    #if os(macOS)
+    @State private var showsSoundPicker = false
+    #endif
+    @State private var soundTitle: String?
+
+    private var soundDisplayName: String {
+        if settings.soundId <= -1 {
+            return "Default"
+        }
+        if settings.soundId == 0 {
+            return "Off"
+        }
+        return soundTitle ?? "…"
+    }
+
+    private var errorIsPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    errorMessage = nil
+                }
+            },
+        )
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { settings.isEnabled },
+            set: { save(settings.withEnabled($0)) },
+        )
+    }
+
+    private var showPreviewBinding: Binding<Bool> {
+        Binding(
+            get: { settings.showPreview },
+            set: { save(settings.withShowPreview($0)) },
+        )
+    }
+
+    @MainActor private func save(_ newSettings: ReactionNotificationSettings) {
+        guard !isSaving else { return }
+        let previousSettings = settings
+        settings = newSettings
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            do {
+                _ = try await service.setReactionNotificationSettings(notificationSettings: newSettings)
                 onSaved(newSettings)
             } catch {
                 settings = previousSettings

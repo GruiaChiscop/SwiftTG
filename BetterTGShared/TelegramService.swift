@@ -18,6 +18,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> { get }
     var unreadChatCountPublisher: AnyPublisher<UpdateUnreadChatCount?, Never> { get }
     var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> { get }
+    var reactionNotificationSettingsPublisher: AnyPublisher<ReactionNotificationSettings?, Never> { get }
     var updatePublisher: AnyPublisher<Update, Never> { get }
 
     func filePublisher(fileId: Int) -> AnyPublisher<File, Never>
@@ -411,6 +412,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         notificationSettings: ScopeNotificationSettings?,
         scope: NotificationSettingsScope?,
     ) async throws -> Ok
+    func setReactionNotificationSettings(notificationSettings: ReactionNotificationSettings?) async throws -> Ok
+    func resetAllNotificationSettings() async throws -> Ok
     func getSavedNotificationSounds() async throws -> NotificationSounds
     func getSavedNotificationSound(notificationSoundId: TdInt64?) async throws -> NotificationSound
     func addSavedNotificationSound(sound: InputFile?) async throws -> NotificationSound
@@ -449,6 +452,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setProfilePhoto(isPublic: Bool?, photo: InputChatPhoto?) async throws -> Ok
     func setOption(name: String?, value: OptionValue?) async throws -> Ok
     func getOption(name: String?) async throws -> OptionValue
+    func getAutosaveSettings() async throws -> AutosaveSettings
+    func setAutosaveSettings(scope: AutosaveSettingsScope?, settings: ScopeAutosaveSettings?) async throws -> Ok
     func getDefaultMessageAutoDeleteTime() async throws -> MessageAutoDeleteTime
     func setDefaultMessageAutoDeleteTime(messageAutoDeleteTime: MessageAutoDeleteTime?) async throws -> Ok
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok
@@ -488,6 +493,14 @@ extension TelegramSession: TelegramService {
 
     func getOption(name: String?) async throws -> OptionValue {
         try await client.getOption(name: name)
+    }
+
+    func getAutosaveSettings() async throws -> AutosaveSettings {
+        try await client.getAutosaveSettings()
+    }
+
+    func setAutosaveSettings(scope: AutosaveSettingsScope?, settings: ScopeAutosaveSettings?) async throws -> Ok {
+        try await client.setAutosaveSettings(scope: scope, settings: settings)
     }
 
     func getDefaultMessageAutoDeleteTime() async throws -> MessageAutoDeleteTime {
@@ -1631,6 +1644,14 @@ extension TelegramSession: TelegramService {
         scope: NotificationSettingsScope?,
     ) async throws -> Ok {
         try await client.setScopeNotificationSettings(notificationSettings: notificationSettings, scope: scope)
+    }
+
+    func setReactionNotificationSettings(notificationSettings: ReactionNotificationSettings?) async throws -> Ok {
+        try await client.setReactionNotificationSettings(notificationSettings: notificationSettings)
+    }
+
+    func resetAllNotificationSettings() async throws -> Ok {
+        try await client.resetAllNotificationSettings()
     }
 
     func getSavedNotificationSounds() async throws -> NotificationSounds {

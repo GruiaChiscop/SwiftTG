@@ -49,6 +49,10 @@ final class TelegramSession: @unchecked Sendable {
         updateStore.availableMessageEffectsPublisher
     }
 
+    var reactionNotificationSettingsPublisher: AnyPublisher<ReactionNotificationSettings?, Never> {
+        updateStore.reactionNotificationSettingsPublisher
+    }
+
     var updatePublisher: AnyPublisher<Update, Never> {
         updateStore.updatePublisher
     }
