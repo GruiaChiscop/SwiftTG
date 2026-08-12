@@ -18,6 +18,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
          .updateNotificationGroup,
          .updateSupergroup,
          .updateSupergroupFullInfo,
+         .updateUnconfirmedSession,
          .updateUser,
          .updateUserStatus:
         true
@@ -146,6 +147,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var conversationHeaderActivities = [MessageSender: ChatAction]()
     var deepLinkErrorMessage: String?
     var pendingDeepLinkJoin: TelegramPendingDeepLinkJoin?
+    var unconfirmedSession: UnconfirmedSession?
+    var unconfirmedSessionActionError: String?
+    var showsDeniedSessionNotice = false
+    var isProcessingUnconfirmedSession = false
 
     let linkPreviewComposer: TelegramLinkPreviewComposer
     let editLinkPreviewComposer: TelegramLinkPreviewComposer
@@ -406,6 +411,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                 .sink { [weak self] update in
                     self?.handleNotificationUpdate(update)
                     self?.handleConversationHeaderUpdate(update)
+                    self?.handleUnconfirmedSessionUpdate(update)
                     if case .updateFavoriteStickers(let value) = update {
                         self?.favoriteStickers.apply(value)
                     }

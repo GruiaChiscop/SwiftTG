@@ -55,6 +55,26 @@ struct MacRootView: View {
                 } message: {
                     Text(model.deepLinkErrorMessage ?? "")
                 }
+                .alert(
+                    "Couldn't Complete Request",
+                    isPresented: Binding(
+                        get: { model.unconfirmedSessionActionError != nil },
+                        set: { isPresented in
+                            if !isPresented {
+                                model.unconfirmedSessionActionError = nil
+                            }
+                        },
+                    ),
+                ) {
+                    Button("OK") {}
+                } message: {
+                    Text(model.unconfirmedSessionActionError ?? "")
+                }
+                .alert("Login Denied", isPresented: $model.showsDeniedSessionNotice) {
+                    Button("OK") {}
+                } message: {
+                    Text("The session was terminated. If this wasn't you, consider changing your password in Two-Step Verification.")
+                }
     }
 
     // MARK: Private
@@ -73,6 +93,20 @@ struct MacRootView: View {
                 .task {
                     await TelegramKeepMediaPolicy.applyStoredPolicy(service: model.service)
                 }
+                .overlay(alignment: .top) {
+                    if let unconfirmedSession = model.unconfirmedSession,
+                       MacSessionModel.deviceSessionId(unconfirmedSession) != nil
+                    {
+                        TelegramUnconfirmedSessionBannerView(
+                            session: unconfirmedSession,
+                            isProcessing: model.isProcessingUnconfirmedSession,
+                            onConfirm: { model.confirmUnconfirmedSession() },
+                            onDeny: { model.denyUnconfirmedSession() },
+                        )
+                        .frame(maxWidth: 420)
+                    }
+                }
+                .animation(.default, value: model.unconfirmedSession)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         TelegramNewChatMenu(service: model.service) { chat in

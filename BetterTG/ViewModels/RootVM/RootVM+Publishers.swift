@@ -60,6 +60,16 @@ extension RootVM {
                 self?.handleNotificationGroupUpdate(group)
             }
             .store(in: &cancellables)
+        service.updatePublisher
+            .compactMap { update -> UpdateUnconfirmedSession? in
+                guard case .updateUnconfirmedSession(let value) = update else { return nil }
+                return value
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] value in
+                self?.unconfirmedSession = value.session
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Snapshot application

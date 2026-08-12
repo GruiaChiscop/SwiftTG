@@ -178,6 +178,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func removeFavoriteSticker(sticker: InputFile?) async throws -> Ok
     func getActiveSessions() async throws -> Sessions
     func terminateSession(sessionId: TdInt64?) async throws -> Ok
+    func confirmSession(sessionId: TdInt64?) async throws -> Ok
     func terminateAllOtherSessions() async throws -> Ok
     func getStickerSet(setId: TdInt64?) async throws -> StickerSet
     func searchStickerSet(ignoreCache: Bool?, name: String?) async throws -> StickerSet
@@ -1142,6 +1143,10 @@ extension TelegramSession: TelegramService {
 
     func terminateSession(sessionId: TdInt64?) async throws -> Ok {
         try await client.terminateSession(sessionId: sessionId)
+    }
+
+    func confirmSession(sessionId: TdInt64?) async throws -> Ok {
+        try await client.confirmSession(sessionId: sessionId)
     }
 
     func terminateAllOtherSessions() async throws -> Ok {

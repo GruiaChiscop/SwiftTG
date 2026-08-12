@@ -101,6 +101,10 @@ struct ChatListLoadKey: Hashable, Sendable {
     var deepLinkErrorMessage: String?
     var pendingDeepLinkJoin: TelegramPendingDeepLinkJoin?
     var inAppNotificationBanner: TelegramInAppNotificationBanner?
+    var unconfirmedSession: UnconfirmedSession?
+    var unconfirmedSessionActionError: String?
+    var showsDeniedSessionNotice = false
+    var isProcessingUnconfirmedSession = false
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
     @ObservationIgnored let service: any TelegramService
     @ObservationIgnored var appliedChatListVersion: UInt64?

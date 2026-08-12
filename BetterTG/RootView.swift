@@ -16,9 +16,22 @@ struct RootView: View {
                         TelegramAudioPlayerBar()
                     }
                     .overlay(alignment: .top) {
-                        TelegramInAppNotificationBannerView()
+                        VStack(spacing: 8) {
+                            if let unconfirmedSession = rootVM.unconfirmedSession,
+                               RootVM.deviceSessionId(unconfirmedSession) != nil
+                            {
+                                TelegramUnconfirmedSessionBannerView(
+                                    session: unconfirmedSession,
+                                    isProcessing: rootVM.isProcessingUnconfirmedSession,
+                                    onConfirm: { rootVM.confirmUnconfirmedSession() },
+                                    onDeny: { rootVM.denyUnconfirmedSession() },
+                                )
+                            }
+                            TelegramInAppNotificationBannerView()
+                        }
                     }
                     .animation(.default, value: rootVM.inAppNotificationBanner)
+                    .animation(.default, value: rootVM.unconfirmedSession)
             } else {
                 LoginView()
             }
@@ -71,6 +84,32 @@ struct RootView: View {
             Button("OK") {}
         } message: {
             Text(rootVM.deepLinkErrorMessage ?? "")
+        }
+        .alert(
+            "Couldn't Complete Request",
+            isPresented: Binding(
+                get: { rootVM.unconfirmedSessionActionError != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        rootVM.unconfirmedSessionActionError = nil
+                    }
+                },
+            ),
+        ) {
+            Button("OK") {}
+        } message: {
+            Text(rootVM.unconfirmedSessionActionError ?? "")
+        }
+        .alert(
+            "Login Denied",
+            isPresented: Binding(
+                get: { rootVM.showsDeniedSessionNotice },
+                set: { rootVM.showsDeniedSessionNotice = $0 },
+            ),
+        ) {
+            Button("OK") {}
+        } message: {
+            Text("The session was terminated. If this wasn't you, consider changing your password in Two-Step Verification.")
         }
     }
 
