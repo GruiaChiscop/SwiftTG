@@ -17,6 +17,7 @@
 		D20000000000000000000001 /* TelegramWebM in Frameworks */ = {isa = PBXBuildFile; productRef = D20000000000000000000005 /* TelegramWebM */; };
 		D20000000000000000000003 /* TelegramWebM in Frameworks */ = {isa = PBXBuildFile; productRef = D20000000000000000000005 /* TelegramWebM */; };
 		D30000000000000000000003 /* TgVoipWebrtc in Frameworks */ = {isa = PBXBuildFile; productRef = D30000000000000000000005 /* TgVoipWebrtc */; };
+		D30000000000000000000004 /* TgVoipWebrtc in Embed Frameworks */ = {isa = PBXBuildFile; productRef = D30000000000000000000005 /* TgVoipWebrtc */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DF9C5CC1292698BC00ED1CA8 /* TDLibKit in Frameworks */ = {isa = PBXBuildFile; productRef = DF9C5CC0292698BC00ED1CA8 /* TDLibKit */; };
 		E1000000000000000000000B /* BetterTGShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* BetterTGShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E10000000000000000000010 /* BetterTGShared/TelegramShareExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000000000000000000000E /* BetterTGShared/TelegramShareExtension.swift */; };
@@ -80,6 +81,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				D30000000000000000000004 /* TgVoipWebrtc in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;

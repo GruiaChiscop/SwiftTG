@@ -190,6 +190,18 @@ struct ChatView: View {
                     .accessibilityLabel(backButtonAccessibilityLabel)
                 }
                 ToolbarItem(placement: .principal) { principal }
+                if let callPeer {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            CallKitManager.shared.startOutgoingCall(
+                                userId: callPeer.id,
+                                displayName: callPeer.displayName,
+                            )
+                        } label: {
+                            Label("Call", systemImage: "phone")
+                        }
+                    }
+                }
             }
         }
         .alert(
@@ -398,6 +410,13 @@ struct ChatView: View {
             .first {
                 !$0.message.isOutgoing && $0.id > chatVM.initialLastReadInboxMessageId
             }?.id
+    }
+
+    /// Calls (Phase 1) are 1:1 only - no button for bots, groups, or channels.
+    private var callPeer: (id: Int64, displayName: String)? {
+        guard case .user(let user) = chatVM.customChat.type else { return nil }
+        let name = [user.firstName, user.lastName].filter { !$0.isEmpty }.joined(separator: " ")
+        return (id: user.id, displayName: name.isEmpty ? chatVM.customChat.displayTitle : name)
     }
 
     private var principalAccessibilityLabel: String {

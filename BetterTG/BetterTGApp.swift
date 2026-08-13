@@ -90,6 +90,8 @@ import UserNotifications
         UNUserNotificationCenter.current().delegate = self
         Self.registerNotificationCategories()
         PushNotificationsManager.shared.start()
+        CallKitManager.shared.start()
+        VoipPushManager.shared.start()
         return true
     }
 

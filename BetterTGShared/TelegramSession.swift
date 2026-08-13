@@ -119,7 +119,7 @@ final class TelegramSession: @unchecked Sendable {
     private lazy var internalClient: TDLibClient = manager.createClient { [weak self] data, client in
         guard let self else { return }
         do {
-            let update = try client.decoder.decode(Update.self, from: data)
+            let update = try decodeUpdate(from: data, using: client.decoder)
             process(update)
         } catch {
             print("TDLib update decoding failed: \(error)")
@@ -132,6 +132,22 @@ final class TelegramSession: @unchecked Sendable {
     private let manager = TDLibClientManager()
     private let stateLock = NSLock()
     private let updateStore = TelegramUpdateStore()
+
+    private func decodeUpdate(from data: Data, using decoder: JSONDecoder) throws -> Update {
+        do {
+            return try decoder.decode(Update.self, from: data)
+        } catch let originalError {
+            // Foundation's convertFromSnakeCase maps `p2p` to `P2P`, while TDLibKit's
+            // generated Swift properties are named `P2p`. Normalize only the two TDLib call
+            // keys affected by this acronym/number edge case, then retry the failed update.
+            guard let compatibleData = TDLibJSONCompatibility.normalizingCallP2PKeys(in: data),
+                  compatibleData != data
+            else {
+                throw originalError
+            }
+            return try decoder.decode(Update.self, from: compatibleData)
+        }
+    }
 
     private func process(_ update: Update) {
         if case .updateAuthorizationState(let value) = update {
@@ -194,5 +210,44 @@ final class TelegramSession: @unchecked Sendable {
         stateLock.lock()
         isConfiguringParameters = false
         stateLock.unlock()
+    }
+}
+
+// MARK: - TDLibJSONCompatibility
+
+private enum TDLibJSONCompatibility {
+    // MARK: Internal
+
+    static func normalizingCallP2PKeys(in data: Data) -> Data? {
+        guard let json = try? JSONSerialization.jsonObject(with: data),
+              let normalized = normalize(json),
+              JSONSerialization.isValidJSONObject(normalized)
+        else {
+            return nil
+        }
+        return try? JSONSerialization.data(withJSONObject: normalized)
+    }
+
+    // MARK: Private
+
+    private static func normalize(_ value: Any) -> Any? {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.reduce(into: [String: Any]()) { result, element in
+                let key =
+                    switch element.key {
+                    case "allow_p2p":
+                        "allowP2p"
+                    case "udp_p2p":
+                        "udpP2p"
+                    default:
+                        element.key
+                    }
+                result[key] = normalize(element.value)
+            }
+        }
+        if let array = value as? [Any] {
+            return array.compactMap(normalize)
+        }
+        return value
     }
 }

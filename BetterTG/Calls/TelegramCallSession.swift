@@ -2,26 +2,21 @@
 
 import AVFoundation
 import Combine
+import Network
 import Observation
 import TDLibKit
-import TgVoipWebrtc
+@preconcurrency import TgVoipWebrtc
 
-/// TDLibKit's generated models don't declare `Sendable`; `CallProtocol` is a plain value type of
-/// trivially-Sendable fields (Bool/Int/[String]), and needs to cross the actor boundary from this
-/// `@MainActor` class into `TelegramService`'s nonisolated async RPC methods.
+// MARK: - CallProtocol + @retroactive @unchecked Sendable
+
+/// TDLibKit's generated models don't declare `Sendable`; `CallProtocol` is a value made entirely
+/// from Sendable fields and crosses the actor boundary into TelegramService's async RPC methods.
 extension CallProtocol: @retroactive @unchecked Sendable {}
 
-/// Bridges TDLib's call signaling (`Call`/`CallState`, driven entirely by TDLib itself - including
-/// the Diffie-Hellman key exchange, so this type never touches raw call crypto) to the vendored
-/// tgcalls engine (`Vendor/TgVoipWebrtc`). iOS-only for now, since the vendored engine is - see
-/// `Vendor/TgVoipWebrtc/ORIGIN.md`.
-///
-/// Phase 1 scope: audio-only, 1:1 calls. No video capturer, no proxy, no direct-connection
-/// shortcut, no TCP-signaling-reflector fallback - TDLib's own `sendCallSignalingData`/
-/// `updateNewCallSignalingData` round trip through Telegram's servers is the only signaling
-/// transport, which is simpler than Telegram-iOS's own `OngoingCallContext` (which layers an
-/// additional raw-socket-to-reflector path on top, as a latency optimization, not a correctness
-/// requirement) and correct on its own.
+// MARK: - TelegramCallSession
+
+/// Bridges TDLib's call state/signaling to the vendored tgcalls engine. The first implementation is
+/// intentionally audio-only; TelegramCallEngine owns the strict tgcalls queue confinement.
 @MainActor
 @Observable final class TelegramCallSession {
     // MARK: Lifecycle
@@ -36,6 +31,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             .receive(on: DispatchQueue.main)
             .sink { [weak self] data in self?.handleSignaling(data) }
             .store(in: &cancellables)
+        CallKitManager.shared
+            .audioSessionActivePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] active in self?.applyAudioSessionActive(active) }
+            .store(in: &cancellables)
+
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            let kind: TelegramCallEngine.NetworkKind = path.usesInterfaceType(.cellular) ? .cellular : .wifi
+            Task { @MainActor [weak self] in
+                self?.applyNetworkKind(kind)
+            }
+        }
+        networkMonitor.start(queue: networkMonitorQueue)
     }
 
     // MARK: Internal
@@ -43,65 +51,119 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     static let shared = TelegramCallSession(service: TDLib.shared.service)
 
     private(set) var activeCall: Call?
-    private(set) var engineState: OngoingCallStateWebrtc?
-    private(set) var isMuted = false
 
-    func startCall(userId: Int64) {
+    private(set) var engineState: TelegramCallEngine.State?
+    private(set) var isMuted = false
+    private(set) var isSpeakerOn = false
+    private(set) var connectedAt: Foundation.Date?
+
+    var onIncomingCall: ((Call) -> Void)?
+    var onCallConnected: (() -> Void)?
+    var onCallEnded: (() -> Void)?
+
+    /// The native CallKit UI remains the sole incoming-answer surface while the call is pending.
+    var shouldShowCallView: Bool {
+        guard let activeCall else { return false }
+        if !activeCall.isOutgoing, case .callStatePending = activeCall.state {
+            return false
+        }
+        return true
+    }
+
+    /// tgcalls configures the category/mode/options CallKit will later activate. This has to run
+    /// before reporting or requesting a CallKit call, matching Telegram-iOS's ordering.
+    static func prepareAudioSession() {
+        SharedCallAudioDevice.setupAudioSession()
+    }
+
+    func startCall(userId: Int64, completion: @escaping (Bool) -> Void = { _ in }) {
         Task { [weak self] in
-            guard let self else { return }
+            guard let self else {
+                completion(false)
+                return
+            }
             do {
                 _ = try await service.createCall(isVideo: false, protocol: Self.ourProtocol(), userId: userId)
+                completion(true)
             } catch {
                 log("Error creating call: \(error)")
+                completion(false)
             }
         }
     }
 
     func answer() {
-        guard let activeCall else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await service.acceptCall(callId: activeCall.id, protocol: Self.ourProtocol())
-            } catch {
-                log("Error accepting call: \(error)")
-            }
+        answerActiveCall()
+    }
+
+    /// CallKit can deliver Answer before TDLib publishes the call after a cold VoIP wake. Keep the
+    /// action and apply it to the first real call rather than fulfilling and losing it.
+    func answerFromSystem() {
+        guard activeCall != nil else {
+            pendingSystemAction = .answer
+            log("[Call] deferring system Answer until TDLib publishes the call")
+            return
         }
+        answerActiveCall()
     }
 
     func end() {
-        guard let activeCall else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await service.discardCall(
-                    callId: activeCall.id,
-                    connectionId: 0,
-                    duration: 0,
-                    inviteLink: nil,
-                    isDisconnected: false,
-                    isVideo: activeCall.isVideo,
-                )
-            } catch {
-                log("Error discarding call: \(error)")
-            }
+        endActiveCall(isDisconnected: false)
+    }
+
+    /// The same cold-wake race applies to End; End takes precedence over an earlier Answer.
+    func endFromSystem() {
+        guard activeCall != nil else {
+            pendingSystemAction = .end
+            log("[Call] deferring system End until TDLib publishes the call")
+            return
         }
+        endActiveCall(isDisconnected: false)
+    }
+
+    func cancelPendingSystemAction() {
+        pendingSystemAction = nil
     }
 
     func toggleMute() {
-        isMuted.toggle()
-        engineContext?.setIsMuted(isMuted)
+        setMuted(!isMuted)
+    }
+
+    func setMuted(_ muted: Bool) {
+        isMuted = muted
+        engine.setMuted(muted)
+    }
+
+    func toggleSpeaker() {
+        let newValue = !isSpeakerOn
+        do {
+            try AVAudioSession.sharedInstance().overrideOutputAudioPort(newValue ? .speaker : .none)
+            isSpeakerOn = newValue
+        } catch {
+            log("Error toggling call speaker: \(error)")
+        }
     }
 
     // MARK: Private
 
-    private static let engineQueue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-engine")
+    private enum PendingSystemAction {
+        case answer
+        case end
+    }
 
     private let service: any TelegramService
+    private let engine = TelegramCallEngine()
+    private let networkMonitor = NWPathMonitor()
+    private let networkMonitorQueue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-network")
     private var cancellables = Set<AnyCancellable>()
-    private var engineContext: OngoingCallThreadLocalContextWebrtc?
-    private var audioDevice: SharedCallAudioDevice?
-    private var contextQueue: CallContextQueue?
+    private var reportedIncomingCallId: Int?
+    private var ringbackAudioDevice: SharedCallAudioDevice?
+    private var isCallKitAudioSessionActive = false
+    private var isEngineRunning = false
+    private var networkKind = TelegramCallEngine.NetworkKind.wifi
+    private var pendingSystemAction: PendingSystemAction?
+    private var isAnswering = false
+    private var isEnding = false
 
     private static func ourProtocol() -> CallProtocol {
         CallProtocol(
@@ -113,132 +175,78 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         )
     }
 
-    private func handle(call: Call?) {
-        guard let call else {
-            activeCall = nil
-            stopEngine()
-            return
+    private static func ringbackTone() -> CallAudioTone {
+        let sampleRate = 48000
+        let onDuration = 1.0
+        let offDuration = 3.0
+        let totalSamples = Int((onDuration + offDuration) * Double(sampleRate))
+        let onSamples = Int(onDuration * Double(sampleRate))
+        var samples = [Int16](repeating: 0, count: totalSamples)
+        let amplitude = 0.2 * Double(Int16.max)
+        for index in 0..<onSamples {
+            let phase = 2.0 * Double.pi * 440.0 * Double(index) / Double(sampleRate)
+            samples[index] = Int16(sin(phase) * amplitude)
         }
-        activeCall = call
-        switch call.state {
-        case .callStateReady(let info):
-            startEngine(call: call, info: info)
-        case .callStateDiscarded, .callStateError:
-            activeCall = nil
-            stopEngine()
-        default:
-            break
-        }
+        let data = samples.withUnsafeBufferPointer { Data(buffer: $0) }
+        return CallAudioTone(samples: data, sampleRate: sampleRate, loopCount: 1_000_000)
     }
 
-    private func handleSignaling(_ data: UpdateNewCallSignalingData) {
-        guard data.callId == activeCall?.id else { return }
-        engineContext?.addSignaling(data.data)
-    }
-
-    private func startEngine(call: Call, info: CallStateReady) {
-        guard engineContext == nil else { return }
-        guard let version = Self.pickVersion(from: info.protocol.libraryVersions) else {
-            log("No mutually supported call protocol version")
-            return
-        }
-
-        SharedCallAudioDevice.setupAudioSession()
-        let audioDevice = SharedCallAudioDevice(disableRecording: false, enableSystemMute: false)
-        self.audioDevice = audioDevice
-
-        let queue = CallContextQueue(queue: Self.engineQueue)
-        contextQueue = queue
-
-        let context = OngoingCallThreadLocalContextWebrtc(
-            version: version,
-            customParameters: info.customParameters.isEmpty ? nil : info.customParameters,
-            queue: queue,
-            proxy: nil,
-            networkType: .wifi,
-            dataSaving: .never,
-            derivedState: Data(),
-            key: info.encryptionKey,
-            isOutgoing: call.isOutgoing,
-            connections: Self.connections(from: info.servers),
-            maxLayer: Int32(info.protocol.maxLayer),
-            allowP2P: info.allowP2p,
-            allowTCP: true,
-            enableStunMarking: true,
-            logPath: "",
-            statsLogPath: "",
-            sendSignalingData: { [weak self] data in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    _ = try? await service.sendCallSignalingData(callId: call.id, data: data)
-                }
-            },
-            videoCapturer: nil,
-            preferredVideoCodec: nil,
-            audioInputDeviceId: "",
-            audioDevice: audioDevice,
-            directConnection: nil,
-        )
-        context.stateChanged = { [weak self] state, _, _, _, _, _ in
-            Task { @MainActor [weak self] in self?.engineState = state }
-        }
-        engineContext = context
-        audioDevice.setManualAudioSessionIsActive(true)
-    }
-
-    private func stopEngine() {
-        guard let engineContext else { return }
-        engineContext.beginTermination()
-        engineContext.stop(nil)
-        self.engineContext = nil
-        engineState = nil
-        isMuted = false
-        audioDevice?.setManualAudioSessionIsActive(false)
-        audioDevice = nil
-        contextQueue = nil
-    }
-
-    /// Highest version both sides support - `libraryVersions` lists are small (a handful of dotted
-    /// version strings like "12.0.0"), so a straightforward numeric-component comparison is enough;
-    /// no need for a general semver library.
+    /// Telegram negotiates by taking the first remote version also present locally. Choosing the
+    /// numerically-highest mutual version can make each peer select a different protocol.
     private static func pickVersion(from theirVersions: [String]) -> String? {
         let ours = Set(OngoingCallThreadLocalContextWebrtc.versions(withIncludeReference: false))
-        let mutual = theirVersions.filter(ours.contains)
-        return mutual.max { compareVersions($0, $1) < 0 }
+        return theirVersions.first(where: ours.contains)
     }
 
-    private static func compareVersions(_ lhs: String, _ rhs: String) -> Int {
-        let left = lhs.split(separator: ".").compactMap { Int($0) }
-        let right = rhs.split(separator: ".").compactMap { Int($0) }
-        for index in 0..<max(left.count, right.count) {
-            let leftComponent = index < left.count ? left[index] : 0
-            let rightComponent = index < right.count ? right[index] : 0
-            if leftComponent != rightComponent {
-                return leftComponent - rightComponent
-            }
+    private static func isTerminal(_ state: CallState) -> Bool {
+        switch state {
+        case .callStateDiscarded, .callStateError: true
+        default: false
         }
-        return 0
     }
 
-    /// Mirrors Telegram-iOS's own `OngoingCallContext.callConnectionDescriptionsWebrtc`: reflector
-    /// servers get a small sequential id (sorted by TDLib's server id, 1-based) that the engine uses
-    /// to pick a primary relay, one connection description per IP family present; WebRTC servers
-    /// always use reflector id 0 and carry their own username/password instead of a peer tag.
-    private static func connections(from servers: [CallServer]) -> [OngoingCallConnectionDescriptionWebrtc] {
+    private static func describe(_ state: CallState) -> String {
+        switch state {
+        case .callStatePending(let value):
+            "pending(isCreated=\(value.isCreated) isReceived=\(value.isReceived))"
+        case .callStateExchangingKeys:
+            "exchangingKeys"
+        case .callStateReady(let value):
+            "ready(allowP2p=\(value.allowP2p) servers=\(value.servers.count) protocolVersions=\(value.protocol.libraryVersions.joined(separator: ",")))"
+        case .callStateHangingUp:
+            "hangingUp"
+        case .callStateDiscarded(let value):
+            "discarded(reason=\(value.reason) needRating=\(value.needRating) needDebugInformation=\(value.needDebugInformation))"
+        case .callStateError(let value):
+            "error(code=\(value.error.code) message=\(value.error.message))"
+        }
+    }
+
+    private static func describe(engineState: TelegramCallEngine.State) -> String {
+        switch engineState {
+        case .initializing: "initializing"
+        case .connected: "connected"
+        case .failed: "failed"
+        case .reconnecting: "reconnecting"
+        case .unknown(let rawValue): "unknown(\(rawValue))"
+        }
+    }
+
+    private static func connections(from servers: [CallServer]) -> [TelegramCallEngine.Connection] {
         let reflectorIds = servers
             .compactMap { server -> TdInt64? in
                 guard case .callServerTypeTelegramReflector = server.type else { return nil }
                 return server.id
             }
             .sorted()
-        let reflectorIdMapping = Dictionary(uniqueKeysWithValues: reflectorIds.enumerated().map { ($1, UInt8($0 + 1)) })
+        let mapping = Dictionary(uniqueKeysWithValues: reflectorIds.enumerated().map { ($1, UInt8($0 + 1)) })
 
-        return servers.flatMap { server -> [OngoingCallConnectionDescriptionWebrtc] in
+        return servers.flatMap { server -> [TelegramCallEngine.Connection] in
             switch server.type {
             case .callServerTypeTelegramReflector(let reflector):
-                guard let reflectorId = reflectorIdMapping[server.id] else { return [] }
+                guard let reflectorId = mapping[server.id] else { return [] }
                 return [server.ipAddress, server.ipv6Address].filter { !$0.isEmpty }.map { ip in
-                    OngoingCallConnectionDescriptionWebrtc(
+                    .init(
                         reflectorId: reflectorId,
                         hasStun: false,
                         hasTurn: true,
@@ -251,7 +259,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 }
             case .callServerTypeWebrtc(let webrtc):
                 return [server.ipAddress, server.ipv6Address].filter { !$0.isEmpty }.map { ip in
-                    OngoingCallConnectionDescriptionWebrtc(
+                    .init(
                         reflectorId: 0,
                         hasStun: webrtc.supportsStun,
                         hasTurn: webrtc.supportsTurn,
@@ -263,6 +271,223 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     )
                 }
             }
+        }
+    }
+
+    private func handle(call: Call?) {
+        guard let call else {
+            // `callPublisher` starts with nil. It is not an ended call and must not dismiss a fresh
+            // CallKit placeholder or erase an Answer/End action received during a cold launch.
+            guard activeCall != nil || reportedIncomingCallId != nil || isEngineRunning else { return }
+            finishCurrentCall(notifyCallKit: true)
+            return
+        }
+
+        log("[Call] id=\(call.id) isOutgoing=\(call.isOutgoing) state=\(Self.describe(call.state))")
+        if Self.isTerminal(call.state) {
+            // A terminal update can be TDLib's first update after a VoIP placeholder. Count it as
+            // a real call so CallKit is dismissed, but never report it as a fresh incoming call.
+            activeCall = call
+            finishCurrentCall(notifyCallKit: true)
+            return
+        }
+
+        if let current = activeCall, current.id != call.id {
+            stopRingback()
+            stopEngine()
+            reportedIncomingCallId = nil
+        }
+        activeCall = call
+
+        if pendingSystemAction == .end {
+            pendingSystemAction = nil
+            endActiveCall(isDisconnected: false)
+            return
+        }
+
+        if !call.isOutgoing, reportedIncomingCallId != call.id {
+            reportedIncomingCallId = call.id
+            onIncomingCall?(call)
+        }
+
+        if pendingSystemAction == .answer {
+            pendingSystemAction = nil
+            answerActiveCall()
+        }
+
+        switch call.state {
+        case .callStatePending:
+            if call.isOutgoing {
+                startRingback()
+            }
+        case .callStateReady(let info):
+            stopRingback()
+            startEngine(call: call, info: info)
+        default:
+            break
+        }
+    }
+
+    private func answerActiveCall() {
+        guard let call = activeCall else {
+            log("[Call] answer() called with no activeCall")
+            return
+        }
+        guard !isAnswering else { return }
+        isAnswering = true
+        log("[Call] accepting callId=\(call.id)")
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isAnswering = false }
+            do {
+                _ = try await service.acceptCall(callId: call.id, protocol: Self.ourProtocol())
+                log("[Call] acceptCall RPC succeeded for callId=\(call.id)")
+            } catch {
+                log("Error accepting call: \(error)")
+                endActiveCall(isDisconnected: true)
+            }
+        }
+    }
+
+    private func endActiveCall(isDisconnected: Bool) {
+        guard let call = activeCall else { return }
+        guard !isEnding else { return }
+        isEnding = true
+        let duration = connectedAt.map { max(0, Int(Foundation.Date().timeIntervalSince($0))) } ?? 0
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await service.discardCall(
+                    callId: call.id,
+                    connectionId: 0,
+                    duration: duration,
+                    inviteLink: nil,
+                    isDisconnected: isDisconnected,
+                    isVideo: call.isVideo,
+                )
+            } catch {
+                log("Error discarding call: \(error)")
+                finishCurrentCall(notifyCallKit: true)
+            }
+            isEnding = false
+        }
+    }
+
+    private func startRingback() {
+        guard ringbackAudioDevice == nil, !isEngineRunning else { return }
+        let device = SharedCallAudioDevice(disableRecording: true, enableSystemMute: false)
+        ringbackAudioDevice = device
+        device.setTone(Self.ringbackTone())
+        device.setManualAudioSessionIsActive(isCallKitAudioSessionActive)
+    }
+
+    private func applyAudioSessionActive(_ active: Bool) {
+        log(
+            "[Call] CallKit audio session active=\(active) (engine=\(isEngineRunning) ringback=\(ringbackAudioDevice != nil))",
+        )
+        isCallKitAudioSessionActive = active
+        engine.setAudioSessionActive(active)
+        ringbackAudioDevice?.setManualAudioSessionIsActive(active)
+    }
+
+    private func applyNetworkKind(_ kind: TelegramCallEngine.NetworkKind) {
+        networkKind = kind
+        engine.setNetworkKind(kind)
+    }
+
+    private func stopRingback() {
+        guard let device = ringbackAudioDevice else { return }
+        device.setTone(nil)
+        device.setManualAudioSessionIsActive(false)
+        ringbackAudioDevice = nil
+    }
+
+    private func handleSignaling(_ data: UpdateNewCallSignalingData) {
+        guard data.callId == activeCall?.id else { return }
+        engine.addSignaling(data.data)
+    }
+
+    private func startEngine(call: Call, info: CallStateReady) {
+        guard !isEngineRunning else { return }
+        guard let version = Self.pickVersion(from: info.protocol.libraryVersions) else {
+            log("No mutually supported call protocol version")
+            endActiveCall(isDisconnected: true)
+            return
+        }
+
+        isEngineRunning = true
+        let callId = call.id
+        engine.start(
+            configuration: .init(
+                version: version,
+                customParameters: info.customParameters.isEmpty ? nil : info.customParameters,
+                encryptionKey: info.encryptionKey,
+                isOutgoing: call.isOutgoing,
+                connections: Self.connections(from: info.servers),
+                maxLayer: Int32(info.protocol.maxLayer),
+                allowP2P: info.allowP2p,
+            ),
+            muted: isMuted,
+            audioSessionActive: isCallKitAudioSessionActive,
+            networkKind: networkKind,
+            sendSignaling: { [weak self] data in
+                Task { @MainActor [weak self] in
+                    guard let self, activeCall?.id == callId else { return }
+                    do {
+                        _ = try await service.sendCallSignalingData(callId: callId, data: data)
+                    } catch {
+                        log("Error sending call signaling: \(error)")
+                    }
+                }
+            },
+            stateChanged: { [weak self] state in
+                Task { @MainActor [weak self] in
+                    self?.handleEngineState(state, callId: callId)
+                }
+            },
+        )
+    }
+
+    private func handleEngineState(_ state: TelegramCallEngine.State, callId: Int) {
+        guard isEngineRunning, activeCall?.id == callId else { return }
+        log("[Call] engine state=\(Self.describe(engineState: state))")
+        let wasConnected = engineState == .connected
+        engineState = state
+        if !wasConnected, state == .connected {
+            connectedAt = Foundation.Date()
+            onCallConnected?()
+        } else if state == .failed {
+            endActiveCall(isDisconnected: true)
+        }
+    }
+
+    private func stopEngine() {
+        engine.stop()
+        isEngineRunning = false
+        engineState = nil
+        isMuted = false
+        connectedAt = nil
+        if isSpeakerOn {
+            do {
+                try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
+            } catch {
+                log("Error restoring call audio route: \(error)")
+            }
+        }
+        isSpeakerOn = false
+    }
+
+    private func finishCurrentCall(notifyCallKit: Bool) {
+        let hadCall = activeCall != nil || reportedIncomingCallId != nil || isEngineRunning
+        activeCall = nil
+        reportedIncomingCallId = nil
+        pendingSystemAction = nil
+        isAnswering = false
+        isEnding = false
+        stopRingback()
+        stopEngine()
+        if notifyCallKit, hadCall {
+            onCallEnded?()
         }
     }
 }

@@ -122,11 +122,12 @@ final class TelegramUpdateStore: @unchecked Sendable {
                 reactionNotificationSettingsSubject.send(value.notificationSettings)
             }
             if case .updateCall(let value) = update {
-                let isOngoing = switch value.call.state {
-                case .callStateDiscarded, .callStateError: false
-                default: true
-                }
-                callSubject.send(isOngoing ? value.call : nil)
+                // Deliver the terminal Call as-is (discarded/error included) rather than collapsing
+                // it to nil here - TelegramCallSession's own state machine already treats those
+                // states as "call ended" and clears `activeCall`, but it needs the real state first
+                // to know (and log) *why*, e.g. the discard reason or error code. Collapsing here
+                // discarded that information before it could ever be observed.
+                callSubject.send(value.call)
             }
             if case .updateNewCallSignalingData(let value) = update {
                 callSignalingDataSubject.send(value)

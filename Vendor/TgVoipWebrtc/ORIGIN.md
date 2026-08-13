@@ -35,6 +35,23 @@ at final link with missing symbols (first hit: `kVTProfileLevel_H264_Main_AutoLe
 from the statically-linked H264 encoder, even though this app never touches
 video - static libraries pull in whole object files, not just used symbols).
 
+A second, separate static-linking gotcha only shows up at *runtime*, not link
+time: tgcalls adds `maxSupportedH264Profile` as an Objective-C **category** on
+`UIDevice`. Categories in a statically-linked `.a` don't get loaded at all
+unless the `-ObjC` linker flag is passed - unlike missing symbols, this fails
+silently at build and link time and only crashes the first time something
+calls the category method (`"unrecognized selector sent to class"`). Passed
+via `.unsafeFlags(["-Xlinker", "-ObjC"])` in `Package.swift`; the app project's
+own `OTHER_LDFLAGS` doesn't set it project-wide.
+
+The Swift package product itself is deliberately **dynamic**, even though its
+binary target contains a static archive. TDLib also embeds OpenSSL, while this
+archive embeds WebRTC's BoringSSL; both export identically named `BN_*` symbols.
+Putting both archives in the app's Mach-O allowed the linker to mix objects from
+the two implementations. TDLib then failed its first call DH validation with
+`Bad prime mod 4g`. Linking the wrapper as its own dynamic framework isolates
+the crypto implementations through Mach-O's two-level namespace.
+
 This is a **debug** build (`-c dbg`), unstripped and unoptimized — fine for
 initial integration, but it should be rebuilt with `-c opt` before shipping
 (expect a large size reduction from the current ~1.5GB).

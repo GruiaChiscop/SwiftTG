@@ -7,23 +7,23 @@ import TgVoipWebrtc
 /// than assuming a particular threading model - `OngoingCallThreadLocalContextWebrtc` is documented
 /// as not thread-safe outside of it. A dedicated serial `DispatchQueue` (not the main queue) keeps
 /// the engine's own work off the UI thread.
-final class CallContextQueue: NSObject, OngoingCallThreadLocalContextQueueWebrtc {
+final class CallContextQueue: NSObject, OngoingCallThreadLocalContextQueueWebrtc, @unchecked Sendable {
     // MARK: Lifecycle
 
     init(queue: DispatchQueue) {
         self.queue = queue
         super.init()
-        queue.setSpecific(key: Self.key, value: ())
+        queue.setSpecific(key: key, value: ())
     }
 
     // MARK: Internal
 
     func dispatch(_ f: @escaping () -> Void) {
-        queue.async(execute: f)
+        queue.async(execute: DispatchWorkItem(block: f))
     }
 
     func isCurrent() -> Bool {
-        DispatchQueue.getSpecific(key: Self.key) != nil
+        DispatchQueue.getSpecific(key: key) != nil
     }
 
     func scheduleBlock(_ f: @escaping () -> Void, after timeout: Double) -> GroupCallDisposable {
@@ -34,6 +34,6 @@ final class CallContextQueue: NSObject, OngoingCallThreadLocalContextQueueWebrtc
 
     // MARK: Private
 
-    private static let key = DispatchSpecificKey<Void>()
+    private let key = DispatchSpecificKey<Void>()
     private let queue: DispatchQueue
 }

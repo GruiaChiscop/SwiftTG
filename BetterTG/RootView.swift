@@ -113,9 +113,19 @@ struct RootView: View {
                 "The session was terminated. If this wasn't you, consider changing your password in Two-Step Verification.",
             )
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { callSession.shouldShowCallView },
+            set: { isPresented in
+                guard !isPresented else { return }
+                callSession.end()
+            },
+        )) {
+            CallView()
+        }
     }
 
     // MARK: Private
 
     @State private var rootVM = RootVM.shared
+    @State private var callSession = TelegramCallSession.shared
 }
