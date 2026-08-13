@@ -66,11 +66,8 @@ import Observation
                 .allowBluetoothHFP,
                 .allowBluetoothA2DP,
                 .defaultToSpeaker,
-                .overrideMutedMicrophoneInterruption,
             ]
-            try audioSession.setCategory(.playAndRecord, mode: .default, policy: .default, options: options)
-            // Documented to suppress system sounds/haptics for the duration of the recording.
-            try audioSession.setAllowHapticsAndSystemSoundsDuringRecording(false)
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: options)
             try audioSession.setActive(true)
         } catch {
             log("Error setting audioSessionRecord: \(error)")
