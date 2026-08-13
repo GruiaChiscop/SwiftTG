@@ -100,6 +100,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var availableAudioRoutes: [AudioRoute] = [.builtIn, .speaker]
     private(set) var selectedAudioRoute = AudioRoute.builtIn
     private(set) var connectedAt: Foundation.Date?
+    var pendingCallRating: CallRatingRequest?
 
     var onIncomingCall: ((Call) -> Void)?
     var onCallConnected: (() -> Void)?
@@ -214,6 +215,28 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             log("Error selecting call audio route \(route.name): \(error)")
             refreshAudioRoutes()
         }
+    }
+
+    func dismissCallRating() {
+        pendingCallRating = nil
+    }
+
+    func submitCallRating(
+        request: CallRatingRequest,
+        rating: Int,
+        problems: [TelegramCallRatingProblem],
+        comment: String,
+    ) async throws {
+        guard pendingCallRating?.id == request.id else { return }
+        _ = try await service.sendCallRating(
+            callId: request.callId,
+            comment: comment.isEmpty ? nil : comment,
+            problems: problems,
+            rating: rating,
+        )
+        guard pendingCallRating?.id == request.id else { return }
+        pendingCallRating = nil
+        log("[Call] sent rating=\(rating) for callId=\(request.callId)")
     }
 
     // MARK: Private
@@ -400,7 +423,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 } else {
                     nil
                 }
+            let ratingRequest: CallRatingRequest? =
+                if case .callStateDiscarded(let discarded) = call.state, discarded.needRating {
+                    CallRatingRequest(callId: call.id, isVideo: call.isVideo)
+                } else {
+                    nil
+                }
             finishCurrentCall(notifyCallKit: true, debugInformationCallId: debugInformationCallId)
+            pendingCallRating = ratingRequest
             return
         }
 
@@ -408,6 +438,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             stopRingback()
             stopEngine()
             reportedIncomingCallId = nil
+        }
+        if pendingCallRating?.callId != call.id {
+            pendingCallRating = nil
         }
         activeCall = call
         updateProximityMonitoring()

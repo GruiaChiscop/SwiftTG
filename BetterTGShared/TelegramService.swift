@@ -493,6 +493,12 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     ) async throws -> Ok
     func sendCallSignalingData(callId: Int?, data: Data?) async throws -> Ok
     func sendCallDebugInformation(callId: Int?, debugInformation: String?) async throws -> Ok
+    func sendCallRating(
+        callId: Int?,
+        comment: String?,
+        problems: [TelegramCallRatingProblem]?,
+        rating: Int?,
+    ) async throws -> Ok
 }
 
 // MARK: - TelegramSession + TelegramService
@@ -1912,6 +1918,33 @@ extension TelegramSession: TelegramService {
         try await client.sendCallDebugInformation(
             callId: callId.map { .inputCallDiscarded(.init(callId: $0)) },
             debugInformation: debugInformation,
+        )
+    }
+
+    func sendCallRating(
+        callId: Int?,
+        comment: String?,
+        problems: [TelegramCallRatingProblem]?,
+        rating: Int?,
+    ) async throws -> Ok {
+        let tdlibProblems = problems?.map { problem -> CallProblem in
+            switch problem {
+            case .distortedSpeech: .callProblemDistortedSpeech
+            case .distortedVideo: .callProblemDistortedVideo
+            case .dropped: .callProblemDropped
+            case .echo: .callProblemEcho
+            case .interruptions: .callProblemInterruptions
+            case .noise: .callProblemNoise
+            case .pixelatedVideo: .callProblemPixelatedVideo
+            case .silentLocal: .callProblemSilentLocal
+            case .silentRemote: .callProblemSilentRemote
+            }
+        }
+        return try await client.sendCallRating(
+            callId: callId.map { .inputCallDiscarded(.init(callId: $0)) },
+            comment: comment,
+            problems: tdlibProblems,
+            rating: rating,
         )
     }
 }
