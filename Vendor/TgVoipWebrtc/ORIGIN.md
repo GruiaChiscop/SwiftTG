@@ -26,9 +26,14 @@ under a `TgVoipWebrtc/` subdirectory (mirroring the original
 `PublicHeaders/TgVoipWebrtc/` layout) so their internal
 `#import <TgVoipWebrtc/...>` imports keep resolving; `Sources/TgVoipWebrtc`
 carries its own copy of those same headers under `include/TgVoipWebrtc/` so
-SwiftPM synthesizes a `TgVoipWebrtc` module for `import TgVoipWebrtc` to work,
-and declares `linkedLibrary("c++")` since tgcalls' statically-linked C++ needs
-libc++ at final link time and nothing else in this package pulls it in.
+SwiftPM synthesizes a `TgVoipWebrtc` module for `import TgVoipWebrtc` to work.
+That synthesized module map also doesn't carry the original xcframework's
+`link framework "..."` directives (AVFoundation, VideoToolbox, etc.) or
+`link "bz2"/"iconv"/"z"/"c++"`, so `Package.swift`'s `linkerSettings`
+re-declares all of them explicitly - without them the app compiles but fails
+at final link with missing symbols (first hit: `kVTProfileLevel_H264_Main_AutoLevel`
+from the statically-linked H264 encoder, even though this app never touches
+video - static libraries pull in whole object files, not just used symbols).
 
 This is a **debug** build (`-c dbg`), unstripped and unoptimized — fine for
 initial integration, but it should be rebuilt with `-c opt` before shipping
