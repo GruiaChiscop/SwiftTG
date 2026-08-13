@@ -116,7 +116,7 @@ struct RootView: View {
         .fullScreenCover(isPresented: Binding(
             get: { callSession.shouldShowCallView },
             set: { isPresented in
-                guard !isPresented else { return }
+                guard !isPresented, callSession.activeCall != nil else { return }
                 callSession.end()
             },
         )) {

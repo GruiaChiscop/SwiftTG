@@ -91,7 +91,10 @@ import TDLibKit
     /// TDLib lifecycle on the same transaction, matching Telegram-iOS's `endCall(uuid:)` flow.
     func requestEndCall() {
         guard let uuid = currentCallUUID else {
-            TelegramCallSession.shared.endFromSystem()
+            // SwiftUI writes `false` back into the presentation binding when the call's terminal
+            // update dismisses CallView. That is not a new system End action and must never be
+            // deferred onto the next call.
+            log("[CallKit] ignoring app End request with no active CallKit call")
             return
         }
         guard !isRequestingEndCall, !isEndingLocally else { return }
