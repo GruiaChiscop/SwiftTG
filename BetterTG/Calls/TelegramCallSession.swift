@@ -240,6 +240,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var pendingSystemAction: PendingSystemAction?
     private var isAnswering = false
     private var isEnding = false
+    private var lastFinishedCallId: Int?
 
     private static func ourProtocol() -> CallProtocol {
         CallProtocol(
@@ -384,10 +385,22 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
         log("[Call] id=\(call.id) isOutgoing=\(call.isOutgoing) state=\(Self.describe(call.state))")
         if Self.isTerminal(call.state) {
+            guard lastFinishedCallId != call.id else {
+                log("[Call] ignoring follow-up terminal update for callId=\(call.id)")
+                return
+            }
+            lastFinishedCallId = call.id
             // A terminal update can be TDLib's first update after a VoIP placeholder. Count it as
             // a real call so CallKit is dismissed, but never report it as a fresh incoming call.
             activeCall = call
-            finishCurrentCall(notifyCallKit: true)
+            let debugInformationCallId: Int? =
+                if case .callStateDiscarded(let discarded) = call.state,
+                discarded.needDebugInformation {
+                    call.id
+                } else {
+                    nil
+                }
+            finishCurrentCall(notifyCallKit: true, debugInformationCallId: debugInformationCallId)
             return
         }
 
@@ -665,8 +678,26 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         refreshAudioRoutes()
     }
 
-    private func stopEngine() {
-        engine.stop()
+    private func stopEngine(debugInformationCallId: Int? = nil) {
+        if let debugInformationCallId {
+            let service = service
+            engine.stop { result in
+                guard let result else { return }
+                Task {
+                    do {
+                        _ = try await service.sendCallDebugInformation(
+                            callId: debugInformationCallId,
+                            debugInformation: result.debugInformation,
+                        )
+                        log("[Call] sent requested debug information for callId=\(debugInformationCallId)")
+                    } catch {
+                        log("Error sending call debug information: \(error)")
+                    }
+                }
+            }
+        } else {
+            engine.stop()
+        }
         isEngineRunning = false
         engineState = nil
         isMuted = false
@@ -681,7 +712,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         refreshAudioRoutes()
     }
 
-    private func finishCurrentCall(notifyCallKit: Bool) {
+    private func finishCurrentCall(notifyCallKit: Bool, debugInformationCallId: Int? = nil) {
         let hadCall = activeCall != nil || reportedIncomingCallId != nil || isEngineRunning
         activeCall = nil
         reportedIncomingCallId = nil
@@ -689,7 +720,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isAnswering = false
         isEnding = false
         stopRingback()
-        stopEngine()
+        stopEngine(debugInformationCallId: debugInformationCallId)
         if notifyCallKit, hadCall {
             onCallEnded?()
         }

@@ -49,6 +49,10 @@ final class TelegramCallEngine: @unchecked Sendable {
         let allowP2P: Bool
     }
 
+    struct StopResult: Sendable {
+        let debugInformation: String
+    }
+
     func start(
         configuration: Configuration,
         muted: Bool,
@@ -154,13 +158,30 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
-    func stop() {
+    func stop(completion: (@Sendable (StopResult?) -> Void)? = nil) {
         queue.async { [weak self] in
-            self?.stopLocked(clearPendingSignaling: true)
+            guard let self else {
+                completion?(nil)
+                return
+            }
+            stopLocked(clearPendingSignaling: true, completion: completion)
         }
     }
 
     // MARK: Private
+
+    private struct DebugInformation: Encodable {
+        struct Traffic: Encodable {
+            let receivedMobile: Int64
+            let receivedWifi: Int64
+            let sentMobile: Int64
+            let sentWifi: Int64
+        }
+
+        let diagnostics: [String]
+        let traffic: Traffic
+        let version = 1
+    }
 
     private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-engine")
     private let contextQueue: CallContextQueue
@@ -202,7 +223,40 @@ final class TelegramCallEngine: @unchecked Sendable {
             .suffix(200)
     }
 
-    private func stopLocked(clearPendingSignaling: Bool) {
+    /// The server-requested payload needs the actual tail of the native log, not the narrower
+    /// console filter above. Bound both line count and encoded size so termination stays cheap.
+    private static func uploadedDebugLines(from debugLog: String) -> [String] {
+        let boundedTail = String(debugLog.suffix(64000))
+        return boundedTail.split(separator: "\n").suffix(400).map(String.init)
+    }
+
+    private static func stopResult(
+        debugLog: String?,
+        sentWifi: Int64,
+        receivedWifi: Int64,
+        sentMobile: Int64,
+        receivedMobile: Int64,
+    ) -> StopResult? {
+        let payload = DebugInformation(
+            diagnostics: debugLog.map(uploadedDebugLines(from:)) ?? [],
+            traffic: .init(
+                receivedMobile: receivedMobile,
+                receivedWifi: receivedWifi,
+                sentMobile: sentMobile,
+                sentWifi: sentWifi,
+            ),
+        )
+        guard
+            let data = try? JSONEncoder().encode(payload),
+            let string = String(data: data, encoding: .utf8)
+        else { return nil }
+        return StopResult(debugInformation: string)
+    }
+
+    private func stopLocked(
+        clearPendingSignaling: Bool,
+        completion: (@Sendable (StopResult?) -> Void)? = nil,
+    ) {
         generation = UUID()
         if let context {
             context.beginTermination()
@@ -213,12 +267,25 @@ final class TelegramCallEngine: @unchecked Sendable {
                 print(
                     "[Call][tgcalls] traffic wifi=\(sentWifi)/\(receivedWifi) mobile=\(sentMobile)/\(receivedMobile)",
                 )
-                guard let debugLog else { return }
-                let lines = Self.diagnosticLines(from: debugLog)
-                guard !lines.isEmpty else { return }
-                print("[Call][tgcalls] diagnostics:\n\(lines.joined(separator: "\n"))")
+                if let debugLog {
+                    let lines = Self.diagnosticLines(from: debugLog)
+                    if !lines.isEmpty {
+                        print("[Call][tgcalls] diagnostics:\n\(lines.joined(separator: "\n"))")
+                    }
+                }
+                completion?(
+                    Self.stopResult(
+                        debugLog: debugLog,
+                        sentWifi: sentWifi,
+                        receivedWifi: receivedWifi,
+                        sentMobile: sentMobile,
+                        receivedMobile: receivedMobile,
+                    ),
+                )
                 _ = context
             }
+        } else {
+            completion?(nil)
         }
         context = nil
         audioDevice?.setManualAudioSessionIsActive(false)
