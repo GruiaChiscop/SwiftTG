@@ -153,17 +153,18 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func end() {
-        endActiveCall(isDisconnected: false)
+        CallKitManager.shared.requestEndCall()
     }
 
     /// The same cold-wake race applies to End; End takes precedence over an earlier Answer.
-    func endFromSystem() {
+    func endFromSystem(completion: @escaping (Bool) -> Void = { _ in }) {
         guard activeCall != nil else {
             pendingSystemAction = .end
             log("[Call] deferring system End until TDLib publishes the call")
+            completion(true)
             return
         }
-        endActiveCall(isDisconnected: false)
+        endActiveCall(isDisconnected: false, completion: completion)
     }
 
     func cancelPendingSystemAction() {
@@ -495,13 +496,23 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
     }
 
-    private func endActiveCall(isDisconnected: Bool) {
-        guard let call = activeCall else { return }
-        guard !isEnding else { return }
+    private func endActiveCall(isDisconnected: Bool, completion: ((Bool) -> Void)? = nil) {
+        guard let call = activeCall else {
+            completion?(false)
+            return
+        }
+        guard !isEnding else {
+            completion?(false)
+            return
+        }
         isEnding = true
         let duration = connectedAt.map { max(0, Int(Foundation.Date().timeIntervalSince($0))) } ?? 0
         Task { [weak self] in
-            guard let self else { return }
+            guard let self else {
+                completion?(false)
+                return
+            }
+            defer { isEnding = false }
             do {
                 _ = try await service.discardCall(
                     callId: call.id,
@@ -511,11 +522,15 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     isDisconnected: isDisconnected,
                     isVideo: call.isVideo,
                 )
+                completion?(true)
             } catch {
                 log("Error discarding call: \(error)")
-                finishCurrentCall(notifyCallKit: true)
+                if let completion {
+                    completion(false)
+                } else {
+                    finishCurrentCall(notifyCallKit: true)
+                }
             }
-            isEnding = false
         }
     }
 

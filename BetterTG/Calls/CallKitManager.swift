@@ -87,6 +87,25 @@ import TDLibKit
         }
     }
 
+    /// App-initiated hangups must travel through CallKit too. This keeps the system call UI and
+    /// TDLib lifecycle on the same transaction, matching Telegram-iOS's `endCall(uuid:)` flow.
+    func requestEndCall() {
+        guard let uuid = currentCallUUID else {
+            TelegramCallSession.shared.endFromSystem()
+            return
+        }
+        guard !isRequestingEndCall, !isEndingLocally else { return }
+        isRequestingEndCall = true
+        Task {
+            do {
+                try await callController.request(CXTransaction(action: CXEndCallAction(call: uuid)))
+            } catch {
+                isRequestingEndCall = false
+                log("CallKit end request failed: \(error)")
+            }
+        }
+    }
+
     /// Reports a placeholder incoming call immediately, before TDLib has told us who it's from -
     /// PushKit requires a `CXProvider` report within a very tight window of every VoIP push, well
     /// before there's time to fetch the caller's name. `reportIncoming(_:)` below reconciles this
@@ -155,6 +174,7 @@ import TDLibKit
     private var recentlyEndedCallUniqueIds = [Int64: Foundation.Date]()
     private var isCurrentCallOutgoing = false
     private var isEndingLocally = false
+    private var isRequestingEndCall = false
     private var isRequestingOutgoingCall = false
 
     private static func update(displayName: String?) -> CXCallUpdate {
@@ -239,6 +259,7 @@ import TDLibKit
         currentTelegramCallUniqueId = nil
         isCurrentCallOutgoing = false
         isEndingLocally = false
+        isRequestingEndCall = false
     }
 
     private func pruneRecentlyEndedCalls() {
@@ -283,13 +304,24 @@ extension CallKitManager: @MainActor CXProviderDelegate {
 
     func provider(_: CXProvider, perform action: CXEndCallAction) {
         log("[CallKit] perform CXEndCallAction uuid=\(action.callUUID)")
+        isRequestingEndCall = false
         guard currentCallUUID == action.callUUID else {
             action.fail()
             return
         }
         isEndingLocally = true
-        TelegramCallSession.shared.endFromSystem()
-        action.fulfill()
+        TelegramCallSession.shared.endFromSystem { [weak self] succeeded in
+            guard let self else {
+                action.fail()
+                return
+            }
+            if succeeded {
+                action.fulfill(withDateEnded: Foundation.Date())
+            } else {
+                isEndingLocally = false
+                action.fail()
+            }
+        }
     }
 
     func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
