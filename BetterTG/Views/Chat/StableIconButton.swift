@@ -33,6 +33,24 @@ import UIKit
 /// remove the need for `StableIconButton`/`StableTranslationBannerLabel` altogether instead of
 /// working around it per element. Deferred; not attempted yet.
 struct StableIconButton: UIViewRepresentable {
+    final class Coordinator {
+        // MARK: Lifecycle
+
+        init(action: @escaping () -> Void, systemImageName: String) {
+            self.action = action
+            self.systemImageName = systemImageName
+        }
+
+        // MARK: Internal
+
+        var action: () -> Void
+        var systemImageName: String
+
+        @objc func performAction() {
+            action()
+        }
+    }
+
     let systemImageName: String
     let accessibilityLabel: String
     let action: () -> Void
@@ -58,19 +76,5 @@ struct StableIconButton: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(action: action, systemImageName: systemImageName)
-    }
-
-    final class Coordinator {
-        var action: () -> Void
-        var systemImageName: String
-
-        init(action: @escaping () -> Void, systemImageName: String) {
-            self.action = action
-            self.systemImageName = systemImageName
-        }
-
-        @objc func performAction() {
-            action()
-        }
     }
 }

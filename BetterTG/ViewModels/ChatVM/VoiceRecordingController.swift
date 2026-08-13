@@ -130,8 +130,8 @@ import TDLibKit
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var savedVoiceNoteUrl = URL(filePath: "")
-    // Created once and reused across every recording in this chat visit, instead of a fresh
-    // `VoiceNoteRecorder()` (and so a fresh `AVAudioEngine()`) per recording.
+    /// Created once and reused across every recording in this chat visit, instead of a fresh
+    /// `VoiceNoteRecorder()` (and so a fresh `AVAudioEngine()`) per recording.
     @ObservationIgnored private let audioRecorder = VoiceNoteRecorder()
 
     private func tdSendChatAction(_ chatAction: ChatAction) async throws {

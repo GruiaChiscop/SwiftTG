@@ -109,7 +109,9 @@ struct RootView: View {
         ) {
             Button("OK") {}
         } message: {
-            Text("The session was terminated. If this wasn't you, consider changing your password in Two-Step Verification.")
+            Text(
+                "The session was terminated. If this wasn't you, consider changing your password in Two-Step Verification.",
+            )
         }
     }
 

@@ -197,11 +197,6 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
         /// Only ever read/written from `writerQueue`; safe to leave as a plain `var`.
         var isFinishing = false
 
-        // MARK: Private
-
-        private let cancellationLock = NSLock()
-        private var isCancelledStorage = false
-
         /// Set from `cancel()`, which may run on any thread (including `@MainActor`) while
         /// `writerQueue` is busy. Guarded by `cancellationLock` since it's read from `writerQueue`
         /// (inside the backpressure spin-wait) concurrently with that write.
@@ -216,6 +211,11 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
             isCancelledStorage = true
             cancellationLock.unlock()
         }
+
+        // MARK: Private
+
+        private let cancellationLock = NSLock()
+        private var isCancelledStorage = false
     }
 
     private final class SquareFrameProcessor {

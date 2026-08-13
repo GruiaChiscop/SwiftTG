@@ -80,7 +80,9 @@ extension ReactionNotificationSettings {
     )
 
     var isEnabled: Bool {
-        if case .reactionNotificationSourceNone = messageReactionSource { return false }
+        if case .reactionNotificationSourceNone = messageReactionSource {
+            return false
+        }
         return true
     }
 
@@ -261,15 +263,15 @@ struct TelegramNotificationsView: View {
         }
         #endif
         .alert(
-            "Reset all notification settings?",
-            isPresented: $confirmsReset,
-        ) {
-            Button("Reset", role: .destructive) { Task { await resetAllNotifications() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This resets custom notification settings for every chat back to their defaults.")
-        }
-        .alert("Couldn't Load Notification Settings", isPresented: errorIsPresented) {
+                "Reset all notification settings?",
+                isPresented: $confirmsReset,
+            ) {
+                Button("Reset", role: .destructive) { Task { await resetAllNotifications() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This resets custom notification settings for every chat back to their defaults.")
+            }
+            .alert("Couldn't Load Notification Settings", isPresented: errorIsPresented) {
                 Button("OK") {}
             } message: {
                 Text(errorMessage ?? "")

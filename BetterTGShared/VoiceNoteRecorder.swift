@@ -41,7 +41,7 @@ final class VoiceNoteRecorder: @unchecked Sendable {
         encoder = try OGGEncoder(
             format: outputFormat.streamDescription.pointee,
             opusRate: 48000,
-            application: .voip,
+            application: .audio,
         )
         compressedData = Data()
         encodedFrameCount = 0
@@ -54,7 +54,6 @@ final class VoiceNoteRecorder: @unchecked Sendable {
                 self?.encode(buffer, outputFormat: outputFormat)
             }
         }
-        engine.prepare()
         try engine.start()
         encodingQueue.asyncAfter(deadline: .now() + warmupDuration) { [weak self] in
             self?.isPastWarmup = true

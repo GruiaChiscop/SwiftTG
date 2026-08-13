@@ -159,7 +159,7 @@ extension RootVM {
 
     // MARK: Private
 
-    private static let inAppNotificationDisplayDuration: Duration = .seconds(4)
+    private static let inAppNotificationDisplayDuration = Duration.seconds(4)
 
     /// Mirrors `MacSessionModel+Notifications.swift`'s `notificationBody(_:)` - kept in sync by
     /// hand since the two run against different live connections (iOS's single global `TDLib`

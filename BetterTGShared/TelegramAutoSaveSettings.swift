@@ -13,6 +13,12 @@ enum TelegramAutoSaveMaxVideoSize: Int64, CaseIterable, Identifiable {
     case tenMB = 10_485_760
     case noLimit = 4_194_304_000 // 4000 MB, TDLib's documented maximum
 
+    // MARK: Lifecycle
+
+    init(closestTo bytes: Int64) {
+        self = Self.allCases.min(by: { abs($0.rawValue - bytes) < abs($1.rawValue - bytes) }) ?? .noLimit
+    }
+
     // MARK: Internal
 
     var id: Int64 { rawValue }
@@ -26,10 +32,6 @@ enum TelegramAutoSaveMaxVideoSize: Int64, CaseIterable, Identifiable {
         case .tenMB: "10 MB"
         case .noLimit: "No Limit"
         }
-    }
-
-    init(closestTo bytes: Int64) {
-        self = Self.allCases.min(by: { abs($0.rawValue - bytes) < abs($1.rawValue - bytes) }) ?? .noLimit
     }
 }
 
@@ -109,13 +111,19 @@ struct TelegramAutoSaveSettingsView: View {
         }
         #endif
         .alert("Couldn't Load Auto-Save Settings", isPresented: errorIsPresented) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
+                Button("OK") {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
     }
 
     // MARK: Private
+
+    private static let defaultSettings = ScopeAutosaveSettings(
+        autosavePhotos: true,
+        autosaveVideos: false,
+        maxVideoFileSize: TelegramAutoSaveMaxVideoSize.tenMB.rawValue,
+    )
 
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -127,12 +135,6 @@ struct TelegramAutoSaveSettingsView: View {
     @State private var channelSettings: ScopeAutosaveSettings?
 
     private let service: any TelegramService
-
-    private static let defaultSettings = ScopeAutosaveSettings(
-        autosavePhotos: true,
-        autosaveVideos: false,
-        maxVideoFileSize: TelegramAutoSaveMaxVideoSize.tenMB.rawValue,
-    )
 
     private var errorIsPresented: Binding<Bool> {
         Binding(

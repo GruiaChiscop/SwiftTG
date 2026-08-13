@@ -73,7 +73,9 @@ struct MacRootView: View {
                 .alert("Login Denied", isPresented: $model.showsDeniedSessionNotice) {
                     Button("OK") {}
                 } message: {
-                    Text("The session was terminated. If this wasn't you, consider changing your password in Two-Step Verification.")
+                    Text(
+                        "The session was terminated. If this wasn't you, consider changing your password in Two-Step Verification.",
+                    )
                 }
     }
 

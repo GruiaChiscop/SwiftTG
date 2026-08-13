@@ -400,6 +400,12 @@ struct ChatView: View {
             }?.id
     }
 
+    private var principalAccessibilityLabel: String {
+        let title = titleOverride ?? chatVM.customChat.displayTitle
+        let status = chatVM.actionStatus.isEmpty ? chatVM.onlineStatus : chatVM.actionStatus
+        return status.isEmpty ? title : "\(title), \(status)"
+    }
+
     private var conversationSearchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
@@ -498,12 +504,6 @@ struct ChatView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(principalAccessibilityLabel)
         .accessibilityAddTraits(.isHeader)
-    }
-
-    private var principalAccessibilityLabel: String {
-        let title = titleOverride ?? chatVM.customChat.displayTitle
-        let status = chatVM.actionStatus.isEmpty ? chatVM.onlineStatus : chatVM.actionStatus
-        return status.isEmpty ? title : "\(title), \(status)"
     }
 
     private func positionInitialMessagesIfNeeded() {

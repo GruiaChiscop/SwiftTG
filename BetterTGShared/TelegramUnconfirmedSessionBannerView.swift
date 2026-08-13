@@ -52,7 +52,8 @@ struct TelegramUnconfirmedSessionBannerView: View {
             // user will reach it on their own even if the announcement is missed.
             AccessibilityNotification.Announcement(
                 "New login attempt. \(session.deviceModel), \(session.location). Was this you?",
-            ).post()
+            )
+            .post()
         }
     }
 }
