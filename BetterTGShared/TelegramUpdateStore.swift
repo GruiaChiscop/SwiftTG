@@ -55,6 +55,19 @@ final class TelegramUpdateStore: @unchecked Sendable {
         reactionNotificationSettingsSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
+    /// Same `CurrentValueSubject` reasoning as `chatFoldersPublisher` - a call screen presented
+    /// after `updateCall` already fired (e.g. CallKit reporting the call before the in-app screen
+    /// finishes appearing) still needs the call's current state, not just its next transition.
+    var callPublisher: AnyPublisher<Call?, Never> {
+        callSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
+    /// `PassthroughSubject`, unlike `callPublisher` - signaling packets are one-shot events to feed
+    /// into the call engine as they arrive, not state to replay to a subscriber that missed one.
+    var callSignalingDataPublisher: AnyPublisher<UpdateNewCallSignalingData, Never> {
+        callSignalingDataSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     func messagePublisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never> {
         messageStore.publisher(chatId: chatId)
     }
@@ -90,7 +103,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
         queue.async {
             [
                 updateSubject, chatFoldersSubject, unreadChatCountSubject, availableMessageEffectsSubject,
-                reactionNotificationSettingsSubject,
+                reactionNotificationSettingsSubject, callSubject, callSignalingDataSubject,
             ] in
             dispatchPrecondition(condition: .onQueue(self.queue))
             self.chatListStore.reduce(update)
@@ -108,6 +121,16 @@ final class TelegramUpdateStore: @unchecked Sendable {
             if case .updateReactionNotificationSettings(let value) = update {
                 reactionNotificationSettingsSubject.send(value.notificationSettings)
             }
+            if case .updateCall(let value) = update {
+                let isOngoing = switch value.call.state {
+                case .callStateDiscarded, .callStateError: false
+                default: true
+                }
+                callSubject.send(isOngoing ? value.call : nil)
+            }
+            if case .updateNewCallSignalingData(let value) = update {
+                callSignalingDataSubject.send(value)
+            }
             updateSubject.send(update)
         }
     }
@@ -118,6 +141,8 @@ final class TelegramUpdateStore: @unchecked Sendable {
     private let unreadChatCountSubject = CurrentValueSubject<UpdateUnreadChatCount?, Never>(nil)
     private let availableMessageEffectsSubject = CurrentValueSubject<UpdateAvailableMessageEffects?, Never>(nil)
     private let reactionNotificationSettingsSubject = CurrentValueSubject<ReactionNotificationSettings?, Never>(nil)
+    private let callSubject = CurrentValueSubject<Call?, Never>(nil)
+    private let callSignalingDataSubject = PassthroughSubject<UpdateNewCallSignalingData, Never>()
     private let chatListStore = TelegramChatListStore()
     private let fileStore = TelegramFileStore()
     private let messageStore = TelegramMessageStore()

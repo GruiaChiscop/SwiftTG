@@ -153,6 +153,16 @@ enum TDLibFixtures {
         )
     }
 
+    static func call(
+        id: Int,
+        userId: Int64 = 1,
+        isOutgoing: Bool = false,
+        isVideo: Bool = false,
+        state: CallState = .callStatePending(.init(isCreated: true, isReceived: true)),
+    ) -> Call {
+        Call(id: id, isOutgoing: isOutgoing, isVideo: isVideo, state: state, uniqueId: 0, userId: userId)
+    }
+
     static func permissions(canSendOtherMessages: Bool) -> ChatPermissions {
         ChatPermissions(
             canAddLinkPreviews: true,

@@ -20,6 +20,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> { get }
     var reactionNotificationSettingsPublisher: AnyPublisher<ReactionNotificationSettings?, Never> { get }
     var updatePublisher: AnyPublisher<Update, Never> { get }
+    var callPublisher: AnyPublisher<Call?, Never> { get }
+    var callSignalingDataPublisher: AnyPublisher<UpdateNewCallSignalingData, Never> { get }
 
     func filePublisher(fileId: Int) -> AnyPublisher<File, Never>
     func messagePublisher(chatId: Int64) -> AnyPublisher<TelegramMessageSnapshot, Never>
@@ -478,6 +480,18 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         size: Int64?,
         ttl: Int?,
     ) async throws -> StorageStatistics
+
+    func createCall(isVideo: Bool?, protocol: CallProtocol?, userId: Int64?) async throws -> CallId
+    func acceptCall(callId: Int?, protocol: CallProtocol?) async throws -> Ok
+    func discardCall(
+        callId: Int?,
+        connectionId: TdInt64?,
+        duration: Int?,
+        inviteLink: String?,
+        isDisconnected: Bool?,
+        isVideo: Bool?,
+    ) async throws -> Ok
+    func sendCallSignalingData(callId: Int?, data: Data?) async throws -> Ok
 }
 
 // MARK: - TelegramSession + TelegramService
@@ -1861,6 +1875,36 @@ extension TelegramSession: TelegramService {
         source: MessageSource?,
     ) async throws -> Ok {
         try await client.viewMessages(chatId: chatId, forceRead: forceRead, messageIds: messageIds, source: source)
+    }
+
+    func createCall(isVideo: Bool?, protocol: CallProtocol?, userId: Int64?) async throws -> CallId {
+        try await client.createCall(isVideo: isVideo, protocol: `protocol`, userId: userId)
+    }
+
+    func acceptCall(callId: Int?, protocol: CallProtocol?) async throws -> Ok {
+        try await client.acceptCall(callId: callId, protocol: `protocol`)
+    }
+
+    func discardCall(
+        callId: Int?,
+        connectionId: TdInt64?,
+        duration: Int?,
+        inviteLink: String?,
+        isDisconnected: Bool?,
+        isVideo: Bool?,
+    ) async throws -> Ok {
+        try await client.discardCall(
+            callId: callId,
+            connectionId: connectionId,
+            duration: duration,
+            inviteLink: inviteLink,
+            isDisconnected: isDisconnected,
+            isVideo: isVideo,
+        )
+    }
+
+    func sendCallSignalingData(callId: Int?, data: Data?) async throws -> Ok {
+        try await client.sendCallSignalingData(callId: callId, data: data)
     }
 }
 

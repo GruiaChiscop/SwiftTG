@@ -57,6 +57,14 @@ final class TelegramSession: @unchecked Sendable {
         updateStore.updatePublisher
     }
 
+    var callPublisher: AnyPublisher<Call?, Never> {
+        updateStore.callPublisher
+    }
+
+    var callSignalingDataPublisher: AnyPublisher<UpdateNewCallSignalingData, Never> {
+        updateStore.callSignalingDataPublisher
+    }
+
     func filePublisher(fileId: Int) -> AnyPublisher<File, Never> {
         updateStore.filePublisher(fileId: fileId)
     }
