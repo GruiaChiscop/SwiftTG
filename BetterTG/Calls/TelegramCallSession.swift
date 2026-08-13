@@ -6,6 +6,7 @@ import Network
 import Observation
 import TDLibKit
 @preconcurrency import TgVoipWebrtc
+import UIKit
 
 // MARK: - CallProtocol + @retroactive @unchecked Sendable
 
@@ -233,6 +234,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var isEffectiveAudioSessionActive = false
     private var isAudioInterrupted = false
     private var areMediaServicesAvailable = true
+    private var ownsProximityMonitoring = false
     private var isEngineRunning = false
     private var networkKind = TelegramCallEngine.NetworkKind.wifi
     private var pendingSystemAction: PendingSystemAction?
@@ -395,6 +397,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             reportedIncomingCallId = nil
         }
         activeCall = call
+        updateProximityMonitoring()
 
         if pendingSystemAction == .end {
             pendingSystemAction = nil
@@ -605,6 +608,23 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         availableAudioRoutes = routes
         selectedAudioRoute = selected
         isSpeakerOn = selected.kind == .speaker
+        updateProximityMonitoring()
+    }
+
+    /// Keep the display protected from accidental touches only while the receiver is the actual
+    /// output. Speaker, wired, Bluetooth, and external routes must leave the screen awake. The
+    /// ownership flag avoids disabling monitoring that another app component may have enabled.
+    private func updateProximityMonitoring() {
+        let shouldMonitor = activeCall != nil && selectedAudioRoute.kind == .builtIn
+        if shouldMonitor, !ownsProximityMonitoring {
+            UIDevice.current.isProximityMonitoringEnabled = true
+            ownsProximityMonitoring = UIDevice.current.isProximityMonitoringEnabled
+            log("[Call] proximity monitoring enabled=\(ownsProximityMonitoring)")
+        } else if !shouldMonitor, ownsProximityMonitoring {
+            UIDevice.current.isProximityMonitoringEnabled = false
+            ownsProximityMonitoring = false
+            log("[Call] proximity monitoring disabled")
+        }
     }
 
     private func handleAudioInterruption(_ notification: Foundation.Notification) {
