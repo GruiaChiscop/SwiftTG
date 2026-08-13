@@ -18,7 +18,7 @@ extension MacSessionModel {
         let url = TelegramVoiceNoteSending.temporaryFileURL()
         let recorder = VoiceNoteRecorder()
         do {
-            try recorder.start()
+            try recorder.start(warmupDuration: 0)
         } catch {
             messageActionError = "Voice recording could not start: \(error.localizedDescription)"
             return

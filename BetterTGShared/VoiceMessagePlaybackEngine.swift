@@ -61,6 +61,7 @@ import SwiftOGG
         guard onWillPlay() else { return }
         do {
             if !engine.isRunning {
+                engine.prepare()
                 try engine.start()
             }
         } catch {
@@ -88,8 +89,10 @@ import SwiftOGG
         currentPath = nil
         allowsSeeking = true
         stopProgressTimer()
-        playerNode.stop()
-        engine.stop()
+        if engine.isRunning {
+            playerNode.stop()
+            engine.stop()
+        }
         audioBuffer = nil
         onStopped?()
     }
@@ -241,7 +244,6 @@ import SwiftOGG
         audioBuffer = buffer
         sampleRate = buffer.format.sampleRate
         schedule(buffer: buffer, from: 0)
-        engine.prepare()
     }
 
     private func schedule(buffer: AVAudioPCMBuffer, from startFrame: AVAudioFramePosition) {

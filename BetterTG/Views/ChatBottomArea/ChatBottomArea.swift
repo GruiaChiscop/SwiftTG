@@ -160,6 +160,9 @@ struct ChatBottomArea: View {
             if chatVM.recordingVideoNote || chatVM.pausedVideoNote || chatVM.preparingVideoNote {
                 chatVM.cancelRecordingVideo()
             }
+            if chatVM.recordingVoiceNote {
+                chatVM.cancelRecordingVoice()
+            }
             // The record session is kept active across multiple recordings within the same chat
             // visit (see VoiceRecordingController) instead of tearing it down after each one, so
             // it only needs deactivating once, here, when there's no more recording to come back to.

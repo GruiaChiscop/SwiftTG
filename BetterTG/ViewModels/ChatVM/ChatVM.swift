@@ -170,7 +170,6 @@ import TDLibKit
         refreshPinnedMessages()
         loadMessages()
         loadThreadRootMessageIfNeeded()
-        Media.shared.onChatOpen(title: customChat.chat.title)
 
         Task.main {
             guard let draftMessage = self.customChat.draftMessage else { return }

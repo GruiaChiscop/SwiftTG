@@ -1,24 +1,27 @@
 // Media.swift
 
 import AVFoundation
-import MediaPlayer
 import Observation
 
 /// Thin iOS wrapper around the shared `VoiceMessagePlaybackEngine`, adding audio session setup
-/// and Now Playing/remote-command-center integration around it. macOS's `MacVoicePlayer` wraps
-/// the same engine without either, since neither applies there.
+/// around it. macOS's `MacVoicePlayer` wraps the same engine without one, since it doesn't apply
+/// there.
+///
+/// Deliberately has no Now Playing/`MPRemoteCommandCenter` integration - matching Telegram-iOS's
+/// own `MediaManager`, which only surfaces music tracks there, never voice messages. Every
+/// transition of that Control Center/lock-screen surface (appearing *or* disappearing) makes
+/// VoiceOver play its own "layout changed" cue, which is audible on every single recording start
+/// once a voice message has ever played in the session (`VoiceRecordingController` stops any
+/// current playback before recording, and stopping playback is what tears the surface down) -
+/// there's no way to only sometimes have that surface without sometimes paying for the transition.
 @Observable final class Media: @unchecked Sendable {
     // MARK: Lifecycle
 
     init() {
         self.engine = MainActor.assumeIsolated { VoiceMessagePlaybackEngine() }
-        setCommandCenterControls()
         MainActor.assumeIsolated {
             engine.trace = { voicePlaybackTrace($0) }
             engine.onWillPlay = { [weak self] in self?.setAudioSessionPlayback() ?? false }
-            engine.onPlayStarted = { [weak self] in self?.setNowPlaying() }
-            engine.onTick = { [weak self] in self?.changeCurrentTime() }
-            engine.onStopped = { [weak self] in self?.nowPlayingCenter.nowPlayingInfo = nil }
         }
     }
 
@@ -32,10 +35,6 @@ import Observation
 
     func stop() {
         MainActor.assumeIsolated { engine.stop() }
-    }
-
-    func onChatOpen(title: String) {
-        self.title = title
     }
 
     func onChatDismiss() {
@@ -62,7 +61,6 @@ import Observation
             // playing through the speaker while the microphone is recording risks it bleeding into
             // the recorded message itself.
             let options: AVAudioSession.CategoryOptions = [
-                .allowAirPlay,
                 .allowBluetoothHFP,
                 .allowBluetoothA2DP,
                 .defaultToSpeaker,
@@ -74,9 +72,6 @@ import Observation
         }
     }
 
-    /// Deactivates the session once there's no more recording to come back to, rather than after
-    /// every individual recording - `setAudioSessionRecord()` keeps the session alive across
-    /// multiple recordings within the same chat visit instead of tearing it down each time.
     func endAudioSessionRecord() {
         do {
             try audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
@@ -87,106 +82,17 @@ import Observation
 
     // MARK: Private
 
-    @ObservationIgnored private var title = ""
     @ObservationIgnored private let engine: VoiceMessagePlaybackEngine
     private let audioSession = AVAudioSession.sharedInstance()
-    private let nowPlayingCenter = MPNowPlayingInfoCenter.default()
-    private let commandCenter = MPRemoteCommandCenter.shared()
-
-    private func changeCurrentTime() {
-        nowPlayingCenter.nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(currentTime)
-    }
 
     private func setAudioSessionPlayback() -> Bool {
         do {
-            try audioSession.setCategory(.playback, mode: .spokenAudio, policy: .default, options: [
-                .mixWithOthers,
-                .interruptSpokenAudioAndMixWithOthers,
-            ])
-            try audioSession.setActive(true, options: [])
-            let outputs = audioSession.currentRoute
-                .outputs
-                .map { "\($0.portType.rawValue):\($0.portName)" }
-                .joined(separator: ",")
-            voicePlaybackTrace("session active outputs=[\(outputs)] volume=\(audioSession.outputVolume)")
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
             return true
         } catch {
-            voicePlaybackTrace("session failed: \(error.localizedDescription)")
             log("Error setting audioSessionPlayback: \(error)")
             return false
         }
-    }
-
-    private func setCommandCenterControls() {
-        commandCenter.skipBackwardCommand.preferredIntervals = [5.0]
-        commandCenter.skipForwardCommand.preferredIntervals = [5.0]
-
-        commandCenter.playCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            return MainActor.assumeIsolated {
-                guard !self.savedMediaPath.isEmpty, self.engine.isReady, !self.isPlaying else { return .commandFailed }
-                self.engine.play()
-                return .success
-            }
-        }
-
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            return MainActor.assumeIsolated {
-                guard !self.savedMediaPath.isEmpty, self.engine.isReady, self.isPlaying else { return .commandFailed }
-                self.engine.pause()
-                return .success
-            }
-        }
-
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            return MainActor.assumeIsolated {
-                guard !self.savedMediaPath.isEmpty, self.engine.isReady else { return .commandFailed }
-                if self.isPlaying {
-                    self.engine.pause()
-                } else {
-                    self.engine.play()
-                }
-                return .success
-            }
-        }
-
-        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
-            nonisolated(unsafe) let event = event
-            return MainActor.assumeIsolated {
-                guard let self, let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
-                    return .commandFailed
-                }
-                self.engine.seek(to: positionEvent.positionTime)
-                return .success
-            }
-        }
-
-        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            return MainActor.assumeIsolated {
-                guard !self.savedMediaPath.isEmpty, self.engine.isReady else { return .commandFailed }
-                self.engine.seekForward()
-                return .success
-            }
-        }
-
-        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            return MainActor.assumeIsolated {
-                guard !self.savedMediaPath.isEmpty, self.engine.isReady else { return .commandFailed }
-                self.engine.seekBackward()
-                return .success
-            }
-        }
-    }
-
-    private func setNowPlaying() {
-        var info = [String: Any]()
-        info[MPMediaItemPropertyTitle] = title
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(currentTime)
-        info[MPMediaItemPropertyPlaybackDuration] = Double(MainActor.assumeIsolated { engine.duration })
-        nowPlayingCenter.nowPlayingInfo = info
     }
 }
