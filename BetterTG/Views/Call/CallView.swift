@@ -45,12 +45,11 @@ struct CallView: View {
                     session.end()
                 }
 
-                CallControlButton(
-                    systemImage: session.isSpeakerOn ? "speaker.wave.2.fill" : "speaker.fill",
-                    label: session.isSpeakerOn ? "Speaker Off" : "Speaker On",
-                    isActive: session.isSpeakerOn,
-                ) {
-                    session.toggleSpeaker()
+                CallAudioRouteControl(
+                    routes: session.availableAudioRoutes,
+                    selectedRoute: session.selectedAudioRoute,
+                ) { route in
+                    session.selectAudioRoute(route)
                 }
             }
 
@@ -89,12 +88,65 @@ struct CallView: View {
     }
 
     @ViewBuilder private var statusView: some View {
-        if let connectedAt = session.connectedAt {
+        if session.engineState == .reconnecting {
+            Text("Reconnecting…")
+        } else if session.engineState == .failed {
+            Text("Call Failed")
+        } else if let connectedAt = session.connectedAt {
             TimelineView(.periodic(from: connectedAt, by: 1)) { context in
                 Text(telegramClockDuration(Int(context.date.timeIntervalSince(connectedAt))))
             }
         } else {
             Text(pendingStatusText)
+        }
+    }
+}
+
+// MARK: - CallAudioRouteControl
+
+private struct CallAudioRouteControl: View {
+    // MARK: Internal
+
+    let routes: [TelegramCallSession.AudioRoute]
+    let selectedRoute: TelegramCallSession.AudioRoute
+    let select: (TelegramCallSession.AudioRoute) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(routes) { route in
+                Button {
+                    select(route)
+                } label: {
+                    Label(
+                        route.name,
+                        systemImage: route == selectedRoute ? "checkmark" : Self.systemImage(for: route.kind),
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: Self.systemImage(for: selectedRoute.kind))
+                .font(.title2)
+                .frame(width: 64, height: 64)
+                .background(selectedRoute.kind == .speaker ? Color.accentColor : Color.gray.opacity(0.3), in: .circle)
+                .foregroundStyle(selectedRoute.kind == .speaker ? .white : Color.primary)
+        }
+        .accessibilityLabel("Audio, \(selectedRoute.name)")
+    }
+
+    // MARK: Private
+
+    private static func systemImage(for kind: TelegramCallSession.AudioRoute.Kind) -> String {
+        switch kind {
+        case .builtIn:
+            "iphone"
+        case .speaker:
+            "speaker.wave.2.fill"
+        case .wired:
+            "headphones"
+        case .bluetooth:
+            "wave.3.right"
+        case .external:
+            "airplayaudio"
         }
     }
 }

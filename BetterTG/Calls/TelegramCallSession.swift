@@ -37,6 +37,30 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             .sink { [weak self] active in self?.applyAudioSessionActive(active) }
             .store(in: &cancellables)
 
+        let notificationCenter = NotificationCenter.default
+        notificationCenter.publisher(for: AVAudioSession.routeChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in self?.handleAudioRouteChange(notification) }
+            .store(in: &cancellables)
+        notificationCenter.publisher(for: AVAudioSession.availableInputsChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshAudioRoutes() }
+            .store(in: &cancellables)
+        notificationCenter.publisher(for: AVAudioSession.interruptionNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in self?.handleAudioInterruption(notification) }
+            .store(in: &cancellables)
+        notificationCenter.publisher(for: AVAudioSession.mediaServicesWereLostNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.handleMediaServicesLost() }
+            .store(in: &cancellables)
+        notificationCenter.publisher(for: AVAudioSession.mediaServicesWereResetNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.handleMediaServicesReset() }
+            .store(in: &cancellables)
+
+        refreshAudioRoutes()
+
         networkMonitor.pathUpdateHandler = { [weak self] path in
             let kind: TelegramCallEngine.NetworkKind = path.usesInterfaceType(.cellular) ? .cellular : .wifi
             Task { @MainActor [weak self] in
@@ -48,6 +72,23 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     // MARK: Internal
 
+    struct AudioRoute: Identifiable, Equatable, Sendable {
+        enum Kind: Equatable, Sendable {
+            case builtIn
+            case speaker
+            case wired
+            case bluetooth
+            case external
+        }
+
+        static let builtIn = AudioRoute(id: "builtin", name: "iPhone", kind: .builtIn)
+        static let speaker = AudioRoute(id: "speaker", name: "Speaker", kind: .speaker)
+
+        let id: String
+        let name: String
+        let kind: Kind
+    }
+
     static let shared = TelegramCallSession(service: TDLib.shared.service)
 
     private(set) var activeCall: Call?
@@ -55,6 +96,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var engineState: TelegramCallEngine.State?
     private(set) var isMuted = false
     private(set) var isSpeakerOn = false
+    private(set) var availableAudioRoutes: [AudioRoute] = [.builtIn, .speaker]
+    private(set) var selectedAudioRoute = AudioRoute.builtIn
     private(set) var connectedAt: Foundation.Date?
 
     var onIncomingCall: ((Call) -> Void)?
@@ -135,12 +178,40 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func toggleSpeaker() {
-        let newValue = !isSpeakerOn
+        selectAudioRoute(isSpeakerOn ? .builtIn : .speaker)
+    }
+
+    func selectAudioRoute(_ route: AudioRoute) {
+        let audioSession = AVAudioSession.sharedInstance()
         do {
-            try AVAudioSession.sharedInstance().overrideOutputAudioPort(newValue ? .speaker : .none)
-            isSpeakerOn = newValue
+            switch route.kind {
+            case .speaker:
+                if let builtInMicrophone = audioSession.availableInputs?.first(where: {
+                    $0.portType == .builtInMic
+                }) {
+                    try audioSession.setPreferredInput(builtInMicrophone)
+                }
+                try audioSession.overrideOutputAudioPort(.speaker)
+            case .builtIn:
+                try audioSession.overrideOutputAudioPort(.none)
+                let builtInMicrophone = audioSession.availableInputs?.first(where: {
+                    $0.portType == .builtInMic
+                })
+                try audioSession.setPreferredInput(builtInMicrophone)
+            case .bluetooth, .external, .wired:
+                try audioSession.overrideOutputAudioPort(.none)
+                guard let input = audioSession.availableInputs?.first(where: {
+                    Self.audioRouteId(for: $0) == route.id
+                }) else {
+                    refreshAudioRoutes()
+                    return
+                }
+                try audioSession.setPreferredInput(input)
+            }
+            refreshAudioRoutes()
         } catch {
-            log("Error toggling call speaker: \(error)")
+            log("Error selecting call audio route \(route.name): \(error)")
+            refreshAudioRoutes()
         }
     }
 
@@ -159,6 +230,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var reportedIncomingCallId: Int?
     private var ringbackAudioDevice: SharedCallAudioDevice?
     private var isCallKitAudioSessionActive = false
+    private var isEffectiveAudioSessionActive = false
+    private var isAudioInterrupted = false
+    private var areMediaServicesAvailable = true
     private var isEngineRunning = false
     private var networkKind = TelegramCallEngine.NetworkKind.wifi
     private var pendingSystemAction: PendingSystemAction?
@@ -230,6 +304,29 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         case .reconnecting: "reconnecting"
         case .unknown(let rawValue): "unknown(\(rawValue))"
         }
+    }
+
+    private static func audioRouteId(for port: AVAudioSessionPortDescription) -> String {
+        "port:\(port.uid)"
+    }
+
+    private static func audioRouteKind(for portType: AVAudioSession.Port) -> AudioRoute.Kind {
+        switch portType {
+        case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
+            .bluetooth
+        case .headphones, .headsetMic, .lineIn:
+            .wired
+        default:
+            .external
+        }
+    }
+
+    private static func audioRoute(for port: AVAudioSessionPortDescription) -> AudioRoute {
+        AudioRoute(
+            id: audioRouteId(for: port),
+            name: port.portName,
+            kind: audioRouteKind(for: port.portType),
+        )
     }
 
     private static func connections(from servers: [CallServer]) -> [TelegramCallEngine.Connection] {
@@ -378,14 +475,22 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         let device = SharedCallAudioDevice(disableRecording: true, enableSystemMute: false)
         ringbackAudioDevice = device
         device.setTone(Self.ringbackTone())
-        device.setManualAudioSessionIsActive(isCallKitAudioSessionActive)
+        device.setManualAudioSessionIsActive(isEffectiveAudioSessionActive)
     }
 
     private func applyAudioSessionActive(_ active: Bool) {
-        log(
-            "[Call] CallKit audio session active=\(active) (engine=\(isEngineRunning) ringback=\(ringbackAudioDevice != nil))",
-        )
         isCallKitAudioSessionActive = active
+        applyEffectiveAudioSessionState()
+        refreshAudioRoutes()
+    }
+
+    private func applyEffectiveAudioSessionState() {
+        let active = isCallKitAudioSessionActive && !isAudioInterrupted && areMediaServicesAvailable
+        guard active != isEffectiveAudioSessionActive else { return }
+        isEffectiveAudioSessionActive = active
+        log(
+            "[Call] audio session effective=\(active) CallKit=\(isCallKitAudioSessionActive) interrupted=\(isAudioInterrupted) mediaServices=\(areMediaServicesAvailable)",
+        )
         engine.setAudioSessionActive(active)
         ringbackAudioDevice?.setManualAudioSessionIsActive(active)
     }
@@ -428,7 +533,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 allowP2P: info.allowP2p,
             ),
             muted: isMuted,
-            audioSessionActive: isCallKitAudioSessionActive,
+            audioSessionActive: isEffectiveAudioSessionActive,
             networkKind: networkKind,
             sendSignaling: { [weak self] data in
                 Task { @MainActor [weak self] in
@@ -451,14 +556,93 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private func handleEngineState(_ state: TelegramCallEngine.State, callId: Int) {
         guard isEngineRunning, activeCall?.id == callId else { return }
         log("[Call] engine state=\(Self.describe(engineState: state))")
-        let wasConnected = engineState == .connected
         engineState = state
-        if !wasConnected, state == .connected {
+        if connectedAt == nil, state == .connected {
             connectedAt = Foundation.Date()
             onCallConnected?()
         } else if state == .failed {
             endActiveCall(isDisconnected: true)
         }
+    }
+
+    private func handleAudioRouteChange(_ notification: Foundation.Notification) {
+        let reason = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? NSNumber)?.uintValue
+        refreshAudioRoutes()
+        log(
+            "[Call] audio route changed reason=\(reason.map(String.init) ?? "unknown") selected=\(selectedAudioRoute.name)",
+        )
+    }
+
+    private func refreshAudioRoutes() {
+        let audioSession = AVAudioSession.sharedInstance()
+        var routes: [AudioRoute] = [.builtIn, .speaker]
+        for input in audioSession.availableInputs ?? [] where input.portType != .builtInMic {
+            let route = Self.audioRoute(for: input)
+            if !routes.contains(where: { $0.id == route.id }) {
+                routes.append(route)
+            }
+        }
+
+        let currentRoute = audioSession.currentRoute
+        let selected: AudioRoute =
+            if currentRoute.outputs.contains(where: { $0.portType == .builtInSpeaker }) {
+                .speaker
+            } else if currentRoute.outputs.contains(where: { $0.portType == .builtInReceiver }) {
+                .builtIn
+            } else if let input = currentRoute.inputs.first(where: { $0.portType != .builtInMic }) {
+                Self.audioRoute(for: input)
+            } else if let output = currentRoute.outputs.first(where: {
+                $0.portType != .builtInReceiver && $0.portType != .builtInSpeaker
+            }) {
+                Self.audioRoute(for: output)
+            } else {
+                .builtIn
+            }
+
+        if !routes.contains(where: { $0.id == selected.id }) {
+            routes.append(selected)
+        }
+        availableAudioRoutes = routes
+        selectedAudioRoute = selected
+        isSpeakerOn = selected.kind == .speaker
+    }
+
+    private func handleAudioInterruption(_ notification: Foundation.Notification) {
+        guard
+            let rawType = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue,
+            let type = AVAudioSession.InterruptionType(rawValue: rawType)
+        else { return }
+
+        switch type {
+        case .began:
+            isAudioInterrupted = true
+            log("[Call] audio interruption began")
+        case .ended:
+            isAudioInterrupted = false
+            let rawOptions = (notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0
+            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+            log("[Call] audio interruption ended shouldResume=\(shouldResume)")
+        @unknown default:
+            return
+        }
+        applyEffectiveAudioSessionState()
+        refreshAudioRoutes()
+    }
+
+    private func handleMediaServicesLost() {
+        areMediaServicesAvailable = false
+        log("[Call] audio media services lost")
+        applyEffectiveAudioSessionState()
+    }
+
+    private func handleMediaServicesReset() {
+        areMediaServicesAvailable = true
+        log("[Call] audio media services reset")
+        if activeCall != nil {
+            Self.prepareAudioSession()
+        }
+        applyEffectiveAudioSessionState()
+        refreshAudioRoutes()
     }
 
     private func stopEngine() {
@@ -474,7 +658,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 log("Error restoring call audio route: \(error)")
             }
         }
-        isSpeakerOn = false
+        refreshAudioRoutes()
     }
 
     private func finishCurrentCall(notifyCallKit: Bool) {
