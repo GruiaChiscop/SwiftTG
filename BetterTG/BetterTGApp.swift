@@ -1,6 +1,7 @@
 // BetterTGApp.swift
 
 import AVKit
+import Intents
 import SwiftUI
 import TDLibKit
 import UserNotifications
@@ -49,6 +50,12 @@ import UserNotifications
                             RootVM.shared.handleDeepLink(url)
                         }
                     }
+                    .onContinueUserActivity(NSStringFromClass(INStartCallIntent.self)) { userActivity in
+                        _ = handleStartCallActivity(userActivity)
+                    }
+                    .onContinueUserActivity(legacyStartCallActivityType) { userActivity in
+                        _ = handleStartCallActivity(userActivity)
+                    }
             }
         }
         // Belt-and-suspenders for the share hand-off: `.authorizationStateReady` (RootVM's other
@@ -75,6 +82,37 @@ import UserNotifications
     // MARK: Private
 
     @Environment(\.scenePhase) private var scenePhase
+}
+
+// MARK: - Start-call Activity
+
+private let legacyStartCallActivityType = "INStartAudioCallIntent"
+
+@MainActor private func handleStartCallActivity(_ userActivity: NSUserActivity) -> Bool {
+    guard let intent = userActivity.interaction?.intent else {
+        log("[CallKit] received user activity type=\(userActivity.activityType) without an intent")
+        return false
+    }
+    let intentType = String(describing: type(of: intent))
+    log("[CallKit] received user activity type=\(userActivity.activityType) intent=\(intentType)")
+
+    let contacts: [INPerson]?
+    if let intent = intent as? INStartCallIntent {
+        contacts = intent.contacts
+    } else if userActivity.activityType == legacyStartCallActivityType
+        || intentType == legacyStartCallActivityType
+    {
+        let contactsSelector = NSSelectorFromString("contacts")
+        guard intent.responds(to: contactsSelector) else {
+            log("[CallKit] legacy start-call intent does not expose contacts")
+            return false
+        }
+        contacts = intent.value(forKey: "contacts") as? [INPerson]
+    } else {
+        log("[CallKit] unsupported start-call intent type=\(intentType)")
+        return false
+    }
+    return CallKitManager.shared.startOutgoingCall(from: contacts)
 }
 
 // MARK: - AppDelegate
@@ -178,6 +216,14 @@ import UserNotifications
         return sceneConfig
     }
 
+    func application(
+        _: UIApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler _: @escaping ([any UIUserActivityRestoring]?) -> Void,
+    ) -> Bool {
+        handleStartCallActivity(userActivity)
+    }
+
     // MARK: Private
 
     /// The action identifier within each repliable category below - Telegram's own push payload
@@ -240,13 +286,20 @@ import UserNotifications
 
 // MARK: - SceneDelegate
 
-final class SceneDelegate: NSObject, UIWindowSceneDelegate {
+@MainActor final class SceneDelegate: NSObject, UIWindowSceneDelegate {
     func scene(
         _ scene: UIScene,
         willConnectTo _: UISceneSession,
-        options _: UIScene.ConnectionOptions,
+        options connectionOptions: UIScene.ConnectionOptions,
     ) {
         guard let scene = scene as? UIWindowScene else { return }
         Utils.screen = scene.screen
+        for userActivity in connectionOptions.userActivities where handleStartCallActivity(userActivity) {
+            break
+        }
+    }
+
+    func scene(_: UIScene, continue userActivity: NSUserActivity) {
+        _ = handleStartCallActivity(userActivity)
     }
 }

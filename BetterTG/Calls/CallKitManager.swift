@@ -4,6 +4,7 @@ import AVFoundation
 import CallKit
 import Combine
 import Foundation
+import Intents
 import TDLibKit
 
 // MARK: - CallKitManager
@@ -67,6 +68,11 @@ import TDLibKit
                 log("[CallKit] microphone permission denied; outgoing call not started")
                 return
             }
+            guard isRequestingOutgoingCall, currentCallUUID == nil else {
+                isRequestingOutgoingCall = false
+                log("[CallKit] outgoing call superseded while waiting for microphone permission")
+                return
+            }
 
             TelegramCallSession.prepareAudioSession()
             let uuid = UUID()
@@ -76,15 +82,47 @@ import TDLibKit
             isRequestingOutgoingCall = false
 
             let name = displayName.isEmpty ? "Telegram" : displayName
-            let action = CXStartCallAction(call: uuid, handle: CXHandle(type: .generic, value: name))
+            let action = CXStartCallAction(call: uuid, handle: Self.telegramHandle(userId: userId))
+            action.contactIdentifier = name
             action.isVideo = false
             do {
                 try await callController.request(CXTransaction(action: action))
+                guard currentCallUUID == uuid else { return }
+                provider.reportCall(with: uuid, updated: Self.update(userId: userId, displayName: name))
+                Self.donateCallIntent(userId: userId, displayName: name)
             } catch {
                 log("CallKit start request failed: \(error)")
                 clearCurrentCall(ifMatching: uuid)
             }
         }
+    }
+
+    /// Handles a call donated to Phone/Siri and returned to the app through `NSUserActivity`.
+    /// A cold launch can deliver the intent before TDLib restores authorization, so wait for its
+    /// real ready state rather than racing `createCall` against session startup.
+    @discardableResult func startOutgoingCall(from contacts: [INPerson]?) -> Bool {
+        guard let person = contacts?.first,
+              let userId = Self.telegramUserId(from: person)
+        else {
+            log("[CallKit] ignoring start-call intent without a Telegram user handle")
+            return false
+        }
+
+        intentStartGeneration &+= 1
+        let generation = intentStartGeneration
+        pendingIntentStartTask?.cancel()
+        pendingIntentStartTask = Task { [weak self] in
+            guard let self else { return }
+            let isReady = await Self.waitUntilTelegramReady(timeoutSeconds: 10)
+            guard !Task.isCancelled, intentStartGeneration == generation else { return }
+            pendingIntentStartTask = nil
+            guard isReady else {
+                log("[CallKit] start-call intent timed out waiting for TDLib authorization")
+                return
+            }
+            startOutgoingCall(userId: userId, displayName: person.displayName)
+        }
+        return true
     }
 
     /// App-initiated hangups must travel through CallKit too. This keeps the system call UI and
@@ -134,7 +172,10 @@ import TDLibKit
         currentTelegramCallUniqueId = callUniqueId
         isCurrentCallOutgoing = false
         log("[CallKit] reportIncomingPlaceholder uuid=\(uuid)")
-        provider.reportNewIncomingCall(with: uuid, update: Self.update(displayName: nil)) { [weak self] error in
+        provider.reportNewIncomingCall(with: uuid, update: Self.update(
+            userId: nil,
+            displayName: nil,
+        )) { [weak self] error in
             Task { @MainActor [weak self] in
                 if let error {
                     log("[CallKit] failed to report placeholder incoming call: \(error)")
@@ -179,10 +220,88 @@ import TDLibKit
     private var isEndingLocally = false
     private var isRequestingEndCall = false
     private var isRequestingOutgoingCall = false
+    private var intentStartGeneration: UInt64 = 0
+    private var pendingIntentStartTask: Task<Void, Never>?
 
-    private static func update(displayName: String?) -> CXCallUpdate {
+    private static func telegramHandle(userId: Int64) -> CXHandle {
+        CXHandle(type: .generic, value: "tg:\(userId)")
+    }
+
+    private static func telegramUserId(from person: INPerson) -> Int64? {
+        for value in [person.customIdentifier, person.personHandle?.value].compactMap(\.self) {
+            if let userId = telegramUserId(fromHandleValue: value) {
+                return userId
+            }
+        }
+        return nil
+    }
+
+    private static func telegramUserId(fromHandleValue value: String) -> Int64? {
+        guard value.hasPrefix("tg:") else { return nil }
+        return Int64(value.dropFirst(3))
+    }
+
+    private static func donateCallIntent(userId: Int64, displayName: String) {
+        let value = telegramHandle(userId: userId).value
+        let person = INPerson(
+            personHandle: INPersonHandle(value: value, type: .unknown),
+            nameComponents: nil,
+            displayName: displayName,
+            image: nil,
+            contactIdentifier: nil,
+            customIdentifier: value,
+        )
+        let intent = INStartCallIntent(
+            callRecordFilter: nil,
+            callRecordToCallBack: nil,
+            audioRoute: .unknown,
+            destinationType: .normal,
+            contacts: [person],
+            callCapability: .audioCall,
+        )
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.direction = .outgoing
+        interaction.donate { error in
+            if let error {
+                log("[CallKit] failed to donate start-call intent: \(error)")
+            } else {
+                log("[CallKit] donated start-call intent userId=\(userId)")
+            }
+        }
+    }
+
+    private static func waitUntilTelegramReady(timeoutSeconds: Double) async -> Bool {
+        if let state = try? await TDLib.shared.service.getAuthorizationState(),
+           case .authorizationStateReady = state
+        {
+            return true
+        }
+
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                for await state in TDLib.shared.service.authorizationStatePublisher.values {
+                    if case .authorizationStateReady = state {
+                        return true
+                    }
+                    if Task.isCancelled {
+                        return false
+                    }
+                }
+                return false
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeoutSeconds))
+                return false
+            }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private static func update(userId: Int64?, displayName: String?) -> CXCallUpdate {
         let update = CXCallUpdate()
-        update.remoteHandle = CXHandle(type: .generic, value: displayName ?? "Telegram")
+        update.remoteHandle = userId.map(telegramHandle(userId:)) ?? CXHandle(type: .generic, value: "Telegram")
         update.localizedCallerName = displayName
         update.hasVideo = false
         update.supportsHolding = false
@@ -206,7 +325,10 @@ import TDLibKit
             log(
                 "[CallKit] reportIncoming reporting fresh (no placeholder) uuid=\(uuid) callId=\(call.id) userId=\(call.userId)",
             )
-            provider.reportNewIncomingCall(with: uuid, update: Self.update(displayName: nil)) { [weak self] error in
+            provider.reportNewIncomingCall(with: uuid, update: Self.update(
+                userId: call.userId,
+                displayName: "Telegram",
+            )) { [weak self] error in
                 guard let error else { return }
                 Task { @MainActor [weak self] in
                     log("[CallKit] failed to report incoming call: \(error)")
@@ -217,13 +339,14 @@ import TDLibKit
         currentUserId = call.userId
         currentTelegramCallUniqueId = call.uniqueId.rawValue
         isCurrentCallOutgoing = false
+        provider.reportCall(with: uuid, updated: Self.update(userId: call.userId, displayName: "Telegram"))
 
         Task { [weak self] in
             guard let self, let user = try? await TDLib.shared.service.getUser(userId: call.userId) else { return }
             let name = [user.firstName, user.lastName].filter { !$0.isEmpty }.joined(separator: " ")
             guard !name.isEmpty, currentCallUUID == uuid else { return }
             log("[CallKit] updating caller display name to \(name)")
-            provider.reportCall(with: uuid, updated: Self.update(displayName: name))
+            provider.reportCall(with: uuid, updated: Self.update(userId: call.userId, displayName: name))
         }
     }
 
@@ -331,7 +454,20 @@ extension CallKitManager: @MainActor CXProviderDelegate {
         log(
             "[CallKit] perform CXStartCallAction uuid=\(action.callUUID) currentUserId=\(currentUserId.map(String.init) ?? "nil")",
         )
-        guard let userId = currentUserId, currentCallUUID == action.callUUID else {
+        let userId: Int64
+        if let currentUserId, currentCallUUID == action.callUUID {
+            userId = currentUserId
+        } else if currentCallUUID == nil,
+                  TelegramCallSession.shared.activeCall == nil,
+                  let resumedUserId = Self.telegramUserId(fromHandleValue: action.handle.value)
+        {
+            TelegramCallSession.prepareAudioSession()
+            currentCallUUID = action.callUUID
+            currentUserId = resumedUserId
+            isCurrentCallOutgoing = true
+            userId = resumedUserId
+            log("[CallKit] resolved system start action to Telegram userId=\(resumedUserId)")
+        } else {
             action.fail()
             return
         }
