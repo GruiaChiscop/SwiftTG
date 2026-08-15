@@ -42,6 +42,11 @@ import TDLibKit
                     self?.registerTokenIfPossible()
                 }
             }
+        Task { [weak self] in
+            guard let self, await Self.currentAuthorizationIsReady() else { return }
+            isTelegramReady = true
+            registerTokenIfPossible()
+        }
     }
 
     // MARK: Private
@@ -69,33 +74,56 @@ import TDLibKit
         }
     }
 
+    private static func currentAuthorizationIsReady() async -> Bool {
+        guard let state = try? await TDLib.shared.service.getAuthorizationState() else { return false }
+        if case .authorizationStateReady = state {
+            return true
+        }
+        return false
+    }
+
     /// Races the reactive `authorizationStatePublisher` against a bounded timeout, instead of
     /// polling - resolves the instant TDLib actually becomes ready (the common case takes well
     /// under a second once the session is restoring), with the timeout only as a safety bound for
     /// the rare case it doesn't. Mirrors Telegram-iOS's own VoIP push handler (`AppDelegate.swift`,
     /// `pushRegistryImpl`), which subscribes to its account-context Signal rather than sleeping.
     private func waitUntilTelegramReady(timeoutSeconds: Double) async {
-        guard !isTelegramReady else { return }
-        await withTaskGroup(of: Void.self) { group in
+        if isTelegramReady {
+            return
+        }
+        if await Self.currentAuthorizationIsReady() {
+            isTelegramReady = true
+            registerTokenIfPossible()
+            return
+        }
+        let becameReady = await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 for await state in TDLib.shared.service.authorizationStatePublisher.values {
                     if case .authorizationStateReady = state {
-                        return
-                    }
-                    if Task.isCancelled {
-                        return
+                        return true
                     }
                 }
+                return false
             }
             group.addTask {
                 try? await Task.sleep(for: .seconds(timeoutSeconds))
+                return false
             }
-            await group.next()
+            let result = await group.next() ?? false
             group.cancelAll()
+            return result
         }
-        if !isTelegramReady {
-            log("VoIP push: TDLib still not ready after \(timeoutSeconds)s, processing anyway")
+        if becameReady {
+            isTelegramReady = true
+            registerTokenIfPossible()
+            return
         }
+        if await Self.currentAuthorizationIsReady() {
+            isTelegramReady = true
+            registerTokenIfPossible()
+            return
+        }
+        log("VoIP push: TDLib still not ready after \(timeoutSeconds)s, processing anyway")
     }
 
     /// The real call never comes from the push payload itself - confirmed directly in TDLib's C++
