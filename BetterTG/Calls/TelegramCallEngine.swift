@@ -28,6 +28,16 @@ final class TelegramCallEngine: @unchecked Sendable {
         case cellular
     }
 
+    enum RemoteAudioState: Equatable, Sendable {
+        case active
+        case muted
+    }
+
+    enum RemoteBatteryLevel: Equatable, Sendable {
+        case normal
+        case low
+    }
+
     struct Connection: Sendable {
         let reflectorId: UInt8
         let hasStun: Bool
@@ -61,7 +71,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         audioSessionActive: Bool,
         networkKind: NetworkKind,
         sendSignaling: @escaping @Sendable (Data) -> Void,
-        stateChanged: @escaping @Sendable (State) -> Void,
+        stateChanged: @escaping @Sendable (State, RemoteAudioState, RemoteBatteryLevel) -> Void,
         signalBarsChanged: @escaping @Sendable (Int32) -> Void,
     ) {
         queue.async { [weak self] in
@@ -114,9 +124,13 @@ final class TelegramCallEngine: @unchecked Sendable {
                 audioDevice: audioDevice,
                 directConnection: nil,
             )
-            context.stateChanged = { [weak self] state, _, _, _, _, _ in
+            context.stateChanged = { [weak self] state, _, _, remoteAudioState, remoteBatteryLevel, _ in
                 guard let self, self.generation == generation else { return }
-                stateChanged(Self.state(from: state))
+                stateChanged(
+                    Self.state(from: state),
+                    Self.remoteAudioState(from: remoteAudioState),
+                    Self.remoteBatteryLevel(from: remoteBatteryLevel),
+                )
             }
             context.signalBarsChanged = { [weak self] signalBars in
                 guard let self, self.generation == generation else { return }
@@ -224,6 +238,22 @@ final class TelegramCallEngine: @unchecked Sendable {
         case .failed: .failed
         case .reconnecting: .reconnecting
         @unknown default: .unknown(state.rawValue)
+        }
+    }
+
+    private static func remoteAudioState(from state: OngoingCallRemoteAudioStateWebrtc) -> RemoteAudioState {
+        switch state {
+        case .active: .active
+        case .muted: .muted
+        @unknown default: .active
+        }
+    }
+
+    private static func remoteBatteryLevel(from level: OngoingCallRemoteBatteryLevelWebrtc) -> RemoteBatteryLevel {
+        switch level {
+        case .normal: .normal
+        case .low: .low
+        @unknown default: .normal
         }
     }
 

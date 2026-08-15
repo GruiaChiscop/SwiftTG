@@ -52,9 +52,13 @@ struct CallView: View {
                     )
                     .font(.title3)
                     .foregroundStyle(.secondary)
+
+                    CallRemoteStatusView(
+                        audioState: session.remoteAudioState,
+                        batteryLevel: session.remoteBatteryLevel,
+                    )
                 }
                 .padding(.horizontal)
-                .accessibilityElement(children: .combine)
 
                 if !session.encryptionEmojis.isEmpty {
                     CallEncryptionKeyView(emojis: session.encryptionEmojis)

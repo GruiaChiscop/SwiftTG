@@ -116,6 +116,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var connectedAt: Foundation.Date?
     private(set) var encryptionEmojis = [String]()
     private(set) var isCallViewMinimized = false
+    private(set) var remoteAudioState = TelegramCallEngine.RemoteAudioState.active
+    private(set) var remoteBatteryLevel = TelegramCallEngine.RemoteBatteryLevel.normal
     private(set) var signalBars: Int?
     var pendingCallRating: CallRatingRequest?
 
@@ -710,9 +712,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     }
                 }
             },
-            stateChanged: { [weak self] state in
+            stateChanged: { [weak self] state, remoteAudioState, remoteBatteryLevel in
                 Task { @MainActor [weak self] in
-                    self?.handleEngineState(state, callId: callId)
+                    self?.handleEngineState(
+                        state,
+                        remoteAudioState: remoteAudioState,
+                        remoteBatteryLevel: remoteBatteryLevel,
+                        callId: callId,
+                    )
                 }
             },
             signalBarsChanged: { [weak self] signalBars in
@@ -723,10 +730,23 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         )
     }
 
-    private func handleEngineState(_ state: TelegramCallEngine.State, callId: Int) {
+    private func handleEngineState(
+        _ state: TelegramCallEngine.State,
+        remoteAudioState: TelegramCallEngine.RemoteAudioState,
+        remoteBatteryLevel: TelegramCallEngine.RemoteBatteryLevel,
+        callId: Int,
+    ) {
         guard isEngineRunning, activeCall?.id == callId else { return }
         log("[Call] engine state=\(Self.describe(engineState: state))")
         engineState = state
+        if self.remoteAudioState != remoteAudioState {
+            self.remoteAudioState = remoteAudioState
+            log("[Call] remote audio=\(remoteAudioState)")
+        }
+        if self.remoteBatteryLevel != remoteBatteryLevel {
+            self.remoteBatteryLevel = remoteBatteryLevel
+            log("[Call] remote battery=\(remoteBatteryLevel)")
+        }
         if connectedAt == nil, state == .connected {
             connectedAt = Foundation.Date()
             onCallConnected?()
@@ -907,6 +927,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isEngineRunning = false
         stopBatteryMonitoring()
         engineState = nil
+        remoteAudioState = .active
+        remoteBatteryLevel = .normal
         signalBars = nil
         isMuted = false
         connectedAt = nil
