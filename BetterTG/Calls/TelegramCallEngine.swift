@@ -181,6 +181,12 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
+    func setTone(_ tone: TelegramCallTone?) {
+        queue.async { [weak self] in
+            self?.audioDevice?.setTone(Self.callAudioTone(from: tone))
+        }
+    }
+
     func setNetworkKind(_ networkKind: NetworkKind) {
         queue.async { [weak self] in
             self?.networkKind = networkKind
@@ -188,13 +194,22 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
-    func stop(completion: (@Sendable (StopResult?) -> Void)? = nil) {
+    func stop(
+        finalTone: TelegramCallTone? = nil,
+        retainAudioDeviceFor retentionDuration: TimeInterval = 0,
+        completion: (@Sendable (StopResult?) -> Void)? = nil,
+    ) {
         queue.async { [weak self] in
             guard let self else {
                 completion?(nil)
                 return
             }
-            stopLocked(clearPendingSignaling: true, completion: completion)
+            stopLocked(
+                clearPendingSignaling: true,
+                finalTone: finalTone,
+                retainAudioDeviceFor: retentionDuration,
+                completion: completion,
+            )
         }
     }
 
@@ -223,6 +238,12 @@ final class TelegramCallEngine: @unchecked Sendable {
     private var isLowBattery = false
     private var isAudioSessionActive = false
     private var networkKind = NetworkKind.wifi
+
+    private static func callAudioTone(from tone: TelegramCallTone?) -> CallAudioTone? {
+        tone.map {
+            CallAudioTone(samples: $0.samples, sampleRate: $0.sampleRate, loopCount: $0.loopCount)
+        }
+    }
 
     private static func networkType(for kind: NetworkKind) -> OngoingCallNetworkTypeWebrtc {
         switch kind {
@@ -300,9 +321,12 @@ final class TelegramCallEngine: @unchecked Sendable {
 
     private func stopLocked(
         clearPendingSignaling: Bool,
+        finalTone: TelegramCallTone? = nil,
+        retainAudioDeviceFor retentionDuration: TimeInterval = 0,
         completion: (@Sendable (StopResult?) -> Void)? = nil,
     ) {
         generation = UUID()
+        let stopGeneration = generation
         if let context {
             context.beginTermination()
             // Retain the native context until its asynchronous stop callback completes. Besides
@@ -333,8 +357,19 @@ final class TelegramCallEngine: @unchecked Sendable {
             completion?(nil)
         }
         context = nil
-        audioDevice?.setManualAudioSessionIsActive(false)
-        audioDevice = nil
+        if let finalTone, retentionDuration > 0, let audioDevice {
+            audioDevice.setTone(Self.callAudioTone(from: finalTone))
+            queue.asyncAfter(deadline: .now() + retentionDuration) { [weak self] in
+                guard let self, generation == stopGeneration else { return }
+                audioDevice.setTone(nil)
+                audioDevice.setManualAudioSessionIsActive(false)
+                self.audioDevice = nil
+            }
+        } else {
+            audioDevice?.setTone(nil)
+            audioDevice?.setManualAudioSessionIsActive(false)
+            audioDevice = nil
+        }
         if clearPendingSignaling {
             pendingSignaling.removeAll(keepingCapacity: false)
         }

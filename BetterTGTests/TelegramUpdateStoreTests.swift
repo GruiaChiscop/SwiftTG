@@ -52,7 +52,7 @@ struct TelegramUpdateStoreTests {
 
         let errored = TDLibFixtures.call(
             id: 3,
-            state: .callStateError(.init(error: .init(code: 4005000, message: "timeout"))),
+            state: .callStateError(.init(error: .init(code: 4_005_000, message: "timeout"))),
         )
         store.publish(.updateCall(.init(call: errored)))
 
@@ -60,7 +60,7 @@ struct TelegramUpdateStoreTests {
         #expect(replayed == errored)
     }
 
-    @Test func `signaling data is delivered as a one-shot event`() throws {
+    @Test func `signaling data is delivered as a one-shot event`() {
         let store = TelegramUpdateStore()
         let payload = UpdateNewCallSignalingData(callId: 5, data: Data([1, 2, 3]))
 
@@ -84,7 +84,7 @@ struct TelegramUpdateStoreTests {
     private func waitForCall(
         store: TelegramUpdateStore,
         matching predicate: @escaping (Call?) -> Bool,
-    ) throws -> Call? {
+    ) -> Call? {
         let semaphore = DispatchSemaphore(value: 0)
         let lock = NSLock()
         var result: Call?

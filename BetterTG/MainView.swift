@@ -1,12 +1,13 @@
 // MainView.swift
 
-import SwiftUI
 import AVFoundation
+import SwiftUI
 
 // MARK: - MainView
 
 struct MainView: View {
     // MARK: Internal
+
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Contacts", systemImage: "person.2.fill", value: MainTab.contacts) {
@@ -80,6 +81,7 @@ private struct MainNavigationRootView: View {
     var currentFolder: CustomFolder? {
         rootVM.folders.first(where: { $0.id == rootVM.currentFolder }) ?? rootVM.folders.first
     }
+
     var body: some View {
         VStack(spacing: 0) {
             if rootVM.folders.count > 1 {
