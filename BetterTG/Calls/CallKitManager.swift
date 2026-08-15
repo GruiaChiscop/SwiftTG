@@ -82,13 +82,13 @@ import TDLibKit
             isRequestingOutgoingCall = false
 
             let name = displayName.isEmpty ? "Telegram" : displayName
-            let action = CXStartCallAction(call: uuid, handle: Self.telegramHandle(userId: userId))
-            action.contactIdentifier = name
+            let visibleHandle = Self.callKitHandle(displayName: name)
+            let action = CXStartCallAction(call: uuid, handle: visibleHandle)
             action.isVideo = false
             do {
                 try await callController.request(CXTransaction(action: action))
                 guard currentCallUUID == uuid else { return }
-                provider.reportCall(with: uuid, updated: Self.update(userId: userId, displayName: name))
+                provider.reportCall(with: uuid, updated: Self.update(handle: visibleHandle, displayName: name))
                 Self.donateCallIntent(userId: userId, displayName: name)
             } catch {
                 log("CallKit start request failed: \(error)")
@@ -172,10 +172,10 @@ import TDLibKit
         currentTelegramCallUniqueId = callUniqueId
         isCurrentCallOutgoing = false
         log("[CallKit] reportIncomingPlaceholder uuid=\(uuid)")
-        provider.reportNewIncomingCall(with: uuid, update: Self.update(
-            userId: nil,
-            displayName: nil,
-        )) { [weak self] error in
+        provider.reportNewIncomingCall(
+            with: uuid,
+            update: Self.update(handle: Self.callKitHandle(displayName: nil), displayName: nil),
+        ) { [weak self] error in
             Task { @MainActor [weak self] in
                 if let error {
                     log("[CallKit] failed to report placeholder incoming call: \(error)")
@@ -223,8 +223,17 @@ import TDLibKit
     private var intentStartGeneration: UInt64 = 0
     private var pendingIntentStartTask: Task<Void, Never>?
 
-    private static func telegramHandle(userId: Int64) -> CXHandle {
-        CXHandle(type: .generic, value: "tg:\(userId)")
+    private static func callKitHandle(displayName: String?) -> CXHandle {
+        let value = displayName.flatMap { $0.isEmpty ? nil : $0 } ?? "Telegram"
+        return CXHandle(type: .generic, value: value)
+    }
+
+    private static func telegramRedialIdentifier(userId: Int64) -> String {
+        "tg:\(userId)"
+    }
+
+    private static func telegramCallHandle(userId: Int64) -> CXHandle {
+        CXHandle(type: .generic, value: telegramRedialIdentifier(userId: userId))
     }
 
     private static func telegramUserId(from person: INPerson) -> Int64? {
@@ -242,7 +251,7 @@ import TDLibKit
     }
 
     private static func donateCallIntent(userId: Int64, displayName: String) {
-        let value = telegramHandle(userId: userId).value
+        let value = telegramRedialIdentifier(userId: userId)
         let person = INPerson(
             personHandle: INPersonHandle(value: value, type: .unknown),
             nameComponents: nil,
@@ -299,9 +308,9 @@ import TDLibKit
         }
     }
 
-    private static func update(userId: Int64?, displayName: String?) -> CXCallUpdate {
+    private static func update(handle: CXHandle, displayName: String?) -> CXCallUpdate {
         let update = CXCallUpdate()
-        update.remoteHandle = userId.map(telegramHandle(userId:)) ?? CXHandle(type: .generic, value: "Telegram")
+        update.remoteHandle = handle
         update.localizedCallerName = displayName
         update.hasVideo = false
         update.supportsHolding = false
@@ -325,10 +334,10 @@ import TDLibKit
             log(
                 "[CallKit] reportIncoming reporting fresh (no placeholder) uuid=\(uuid) callId=\(call.id) userId=\(call.userId)",
             )
-            provider.reportNewIncomingCall(with: uuid, update: Self.update(
-                userId: call.userId,
-                displayName: "Telegram",
-            )) { [weak self] error in
+            provider.reportNewIncomingCall(
+                with: uuid,
+                update: Self.update(handle: Self.telegramCallHandle(userId: call.userId), displayName: "Telegram"),
+            ) { [weak self] error in
                 guard let error else { return }
                 Task { @MainActor [weak self] in
                     log("[CallKit] failed to report incoming call: \(error)")
@@ -339,14 +348,15 @@ import TDLibKit
         currentUserId = call.userId
         currentTelegramCallUniqueId = call.uniqueId.rawValue
         isCurrentCallOutgoing = false
-        provider.reportCall(with: uuid, updated: Self.update(userId: call.userId, displayName: "Telegram"))
+        let handle = Self.telegramCallHandle(userId: call.userId)
+        provider.reportCall(with: uuid, updated: Self.update(handle: handle, displayName: "Telegram"))
 
         Task { [weak self] in
             guard let self, let user = try? await TDLib.shared.service.getUser(userId: call.userId) else { return }
             let name = [user.firstName, user.lastName].filter { !$0.isEmpty }.joined(separator: " ")
             guard !name.isEmpty, currentCallUUID == uuid else { return }
             log("[CallKit] updating caller display name to \(name)")
-            provider.reportCall(with: uuid, updated: Self.update(userId: call.userId, displayName: name))
+            provider.reportCall(with: uuid, updated: Self.update(handle: handle, displayName: name))
         }
     }
 
