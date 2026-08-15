@@ -137,11 +137,14 @@ import TDLibKit
         }
         guard !isRequestingEndCall, !isEndingLocally else { return }
         isRequestingEndCall = true
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 try await callController.request(CXTransaction(action: CXEndCallAction(call: uuid)))
             } catch {
-                isRequestingEndCall = false
+                if currentCallUUID == uuid {
+                    isRequestingEndCall = false
+                }
                 log("CallKit end request failed: \(error)")
             }
         }
@@ -471,11 +474,11 @@ extension CallKitManager: @MainActor CXProviderDelegate {
 
     func provider(_: CXProvider, perform action: CXEndCallAction) {
         log("[CallKit] perform CXEndCallAction uuid=\(action.callUUID)")
-        isRequestingEndCall = false
         guard currentCallUUID == action.callUUID else {
             action.fail()
             return
         }
+        isRequestingEndCall = false
         isEndingLocally = true
         TelegramCallSession.shared.endFromSystem { [weak self] succeeded in
             guard let self else {
@@ -485,7 +488,9 @@ extension CallKitManager: @MainActor CXProviderDelegate {
             if succeeded {
                 action.fulfill(withDateEnded: Foundation.Date())
             } else {
-                isEndingLocally = false
+                if currentCallUUID == action.callUUID {
+                    isEndingLocally = false
+                }
                 action.fail()
             }
         }
@@ -514,9 +519,14 @@ extension CallKitManager: @MainActor CXProviderDelegate {
         }
         provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: nil)
         TelegramCallSession.shared.startCall(userId: userId) { [weak self] succeeded in
+            guard let self, currentCallUUID == action.callUUID else {
+                log("[CallKit] start action superseded before createCall completed")
+                action.fail()
+                return
+            }
             guard succeeded else {
                 action.fail()
-                self?.clearCurrentCall(ifMatching: action.callUUID)
+                clearCurrentCall(ifMatching: action.callUUID)
                 return
             }
             action.fulfill()

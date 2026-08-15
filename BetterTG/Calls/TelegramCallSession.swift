@@ -511,12 +511,22 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         log("[Call] accepting callId=\(call.id)")
         Task { [weak self] in
             guard let self else { return }
-            defer { isAnswering = false }
+            defer {
+                if activeCall?.id == call.id {
+                    isAnswering = false
+                }
+            }
             do {
                 _ = try await service.acceptCall(callId: call.id, protocol: Self.ourProtocol())
-                log("[Call] acceptCall RPC succeeded for callId=\(call.id)")
+                if activeCall?.id == call.id {
+                    log("[Call] acceptCall RPC succeeded for callId=\(call.id)")
+                }
             } catch {
                 log("Error accepting call: \(error)")
+                guard activeCall?.id == call.id else {
+                    log("[Call] ignoring stale acceptCall failure for callId=\(call.id)")
+                    return
+                }
                 endActiveCall(isDisconnected: true)
             }
         }
@@ -538,7 +548,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 completion?(false)
                 return
             }
-            defer { isEnding = false }
+            defer {
+                if activeCall?.id == call.id {
+                    isEnding = false
+                }
+            }
             do {
                 _ = try await service.discardCall(
                     callId: call.id,
@@ -553,8 +567,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 log("Error discarding call: \(error)")
                 if let completion {
                     completion(false)
-                } else {
+                } else if activeCall?.id == call.id {
                     finishCurrentCall(notifyCallKit: true)
+                } else {
+                    log("[Call] ignoring stale discardCall failure for callId=\(call.id)")
                 }
             }
         }
