@@ -290,10 +290,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private let networkMonitorQueue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-network")
     private var cancellables = Set<AnyCancellable>()
     private var reportedIncomingCallId: Int?
-    private var auxiliaryToneAudioDevice: SharedCallAudioDevice?
     private var terminalToneStopTask: Task<Void, Never>?
     private var delayedCallKitEndTask: Task<Void, Never>?
     private var terminalToneStartedAt: Foundation.Date?
+    private var isPreCallAudioDevicePrepared = false
     private var isCallKitAudioSessionActive = false
     private var isEffectiveAudioSessionActive = false
     private var isAudioInterrupted = false
@@ -316,10 +316,6 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             udpP2p: true,
             udpReflector: true,
         )
-    }
-
-    private static func callAudioTone(from tone: TelegramCallTone) -> CallAudioTone {
-        CallAudioTone(samples: tone.samples, sampleRate: tone.sampleRate, loopCount: tone.loopCount)
     }
 
     /// Telegram negotiates by taking the first remote version also present locally. Choosing the
@@ -530,7 +526,6 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
         if let current = activeCall, current.id != call.id {
             cancelPendingToneCleanup()
-            stopAuxiliaryTone()
             stopEngine()
             reportedIncomingCallId = nil
             encryptionEmojis = []
@@ -564,7 +559,6 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 startRingback()
             }
         case .callStateReady(let info):
-            stopRingback()
             encryptionEmojis = info.emojis
             startEngine(call: call, info: info)
         default:
@@ -656,14 +650,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     private func startRingback() {
-        guard auxiliaryToneAudioDevice == nil, !isEngineRunning, let ringingTone = Self.ringingTone else { return }
+        guard !isPreCallAudioDevicePrepared, !isEngineRunning, let ringingTone = Self.ringingTone else { return }
         terminalToneStopTask?.cancel()
         terminalToneStopTask = nil
         terminalToneStartedAt = nil
-        let device = SharedCallAudioDevice(disableRecording: true, enableSystemMute: false)
-        auxiliaryToneAudioDevice = device
-        device.setTone(Self.callAudioTone(from: ringingTone))
-        device.setManualAudioSessionIsActive(isEffectiveAudioSessionActive)
+        isPreCallAudioDevicePrepared = true
+        engine.prepareAudioDevice(tone: ringingTone, audioSessionActive: isEffectiveAudioSessionActive)
     }
 
     @discardableResult private func playEndedToneIfNeeded() -> Foundation.Date? {
@@ -674,15 +666,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
         let startedAt = Foundation.Date()
         terminalToneStartedAt = startedAt
-        if isEngineRunning {
-            engine.setTone(endedTone)
-        } else {
-            let device = auxiliaryToneAudioDevice
-                ?? SharedCallAudioDevice(disableRecording: true, enableSystemMute: false)
-            auxiliaryToneAudioDevice = device
-            device.setTone(Self.callAudioTone(from: endedTone))
-            device.setManualAudioSessionIsActive(isEffectiveAudioSessionActive)
-        }
+        isPreCallAudioDevicePrepared = true
+        engine.prepareAudioDevice(tone: endedTone, audioSessionActive: isEffectiveAudioSessionActive)
 
         terminalToneStopTask?.cancel()
         terminalToneStopTask = Task { [weak self] in
@@ -692,7 +677,6 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 return
             }
             guard let self, terminalToneStartedAt == startedAt else { return }
-            stopAuxiliaryTone()
             terminalToneStartedAt = nil
             terminalToneStopTask = nil
         }
@@ -713,7 +697,6 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             "[Call] audio session effective=\(active) CallKit=\(isCallKitAudioSessionActive) interrupted=\(isAudioInterrupted) mediaServices=\(areMediaServicesAvailable)",
         )
         engine.setAudioSessionActive(active)
-        auxiliaryToneAudioDevice?.setManualAudioSessionIsActive(active)
     }
 
     private func applyNetworkKind(_ kind: TelegramCallEngine.NetworkKind) {
@@ -723,14 +706,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     private func stopRingback() {
         guard terminalToneStartedAt == nil else { return }
-        stopAuxiliaryTone()
-    }
-
-    private func stopAuxiliaryTone() {
-        guard let device = auxiliaryToneAudioDevice else { return }
-        device.setTone(nil)
-        device.setManualAudioSessionIsActive(false)
-        auxiliaryToneAudioDevice = nil
+        engine.setTone(nil)
     }
 
     private func cancelPendingToneCleanup() {
@@ -748,6 +724,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         guard !isEngineRunning else { return }
         guard let version = Self.pickVersion(from: info.protocol.libraryVersions) else {
             log("No mutually supported call protocol version")
+            stopRingback()
             endActiveCall(isDisconnected: true)
             return
         }
@@ -1003,6 +980,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         } else {
             engine.stop(finalTone: finalTone, retainAudioDeviceFor: retentionDuration)
         }
+        isPreCallAudioDevicePrepared = false
         isEngineRunning = false
         stopBatteryMonitoring()
         engineState = nil

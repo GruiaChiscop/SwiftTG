@@ -64,6 +64,18 @@ final class TelegramCallEngine: @unchecked Sendable {
         let debugInformation: String?
     }
 
+    /// Creates the microphone-capable shared device before negotiation starts, so ringback,
+    /// connecting tones and call audio all use the same WebRTC audio pipeline.
+    func prepareAudioDevice(tone: TelegramCallTone?, audioSessionActive: Bool) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            isAudioSessionActive = audioSessionActive
+            let audioDevice = audioDeviceLocked()
+            audioDevice.setTone(Self.callAudioTone(from: tone))
+            audioDevice.setManualAudioSessionIsActive(audioSessionActive)
+        }
+    }
+
     func start(
         configuration: Configuration,
         muted: Bool,
@@ -78,7 +90,7 @@ final class TelegramCallEngine: @unchecked Sendable {
             guard let self else { return }
 
             let pendingSignaling = pendingSignaling
-            stopLocked(clearPendingSignaling: false)
+            stopLocked(clearPendingSignaling: false, preserveAudioDevice: true)
             self.pendingSignaling = pendingSignaling
             isMuted = muted
             isLowBattery = lowBattery
@@ -87,7 +99,7 @@ final class TelegramCallEngine: @unchecked Sendable {
 
             let generation = UUID()
             self.generation = generation
-            let audioDevice = SharedCallAudioDevice(disableRecording: false, enableSystemMute: false)
+            let audioDevice = audioDeviceLocked()
             let connections = configuration.connections.map {
                 OngoingCallConnectionDescriptionWebrtc(
                     reflectorId: $0.reflectorId,
@@ -319,8 +331,20 @@ final class TelegramCallEngine: @unchecked Sendable {
         return StopResult(callLog: debugLog, debugInformation: debugInformation)
     }
 
+    /// Must only be called on `queue`; keeping construction here also prevents the Objective-C
+    /// audio device, which is not Sendable, from crossing an actor or executor boundary.
+    private func audioDeviceLocked() -> SharedCallAudioDevice {
+        if let audioDevice {
+            return audioDevice
+        }
+        let audioDevice = SharedCallAudioDevice(disableRecording: false, enableSystemMute: false)
+        self.audioDevice = audioDevice
+        return audioDevice
+    }
+
     private func stopLocked(
         clearPendingSignaling: Bool,
+        preserveAudioDevice: Bool = false,
         finalTone: TelegramCallTone? = nil,
         retainAudioDeviceFor retentionDuration: TimeInterval = 0,
         completion: (@Sendable (StopResult?) -> Void)? = nil,
@@ -357,7 +381,10 @@ final class TelegramCallEngine: @unchecked Sendable {
             completion?(nil)
         }
         context = nil
-        if let finalTone, retentionDuration > 0, let audioDevice {
+        if preserveAudioDevice {
+            // The next context adopts the existing device. Its current tone remains uninterrupted
+            // until the queued state transition replaces it.
+        } else if let finalTone, retentionDuration > 0, let audioDevice {
             audioDevice.setTone(Self.callAudioTone(from: finalTone))
             queue.asyncAfter(deadline: .now() + retentionDuration) { [weak self] in
                 guard let self, generation == stopGeneration else { return }
