@@ -21,6 +21,7 @@ struct CallControlButton: View {
                     .frame(width: 64, height: 64)
                     .background(controlBackground, in: .circle)
                     .foregroundStyle(controlForeground)
+                    .accessibilityHidden(true)
 
                 Text(label)
                     .font(.callout)
@@ -30,7 +31,7 @@ struct CallControlButton: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityValue(isDestructive ? "" : (isActive ? "On" : "Off"))
+        .accessibilityAddTraits(isActive && !isDestructive ? .isSelected : [])
     }
 
     // MARK: Private

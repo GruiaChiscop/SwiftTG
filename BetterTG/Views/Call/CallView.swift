@@ -68,6 +68,13 @@ struct CallView: View {
                 Spacer()
 
                 HStack {
+                    CallAudioRouteControl(
+                        routes: session.availableAudioRoutes,
+                        selectedRoute: session.selectedAudioRoute,
+                        select: session.selectAudioRoute,
+                    )
+                    .frame(maxWidth: .infinity)
+
                     CallControlButton(
                         systemImage: session.isMuted ? "mic.slash.fill" : "mic.fill",
                         label: "Mute",
@@ -78,16 +85,9 @@ struct CallView: View {
 
                     CallControlButton(
                         systemImage: "phone.down.fill",
-                        label: "End Call",
+                        label: "End",
                         isDestructive: true,
                         action: session.end,
-                    )
-                    .frame(maxWidth: .infinity)
-
-                    CallAudioRouteControl(
-                        routes: session.availableAudioRoutes,
-                        selectedRoute: session.selectedAudioRoute,
-                        select: session.selectAudioRoute,
                     )
                     .frame(maxWidth: .infinity)
                 }
