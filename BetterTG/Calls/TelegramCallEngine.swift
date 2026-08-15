@@ -50,7 +50,8 @@ final class TelegramCallEngine: @unchecked Sendable {
     }
 
     struct StopResult: Sendable {
-        let debugInformation: String
+        let callLog: String?
+        let debugInformation: String?
     }
 
     func start(
@@ -236,7 +237,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         receivedWifi: Int64,
         sentMobile: Int64,
         receivedMobile: Int64,
-    ) -> StopResult? {
+    ) -> StopResult {
         let payload = DebugInformation(
             diagnostics: debugLog.map(uploadedDebugLines(from:)) ?? [],
             traffic: .init(
@@ -246,11 +247,9 @@ final class TelegramCallEngine: @unchecked Sendable {
                 sentWifi: sentWifi,
             ),
         )
-        guard
-            let data = try? JSONEncoder().encode(payload),
-            let string = String(data: data, encoding: .utf8)
-        else { return nil }
-        return StopResult(debugInformation: string)
+        let encodedPayload = try? JSONEncoder().encode(payload)
+        let debugInformation = encodedPayload.flatMap { String(data: $0, encoding: .utf8) }
+        return StopResult(callLog: debugLog, debugInformation: debugInformation)
     }
 
     private func stopLocked(

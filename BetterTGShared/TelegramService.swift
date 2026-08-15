@@ -493,6 +493,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     ) async throws -> Ok
     func sendCallSignalingData(callId: Int?, data: Data?) async throws -> Ok
     func sendCallDebugInformation(callId: Int?, debugInformation: String?) async throws -> Ok
+    func sendCallLog(callId: Int?, path: String) async throws -> Ok
     func sendCallRating(
         callId: Int?,
         comment: String?,
@@ -1918,6 +1919,13 @@ extension TelegramSession: TelegramService {
         try await client.sendCallDebugInformation(
             callId: callId.map { .inputCallDiscarded(.init(callId: $0)) },
             debugInformation: debugInformation,
+        )
+    }
+
+    func sendCallLog(callId: Int?, path: String) async throws -> Ok {
+        try await client.sendCallLog(
+            callId: callId.map { .inputCallDiscarded(.init(callId: $0)) },
+            logFile: .inputFileLocal(.init(path: path)),
         )
     }
 

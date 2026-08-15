@@ -399,6 +399,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
     }
 
+    private nonisolated static func writeTemporaryCallLog(_ callLog: String) -> URL? {
+        let url = FileManager.default
+            .temporaryDirectory
+            .appending(path: "SwiftTG-Call-\(UUID().uuidString).log")
+        do {
+            try Data(callLog.utf8).write(to: url, options: .atomic)
+            return url
+        } catch {
+            log("Error writing temporary call log: \(error)")
+            return nil
+        }
+    }
+
     private func handle(call: Call?) {
         guard let call else {
             // `callPublisher` starts with nil. It is not an ended call and must not dismiss a fresh
@@ -425,13 +438,23 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 } else {
                     nil
                 }
+            let logCallId: Int? =
+                if case .callStateDiscarded(let discarded) = call.state, discarded.needLog {
+                    call.id
+                } else {
+                    nil
+                }
             let ratingRequest: CallRatingRequest? =
                 if case .callStateDiscarded(let discarded) = call.state, discarded.needRating {
                     CallRatingRequest(callId: call.id, isVideo: call.isVideo)
                 } else {
                     nil
                 }
-            finishCurrentCall(notifyCallKit: true, debugInformationCallId: debugInformationCallId)
+            finishCurrentCall(
+                notifyCallKit: true,
+                debugInformationCallId: debugInformationCallId,
+                logCallId: logCallId,
+            )
             pendingCallRating = ratingRequest
             return
         }
@@ -729,20 +752,37 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         refreshAudioRoutes()
     }
 
-    private func stopEngine(debugInformationCallId: Int? = nil) {
-        if let debugInformationCallId {
+    private func stopEngine(debugInformationCallId: Int? = nil, logCallId: Int? = nil) {
+        if debugInformationCallId != nil || logCallId != nil {
             let service = service
             engine.stop { result in
                 guard let result else { return }
+                let logURL: URL? =
+                    if logCallId != nil, let callLog = result.callLog {
+                        Self.writeTemporaryCallLog(callLog)
+                    } else {
+                        nil
+                    }
                 Task {
-                    do {
-                        _ = try await service.sendCallDebugInformation(
-                            callId: debugInformationCallId,
-                            debugInformation: result.debugInformation,
-                        )
-                        log("[Call] sent requested debug information for callId=\(debugInformationCallId)")
-                    } catch {
-                        log("Error sending call debug information: \(error)")
+                    if let debugInformationCallId, let debugInformation = result.debugInformation {
+                        do {
+                            _ = try await service.sendCallDebugInformation(
+                                callId: debugInformationCallId,
+                                debugInformation: debugInformation,
+                            )
+                            log("[Call] sent requested debug information for callId=\(debugInformationCallId)")
+                        } catch {
+                            log("Error sending call debug information: \(error)")
+                        }
+                    }
+                    if let logCallId, let logURL {
+                        defer { try? FileManager.default.removeItem(at: logURL) }
+                        do {
+                            _ = try await service.sendCallLog(callId: logCallId, path: logURL.path)
+                            log("[Call] sent requested call log for callId=\(logCallId)")
+                        } catch {
+                            log("Error sending call log: \(error)")
+                        }
                     }
                 }
             }
@@ -763,7 +803,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         refreshAudioRoutes()
     }
 
-    private func finishCurrentCall(notifyCallKit: Bool, debugInformationCallId: Int? = nil) {
+    private func finishCurrentCall(
+        notifyCallKit: Bool,
+        debugInformationCallId: Int? = nil,
+        logCallId: Int? = nil,
+    ) {
         let hadCall = activeCall != nil || reportedIncomingCallId != nil || isEngineRunning
         activeCall = nil
         reportedIncomingCallId = nil
@@ -772,7 +816,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isEnding = false
         encryptionEmojis = []
         stopRingback()
-        stopEngine(debugInformationCallId: debugInformationCallId)
+        stopEngine(debugInformationCallId: debugInformationCallId, logCallId: logCallId)
         if notifyCallKit, hadCall {
             onCallEnded?()
         }
