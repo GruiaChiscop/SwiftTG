@@ -100,6 +100,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var availableAudioRoutes: [AudioRoute] = [.builtIn, .speaker]
     private(set) var selectedAudioRoute = AudioRoute.builtIn
     private(set) var connectedAt: Foundation.Date?
+    private(set) var encryptionEmojis = [String]()
     var pendingCallRating: CallRatingRequest?
 
     var onIncomingCall: ((Call) -> Void)?
@@ -439,6 +440,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             stopRingback()
             stopEngine()
             reportedIncomingCallId = nil
+            encryptionEmojis = []
         }
         if pendingCallRating?.callId != call.id {
             pendingCallRating = nil
@@ -469,6 +471,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             }
         case .callStateReady(let info):
             stopRingback()
+            encryptionEmojis = info.emojis
             startEngine(call: call, info: info)
         default:
             break
@@ -767,6 +770,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         pendingSystemAction = nil
         isAnswering = false
         isEnding = false
+        encryptionEmojis = []
         stopRingback()
         stopEngine(debugInformationCallId: debugInformationCallId)
         if notifyCallKit, hadCall {

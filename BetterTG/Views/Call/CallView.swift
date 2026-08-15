@@ -26,6 +26,19 @@ struct CallView: View {
             }
             .accessibilityElement(children: .combine)
 
+            if !session.encryptionEmojis.isEmpty {
+                VStack(spacing: 8) {
+                    Text(session.encryptionEmojis.joined(separator: " "))
+                        .font(.title)
+                    Text("Compare these emoji with the other person to verify this call is secure.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+                .accessibilityElement(children: .combine)
+            }
+
             Spacer()
 
             HStack(spacing: 40) {
