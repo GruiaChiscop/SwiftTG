@@ -172,7 +172,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func toggleMute() {
-        setMuted(!isMuted)
+        CallKitManager.shared.requestSetMuted(!isMuted)
     }
 
     func setMuted(_ muted: Bool) {

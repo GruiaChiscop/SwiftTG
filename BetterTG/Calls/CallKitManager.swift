@@ -147,6 +147,30 @@ import TDLibKit
         }
     }
 
+    /// App-initiated mute changes must also pass through CallKit so the in-app control and the
+    /// system call surfaces always agree on whether the microphone is muted.
+    func requestSetMuted(_ muted: Bool) {
+        guard let uuid = currentCallUUID else {
+            log("[CallKit] ignoring app mute request with no active CallKit call")
+            return
+        }
+        guard requestedMutedValue == nil else { return }
+        requestedMutedValue = muted
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await callController.request(CXTransaction(
+                    action: CXSetMutedCallAction(call: uuid, muted: muted),
+                ))
+            } catch {
+                if currentCallUUID == uuid, requestedMutedValue == muted {
+                    requestedMutedValue = nil
+                }
+                log("CallKit mute request failed: \(error)")
+            }
+        }
+    }
+
     /// Reports a placeholder incoming call immediately, before TDLib has told us who it's from -
     /// PushKit requires a `CXProvider` report within a very tight window of every VoIP push, well
     /// before there's time to fetch the caller's name. `reportIncoming(_:)` below reconciles this
@@ -220,6 +244,7 @@ import TDLibKit
     private var isEndingLocally = false
     private var isRequestingEndCall = false
     private var isRequestingOutgoingCall = false
+    private var requestedMutedValue: Bool?
     private var intentStartGeneration: UInt64 = 0
     private var pendingIntentStartTask: Task<Void, Never>?
 
@@ -396,6 +421,7 @@ import TDLibKit
         isCurrentCallOutgoing = false
         isEndingLocally = false
         isRequestingEndCall = false
+        requestedMutedValue = nil
     }
 
     private func pruneRecentlyEndedCalls() {
@@ -424,6 +450,11 @@ extension CallKitManager: @MainActor CXProviderDelegate {
         }
         Task {
             let granted = await AVAudioApplication.requestRecordPermission()
+            guard currentCallUUID == action.callUUID else {
+                log("[CallKit] answer action superseded while waiting for microphone permission")
+                action.fail()
+                return
+            }
             guard granted else {
                 log("[CallKit] microphone permission denied; incoming call rejected")
                 TelegramCallSession.shared.endFromSystem()
@@ -498,6 +529,7 @@ extension CallKitManager: @MainActor CXProviderDelegate {
             action.fail()
             return
         }
+        requestedMutedValue = nil
         TelegramCallSession.shared.setMuted(action.isMuted)
         action.fulfill()
     }
