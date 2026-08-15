@@ -47,7 +47,7 @@ import TDLibKit
         let session = TelegramCallSession.shared
         session.onIncomingCall = { [weak self] call in self?.reportIncoming(call) }
         session.onCallConnected = { [weak self] in self?.reportConnected() }
-        session.onCallEnded = { [weak self] in self?.reportEnded() }
+        session.onCallEnded = { [weak self] reason in self?.reportEnded(reason: reason) }
     }
 
     /// Routes an outgoing call through CallKit's own `CXStartCallAction` first, matching Apple's
@@ -399,17 +399,23 @@ import TDLibKit
         provider.reportOutgoingCall(with: uuid, connectedAt: nil)
     }
 
-    private func reportEnded() {
+    private func reportEnded(reason: TelegramCallSession.EndReason) {
         guard let uuid = currentCallUUID else {
             log("[CallKit] reportEnded no-op, currentCallUUID=nil")
             return
         }
-        log("[CallKit] reportEnded uuid=\(uuid)")
+        let callKitReason: CXCallEndedReason =
+            switch reason {
+            case .failed: .failed
+            case .remoteEnded: .remoteEnded
+            case .unanswered: .unanswered
+            }
+        log("[CallKit] reportEnded uuid=\(uuid) reason=\(callKitReason.rawValue)")
         if let uniqueId = currentTelegramCallUniqueId {
             recentlyEndedCallUniqueIds[uniqueId] = Foundation.Date()
         }
         if !isEndingLocally {
-            provider.reportCall(with: uuid, endedAt: nil, reason: .remoteEnded)
+            provider.reportCall(with: uuid, endedAt: nil, reason: callKitReason)
         }
         clearCurrentCall(ifMatching: uuid)
     }

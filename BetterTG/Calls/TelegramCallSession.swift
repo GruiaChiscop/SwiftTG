@@ -73,6 +73,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     // MARK: Internal
 
+    enum EndReason: Sendable {
+        case failed
+        case remoteEnded
+        case unanswered
+    }
+
     struct AudioRoute: Identifiable, Equatable, Sendable {
         enum Kind: Equatable, Sendable {
             case builtIn
@@ -105,7 +111,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     var onIncomingCall: ((Call) -> Void)?
     var onCallConnected: (() -> Void)?
-    var onCallEnded: (() -> Void)?
+    var onCallEnded: ((EndReason) -> Void)?
 
     /// The native CallKit UI remains the sole incoming-answer surface while the call is pending.
     var shouldShowCallView: Bool {
@@ -307,6 +313,27 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
     }
 
+    private static func endReason(for state: CallState) -> EndReason {
+        switch state {
+        case .callStateError:
+            .failed
+        case .callStateDiscarded(let discarded):
+            switch discarded.reason {
+            case .callDiscardReasonDisconnected:
+                .failed
+            case .callDiscardReasonMissed:
+                .unanswered
+            case .callDiscardReasonDeclined,
+                 .callDiscardReasonEmpty,
+                 .callDiscardReasonHungUp,
+                 .callDiscardReasonUpgradeToGroupCall:
+                .remoteEnded
+            }
+        default:
+            .remoteEnded
+        }
+    }
+
     private static func describe(_ state: CallState) -> String {
         switch state {
         case .callStatePending(let value):
@@ -452,6 +479,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 }
             finishCurrentCall(
                 notifyCallKit: true,
+                endReason: Self.endReason(for: call.state),
                 debugInformationCallId: debugInformationCallId,
                 logCallId: logCallId,
             )
@@ -821,6 +849,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     private func finishCurrentCall(
         notifyCallKit: Bool,
+        endReason: EndReason = .remoteEnded,
         debugInformationCallId: Int? = nil,
         logCallId: Int? = nil,
     ) {
@@ -834,7 +863,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         stopRingback()
         stopEngine(debugInformationCallId: debugInformationCallId, logCallId: logCallId)
         if notifyCallKit, hadCall {
-            onCallEnded?()
+            onCallEnded?(endReason)
         }
     }
 }
