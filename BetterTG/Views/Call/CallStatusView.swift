@@ -11,19 +11,26 @@ struct CallStatusView: View {
     let call: Call?
     let connectedAt: Foundation.Date?
     let engineState: TelegramCallEngine.State?
+    let signalBars: Int?
 
     var body: some View {
-        if engineState == .reconnecting {
-            Text("Reconnecting…")
-        } else if engineState == .failed {
-            Text("Call Failed")
-        } else if let connectedAt {
-            TimelineView(.periodic(from: connectedAt, by: 1)) { context in
-                Text(telegramClockDuration(Int(context.date.timeIntervalSince(connectedAt))))
-                    .monospacedDigit()
+        HStack(spacing: 6) {
+            if engineState == .reconnecting {
+                Text("Reconnecting…")
+            } else if engineState == .failed {
+                Text("Call Failed")
+            } else if let connectedAt {
+                TimelineView(.periodic(from: connectedAt, by: 1)) { context in
+                    Text(telegramClockDuration(Int(context.date.timeIntervalSince(connectedAt))))
+                        .monospacedDigit()
+                }
+            } else {
+                Text(pendingStatusText)
             }
-        } else {
-            Text(pendingStatusText)
+
+            if connectedAt != nil, engineState != .reconnecting, let signalBars {
+                CallSignalBarsView(bars: signalBars)
+            }
         }
     }
 

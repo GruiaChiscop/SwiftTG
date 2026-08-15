@@ -62,6 +62,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         networkKind: NetworkKind,
         sendSignaling: @escaping @Sendable (Data) -> Void,
         stateChanged: @escaping @Sendable (State) -> Void,
+        signalBarsChanged: @escaping @Sendable (Int32) -> Void,
     ) {
         queue.async { [weak self] in
             guard let self else { return }
@@ -116,6 +117,10 @@ final class TelegramCallEngine: @unchecked Sendable {
             context.stateChanged = { [weak self] state, _, _, _, _, _ in
                 guard let self, self.generation == generation else { return }
                 stateChanged(Self.state(from: state))
+            }
+            context.signalBarsChanged = { [weak self] signalBars in
+                guard let self, self.generation == generation else { return }
+                signalBarsChanged(signalBars)
             }
 
             self.audioDevice = audioDevice

@@ -23,6 +23,7 @@ struct TelegramCallBar: View {
                             call: session.activeCall,
                             connectedAt: session.connectedAt,
                             engineState: session.engineState,
+                            signalBars: session.signalBars,
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)

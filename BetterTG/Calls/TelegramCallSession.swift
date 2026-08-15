@@ -116,6 +116,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var connectedAt: Foundation.Date?
     private(set) var encryptionEmojis = [String]()
     private(set) var isCallViewMinimized = false
+    private(set) var signalBars: Int?
     var pendingCallRating: CallRatingRequest?
 
     var onIncomingCall: ((Call) -> Void)?
@@ -714,6 +715,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     self?.handleEngineState(state, callId: callId)
                 }
             },
+            signalBarsChanged: { [weak self] signalBars in
+                Task { @MainActor [weak self] in
+                    self?.handleSignalBars(signalBars, callId: callId)
+                }
+            },
         )
     }
 
@@ -727,6 +733,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         } else if state == .failed {
             endActiveCall(isDisconnected: true)
         }
+    }
+
+    private func handleSignalBars(_ bars: Int32, callId: Int) {
+        guard isEngineRunning, activeCall?.id == callId else { return }
+        let updatedBars = min(4, max(0, Int(bars)))
+        guard signalBars != updatedBars else { return }
+        signalBars = updatedBars
+        log("[Call] signal bars=\(updatedBars)")
     }
 
     private func handleAudioRouteChange(_ notification: Foundation.Notification) {
@@ -893,6 +907,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isEngineRunning = false
         stopBatteryMonitoring()
         engineState = nil
+        signalBars = nil
         isMuted = false
         connectedAt = nil
         if isSpeakerOn {

@@ -48,6 +48,7 @@ struct CallView: View {
                         call: session.activeCall,
                         connectedAt: session.connectedAt,
                         engineState: session.engineState,
+                        signalBars: session.signalBars,
                     )
                     .font(.title3)
                     .foregroundStyle(.secondary)
