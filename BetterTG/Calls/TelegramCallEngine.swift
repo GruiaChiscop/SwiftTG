@@ -99,6 +99,7 @@ final class TelegramCallEngine: @unchecked Sendable {
 
             let generation = UUID()
             self.generation = generation
+            let isAdoptingPreparedAudioDevice = audioDevice != nil
             let audioDevice = audioDeviceLocked()
             let connections = configuration.connections.map {
                 OngoingCallConnectionDescriptionWebrtc(
@@ -153,7 +154,12 @@ final class TelegramCallEngine: @unchecked Sendable {
             self.context = context
             context.setIsMuted(muted)
             context.setIsLowBatteryLevel(lowBattery)
-            audioDevice.setManualAudioSessionIsActive(audioSessionActive)
+            if !isAdoptingPreparedAudioDevice {
+                // Incoming calls can reach Ready without a pre-call tone, so a newly-created
+                // device still needs the current CallKit activation. A prepared device is already
+                // active and must not be activated again when the call context adopts it.
+                audioDevice.setManualAudioSessionIsActive(audioSessionActive)
+            }
             for data in self.pendingSignaling {
                 context.addSignaling(data)
             }
