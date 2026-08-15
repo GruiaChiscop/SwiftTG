@@ -18,6 +18,16 @@ struct CallView: View {
             CallBackground(userId: session.activeCall?.userId)
 
             VStack {
+                HStack {
+                    Button("Minimize Call", systemImage: "chevron.down", action: session.minimizeCallView)
+                        .labelStyle(.iconOnly)
+                        .font(.title3.bold())
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: .circle)
+
+                    Spacer()
+                }
+
                 Spacer(minLength: 24)
 
                 CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
@@ -82,6 +92,7 @@ struct CallView: View {
             .padding(.horizontal)
         }
         .preferredColorScheme(.dark)
+        .interactiveDismissDisabled()
         .task(id: session.activeCall?.userId) {
             user = nil
             guard let userId = session.activeCall?.userId else { return }

@@ -9,6 +9,9 @@ struct RootView: View {
         ZStack {
             if rootVM.loggedIn {
                 MainView()
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        TelegramCallBar()
+                    }
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         TelegramLiveLocationBar()
                     }
@@ -116,8 +119,9 @@ struct RootView: View {
         .fullScreenCover(isPresented: Binding(
             get: { callSession.shouldShowCallView },
             set: { isPresented in
-                guard !isPresented, callSession.activeCall != nil else { return }
-                callSession.end()
+                if isPresented {
+                    callSession.restoreCallView()
+                }
             },
         )) {
             CallView()

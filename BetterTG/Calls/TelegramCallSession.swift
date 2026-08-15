@@ -115,6 +115,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var selectedAudioRoute = AudioRoute.builtIn
     private(set) var connectedAt: Foundation.Date?
     private(set) var encryptionEmojis = [String]()
+    private(set) var isCallViewMinimized = false
     var pendingCallRating: CallRatingRequest?
 
     var onIncomingCall: ((Call) -> Void)?
@@ -127,8 +128,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         if !activeCall.isOutgoing, case .callStatePending = activeCall.state {
             return false
         }
-        return true
+        return !isCallViewMinimized
     }
+
+    var shouldShowMinimizedCallBar: Bool { activeCall != nil && isCallViewMinimized }
 
     /// tgcalls configures the category/mode/options CallKit will later activate. This has to run
     /// before reporting or requesting a CallKit call, matching Telegram-iOS's ordering.
@@ -235,6 +238,16 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     func dismissCallRating() {
         pendingCallRating = nil
+    }
+
+    func minimizeCallView() {
+        guard activeCall != nil else { return }
+        isCallViewMinimized = true
+    }
+
+    func restoreCallView() {
+        guard activeCall != nil else { return }
+        isCallViewMinimized = false
     }
 
     func submitCallRating(
@@ -506,6 +519,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             stopEngine()
             reportedIncomingCallId = nil
             encryptionEmojis = []
+            isCallViewMinimized = false
         }
         if pendingCallRating?.callId != call.id {
             pendingCallRating = nil
@@ -904,6 +918,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isAnswering = false
         isEnding = false
         encryptionEmojis = []
+        isCallViewMinimized = false
         stopRingback()
         stopEngine(debugInformationCallId: debugInformationCallId, logCallId: logCallId)
         if notifyCallKit, hadCall {
