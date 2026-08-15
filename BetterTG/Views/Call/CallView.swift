@@ -52,11 +52,6 @@ struct CallView: View {
                     )
                     .font(.title3)
                     .foregroundStyle(.secondary)
-
-                    CallRemoteStatusView(
-                        audioState: session.remoteAudioState,
-                        batteryLevel: session.remoteBatteryLevel,
-                    )
                 }
                 .padding(.horizontal)
 
@@ -66,6 +61,14 @@ struct CallView: View {
                 }
 
                 Spacer()
+
+                CallNoticeView(
+                    isLocalMuted: session.isMuted,
+                    remoteAudioState: session.remoteAudioState,
+                    remoteBatteryLevel: session.remoteBatteryLevel,
+                    peerName: peerShortName,
+                )
+                .padding(.bottom, 12)
 
                 HStack {
                     CallAudioRouteControl(
@@ -117,5 +120,10 @@ struct CallView: View {
         guard let user else { return "Telegram" }
         let name = [user.firstName, user.lastName].filter { !$0.isEmpty }.joined(separator: " ")
         return name.isEmpty ? "Telegram" : name
+    }
+
+    private var peerShortName: String {
+        guard let user else { return "The other person" }
+        return user.firstName.isEmpty ? displayName : user.firstName
     }
 }
