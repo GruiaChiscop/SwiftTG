@@ -57,6 +57,7 @@ final class TelegramCallEngine: @unchecked Sendable {
     func start(
         configuration: Configuration,
         muted: Bool,
+        lowBattery: Bool,
         audioSessionActive: Bool,
         networkKind: NetworkKind,
         sendSignaling: @escaping @Sendable (Data) -> Void,
@@ -69,6 +70,7 @@ final class TelegramCallEngine: @unchecked Sendable {
             stopLocked(clearPendingSignaling: false)
             self.pendingSignaling = pendingSignaling
             isMuted = muted
+            isLowBattery = lowBattery
             isAudioSessionActive = audioSessionActive
             self.networkKind = networkKind
 
@@ -119,6 +121,7 @@ final class TelegramCallEngine: @unchecked Sendable {
             self.audioDevice = audioDevice
             self.context = context
             context.setIsMuted(muted)
+            context.setIsLowBatteryLevel(lowBattery)
             audioDevice.setManualAudioSessionIsActive(audioSessionActive)
             for data in self.pendingSignaling {
                 context.addSignaling(data)
@@ -142,6 +145,13 @@ final class TelegramCallEngine: @unchecked Sendable {
         queue.async { [weak self] in
             self?.isMuted = muted
             self?.context?.setIsMuted(muted)
+        }
+    }
+
+    func setLowBattery(_ lowBattery: Bool) {
+        queue.async { [weak self] in
+            self?.isLowBattery = lowBattery
+            self?.context?.setIsLowBatteryLevel(lowBattery)
         }
     }
 
@@ -191,6 +201,7 @@ final class TelegramCallEngine: @unchecked Sendable {
     private var pendingSignaling = [Data]()
     private var generation = UUID()
     private var isMuted = false
+    private var isLowBattery = false
     private var isAudioSessionActive = false
     private var networkKind = NetworkKind.wifi
 

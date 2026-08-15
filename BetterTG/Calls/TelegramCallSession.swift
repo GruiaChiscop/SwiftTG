@@ -59,6 +59,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.handleMediaServicesReset() }
             .store(in: &cancellables)
+        notificationCenter.publisher(for: UIDevice.batteryLevelDidChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshLowBatteryState() }
+            .store(in: &cancellables)
+        notificationCenter.publisher(for: UIDevice.batteryStateDidChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshLowBatteryState() }
+            .store(in: &cancellables)
 
         refreshAudioRoutes()
 
@@ -266,7 +274,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var isAudioInterrupted = false
     private var areMediaServicesAvailable = true
     private var ownsProximityMonitoring = false
+    private var ownsBatteryMonitoring = false
     private var isEngineRunning = false
+    private var isLowBattery = false
     private var networkKind = TelegramCallEngine.NetworkKind.wifi
     private var pendingSystemAction: PendingSystemAction?
     private var isAnswering = false
@@ -382,6 +392,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             name: port.portName,
             kind: audioRouteKind(for: port.portType),
         )
+    }
+
+    private static func isLowBattery(_ device: UIDevice) -> Bool {
+        device.batteryLevel >= 0 && device.batteryLevel < 0.1 && device.batteryState != .charging
     }
 
     private static func connections(from servers: [CallServer]) -> [TelegramCallEngine.Connection] {
@@ -655,6 +669,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
 
         isEngineRunning = true
+        startBatteryMonitoring()
         let callId = call.id
         engine.start(
             configuration: .init(
@@ -667,6 +682,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 allowP2P: info.allowP2p,
             ),
             muted: isMuted,
+            lowBattery: isLowBattery,
             audioSessionActive: isEffectiveAudioSessionActive,
             networkKind: networkKind,
             sendSignaling: { [weak self] data in
@@ -796,6 +812,33 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         refreshAudioRoutes()
     }
 
+    private func startBatteryMonitoring() {
+        let device = UIDevice.current
+        if !device.isBatteryMonitoringEnabled {
+            device.isBatteryMonitoringEnabled = true
+            ownsBatteryMonitoring = device.isBatteryMonitoringEnabled
+        }
+        refreshLowBatteryState()
+        log("[Call] battery monitoring started low=\(isLowBattery)")
+    }
+
+    private func refreshLowBatteryState() {
+        guard isEngineRunning else { return }
+        let lowBattery = Self.isLowBattery(UIDevice.current)
+        guard lowBattery != isLowBattery else { return }
+        isLowBattery = lowBattery
+        log("[Call] low battery=\(lowBattery)")
+        engine.setLowBattery(lowBattery)
+    }
+
+    private func stopBatteryMonitoring() {
+        if ownsBatteryMonitoring {
+            UIDevice.current.isBatteryMonitoringEnabled = false
+            ownsBatteryMonitoring = false
+        }
+        isLowBattery = false
+    }
+
     private func stopEngine(debugInformationCallId: Int? = nil, logCallId: Int? = nil) {
         if debugInformationCallId != nil || logCallId != nil {
             let service = service
@@ -834,6 +877,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             engine.stop()
         }
         isEngineRunning = false
+        stopBatteryMonitoring()
         engineState = nil
         isMuted = false
         connectedAt = nil
