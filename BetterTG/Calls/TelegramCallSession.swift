@@ -280,6 +280,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     private static let ringingTone = TelegramCallTone.load(resourceName: "voip_ringback", loopCount: 1_000_000)
     private static let connectingTone = TelegramCallTone.load(resourceName: "voip_connecting", loopCount: 1_000_000)
+    private static let busyTone = TelegramCallTone.load(resourceName: "voip_busy", loopCount: 3)
+    private static let failedTone = TelegramCallTone.load(resourceName: "voip_fail", loopCount: 1)
     private static let endedTone = TelegramCallTone.load(resourceName: "voip_end", loopCount: 1)
     private static let terminalToneLifetime: TimeInterval = 2
     private static let endedTonePlaybackDuration: TimeInterval = 1.25
@@ -353,16 +355,23 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
     }
 
-    private static func shouldPlayEndedTone(for state: CallState) -> Bool {
-        guard case .callStateDiscarded(let discarded) = state else { return false }
-        switch discarded.reason {
-        case .callDiscardReasonHungUp, .callDiscardReasonMissed:
-            return true
-        case .callDiscardReasonDeclined,
-             .callDiscardReasonDisconnected,
-             .callDiscardReasonEmpty,
-             .callDiscardReasonUpgradeToGroupCall:
-            return false
+    private static func terminalTone(for state: CallState) -> TelegramCallTone? {
+        switch state {
+        case .callStateError:
+            failedTone
+        case .callStateDiscarded(let discarded):
+            switch discarded.reason {
+            case .callDiscardReasonDeclined:
+                busyTone
+            case .callDiscardReasonDisconnected:
+                failedTone
+            case .callDiscardReasonHungUp, .callDiscardReasonMissed:
+                endedTone
+            case .callDiscardReasonEmpty, .callDiscardReasonUpgradeToGroupCall:
+                nil
+            }
+        default:
+            nil
         }
     }
 
@@ -516,7 +525,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             finishCurrentCall(
                 notifyCallKit: true,
                 endReason: Self.endReason(for: call.state),
-                playEndedTone: Self.shouldPlayEndedTone(for: call.state),
+                terminalTone: Self.terminalTone(for: call.state),
                 debugInformationCallId: debugInformationCallId,
                 logCallId: logCallId,
             )
@@ -607,7 +616,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             return
         }
         isEnding = true
-        let endedToneStartedAt = isDisconnected ? nil : playEndedToneIfNeeded()
+        let endedToneStartedAt = isDisconnected ? nil : playTerminalToneIfNeeded(Self.endedTone)
         let duration = connectedAt.map { max(0, Int(Foundation.Date().timeIntervalSince($0))) } ?? 0
         Task { [weak self] in
             guard let self else {
@@ -658,16 +667,16 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         engine.prepareAudioDevice(tone: ringingTone, audioSessionActive: isEffectiveAudioSessionActive)
     }
 
-    @discardableResult private func playEndedToneIfNeeded() -> Foundation.Date? {
+    @discardableResult private func playTerminalToneIfNeeded(_ tone: TelegramCallTone?) -> Foundation.Date? {
+        guard let tone else { return nil }
         if let terminalToneStartedAt {
             return terminalToneStartedAt
         }
-        guard let endedTone = Self.endedTone else { return nil }
 
         let startedAt = Foundation.Date()
         terminalToneStartedAt = startedAt
         isPreCallAudioDevicePrepared = true
-        engine.prepareAudioDevice(tone: endedTone, audioSessionActive: isEffectiveAudioSessionActive)
+        engine.prepareAudioDevice(tone: tone, audioSessionActive: isEffectiveAudioSessionActive)
 
         terminalToneStopTask?.cancel()
         terminalToneStopTask = Task { [weak self] in
@@ -1002,13 +1011,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private func finishCurrentCall(
         notifyCallKit: Bool,
         endReason: EndReason = .remoteEnded,
-        playEndedTone: Bool = false,
+        terminalTone: TelegramCallTone? = nil,
         debugInformationCallId: Int? = nil,
         logCallId: Int? = nil,
     ) {
         let hadCall = activeCall != nil || reportedIncomingCallId != nil || isEngineRunning
         let wasOutgoing = activeCall?.isOutgoing == true
-        let didStartEndedTone = playEndedTone && playEndedToneIfNeeded() != nil
+        let selectedTerminalTone = terminalToneStartedAt == nil ? terminalTone : Self.endedTone
+        let didStartTerminalTone = playTerminalToneIfNeeded(selectedTerminalTone) != nil
         activeCall = nil
         reportedIncomingCallId = nil
         pendingSystemAction = nil
@@ -1016,16 +1026,16 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isEnding = false
         encryptionEmojis = []
         isCallViewMinimized = false
-        if !didStartEndedTone {
+        if !didStartTerminalTone {
             stopRingback()
         }
         stopEngine(
             debugInformationCallId: debugInformationCallId,
             logCallId: logCallId,
-            finalTone: didStartEndedTone ? Self.endedTone : nil,
+            finalTone: didStartTerminalTone ? selectedTerminalTone : nil,
         )
         if notifyCallKit, hadCall {
-            if didStartEndedTone, wasOutgoing {
+            if didStartTerminalTone, wasOutgoing {
                 delayedCallKitEndTask?.cancel()
                 delayedCallKitEndTask = Task { [weak self] in
                     do {
