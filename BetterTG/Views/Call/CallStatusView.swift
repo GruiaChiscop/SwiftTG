@@ -39,8 +39,11 @@ struct CallStatusView: View {
     private var pendingStatusText: String {
         guard let call else { return "" }
         switch call.state {
-        case .callStatePending:
-            return call.isOutgoing ? "Calling…" : "Incoming Call"
+        case .callStatePending(let pending):
+            if !call.isOutgoing {
+                return "Incoming Call"
+            }
+            return pending.isReceived ? "Ringing…" : "Requesting…"
         case .callStateExchangingKeys, .callStateReady:
             return "Connecting…"
         case .callStateHangingUp:
