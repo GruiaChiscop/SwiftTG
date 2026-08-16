@@ -97,8 +97,10 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
     log("[CallKit] received user activity type=\(userActivity.activityType) intent=\(intentType)")
 
     let contacts: [INPerson]?
+    let isVideo: Bool
     if let intent = intent as? INStartCallIntent {
         contacts = intent.contacts
+        isVideo = intent.callCapability == .videoCall
     } else if userActivity.activityType == legacyStartCallActivityType
         || intentType == legacyStartCallActivityType
     {
@@ -108,11 +110,12 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
             return false
         }
         contacts = intent.value(forKey: "contacts") as? [INPerson]
+        isVideo = false
     } else {
         log("[CallKit] unsupported start-call intent type=\(intentType)")
         return false
     }
-    return CallKitManager.shared.startOutgoingCall(from: contacts)
+    return CallKitManager.shared.startOutgoingCall(from: contacts, isVideo: isVideo)
 }
 
 // MARK: - AppDelegate

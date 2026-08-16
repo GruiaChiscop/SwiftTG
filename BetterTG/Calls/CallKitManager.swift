@@ -54,7 +54,12 @@ import TDLibKit
     /// required flow, rather than calling `TelegramCallSession.startCall` directly - the actual
     /// `createCall` only happens once CallKit grants the action in
     /// `provider(_:perform: CXStartCallAction)` below.
-    func startOutgoingCall(userId: Int64, displayName: String) {
+    func startOutgoingCall(
+        userId: Int64,
+        displayName: String,
+        isVideo: Bool = false,
+        onCameraPermissionDenied: @escaping () -> Void = {},
+    ) {
         guard currentCallUUID == nil, !isRequestingOutgoingCall else {
             log("[CallKit] refusing a second outgoing call while another call is active")
             return
@@ -67,6 +72,15 @@ import TDLibKit
                 isRequestingOutgoingCall = false
                 log("[CallKit] microphone permission denied; outgoing call not started")
                 return
+            }
+            if isVideo {
+                let cameraGranted = await Self.requestCameraAccess()
+                guard cameraGranted else {
+                    isRequestingOutgoingCall = false
+                    log("[CallKit] camera permission denied; outgoing video call not started")
+                    onCameraPermissionDenied()
+                    return
+                }
             }
             guard isRequestingOutgoingCall, currentCallUUID == nil else {
                 isRequestingOutgoingCall = false
@@ -84,12 +98,15 @@ import TDLibKit
             let name = displayName.isEmpty ? "Telegram" : displayName
             let visibleHandle = Self.callKitHandle(displayName: name)
             let action = CXStartCallAction(call: uuid, handle: visibleHandle)
-            action.isVideo = false
+            action.isVideo = isVideo
             do {
                 try await callController.request(CXTransaction(action: action))
                 guard currentCallUUID == uuid else { return }
-                provider.reportCall(with: uuid, updated: Self.update(handle: visibleHandle, displayName: name))
-                Self.donateCallIntent(userId: userId, displayName: name)
+                provider.reportCall(
+                    with: uuid,
+                    updated: Self.update(handle: visibleHandle, displayName: name, hasVideo: isVideo),
+                )
+                Self.donateCallIntent(userId: userId, displayName: name, isVideo: isVideo)
             } catch {
                 log("CallKit start request failed: \(error)")
                 clearCurrentCall(ifMatching: uuid)
@@ -100,7 +117,7 @@ import TDLibKit
     /// Handles a call donated to Phone/Siri and returned to the app through `NSUserActivity`.
     /// A cold launch can deliver the intent before TDLib restores authorization, so wait for its
     /// real ready state rather than racing `createCall` against session startup.
-    @discardableResult func startOutgoingCall(from contacts: [INPerson]?) -> Bool {
+    @discardableResult func startOutgoingCall(from contacts: [INPerson]?, isVideo: Bool = false) -> Bool {
         guard let person = contacts?.first,
               let userId = Self.telegramUserId(from: person)
         else {
@@ -120,7 +137,7 @@ import TDLibKit
                 log("[CallKit] start-call intent timed out waiting for TDLib authorization")
                 return
             }
-            startOutgoingCall(userId: userId, displayName: person.displayName)
+            startOutgoingCall(userId: userId, displayName: person.displayName, isVideo: isVideo)
         }
         return true
     }
@@ -278,7 +295,7 @@ import TDLibKit
         return Int64(value.dropFirst(3))
     }
 
-    private static func donateCallIntent(userId: Int64, displayName: String) {
+    private static func donateCallIntent(userId: Int64, displayName: String, isVideo: Bool) {
         let value = telegramRedialIdentifier(userId: userId)
         let person = INPerson(
             personHandle: INPersonHandle(value: value, type: .unknown),
@@ -294,7 +311,7 @@ import TDLibKit
             audioRoute: .unknown,
             destinationType: .normal,
             contacts: [person],
-            callCapability: .audioCall,
+            callCapability: isVideo ? .videoCall : .audioCall,
         )
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .outgoing
@@ -333,6 +350,19 @@ import TDLibKit
             let result = await group.next() ?? false
             group.cancelAll()
             return result
+        }
+    }
+
+    private static func requestCameraAccess() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            true
+        case .notDetermined:
+            await AVCaptureDevice.requestAccess(for: .video)
+        case .denied, .restricted:
+            false
+        @unknown default:
+            false
         }
     }
 
@@ -534,7 +564,7 @@ extension CallKitManager: @MainActor CXProviderDelegate {
             return
         }
         provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: nil)
-        TelegramCallSession.shared.startCall(userId: userId) { [weak self] succeeded in
+        TelegramCallSession.shared.startCall(userId: userId, isVideo: action.isVideo) { [weak self] succeeded in
             guard let self, currentCallUUID == action.callUUID else {
                 log("[CallKit] start action superseded before createCall completed")
                 action.fail()

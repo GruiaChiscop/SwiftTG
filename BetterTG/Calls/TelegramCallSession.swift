@@ -16,8 +16,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
 // MARK: - TelegramCallSession
 
-/// Bridges TDLib's call state/signaling to the vendored tgcalls engine. The first implementation is
-/// intentionally audio-only; TelegramCallEngine owns the strict tgcalls queue confinement.
+/// Bridges TDLib's call state/signaling to the vendored tgcalls engine. TelegramCallEngine owns the
+/// strict tgcalls queue confinement.
 @MainActor
 @Observable final class TelegramCallSession {
     // MARK: Lifecycle
@@ -58,6 +58,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         notificationCenter.publisher(for: AVAudioSession.mediaServicesWereResetNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.handleMediaServicesReset() }
+            .store(in: &cancellables)
+        notificationCenter.publisher(for: UIDevice.proximityStateDidChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateProximityMonitoring() }
             .store(in: &cancellables)
         notificationCenter.publisher(for: UIDevice.batteryLevelDidChangeNotification)
             .receive(on: DispatchQueue.main)
@@ -153,14 +157,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         SharedCallAudioDevice.setupAudioSession()
     }
 
-    func startCall(userId: Int64, completion: @escaping (Bool) -> Void = { _ in }) {
+    func startCall(userId: Int64, isVideo: Bool, completion: @escaping (Bool) -> Void = { _ in }) {
         Task { [weak self] in
             guard let self else {
                 completion(false)
                 return
             }
             do {
-                _ = try await service.createCall(isVideo: false, protocol: Self.ourProtocol(), userId: userId)
+                _ = try await service.createCall(isVideo: isVideo, protocol: Self.ourProtocol(), userId: userId)
                 completion(true)
             } catch {
                 log("Error creating call: \(error)")
@@ -334,6 +338,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var reportedIncomingCallId: Int?
     private var terminalToneStopTask: Task<Void, Never>?
     private var delayedCallKitEndTask: Task<Void, Never>?
+    private var videoAudioRouteTask: Task<Void, Never>?
     private var terminalToneStartedAt: Foundation.Date?
     private var isPreCallAudioDevicePrepared = false
     private var isCallKitAudioSessionActive = false
@@ -354,6 +359,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var videoGeneration = UUID()
     private var isRequestingRemoteVideoView = false
     private var remoteVideoGeneration = UUID()
+
+    private var shouldRouteVideoToSpeaker: Bool {
+        activeCall?.isVideo == true || isLocalVideoEnabled || remoteVideoState != .inactive
+    }
 
     private static func ourProtocol() -> CallProtocol {
         CallProtocol(
@@ -602,7 +611,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             pendingCallRating = nil
         }
         activeCall = call
-        updateProximityMonitoring()
+        updateVideoAudioRouting()
 
         if pendingSystemAction == .end {
             pendingSystemAction = nil
@@ -754,6 +763,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isCallKitAudioSessionActive = active
         applyEffectiveAudioSessionState()
         refreshAudioRoutes()
+        routeVideoToSpeakerIfNeeded()
     }
 
     private func applyEffectiveAudioSessionState() {
@@ -840,6 +850,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 }
             },
         )
+        if call.isOutgoing, call.isVideo {
+            enableLocalVideo()
+        }
         engine.setTone(Self.connectingTone)
     }
 
@@ -881,6 +894,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             remoteVideoState = state
             log("[Call] remote video=\(state)")
         }
+        updateVideoAudioRouting()
 
         switch state {
         case .active, .paused:
@@ -915,6 +929,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private func handleAudioRouteChange(_ notification: Foundation.Notification) {
         let reason = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? NSNumber)?.uintValue
         refreshAudioRoutes()
+        routeVideoToSpeakerIfNeeded()
         log(
             "[Call] audio route changed reason=\(reason.map(String.init) ?? "unknown") selected=\(selectedAudioRoute.name)",
         )
@@ -956,19 +971,70 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     /// Keep the display protected from accidental touches only while the receiver is the actual
-    /// output. Speaker, wired, Bluetooth, and external routes must leave the screen awake. The
-    /// ownership flag avoids disabling monitoring that another app component may have enabled.
+    /// output during an audio-only call. Video must keep the display awake even if CallKit enables
+    /// proximity after its audio handoff, so video disables it authoritatively. For audio-only
+    /// calls the ownership flag still avoids disabling monitoring owned by another component.
     private func updateProximityMonitoring() {
-        let shouldMonitor = activeCall != nil && selectedAudioRoute.kind == .builtIn
+        let device = UIDevice.current
+        if activeCall != nil, shouldRouteVideoToSpeaker {
+            if device.isProximityMonitoringEnabled {
+                device.isProximityMonitoringEnabled = false
+                log("[Call] proximity monitoring force-disabled for video")
+            }
+            ownsProximityMonitoring = false
+            return
+        }
+
+        let shouldMonitor = activeCall != nil
+            && selectedAudioRoute.kind == .builtIn
         if shouldMonitor, !ownsProximityMonitoring {
-            UIDevice.current.isProximityMonitoringEnabled = true
-            ownsProximityMonitoring = UIDevice.current.isProximityMonitoringEnabled
+            device.isProximityMonitoringEnabled = true
+            ownsProximityMonitoring = device.isProximityMonitoringEnabled
             log("[Call] proximity monitoring enabled=\(ownsProximityMonitoring)")
         } else if !shouldMonitor, ownsProximityMonitoring {
-            UIDevice.current.isProximityMonitoringEnabled = false
+            device.isProximityMonitoringEnabled = false
             ownsProximityMonitoring = false
             log("[Call] proximity monitoring disabled")
         }
+    }
+
+    /// Telegram-iOS defaults video calls to speaker and repeatedly restores it because CallKit can
+    /// briefly reset the route during activation. Wired, Bluetooth, and external routes are never
+    /// replaced; only the built-in receiver is promoted to speaker.
+    private func updateVideoAudioRouting() {
+        guard activeCall != nil, shouldRouteVideoToSpeaker else {
+            videoAudioRouteTask?.cancel()
+            videoAudioRouteTask = nil
+            updateProximityMonitoring()
+            return
+        }
+
+        routeVideoToSpeakerIfNeeded()
+        updateProximityMonitoring()
+        guard videoAudioRouteTask == nil else { return }
+
+        videoAudioRouteTask = Task { [weak self] in
+            while let self, !Task.isCancelled, activeCall != nil, shouldRouteVideoToSpeaker {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                routeVideoToSpeakerIfNeeded()
+                updateProximityMonitoring()
+            }
+        }
+    }
+
+    private func routeVideoToSpeakerIfNeeded() {
+        guard activeCall != nil,
+              shouldRouteVideoToSpeaker,
+              isEffectiveAudioSessionActive,
+              selectedAudioRoute.kind == .builtIn
+        else { return }
+        log("[Call] routing video call from receiver to speaker")
+        selectAudioRoute(.speaker)
     }
 
     private func handleAudioInterruption(_ notification: Foundation.Notification) {
@@ -1044,6 +1110,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         videoCapturer = capturer
         isUsingFrontCamera = true
         isLocalVideoEnabled = true
+        updateVideoAudioRouting()
         capturer.makeOutgoingVideoView(false) { [weak self] videoView, _ in
             MainActor.assumeIsolated {
                 guard let self, self.videoGeneration == generation, self.isLocalVideoEnabled else { return }
@@ -1062,6 +1129,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         videoCapturer = nil
         videoGeneration = UUID()
         isUsingFrontCamera = true
+        updateVideoAudioRouting()
     }
 
     private func stopEngine(
@@ -1108,6 +1176,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
         isPreCallAudioDevicePrepared = false
         isEngineRunning = false
+        videoAudioRouteTask?.cancel()
+        videoAudioRouteTask = nil
         stopBatteryMonitoring()
         engineState = nil
         remoteAudioState = .active

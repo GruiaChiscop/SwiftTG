@@ -4,6 +4,7 @@ import Combine
 import PhotosUI
 import SwiftUI
 import TDLibKit
+import UIKit
 
 // MARK: - PresentedChatActionError
 
@@ -190,13 +191,11 @@ struct ChatView: View {
                     .accessibilityLabel(backButtonAccessibilityLabel)
                 }
                 ToolbarItem(placement: .principal) { principal }
-                if let callPeer {
+                if callPeer != nil {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            CallKitManager.shared.startOutgoingCall(
-                                userId: callPeer.id,
-                                displayName: callPeer.displayName,
-                            )
+                        Menu {
+                            Button("Audio Call", systemImage: "phone", action: startAudioCall)
+                            Button("Video Call", systemImage: "video", action: startVideoCall)
                         } label: {
                             Label("Call", systemImage: "phone")
                         }
@@ -231,6 +230,12 @@ struct ChatView: View {
                     chatVM.messageActionError = nil
                 },
             )
+        }
+        .alert("Camera Access Required", isPresented: $showsCameraPermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow camera access in Settings to start video calls.")
         }
         .navigationDestination(isPresented: $showsChatInfo) {
             ChatInfoView()
@@ -366,6 +371,7 @@ struct ChatView: View {
     
     // MARK: Private
 
+    @Environment(\.openURL) private var openURL
     @FocusState private var conversationSearchFocused
     @State private var initialScrollPosition = ScrollPosition(idType: Int64.self, edge: .bottom)
     @State private var navigationBarHeight = CGFloat.zero
@@ -373,6 +379,7 @@ struct ChatView: View {
     @State private var rootVM = RootVM.shared
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
+    @State private var showsCameraPermissionAlert = false
     @State private var presentedActionError: PresentedChatActionError?
 
     private var unreadChatCount: Int {
@@ -523,6 +530,30 @@ struct ChatView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(principalAccessibilityLabel)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private func startAudioCall() {
+        guard let callPeer else { return }
+        CallKitManager.shared.startOutgoingCall(
+            userId: callPeer.id,
+            displayName: callPeer.displayName,
+        )
+    }
+
+    private func startVideoCall() {
+        guard let callPeer else { return }
+        CallKitManager.shared.startOutgoingCall(
+            userId: callPeer.id,
+            displayName: callPeer.displayName,
+            isVideo: true,
+        ) {
+            showsCameraPermissionAlert = true
+        }
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     private func positionInitialMessagesIfNeeded() {
