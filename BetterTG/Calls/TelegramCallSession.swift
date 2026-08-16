@@ -117,10 +117,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var encryptionEmojis = [String]()
     private(set) var isCallViewMinimized = false
     private(set) var remoteAudioState = TelegramCallEngine.RemoteAudioState.active
+    private(set) var remoteVideoState = TelegramCallEngine.RemoteVideoState.inactive
     private(set) var remoteBatteryLevel = TelegramCallEngine.RemoteBatteryLevel.normal
     private(set) var signalBars: Int?
     private(set) var isLocalVideoEnabled = false
     private(set) var localVideoView: UIView?
+    private(set) var remoteVideoView: UIView?
     private(set) var isUsingFrontCamera = true
     var showsCameraPermissionAlert = false
     var pendingCallRating: CallRatingRequest?
@@ -350,6 +352,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var videoCapturer: OngoingCallThreadLocalContextVideoCapturer?
     private var isRequestingVideo = false
     private var videoGeneration = UUID()
+    private var isRequestingRemoteVideoView = false
+    private var remoteVideoGeneration = UUID()
 
     private static func ourProtocol() -> CallProtocol {
         CallProtocol(
@@ -819,10 +823,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     }
                 }
             },
-            stateChanged: { [weak self] state, remoteAudioState, remoteBatteryLevel in
+            stateChanged: { [weak self] state, remoteVideoState, remoteAudioState, remoteBatteryLevel in
                 Task { @MainActor [weak self] in
                     self?.handleEngineState(
                         state,
+                        remoteVideoState: remoteVideoState,
                         remoteAudioState: remoteAudioState,
                         remoteBatteryLevel: remoteBatteryLevel,
                         callId: callId,
@@ -840,6 +845,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     private func handleEngineState(
         _ state: TelegramCallEngine.State,
+        remoteVideoState: TelegramCallEngine.RemoteVideoState,
         remoteAudioState: TelegramCallEngine.RemoteAudioState,
         remoteBatteryLevel: TelegramCallEngine.RemoteBatteryLevel,
         callId: Int,
@@ -853,6 +859,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         case .connected, .failed, .unknown:
             engine.setTone(nil)
         }
+        handleRemoteVideoState(remoteVideoState, callId: callId)
         if self.remoteAudioState != remoteAudioState {
             self.remoteAudioState = remoteAudioState
             log("[Call] remote audio=\(remoteAudioState)")
@@ -866,6 +873,34 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             onCallConnected?()
         } else if state == .failed {
             endActiveCall(isDisconnected: true)
+        }
+    }
+
+    private func handleRemoteVideoState(_ state: TelegramCallEngine.RemoteVideoState, callId: Int) {
+        if remoteVideoState != state {
+            remoteVideoState = state
+            log("[Call] remote video=\(state)")
+        }
+
+        switch state {
+        case .active, .paused:
+            guard remoteVideoView == nil, !isRequestingRemoteVideoView else { return }
+            let generation = UUID()
+            remoteVideoGeneration = generation
+            isRequestingRemoteVideoView = true
+            engine.makeIncomingVideoView { [weak self] videoView in
+                guard let self else { return }
+                isRequestingRemoteVideoView = false
+                guard remoteVideoGeneration == generation,
+                      activeCall?.id == callId,
+                      remoteVideoState != .inactive
+                else { return }
+                remoteVideoView = videoView
+            }
+        case .inactive:
+            remoteVideoGeneration = UUID()
+            isRequestingRemoteVideoView = false
+            remoteVideoView = nil
         }
     }
 
@@ -1076,6 +1111,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         stopBatteryMonitoring()
         engineState = nil
         remoteAudioState = .active
+        remoteVideoState = .inactive
         remoteBatteryLevel = .normal
         signalBars = nil
         isMuted = false
@@ -1084,6 +1120,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isLocalVideoEnabled = false
         localVideoView = nil
         videoCapturer = nil
+        videoGeneration = UUID()
+        remoteVideoView = nil
+        isRequestingRemoteVideoView = false
+        remoteVideoGeneration = UUID()
         isUsingFrontCamera = true
         showsCameraPermissionAlert = false
         if isSpeakerOn {

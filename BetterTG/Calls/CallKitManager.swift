@@ -18,7 +18,7 @@ import TDLibKit
 
     override private init() {
         let configuration = CXProviderConfiguration()
-        configuration.supportsVideo = false
+        configuration.supportsVideo = true
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
         configuration.supportedHandleTypes = [.generic]
@@ -336,11 +336,11 @@ import TDLibKit
         }
     }
 
-    private static func update(handle: CXHandle, displayName: String?) -> CXCallUpdate {
+    private static func update(handle: CXHandle, displayName: String?, hasVideo: Bool = false) -> CXCallUpdate {
         let update = CXCallUpdate()
         update.remoteHandle = handle
         update.localizedCallerName = displayName
-        update.hasVideo = false
+        update.hasVideo = hasVideo
         update.supportsHolding = false
         update.supportsGrouping = false
         update.supportsUngrouping = false
@@ -364,7 +364,11 @@ import TDLibKit
             )
             provider.reportNewIncomingCall(
                 with: uuid,
-                update: Self.update(handle: Self.telegramCallHandle(userId: call.userId), displayName: "Telegram"),
+                update: Self.update(
+                    handle: Self.telegramCallHandle(userId: call.userId),
+                    displayName: "Telegram",
+                    hasVideo: call.isVideo,
+                ),
             ) { [weak self] error in
                 guard let error else { return }
                 Task { @MainActor [weak self] in
@@ -377,14 +381,20 @@ import TDLibKit
         currentTelegramCallUniqueId = call.uniqueId.rawValue
         isCurrentCallOutgoing = false
         let handle = Self.telegramCallHandle(userId: call.userId)
-        provider.reportCall(with: uuid, updated: Self.update(handle: handle, displayName: "Telegram"))
+        provider.reportCall(
+            with: uuid,
+            updated: Self.update(handle: handle, displayName: "Telegram", hasVideo: call.isVideo),
+        )
 
         Task { [weak self] in
             guard let self, let user = try? await TDLib.shared.service.getUser(userId: call.userId) else { return }
             let name = [user.firstName, user.lastName].filter { !$0.isEmpty }.joined(separator: " ")
             guard !name.isEmpty, currentCallUUID == uuid else { return }
             log("[CallKit] updating caller display name to \(name)")
-            provider.reportCall(with: uuid, updated: Self.update(handle: handle, displayName: name))
+            provider.reportCall(
+                with: uuid,
+                updated: Self.update(handle: handle, displayName: name, hasVideo: call.isVideo),
+            )
         }
     }
 

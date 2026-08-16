@@ -15,14 +15,29 @@ struct CallView: View {
     // MARK: Internal
 
     var body: some View {
-        ZStack {
-            if let localVideoView = session.localVideoView, session.isLocalVideoEnabled {
+        ZStack(alignment: .topTrailing) {
+            if let remoteVideoView = session.remoteVideoView, session.remoteVideoState != .inactive {
+                CallVideoSurfaceView(videoView: remoteVideoView)
+                    .id(ObjectIdentifier(remoteVideoView))
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            } else if let localVideoView = session.localVideoView, session.isLocalVideoEnabled {
                 CallVideoSurfaceView(videoView: localVideoView)
                     .id(ObjectIdentifier(localVideoView))
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
             } else {
                 CallBackground(userId: session.activeCall?.userId)
+            }
+
+            if session.remoteVideoView != nil || session.localVideoView != nil {
+                LinearGradient(
+                    colors: [.black.opacity(0.4), .clear, .black.opacity(0.5)],
+                    startPoint: .top,
+                    endPoint: .bottom,
+                )
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
             }
 
             VStack {
@@ -38,7 +53,7 @@ struct CallView: View {
 
                 Spacer(minLength: 24)
 
-                if session.localVideoView == nil {
+                if session.remoteVideoView == nil, session.localVideoView == nil {
                     CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
                         .frame(width: 128, height: 128)
                         .overlay {
@@ -83,7 +98,9 @@ struct CallView: View {
 
                 CallNoticeView(
                     isLocalMuted: session.isMuted,
+                    isLocalVideoEnabled: session.isLocalVideoEnabled,
                     remoteAudioState: session.remoteAudioState,
+                    remoteVideoState: session.remoteVideoState,
                     remoteBatteryLevel: session.remoteBatteryLevel,
                     peerName: peerShortName,
                 )
@@ -135,6 +152,24 @@ struct CallView: View {
             }
             .safeAreaPadding()
             .padding(.horizontal)
+
+            if let localVideoView = session.localVideoView,
+               session.isLocalVideoEnabled,
+               session.remoteVideoView != nil
+            {
+                CallVideoSurfaceView(videoView: localVideoView)
+                    .id(ObjectIdentifier(localVideoView))
+                    .frame(width: 108, height: 152)
+                    .clipShape(.rect(cornerRadius: 16))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(.white.opacity(0.25), lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+                    .padding(.top, 72)
+                    .padding(.trailing, 16)
+                    .accessibilityHidden(true)
+            }
         }
         .preferredColorScheme(.dark)
         .interactiveDismissDisabled()

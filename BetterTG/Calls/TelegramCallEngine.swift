@@ -2,6 +2,7 @@
 
 import Foundation
 @preconcurrency import TgVoipWebrtc
+import UIKit
 
 /// Owns every tgcalls object and touches it only from the serial queue supplied to tgcalls.
 /// `OngoingCallThreadLocalContextWebrtc` asserts this contract in debug builds, including during
@@ -31,6 +32,12 @@ final class TelegramCallEngine: @unchecked Sendable {
     enum RemoteAudioState: Equatable, Sendable {
         case active
         case muted
+    }
+
+    enum RemoteVideoState: Equatable, Sendable {
+        case inactive
+        case active
+        case paused
     }
 
     enum RemoteBatteryLevel: Equatable, Sendable {
@@ -83,7 +90,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         audioSessionActive: Bool,
         networkKind: NetworkKind,
         sendSignaling: @escaping @Sendable (Data) -> Void,
-        stateChanged: @escaping @Sendable (State, RemoteAudioState, RemoteBatteryLevel) -> Void,
+        stateChanged: @escaping @Sendable (State, RemoteVideoState, RemoteAudioState, RemoteBatteryLevel) -> Void,
         signalBarsChanged: @escaping @Sendable (Int32) -> Void,
     ) {
         queue.async { [weak self] in
@@ -137,10 +144,11 @@ final class TelegramCallEngine: @unchecked Sendable {
                 audioDevice: audioDevice,
                 directConnection: nil,
             )
-            context.stateChanged = { [weak self] state, _, _, remoteAudioState, remoteBatteryLevel, _ in
+            context.stateChanged = { [weak self] state, _, remoteVideoState, remoteAudioState, remoteBatteryLevel, _ in
                 guard let self, self.generation == generation else { return }
                 stateChanged(
                     Self.state(from: state),
+                    Self.remoteVideoState(from: remoteVideoState),
                     Self.remoteAudioState(from: remoteAudioState),
                     Self.remoteBatteryLevel(from: remoteBatteryLevel),
                 )
@@ -224,6 +232,17 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
+    func makeIncomingVideoView(completion: @escaping @MainActor (UIView?) -> Void) {
+        queue.async { [weak self] in
+            guard let context = self?.context else { return }
+            context.makeIncomingVideoView { videoView in
+                MainActor.assumeIsolated {
+                    completion(videoView)
+                }
+            }
+        }
+    }
+
     func stop(
         finalTone: TelegramCallTone? = nil,
         retainAudioDeviceFor retentionDuration: TimeInterval = 0,
@@ -297,6 +316,15 @@ final class TelegramCallEngine: @unchecked Sendable {
         case .active: .active
         case .muted: .muted
         @unknown default: .active
+        }
+    }
+
+    private static func remoteVideoState(from state: OngoingCallRemoteVideoStateWebrtc) -> RemoteVideoState {
+        switch state {
+        case .inactive: .inactive
+        case .active: .active
+        case .paused: .paused
+        @unknown default: .inactive
         }
     }
 
