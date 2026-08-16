@@ -126,8 +126,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var signalBars: Int?
     private(set) var isLocalVideoEnabled = false
     private(set) var localVideoView: UIView?
+    private(set) var cameraPreviewView: UIView?
     private(set) var remoteVideoView: UIView?
     private(set) var isUsingFrontCamera = true
+    private(set) var showsCameraPreview = false
     var showsCameraPermissionAlert = false
     var pendingCallRating: CallRatingRequest?
 
@@ -147,7 +149,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     var shouldShowMinimizedCallBar: Bool { activeCall != nil && isCallViewMinimized }
 
     var canToggleVideo: Bool {
-        guard !isRequestingVideo else { return false }
+        guard !isRequestingVideo, !showsCameraPreview else { return false }
         return isLocalVideoEnabled || engineState == .connected || engineState == .reconnecting
     }
 
@@ -239,14 +241,47 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 showsCameraPermissionAlert = true
                 return
             }
-            enableLocalVideo()
+            prepareCameraPreview()
         }
     }
 
     func flipCamera() {
-        guard let videoCapturer, isLocalVideoEnabled else { return }
+        guard let videoCapturer, isLocalVideoEnabled || showsCameraPreview else { return }
         isUsingFrontCamera.toggle()
         videoCapturer.switchVideoInput(isUsingFrontCamera ? "" : "back")
+    }
+
+    func selectCamera(isFront: Bool) {
+        guard videoCapturer != nil,
+              isLocalVideoEnabled || showsCameraPreview,
+              isUsingFrontCamera != isFront
+        else { return }
+        flipCamera()
+    }
+
+    func confirmCameraPreview() {
+        guard showsCameraPreview,
+              activeCall != nil,
+              let videoCapturer
+        else {
+            cancelCameraPreview()
+            return
+        }
+        showsCameraPreview = false
+        isLocalVideoEnabled = true
+        localVideoView = cameraPreviewView
+        cameraPreviewView = nil
+        updateVideoAudioRouting()
+        engine.requestVideo(videoCapturer)
+    }
+
+    func cancelCameraPreview() {
+        guard showsCameraPreview || cameraPreviewView != nil else { return }
+        videoGeneration = UUID()
+        showsCameraPreview = false
+        cameraPreviewView = nil
+        videoCapturer = nil
+        isUsingFrontCamera = true
     }
 
     func selectAudioRoute(_ route: AudioRoute) {
@@ -1149,6 +1184,25 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         engine.requestVideo(capturer)
     }
 
+    private func prepareCameraPreview() {
+        guard !isLocalVideoEnabled, !showsCameraPreview else { return }
+        let capturer = OngoingCallThreadLocalContextVideoCapturer(deviceId: "", keepLandscape: false)
+        let generation = UUID()
+        videoGeneration = generation
+        videoCapturer = capturer
+        isUsingFrontCamera = true
+        showsCameraPreview = true
+        capturer.makeOutgoingVideoView(false) { [weak self] videoView, _ in
+            MainActor.assumeIsolated {
+                guard let self,
+                      self.videoGeneration == generation,
+                      self.showsCameraPreview
+                else { return }
+                self.cameraPreviewView = videoView
+            }
+        }
+    }
+
     private func disableLocalVideo() {
         guard isLocalVideoEnabled else { return }
         engine.disableVideo()
@@ -1218,12 +1272,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isRequestingVideo = false
         isLocalVideoEnabled = false
         localVideoView = nil
+        cameraPreviewView = nil
         videoCapturer = nil
         videoGeneration = UUID()
         remoteVideoView = nil
         isRequestingRemoteVideoView = false
         remoteVideoGeneration = UUID()
         isUsingFrontCamera = true
+        showsCameraPreview = false
         showsCameraPermissionAlert = false
         if isSpeakerOn {
             do {

@@ -174,6 +174,9 @@ struct CallView: View {
         } message: {
             Text("Allow camera access in Settings to use video during calls.")
         }
+        .sheet(isPresented: cameraPreviewPresentation) {
+            CallCameraPreviewView()
+        }
         .task(id: session.activeCall?.userId) {
             user = nil
             isLocalVideoPrimary = false
@@ -195,6 +198,17 @@ struct CallView: View {
     @State private var isLocalVideoPrimary = false
     @State private var user: User?
     @State private var session = TelegramCallSession.shared
+
+    private var cameraPreviewPresentation: Binding<Bool> {
+        Binding(
+            get: { session.showsCameraPreview },
+            set: { isPresented in
+                if !isPresented {
+                    session.cancelCameraPreview()
+                }
+            },
+        )
+    }
 
     private var primaryVideoView: UIView? {
         if isLocalVideoPrimary,
