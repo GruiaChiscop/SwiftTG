@@ -119,6 +119,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var remoteAudioState = TelegramCallEngine.RemoteAudioState.active
     private(set) var remoteBatteryLevel = TelegramCallEngine.RemoteBatteryLevel.normal
     private(set) var signalBars: Int?
+    private(set) var isLocalVideoEnabled = false
+    private(set) var localVideoView: UIView?
+    private(set) var isUsingFrontCamera = true
+    var showsCameraPermissionAlert = false
     var pendingCallRating: CallRatingRequest?
 
     var onIncomingCall: ((Call) -> Void)?
@@ -135,6 +139,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     var shouldShowMinimizedCallBar: Bool { activeCall != nil && isCallViewMinimized }
+
+    var canToggleVideo: Bool {
+        guard !isRequestingVideo else { return false }
+        return isLocalVideoEnabled || engineState == .connected || engineState == .reconnecting
+    }
 
     /// tgcalls configures the category/mode/options CallKit will later activate. This has to run
     /// before reporting or requesting a CallKit call, matching Telegram-iOS's ordering.
@@ -203,6 +212,35 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     func toggleSpeaker() {
         selectAudioRoute(isSpeakerOn ? .builtIn : .speaker)
+    }
+
+    func toggleVideo() {
+        if isLocalVideoEnabled {
+            disableLocalVideo()
+            return
+        }
+        guard canToggleVideo, let callId = activeCall?.id else { return }
+        isRequestingVideo = true
+        Task { [weak self] in
+            guard let self else { return }
+            let isAuthorized = await Self.requestCameraAccess()
+            guard activeCall?.id == callId else {
+                isRequestingVideo = false
+                return
+            }
+            isRequestingVideo = false
+            guard isAuthorized else {
+                showsCameraPermissionAlert = true
+                return
+            }
+            enableLocalVideo()
+        }
+    }
+
+    func flipCamera() {
+        guard let videoCapturer, isLocalVideoEnabled else { return }
+        isUsingFrontCamera.toggle()
+        videoCapturer.switchVideoInput(isUsingFrontCamera ? "" : "back")
     }
 
     func selectAudioRoute(_ route: AudioRoute) {
@@ -309,6 +347,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var isAnswering = false
     private var isEnding = false
     private var lastFinishedCallId: Int?
+    private var videoCapturer: OngoingCallThreadLocalContextVideoCapturer?
+    private var isRequestingVideo = false
+    private var videoGeneration = UUID()
 
     private static func ourProtocol() -> CallProtocol {
         CallProtocol(
@@ -427,6 +468,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     private static func isLowBattery(_ device: UIDevice) -> Bool {
         device.batteryLevel >= 0 && device.batteryLevel < 0.1 && device.batteryState != .charging
+    }
+
+    private static func requestCameraAccess() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            true
+        case .notDetermined:
+            await AVCaptureDevice.requestAccess(for: .video)
+        case .denied, .restricted:
+            false
+        @unknown default:
+            false
+        }
     }
 
     private static func connections(from servers: [CallServer]) -> [TelegramCallEngine.Connection] {
@@ -947,6 +1001,34 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isLowBattery = false
     }
 
+    private func enableLocalVideo() {
+        guard !isLocalVideoEnabled else { return }
+        let capturer = OngoingCallThreadLocalContextVideoCapturer(deviceId: "", keepLandscape: false)
+        let generation = UUID()
+        videoGeneration = generation
+        videoCapturer = capturer
+        isUsingFrontCamera = true
+        isLocalVideoEnabled = true
+        capturer.makeOutgoingVideoView(false) { [weak self] videoView, _ in
+            MainActor.assumeIsolated {
+                guard let self, self.videoGeneration == generation, self.isLocalVideoEnabled else { return }
+                self.localVideoView = videoView
+            }
+        }
+        engine.requestVideo(capturer)
+    }
+
+    private func disableLocalVideo() {
+        guard isLocalVideoEnabled else { return }
+        engine.disableVideo()
+        videoGeneration = UUID()
+        isLocalVideoEnabled = false
+        localVideoView = nil
+        videoCapturer = nil
+        videoGeneration = UUID()
+        isUsingFrontCamera = true
+    }
+
     private func stopEngine(
         debugInformationCallId: Int? = nil,
         logCallId: Int? = nil,
@@ -998,6 +1080,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         signalBars = nil
         isMuted = false
         connectedAt = nil
+        isRequestingVideo = false
+        isLocalVideoEnabled = false
+        localVideoView = nil
+        videoCapturer = nil
+        isUsingFrontCamera = true
+        showsCameraPermissionAlert = false
         if isSpeakerOn {
             do {
                 try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)

@@ -212,6 +212,18 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
+    func requestVideo(_ capturer: OngoingCallThreadLocalContextVideoCapturer) {
+        queue.async { [weak self] in
+            self?.context?.requestVideo(capturer)
+        }
+    }
+
+    func disableVideo() {
+        queue.async { [weak self] in
+            self?.context?.disableVideo()
+        }
+    }
+
     func stop(
         finalTone: TelegramCallTone? = nil,
         retainAudioDeviceFor retentionDuration: TimeInterval = 0,

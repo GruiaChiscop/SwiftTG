@@ -2,6 +2,7 @@
 
 import SwiftUI
 import TDLibKit
+import UIKit
 
 // MARK: - CallView
 
@@ -15,7 +16,14 @@ struct CallView: View {
 
     var body: some View {
         ZStack {
-            CallBackground(userId: session.activeCall?.userId)
+            if let localVideoView = session.localVideoView, session.isLocalVideoEnabled {
+                CallVideoSurfaceView(videoView: localVideoView)
+                    .id(ObjectIdentifier(localVideoView))
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            } else {
+                CallBackground(userId: session.activeCall?.userId)
+            }
 
             VStack {
                 HStack {
@@ -30,13 +38,15 @@ struct CallView: View {
 
                 Spacer(minLength: 24)
 
-                CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
-                    .frame(width: 128, height: 128)
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.2), lineWidth: 1)
-                    }
-                    .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+                if session.localVideoView == nil {
+                    CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
+                        .frame(width: 128, height: 128)
+                        .overlay {
+                            Circle()
+                                .stroke(.white.opacity(0.2), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+                }
 
                 VStack(spacing: 6) {
                     Text(displayName)
@@ -80,10 +90,28 @@ struct CallView: View {
                 .padding(.bottom, 12)
 
                 HStack {
-                    CallAudioRouteControl(
-                        routes: session.availableAudioRoutes,
-                        selectedRoute: session.selectedAudioRoute,
-                        select: session.selectAudioRoute,
+                    if session.isLocalVideoEnabled {
+                        CallControlButton(
+                            systemImage: "arrow.triangle.2.circlepath.camera",
+                            label: "Flip",
+                            action: session.flipCamera,
+                        )
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        CallAudioRouteControl(
+                            routes: session.availableAudioRoutes,
+                            selectedRoute: session.selectedAudioRoute,
+                            select: session.selectAudioRoute,
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+
+                    CallControlButton(
+                        systemImage: "video.fill",
+                        label: "Video",
+                        isActive: session.isLocalVideoEnabled,
+                        isEnabled: session.canToggleVideo,
+                        action: session.toggleVideo,
                     )
                     .frame(maxWidth: .infinity)
 
@@ -110,6 +138,12 @@ struct CallView: View {
         }
         .preferredColorScheme(.dark)
         .interactiveDismissDisabled()
+        .alert("Camera Access Required", isPresented: $session.showsCameraPermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow camera access in Settings to use video during calls.")
+        }
         .task(id: session.activeCall?.userId) {
             user = nil
             guard let userId = session.activeCall?.userId else { return }
@@ -121,9 +155,9 @@ struct CallView: View {
 
     // MARK: Private
 
+    @Environment(\.openURL) private var openURL
     @State private var user: User?
-
-    private let session = TelegramCallSession.shared
+    @State private var session = TelegramCallSession.shared
 
     private var displayName: String {
         guard let user else { return "Telegram" }
@@ -134,5 +168,10 @@ struct CallView: View {
     private var peerShortName: String {
         guard let user else { return "The other person" }
         return user.firstName.isEmpty ? displayName : user.firstName
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 }

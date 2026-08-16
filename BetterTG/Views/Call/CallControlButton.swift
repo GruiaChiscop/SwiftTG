@@ -11,6 +11,7 @@ struct CallControlButton: View {
     let label: String
     var isActive = false
     var isDestructive = false
+    var isEnabled = true
     let action: () -> Void
 
     var body: some View {
@@ -31,6 +32,8 @@ struct CallControlButton: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.5)
         .accessibilityAddTraits(isActive && !isDestructive ? .isSelected : [])
     }
 
