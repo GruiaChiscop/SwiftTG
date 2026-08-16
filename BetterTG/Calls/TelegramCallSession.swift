@@ -657,6 +657,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     isAnswering = false
                 }
             }
+            if call.isVideo {
+                let cameraGranted = await Self.requestCameraAccess()
+                guard activeCall?.id == call.id else {
+                    log("[Call] video answer superseded while waiting for camera permission")
+                    return
+                }
+                guard cameraGranted else {
+                    log("[Call] camera permission denied; incoming video call rejected")
+                    showsCameraPermissionAlert = true
+                    endActiveCall(isDisconnected: false)
+                    return
+                }
+            }
             do {
                 _ = try await service.acceptCall(callId: call.id, protocol: Self.ourProtocol())
                 if activeCall?.id == call.id {
@@ -850,7 +863,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 }
             },
         )
-        if call.isOutgoing, call.isVideo {
+        // Telegram starts both sides of an explicitly-video call with their camera enabled. For
+        // incoming calls, `answerActiveCall()` has already obtained permission before accepting;
+        // outgoing calls are authorized before CallKit creates the call.
+        if call.isVideo, AVCaptureDevice.authorizationStatus(for: .video) == .authorized {
             enableLocalVideo()
         }
         engine.setTone(Self.connectingTone)
