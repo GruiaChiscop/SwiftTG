@@ -16,21 +16,16 @@ struct CallView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            if let remoteVideoView = session.remoteVideoView, session.remoteVideoState != .inactive {
-                CallVideoSurfaceView(videoView: remoteVideoView)
-                    .id(ObjectIdentifier(remoteVideoView))
-                    .ignoresSafeArea()
-                    .accessibilityHidden(true)
-            } else if let localVideoView = session.localVideoView, session.isLocalVideoEnabled {
-                CallVideoSurfaceView(videoView: localVideoView)
-                    .id(ObjectIdentifier(localVideoView))
+            if let primaryVideoView {
+                CallVideoSurfaceView(videoView: primaryVideoView)
+                    .id(ObjectIdentifier(primaryVideoView))
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
             } else {
                 CallBackground(userId: session.activeCall?.userId)
             }
 
-            if session.remoteVideoView != nil || session.localVideoView != nil {
+            if primaryVideoView != nil {
                 LinearGradient(
                     colors: [.black.opacity(0.4), .clear, .black.opacity(0.5)],
                     startPoint: .top,
@@ -53,7 +48,7 @@ struct CallView: View {
 
                 Spacer(minLength: 24)
 
-                if session.remoteVideoView == nil, session.localVideoView == nil {
+                if primaryVideoView == nil {
                     CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
                         .frame(width: 128, height: 128)
                         .overlay {
@@ -153,22 +148,22 @@ struct CallView: View {
             .safeAreaPadding()
             .padding(.horizontal)
 
-            if let localVideoView = session.localVideoView,
-               session.isLocalVideoEnabled,
-               session.remoteVideoView != nil
-            {
-                CallVideoSurfaceView(videoView: localVideoView)
-                    .id(ObjectIdentifier(localVideoView))
-                    .frame(width: 108, height: 152)
-                    .clipShape(.rect(cornerRadius: 16))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(.white.opacity(0.25), lineWidth: 1)
-                    }
-                    .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
-                    .padding(.top, 72)
-                    .padding(.trailing, 16)
-                    .accessibilityHidden(true)
+            if let secondaryVideoView {
+                Button(action: swapPrimaryVideo) {
+                    CallVideoSurfaceView(videoView: secondaryVideoView)
+                        .id(ObjectIdentifier(secondaryVideoView))
+                        .frame(width: 108, height: 152)
+                        .clipShape(.rect(cornerRadius: 16))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(.white.opacity(0.25), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 72)
+                .padding(.trailing, 16)
+                .accessibilityLabel(secondaryVideoAccessibilityLabel)
             }
         }
         .preferredColorScheme(.dark)
@@ -181,18 +176,56 @@ struct CallView: View {
         }
         .task(id: session.activeCall?.userId) {
             user = nil
+            isLocalVideoPrimary = false
             guard let userId = session.activeCall?.userId else { return }
             guard let loadedUser = try? await TDLib.shared.service.getUser(userId: userId) else { return }
             guard !Task.isCancelled else { return }
             user = loadedUser
+        }
+        .onChange(of: session.isLocalVideoEnabled) { _, isEnabled in
+            if !isEnabled {
+                isLocalVideoPrimary = false
+            }
         }
     }
 
     // MARK: Private
 
     @Environment(\.openURL) private var openURL
+    @State private var isLocalVideoPrimary = false
     @State private var user: User?
     @State private var session = TelegramCallSession.shared
+
+    private var primaryVideoView: UIView? {
+        if isLocalVideoPrimary,
+           session.isLocalVideoEnabled,
+           let localVideoView = session.localVideoView
+        {
+            return localVideoView
+        }
+        if session.remoteVideoState != .inactive, let remoteVideoView = session.remoteVideoView {
+            return remoteVideoView
+        }
+        if session.isLocalVideoEnabled, let localVideoView = session.localVideoView {
+            return localVideoView
+        }
+        return nil
+    }
+
+    private var secondaryVideoView: UIView? {
+        guard session.isLocalVideoEnabled,
+              let localVideoView = session.localVideoView,
+              session.remoteVideoState != .inactive,
+              let remoteVideoView = session.remoteVideoView
+        else { return nil }
+        return isLocalVideoPrimary ? remoteVideoView : localVideoView
+    }
+
+    private var secondaryVideoAccessibilityLabel: String {
+        isLocalVideoPrimary
+            ? "Show \(peerShortName)'s video full screen"
+            : "Show your video full screen"
+    }
 
     private var displayName: String {
         guard let user else { return "Telegram" }
@@ -208,5 +241,10 @@ struct CallView: View {
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         openURL(url)
+    }
+
+    private func swapPrimaryVideo() {
+        guard secondaryVideoView != nil else { return }
+        isLocalVideoPrimary.toggle()
     }
 }
