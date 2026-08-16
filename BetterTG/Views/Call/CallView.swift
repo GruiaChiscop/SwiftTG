@@ -56,8 +56,11 @@ struct CallView: View {
                 .padding(.horizontal)
 
                 if !session.encryptionEmojis.isEmpty {
-                    CallEncryptionKeyView(emojis: session.encryptionEmojis)
-                        .padding(.top)
+                    CallEncryptionKeyView(
+                        emojis: session.encryptionEmojis,
+                        peerName: peerShortName,
+                    )
+                    .padding(.top)
                 }
 
                 Spacer()
