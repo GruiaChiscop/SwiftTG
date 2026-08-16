@@ -327,6 +327,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private static let busyTone = TelegramCallTone.load(resourceName: "voip_busy", loopCount: 3)
     private static let failedTone = TelegramCallTone.load(resourceName: "voip_fail", loopCount: 1)
     private static let endedTone = TelegramCallTone.load(resourceName: "voip_end", loopCount: 1)
+    private static let remoteCameraTone = TelegramCallTone.load(
+        resourceName: "voip_group_recording_started",
+        loopCount: 1,
+    )
     private static let terminalToneLifetime: TimeInterval = 2
     private static let endedTonePlaybackDuration: TimeInterval = 1.25
 
@@ -906,9 +910,18 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     private func handleRemoteVideoState(_ state: TelegramCallEngine.RemoteVideoState, callId: Int) {
+        let previousState = remoteVideoState
         if remoteVideoState != state {
             remoteVideoState = state
             log("[Call] remote video=\(state)")
+        }
+        if previousState == .inactive,
+           state != .inactive,
+           selectedAudioRoute.kind == .builtIn
+        {
+            // Telegram plays this cue only when an audio call is still using the receiver. Video
+            // routing may promote that receiver to speaker immediately after this state change.
+            engine.setTone(Self.remoteCameraTone)
         }
         updateVideoAudioRouting()
 
