@@ -52,6 +52,12 @@ struct CallView: View {
                     )
                     .font(.title3)
                     .foregroundStyle(.secondary)
+
+                    CallWeakSignalView(
+                        isVisible: session.connectedAt != nil
+                            && session.engineState == .connected
+                            && session.signalBars == 0,
+                    )
                 }
                 .padding(.horizontal)
 
