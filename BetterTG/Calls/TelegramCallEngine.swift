@@ -243,6 +243,29 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
+    /// Adds an independent frame sink instead of replacing tgcalls' single native renderer.
+    /// Telegram-iOS uses this path for sample-buffer rendering and Picture in Picture.
+    @discardableResult func addVideoOutput(
+        isIncoming: Bool,
+        sink: @escaping @Sendable (CallVideoFrameData) -> Void,
+    ) -> UUID {
+        let identifier = UUID()
+        queue.async { [weak self] in
+            guard let self, let context else { return }
+            videoOutputDisposables[identifier] = context.addVideoOutput(
+                withIsIncoming: isIncoming,
+                sink: sink,
+            )
+        }
+        return identifier
+    }
+
+    func removeVideoOutput(_ identifier: UUID) {
+        queue.async { [weak self] in
+            self?.videoOutputDisposables.removeValue(forKey: identifier)?.dispose()
+        }
+    }
+
     func stop(
         finalTone: TelegramCallTone? = nil,
         retainAudioDeviceFor retentionDuration: TimeInterval = 0,
@@ -280,6 +303,7 @@ final class TelegramCallEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-engine")
     private let contextQueue: CallContextQueue
     private var context: OngoingCallThreadLocalContextWebrtc?
+    private var videoOutputDisposables = [UUID: GroupCallDisposable]()
     private var audioDevice: SharedCallAudioDevice?
     private var pendingSignaling = [Data]()
     private var generation = UUID()
@@ -397,6 +421,10 @@ final class TelegramCallEngine: @unchecked Sendable {
     ) {
         generation = UUID()
         let stopGeneration = generation
+        for disposable in videoOutputDisposables.values {
+            disposable.dispose()
+        }
+        videoOutputDisposables.removeAll(keepingCapacity: false)
         if let context {
             context.beginTermination()
             // Retain the native context until its asynchronous stop callback completes. Besides

@@ -128,6 +128,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var localVideoView: UIView?
     private(set) var cameraPreviewView: UIView?
     private(set) var remoteVideoView: UIView?
+    private(set) var pictureInPictureVideoView: UIView?
     private(set) var isUsingFrontCamera = true
     private(set) var showsCameraPreview = false
     var showsCameraPermissionAlert = false
@@ -273,6 +274,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         cameraPreviewView = nil
         updateVideoAudioRouting()
         engine.requestVideo(videoCapturer)
+        refreshPictureInPictureController()
     }
 
     func cancelCameraPreview() {
@@ -324,12 +326,18 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     func minimizeCallView() {
         guard activeCall != nil else { return }
+        if pictureInPictureController?.start() == false,
+           isLocalVideoEnabled || remoteVideoState != .inactive
+        {
+            log("[Call] Picture in Picture is not ready; using the in-app minimized call bar")
+        }
         isCallViewMinimized = true
     }
 
     func restoreCallView() {
         guard activeCall != nil else { return }
         isCallViewMinimized = false
+        pictureInPictureController?.stop()
     }
 
     func submitCallRating(
@@ -398,6 +406,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var videoGeneration = UUID()
     private var isRequestingRemoteVideoView = false
     private var remoteVideoGeneration = UUID()
+    private var pictureInPictureController: CallPictureInPictureController?
 
     private var shouldRouteVideoToSpeaker: Bool {
         activeCall?.isVideo == true || isLocalVideoEnabled || remoteVideoState != .inactive
@@ -959,6 +968,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             engine.setTone(Self.remoteCameraTone)
         }
         updateVideoAudioRouting()
+        refreshPictureInPictureController()
 
         switch state {
         case .active, .paused:
@@ -1182,6 +1192,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             }
         }
         engine.requestVideo(capturer)
+        refreshPictureInPictureController()
     }
 
     private func prepareCameraPreview() {
@@ -1213,6 +1224,46 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         videoGeneration = UUID()
         isUsingFrontCamera = true
         updateVideoAudioRouting()
+        refreshPictureInPictureController()
+    }
+
+    private func refreshPictureInPictureController() {
+        let isIncoming: Bool
+        if remoteVideoState != .inactive {
+            isIncoming = true
+        } else if isLocalVideoEnabled {
+            isIncoming = false
+        } else {
+            pictureInPictureController?.stop()
+            pictureInPictureController = nil
+            pictureInPictureVideoView = nil
+            return
+        }
+
+        if pictureInPictureController?.isIncoming == isIncoming {
+            return
+        }
+
+        pictureInPictureController?.stop()
+        let videoView = TelegramCallSampleBufferVideoView(engine: engine, isIncoming: isIncoming)
+        guard let controller = CallPictureInPictureController(
+            videoView: videoView,
+            isIncoming: isIncoming,
+        ) else {
+            pictureInPictureController = nil
+            pictureInPictureVideoView = nil
+            return
+        }
+        controller.restoreCallInterface = { [weak self] completion in
+            guard let self, activeCall != nil else {
+                completion(false)
+                return
+            }
+            restoreCallView()
+            completion(true)
+        }
+        pictureInPictureController = controller
+        pictureInPictureVideoView = videoView
     }
 
     private func stopEngine(
@@ -1220,6 +1271,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         logCallId: Int? = nil,
         finalTone: TelegramCallTone? = nil,
     ) {
+        pictureInPictureController?.stop()
+        pictureInPictureController = nil
+        pictureInPictureVideoView = nil
         let retentionDuration = finalTone == nil ? 0 : Self.terminalToneLifetime
         if debugInformationCallId != nil || logCallId != nil {
             let service = service

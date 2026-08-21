@@ -16,6 +16,16 @@ struct CallView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
+            // Keep AVKit's independent sample-buffer source in the hierarchy while the native
+            // tgcalls renderer remains the visible call surface. PiP retains this layer when the
+            // full-screen cover is dismissed.
+            if let pictureInPictureVideoView = session.pictureInPictureVideoView {
+                CallVideoSurfaceView(videoView: pictureInPictureVideoView)
+                    .id(ObjectIdentifier(pictureInPictureVideoView))
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
+
             if let primaryVideoView {
                 CallVideoSurfaceView(videoView: primaryVideoView)
                     .id(ObjectIdentifier(primaryVideoView))
