@@ -26,13 +26,14 @@ import AVKit
 
         controller.delegate = self
         controller.requiresLinearPlayback = true
-        controller.canStartPictureInPictureAutomaticallyFromInline = false
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
     }
 
     // MARK: Internal
 
     let isIncoming: Bool
     let videoView: TelegramCallSampleBufferVideoView
+    var didStartPictureInPicture: (() -> Void)?
     var restoreCallInterface: (((Bool) -> Void) -> Void)?
 
     @discardableResult func start() -> Bool {
@@ -56,6 +57,10 @@ import AVKit
 // MARK: @preconcurrency AVPictureInPictureControllerDelegate
 
 extension CallPictureInPictureController: @preconcurrency AVPictureInPictureControllerDelegate {
+    func pictureInPictureControllerDidStartPictureInPicture(_: AVPictureInPictureController) {
+        didStartPictureInPicture?()
+    }
+
     func pictureInPictureController(
         _: AVPictureInPictureController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void,

@@ -1262,6 +1262,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             restoreCallView()
             completion(true)
         }
+        controller.didStartPictureInPicture = { [weak self] in
+            guard let self, activeCall != nil else { return }
+            isCallViewMinimized = true
+        }
         pictureInPictureController = controller
         pictureInPictureVideoView = videoView
     }
