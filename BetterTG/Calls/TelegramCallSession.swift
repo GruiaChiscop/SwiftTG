@@ -128,7 +128,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var localVideoView: UIView?
     private(set) var cameraPreviewView: UIView?
     private(set) var remoteVideoView: UIView?
-    private(set) var pictureInPictureVideoView: UIView?
+    private(set) var pictureInPictureSourceView: UIView?
     private(set) var isUsingFrontCamera = true
     private(set) var showsCameraPreview = false
     var showsCameraPermissionAlert = false
@@ -326,9 +326,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     func minimizeCallView() {
         guard activeCall != nil else { return }
-        if pictureInPictureController?.start() == false,
-           isLocalVideoEnabled || remoteVideoState != .inactive
-        {
+        let hasVideo = isLocalVideoEnabled || remoteVideoState != .inactive
+        if hasVideo, pictureInPictureController?.start() == true {
+            // Keep the active source view mounted until AVKit finishes its PiP transition.
+            return
+        }
+        if hasVideo {
             log("[Call] Picture in Picture is not ready; using the in-app minimized call bar")
         }
         isCallViewMinimized = true
@@ -1236,7 +1239,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         } else {
             pictureInPictureController?.stop()
             pictureInPictureController = nil
-            pictureInPictureVideoView = nil
+            pictureInPictureSourceView = nil
             return
         }
 
@@ -1251,7 +1254,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             isIncoming: isIncoming,
         ) else {
             pictureInPictureController = nil
-            pictureInPictureVideoView = nil
+            pictureInPictureSourceView = nil
             return
         }
         controller.restoreCallInterface = { [weak self] completion in
@@ -1266,8 +1269,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             guard let self, activeCall != nil else { return }
             isCallViewMinimized = true
         }
+        controller.didFailToStartPictureInPicture = { [weak self] in
+            guard let self, activeCall != nil else { return }
+            isCallViewMinimized = true
+        }
         pictureInPictureController = controller
-        pictureInPictureVideoView = videoView
+        pictureInPictureSourceView = controller.sourceView
     }
 
     private func stopEngine(
@@ -1277,7 +1284,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     ) {
         pictureInPictureController?.stop()
         pictureInPictureController = nil
-        pictureInPictureVideoView = nil
+        pictureInPictureSourceView = nil
         let retentionDuration = finalTone == nil ? 0 : Self.terminalToneLifetime
         if debugInformationCallId != nil || logCallId != nil {
             let service = service

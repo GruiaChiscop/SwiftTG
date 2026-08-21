@@ -4,9 +4,8 @@ import AVKit
 
 // MARK: - CallPictureInPictureController
 
-/// Owns AVKit's live-video Picture in Picture controller while the call session owns the source
-/// renderer. The source is a separate tgcalls frame sink, so entering PiP never reparents the
-/// renderer used by the full-screen call UI.
+/// Owns AVKit's video-call Picture in Picture controller and an independent tgcalls frame sink,
+/// so entering PiP never reparents the renderer used by the full-screen call UI.
 @MainActor final class CallPictureInPictureController: NSObject {
     // MARK: Lifecycle
 
@@ -14,25 +13,31 @@ import AVKit
         guard AVPictureInPictureController.isPictureInPictureSupported() else { return nil }
 
         self.isIncoming = isIncoming
-        self.videoView = videoView
-        let playbackDelegate = PlaybackDelegate()
-        self.playbackDelegate = playbackDelegate
+        let sourceView = UIView()
+        self.sourceView = sourceView
+        let contentViewController = AVPictureInPictureVideoCallViewController()
+        let videoContainerView = CallVideoSurfaceContainerView(videoView: videoView)
+        videoContainerView.frame = contentViewController.view.bounds
+        videoContainerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        contentViewController.view.backgroundColor = .black
+        contentViewController.view.addSubview(videoContainerView)
+        self.contentViewController = contentViewController
         let contentSource = AVPictureInPictureController.ContentSource(
-            sampleBufferDisplayLayer: videoView.sampleBufferLayer,
-            playbackDelegate: playbackDelegate,
+            activeVideoCallSourceView: sourceView,
+            contentViewController: contentViewController,
         )
         self.controller = AVPictureInPictureController(contentSource: contentSource)
         super.init()
 
         controller.delegate = self
-        controller.requiresLinearPlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
     }
 
     // MARK: Internal
 
     let isIncoming: Bool
-    let videoView: TelegramCallSampleBufferVideoView
+    let sourceView: UIView
+    var didFailToStartPictureInPicture: (() -> Void)?
     var didStartPictureInPicture: (() -> Void)?
     var restoreCallInterface: (((Bool) -> Void) -> Void)?
 
@@ -50,13 +55,21 @@ import AVKit
 
     // MARK: Private
 
-    private let playbackDelegate: PlaybackDelegate
+    private let contentViewController: AVPictureInPictureVideoCallViewController
     private let controller: AVPictureInPictureController
 }
 
 // MARK: @preconcurrency AVPictureInPictureControllerDelegate
 
 extension CallPictureInPictureController: @preconcurrency AVPictureInPictureControllerDelegate {
+    func pictureInPictureController(
+        _: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError error: any Error,
+    ) {
+        log("[Call] Picture in Picture failed to start: \(error)")
+        didFailToStartPictureInPicture?()
+    }
+
     func pictureInPictureControllerDidStartPictureInPicture(_: AVPictureInPictureController) {
         didStartPictureInPicture?()
     }
@@ -70,40 +83,5 @@ extension CallPictureInPictureController: @preconcurrency AVPictureInPictureCont
             return
         }
         restoreCallInterface(completionHandler)
-    }
-}
-
-// MARK: - PlaybackDelegate
-
-private final class PlaybackDelegate: NSObject, AVPictureInPictureSampleBufferPlaybackDelegate {
-    func pictureInPictureController(_: AVPictureInPictureController, setPlaying _: Bool) {}
-
-    func pictureInPictureControllerTimeRangeForPlayback(
-        _: AVPictureInPictureController,
-    ) -> CMTimeRange {
-        CMTimeRange(start: .zero, duration: .positiveInfinity)
-    }
-
-    func pictureInPictureControllerIsPlaybackPaused(_: AVPictureInPictureController) -> Bool {
-        false
-    }
-
-    func pictureInPictureController(
-        _: AVPictureInPictureController,
-        didTransitionToRenderSize _: CMVideoDimensions,
-    ) {}
-
-    func pictureInPictureController(
-        _: AVPictureInPictureController,
-        skipByInterval _: CMTime,
-        completion completionHandler: @escaping () -> Void,
-    ) {
-        completionHandler()
-    }
-
-    func pictureInPictureControllerShouldProhibitBackgroundAudioPlayback(
-        _: AVPictureInPictureController,
-    ) -> Bool {
-        false
     }
 }
