@@ -79,6 +79,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         let connections: [Connection]
         let maxLayer: Int32
         let allowP2P: Bool
+        let allowTCP: Bool
         let dataSaving: DataSaving
         let proxy: ProxyServer?
     }
@@ -158,7 +159,7 @@ final class TelegramCallEngine: @unchecked Sendable {
                 connections: connections,
                 maxLayer: configuration.maxLayer,
                 allowP2P: configuration.allowP2P,
-                allowTCP: true,
+                allowTCP: configuration.allowTCP,
                 enableStunMarking: true,
                 logPath: "",
                 statsLogPath: "",

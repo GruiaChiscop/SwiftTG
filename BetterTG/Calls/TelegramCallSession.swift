@@ -971,6 +971,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 connections: Self.connections(from: info.servers),
                 maxLayer: Int32(info.protocol.maxLayer),
                 allowP2P: info.allowP2p,
+                // Telegram-iOS keeps VoIP-over-TCP behind its disabled-by-default experimental
+                // switch. SwiftTG has no equivalent switch, so use the same production default.
+                allowTCP: false,
                 dataSaving: TelegramCallSettings.usesLessData ? .always : .never,
                 proxy: proxy,
             ),
