@@ -186,6 +186,8 @@ struct CallView: View {
         .sheet(isPresented: cameraPreviewPresentation) {
             CallCameraPreviewView()
         }
+        .onAppear(perform: acquireIdleTimer)
+        .onDisappear(perform: releaseIdleTimer)
         .task(id: session.activeCall?.userId) {
             user = nil
             isLocalVideoPrimary = false
@@ -204,6 +206,7 @@ struct CallView: View {
     // MARK: Private
 
     @Environment(\.openURL) private var openURL
+    @State private var idleTimerToken: UUID?
     @State private var isLocalVideoPrimary = false
     @State private var user: User?
     @State private var session = TelegramCallSession.shared
@@ -259,6 +262,17 @@ struct CallView: View {
     private var peerShortName: String {
         guard let user else { return "The other person" }
         return user.firstName.isEmpty ? displayName : user.firstName
+    }
+
+    private func acquireIdleTimer() {
+        guard idleTimerToken == nil else { return }
+        idleTimerToken = ApplicationIdleTimer.acquire()
+    }
+
+    private func releaseIdleTimer() {
+        guard let idleTimerToken else { return }
+        ApplicationIdleTimer.release(idleTimerToken)
+        self.idleTimerToken = nil
     }
 
     private func openSettings() {
