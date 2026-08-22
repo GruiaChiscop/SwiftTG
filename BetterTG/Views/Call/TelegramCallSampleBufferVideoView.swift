@@ -45,6 +45,8 @@ import UIKit
 
     private(set) var orientation = OngoingCallVideoOrientationWebrtc.orientation0
     private(set) var aspect: CGFloat = 3 / 4
+    private(set) var mirrorHorizontally = false
+    private(set) var mirrorVertically = false
 
     var sampleBufferLayer: AVSampleBufferDisplayLayer {
         layer as! AVSampleBufferDisplayLayer
@@ -75,7 +77,6 @@ import UIKit
     private var outputIdentifier: UUID?
     private var isEnabled = true
     private var didReceiveFirstFrame = false
-    private var isMirrored = false
     private var onFirstFrameReceived: ((Float) -> Void)?
     private var onOrientationUpdated: ((OngoingCallVideoOrientationWebrtc, CGFloat) -> Void)?
     private var onIsMirroredUpdated: ((Bool) -> Void)?
@@ -240,22 +241,53 @@ import UIKit
         return sampleBuffer
     }
 
+    private static func presentation(
+        for frame: CallVideoFrameData,
+    ) -> (
+        orientation: OngoingCallVideoOrientationWebrtc,
+        mirrorHorizontally: Bool,
+        mirrorVertically: Bool,
+    ) {
+        guard frame.hasDeviceRelativeOrientation else {
+            return (frame.orientation, frame.mirrorHorizontally, frame.mirrorVertically)
+        }
+
+        let orientation = frame.deviceRelativeOrientation
+        guard orientation != frame.orientation,
+              frame.mirrorHorizontally || frame.mirrorVertically
+        else {
+            return (orientation, frame.mirrorHorizontally, frame.mirrorVertically)
+        }
+
+        switch orientation {
+        case .orientation0, .orientation180:
+            return (orientation, true, false)
+        case .orientation90, .orientation270:
+            return (orientation, false, true)
+        @unknown default:
+            return (orientation, frame.mirrorHorizontally, frame.mirrorVertically)
+        }
+    }
+
     private func addFrame(_ frame: CallVideoFrameData) {
         let width = Int(frame.width)
         let height = Int(frame.height)
         guard width > 0, height > 0 else { return }
 
+        let presentation = Self.presentation(for: frame)
         let updatedAspect = CGFloat(width) / CGFloat(height)
-        if aspect != updatedAspect || orientation != frame.orientation {
+        if aspect != updatedAspect || orientation != presentation.orientation {
             aspect = updatedAspect
-            orientation = frame.orientation
+            orientation = presentation.orientation
             onOrientationUpdated?(orientation, aspect)
         }
 
-        let updatedIsMirrored = frame.mirrorHorizontally != frame.mirrorVertically
-        if isMirrored != updatedIsMirrored {
-            isMirrored = updatedIsMirrored
-            onIsMirroredUpdated?(updatedIsMirrored)
+        if mirrorHorizontally != presentation.mirrorHorizontally
+            || mirrorVertically != presentation.mirrorVertically
+        {
+            mirrorHorizontally = presentation.mirrorHorizontally
+            mirrorVertically = presentation.mirrorVertically
+            onIsMirroredUpdated?(mirrorHorizontally != mirrorVertically)
         }
 
         if !didReceiveFirstFrame {

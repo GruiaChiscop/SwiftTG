@@ -33,6 +33,19 @@ import UIKit
                     self.setNeedsLayout()
                 }
             }
+
+            if let sampleBufferVideoView = videoView as? TelegramCallSampleBufferVideoView {
+                self.mirrorHorizontally = sampleBufferVideoView.mirrorHorizontally
+                self.mirrorVertically = sampleBufferVideoView.mirrorVertically
+                videoRenderer.setOnIsMirroredUpdated { [weak self, weak sampleBufferVideoView] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let sampleBufferVideoView else { return }
+                        self.mirrorHorizontally = sampleBufferVideoView.mirrorHorizontally
+                        self.mirrorVertically = sampleBufferVideoView.mirrorVertically
+                        self.setNeedsLayout()
+                    }
+                }
+            }
         }
     }
 
@@ -75,7 +88,10 @@ import UIKit
         videoView.transform = .identity
         videoView.bounds = CGRect(origin: .zero, size: rendererSize)
         videoView.center = CGPoint(x: bounds.midX, y: bounds.midY)
-        videoView.transform = CGAffineTransform(rotationAngle: rotation)
+        videoView.transform = CGAffineTransform(rotationAngle: rotation).scaledBy(
+            x: mirrorHorizontally ? -1 : 1,
+            y: mirrorVertically ? -1 : 1,
+        )
     }
 
     // MARK: Private
@@ -86,6 +102,8 @@ import UIKit
     private let videoRenderer: (any OngoingCallThreadLocalContextWebrtcVideoView)?
     private var orientation = OngoingCallVideoOrientationWebrtc.orientation0
     private var aspect = fallbackAspect
+    private var mirrorHorizontally = false
+    private var mirrorVertically = false
 
     private static func validAspect(_ aspect: CGFloat) -> CGFloat {
         guard aspect.isFinite, aspect > 0.01 else { return fallbackAspect }
