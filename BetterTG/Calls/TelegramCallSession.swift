@@ -2,6 +2,7 @@
 
 import AVFoundation
 import Combine
+import CoreTelephony
 import Network
 import Observation
 import TDLibKit
@@ -71,13 +72,18 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshLowBatteryState() }
             .store(in: &cancellables)
+        notificationCenter.publisher(for: .CTServiceRadioAccessTechnologyDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshNetworkKind() }
+            .store(in: &cancellables)
 
         refreshAudioRoutes()
 
         networkMonitor.pathUpdateHandler = { [weak self] path in
-            let kind: TelegramCallEngine.NetworkKind = path.usesInterfaceType(.cellular) ? .cellular : .wifi
+            let usesCellular = path.usesInterfaceType(.cellular)
             Task { @MainActor [weak self] in
-                self?.applyNetworkKind(kind)
+                self?.usesCellularNetwork = usesCellular
+                self?.refreshNetworkKind()
             }
         }
         networkMonitor.start(queue: networkMonitorQueue)
@@ -395,6 +401,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     private let service: any TelegramService
     private let engine = TelegramCallEngine()
+    private let cellularNetworkInfo = CTTelephonyNetworkInfo()
     private let networkMonitor = NWPathMonitor()
     private let networkMonitorQueue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-network")
     private var cancellables = Set<AnyCancellable>()
@@ -415,6 +422,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var engineStartTask: Task<Void, Never>?
     private var isLowBattery = false
     private var networkKind = TelegramCallEngine.NetworkKind.wifi
+    private var usesCellularNetwork = false
     private var pendingSystemAction: PendingSystemAction?
     private var isAnswering = false
     private var isEnding = false
@@ -447,6 +455,37 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private static func pickVersion(from theirVersions: [String]) -> String? {
         let ours = Set(OngoingCallThreadLocalContextWebrtc.versions(withIncludeReference: false))
         return theirVersions.first(where: ours.contains)
+    }
+
+    private static func networkKind(for accessTechnology: String) -> TelegramCallEngine.NetworkKind {
+        switch accessTechnology {
+        case CTRadioAccessTechnologyGPRS:
+            .cellularGprs
+        case CTRadioAccessTechnologyCDMA1x, CTRadioAccessTechnologyEdge:
+            .cellularEdge
+        case CTRadioAccessTechnologyLTE, CTRadioAccessTechnologyNR, CTRadioAccessTechnologyNRNSA:
+            .cellularLte
+        case CTRadioAccessTechnologyCDMAEVDORev0,
+             CTRadioAccessTechnologyCDMAEVDORevA,
+             CTRadioAccessTechnologyCDMAEVDORevB,
+             CTRadioAccessTechnologyeHRPD,
+             CTRadioAccessTechnologyHSDPA,
+             CTRadioAccessTechnologyHSUPA,
+             CTRadioAccessTechnologyWCDMA:
+            .cellular3g
+        default:
+            .cellular3g
+        }
+    }
+
+    private static func describe(networkKind: TelegramCallEngine.NetworkKind) -> String {
+        switch networkKind {
+        case .wifi: "wifi"
+        case .cellularGprs: "gprs"
+        case .cellularEdge: "edge"
+        case .cellular3g: "3g"
+        case .cellularLte: "lte"
+        }
     }
 
     private static func isTerminal(_ state: CallState) -> Bool {
@@ -858,8 +897,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     private func applyNetworkKind(_ kind: TelegramCallEngine.NetworkKind) {
+        guard networkKind != kind else { return }
         networkKind = kind
+        log("[Call] network kind=\(Self.describe(networkKind: kind))")
         engine.setNetworkKind(kind)
+    }
+
+    private func refreshNetworkKind() {
+        guard usesCellularNetwork else {
+            applyNetworkKind(.wifi)
+            return
+        }
+        let accessTechnology = cellularNetworkInfo.serviceCurrentRadioAccessTechnology?.values.first ?? ""
+        applyNetworkKind(Self.networkKind(for: accessTechnology))
     }
 
     private func stopRingback() {

@@ -24,9 +24,12 @@ final class TelegramCallEngine: @unchecked Sendable {
         case unknown(Int32)
     }
 
-    enum NetworkKind: Sendable {
+    enum NetworkKind: Equatable, Sendable {
         case wifi
-        case cellular
+        case cellularGprs
+        case cellularEdge
+        case cellular3g
+        case cellularLte
     }
 
     enum DataSaving: Sendable {
@@ -349,7 +352,10 @@ final class TelegramCallEngine: @unchecked Sendable {
     private static func networkType(for kind: NetworkKind) -> OngoingCallNetworkTypeWebrtc {
         switch kind {
         case .wifi: .wifi
-        case .cellular: .cellularLte
+        case .cellularGprs: .cellularGprs
+        case .cellularEdge: .cellularEdge
+        case .cellular3g: .cellular3g
+        case .cellularLte: .cellularLte
         }
     }
 
