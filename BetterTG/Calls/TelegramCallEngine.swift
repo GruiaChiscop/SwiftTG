@@ -232,6 +232,12 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
+    func addExternalAudioData(_ data: Data) {
+        queue.async { [weak self] in
+            self?.context?.addExternalAudioData(data)
+        }
+    }
+
     func makeIncomingVideoView(completion: @escaping @MainActor (UIView?) -> Void) {
         queue.async { [weak self] in
             guard let context = self?.context else { return }

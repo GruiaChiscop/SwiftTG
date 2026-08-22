@@ -111,7 +111,7 @@ struct CallView: View {
                 .padding(.bottom, 12)
 
                 HStack {
-                    if session.isLocalVideoEnabled {
+                    if session.isLocalVideoEnabled, !session.isScreenSharing {
                         CallControlButton(
                             systemImage: "arrow.triangle.2.circlepath.camera",
                             label: "Flip",
@@ -128,8 +128,8 @@ struct CallView: View {
                     }
 
                     CallControlButton(
-                        systemImage: "video.fill",
-                        label: "Video",
+                        systemImage: session.isScreenSharing ? "rectangle.on.rectangle.slash" : "video.fill",
+                        label: session.isScreenSharing ? "Stop Sharing" : "Video",
                         isActive: session.isLocalVideoEnabled,
                         isEnabled: session.canToggleVideo,
                         action: session.toggleVideo,

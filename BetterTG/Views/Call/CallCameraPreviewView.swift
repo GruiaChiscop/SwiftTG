@@ -11,7 +11,12 @@ struct CallCameraPreviewView: View {
         NavigationStack {
             VStack(spacing: 20) {
                 Group {
-                    if let cameraPreviewView = session.cameraPreviewView {
+                    if selectedSource == .screen {
+                        ContentUnavailableView(
+                            "Everything on your screen\nwill be shared",
+                            systemImage: "rectangle.on.rectangle",
+                        )
+                    } else if let cameraPreviewView = session.cameraPreviewView {
                         CallVideoSurfaceView(videoView: cameraPreviewView)
                             .id(ObjectIdentifier(cameraPreviewView))
                             .accessibilityHidden(true)
@@ -23,17 +28,27 @@ struct CallCameraPreviewView: View {
                 .background(.black)
                 .clipShape(.rect(cornerRadius: 16))
 
-                Picker("Camera", selection: $selectedCamera) {
-                    Text("Front Camera").tag(Camera.front)
-                    Text("Back Camera").tag(Camera.back)
+                Picker("Video Source", selection: $selectedSource) {
+                    Text("Phone Screen").tag(VideoSource.screen)
+                    Text("Front Camera").tag(VideoSource.front)
+                    Text("Back Camera").tag(VideoSource.back)
                 }
                 .pickerStyle(.segmented)
 
-                Button("Continue", action: session.confirmCameraPreview)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                    .disabled(session.cameraPreviewView == nil)
+                ZStack {
+                    Button("Continue", action: session.confirmCameraPreview)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .disabled(selectedSource != .screen && session.cameraPreviewView == nil)
+                        .accessibilityHidden(selectedSource == .screen)
+
+                    if selectedSource == .screen {
+                        SystemBroadcastPickerButton(isEnabled: true, label: "Continue")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(minHeight: 50)
             }
             .padding()
             .navigationTitle("Video Preview")
@@ -48,10 +63,17 @@ struct CallCameraPreviewView: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {
-            selectedCamera = session.isUsingFrontCamera ? .front : .back
+            selectedSource = session.isUsingFrontCamera ? .front : .back
         }
-        .onChange(of: selectedCamera) { _, camera in
-            session.selectCamera(isFront: camera == .front)
+        .onChange(of: selectedSource) { _, source in
+            switch source {
+            case .front:
+                session.selectCamera(isFront: true)
+            case .back:
+                session.selectCamera(isFront: false)
+            case .screen:
+                break
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
@@ -62,12 +84,13 @@ struct CallCameraPreviewView: View {
 
     // MARK: Private
 
-    private enum Camera: Hashable {
+    private enum VideoSource: Hashable {
+        case screen
         case front
         case back
     }
 
     @Environment(\.scenePhase) private var scenePhase
-    @State private var selectedCamera = Camera.front
+    @State private var selectedSource = VideoSource.front
     @State private var session = TelegramCallSession.shared
 }

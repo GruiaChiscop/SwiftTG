@@ -131,6 +131,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var pictureInPictureSourceView: UIView?
     private(set) var isUsingFrontCamera = true
     private(set) var showsCameraPreview = false
+    private(set) var isScreenSharing = false
     var showsCameraPermissionAlert = false
     var pendingCallRating: CallRatingRequest?
 
@@ -224,6 +225,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func toggleVideo() {
+        if isScreenSharing {
+            stopScreenSharing()
+            return
+        }
         if isLocalVideoEnabled {
             disableLocalVideo()
             return
@@ -247,7 +252,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func flipCamera() {
-        guard let videoCapturer, isLocalVideoEnabled || showsCameraPreview else { return }
+        guard !isScreenSharing,
+              let videoCapturer,
+              isLocalVideoEnabled || showsCameraPreview
+        else { return }
         isUsingFrontCamera.toggle()
         videoCapturer.switchVideoInput(isUsingFrontCamera ? "" : "back")
     }
@@ -284,6 +292,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         cameraPreviewView = nil
         videoCapturer = nil
         isUsingFrontCamera = true
+    }
+
+    func stopScreenSharing() {
+        guard isScreenSharing else { return }
+        screenShareReceiver?.requestBroadcastStop()
     }
 
     func selectAudioRoute(_ route: AudioRoute) {
@@ -405,6 +418,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var isEnding = false
     private var lastFinishedCallId: Int?
     private var videoCapturer: OngoingCallThreadLocalContextVideoCapturer?
+    private var screenShareCapturer: OngoingCallThreadLocalContextVideoCapturer?
+    private var screenShareReceiver: CallScreenShareReceiver?
     private var isRequestingVideo = false
     private var videoGeneration = UUID()
     private var isRequestingRemoteVideoView = false
@@ -914,6 +929,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 }
             },
         )
+        startScreenShareReceiver()
         // Telegram starts both sides of an explicitly-video call with their camera enabled. For
         // incoming calls, `answerActiveCall()` has already obtained permission before accepting;
         // outgoing calls are authorized before CallKit creates the call.
@@ -1198,6 +1214,69 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         refreshPictureInPictureController()
     }
 
+    private func startScreenShareReceiver() {
+        guard screenShareReceiver == nil else { return }
+        let receiver = CallScreenShareReceiver(
+            frameReceived: { [weak self] frame in
+                guard let self, isScreenSharing, let screenShareCapturer else { return }
+                screenShareCapturer.submitSampleBuffer(
+                    frame.sampleBuffer,
+                    rotation: frame.rotation,
+                    completion: {},
+                )
+            },
+            audioReceived: { [weak self] data in
+                guard let self, isScreenSharing else { return }
+                engine.addExternalAudioData(data)
+            },
+            activeChanged: { [weak self] active in
+                self?.setScreenSharingActive(active)
+            },
+        )
+        screenShareReceiver = receiver
+        receiver.start()
+    }
+
+    private func setScreenSharingActive(_ active: Bool) {
+        guard active != isScreenSharing else { return }
+        if active {
+            cancelCameraPreview()
+            if isLocalVideoEnabled {
+                disableLocalVideo()
+            }
+            let capturer = OngoingCallThreadLocalContextVideoCapturer.withExternalSampleBufferProvider()
+            let generation = UUID()
+            videoGeneration = generation
+            screenShareCapturer = capturer
+            isScreenSharing = true
+            isLocalVideoEnabled = true
+            isUsingFrontCamera = true
+            updateVideoAudioRouting()
+            capturer.makeOutgoingVideoView(false) { [weak self] videoView, _ in
+                MainActor.assumeIsolated {
+                    guard let self,
+                          self.videoGeneration == generation,
+                          self.isScreenSharing
+                    else { return }
+                    self.localVideoView = videoView
+                }
+            }
+            engine.requestVideo(capturer)
+            refreshPictureInPictureController()
+            log("[Call] screen sharing started")
+        } else {
+            engine.disableVideo()
+            videoGeneration = UUID()
+            screenShareCapturer = nil
+            isScreenSharing = false
+            isLocalVideoEnabled = false
+            localVideoView = nil
+            updateVideoAudioRouting()
+            refreshPictureInPictureController()
+            log("[Call] screen sharing stopped")
+        }
+    }
+
     private func prepareCameraPreview() {
         guard !isLocalVideoEnabled, !showsCameraPreview else { return }
         let capturer = OngoingCallThreadLocalContextVideoCapturer(deviceId: "", keepLandscape: false)
@@ -1226,6 +1305,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         videoCapturer = nil
         videoGeneration = UUID()
         isUsingFrontCamera = true
+        isScreenSharing = false
+        screenShareCapturer = nil
         updateVideoAudioRouting()
         refreshPictureInPictureController()
     }
@@ -1282,6 +1363,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         logCallId: Int? = nil,
         finalTone: TelegramCallTone? = nil,
     ) {
+        screenShareReceiver?.stop()
+        screenShareReceiver = nil
+        screenShareCapturer = nil
+        isScreenSharing = false
         pictureInPictureController?.stop()
         pictureInPictureController = nil
         pictureInPictureSourceView = nil
