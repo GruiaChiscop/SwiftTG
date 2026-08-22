@@ -897,6 +897,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 connections: Self.connections(from: info.servers),
                 maxLayer: Int32(info.protocol.maxLayer),
                 allowP2P: info.allowP2p,
+                dataSaving: TelegramCallSettings.usesLessData ? .always : .never,
             ),
             muted: isMuted,
             lowBattery: isLowBattery,

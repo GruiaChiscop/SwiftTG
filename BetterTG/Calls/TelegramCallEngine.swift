@@ -29,6 +29,11 @@ final class TelegramCallEngine: @unchecked Sendable {
         case cellular
     }
 
+    enum DataSaving: Sendable {
+        case never
+        case always
+    }
+
     enum RemoteAudioState: Equatable, Sendable {
         case active
         case muted
@@ -64,6 +69,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         let connections: [Connection]
         let maxLayer: Int32
         let allowP2P: Bool
+        let dataSaving: DataSaving
     }
 
     struct StopResult: Sendable {
@@ -126,7 +132,7 @@ final class TelegramCallEngine: @unchecked Sendable {
                 queue: contextQueue,
                 proxy: nil,
                 networkType: Self.networkType(for: networkKind),
-                dataSaving: .never,
+                dataSaving: Self.dataSaving(from: configuration.dataSaving),
                 derivedState: Data(),
                 key: configuration.encryptionKey,
                 isOutgoing: configuration.isOutgoing,
@@ -328,6 +334,13 @@ final class TelegramCallEngine: @unchecked Sendable {
         switch kind {
         case .wifi: .wifi
         case .cellular: .cellularLte
+        }
+    }
+
+    private static func dataSaving(from setting: DataSaving) -> OngoingCallDataSavingWebrtc {
+        switch setting {
+        case .never: .never
+        case .always: .always
         }
     }
 
