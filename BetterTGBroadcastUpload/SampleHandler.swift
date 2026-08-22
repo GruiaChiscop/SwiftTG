@@ -17,7 +17,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
             finishBroadcastWithError(Self.error("SwiftTG couldn't open its shared screen-share container."))
             return
         }
+        isFinishing = false
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
         let audioURL = directory.appending(path: Self.audioName)
         FileManager.default.createFile(atPath: audioURL.path, contents: nil)
         audioWriteHandle = try? FileHandle(forWritingTo: audioURL)
@@ -29,17 +31,25 @@ final class SampleHandler: RPBroadcastSampleHandler {
     override func broadcastResumed() {}
 
     override func broadcastFinished() {
-        guard let directory = Self.sharedDirectory else { return }
         try? audioWriteHandle?.close()
         audioWriteHandle = nil
+        guard let directory = Self.sharedDirectory else { return }
         try? FileManager.default.removeItem(at: directory.appending(path: Self.extensionHeartbeatName))
         try? FileManager.default.removeItem(at: directory.appending(path: Self.frameName))
         try? FileManager.default.removeItem(at: directory.appending(path: Self.audioName))
+        try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
-        guard let directory = Self.sharedDirectory, Self.isCallActive(in: directory) else {
-            finishBroadcastWithError(Self.error("The SwiftTG call has ended."))
+        guard !isFinishing, let directory = Self.sharedDirectory else { return }
+        if FileManager.default.fileExists(atPath: directory.appending(path: Self.stopRequestName).path) {
+            isFinishing = true
+            BetterTGFinishBroadcastGracefully(self)
+            return
+        }
+        guard Self.isCallActive(in: directory) else {
+            isFinishing = true
+            finishBroadcastWithError(Self.error("You're not in a voice chat"))
             return
         }
 
@@ -63,6 +73,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private static let extensionHeartbeatName = "extension-heartbeat"
     private static let frameName = "frame.bin"
     private static let audioName = "audio.bin"
+    private static let stopRequestName = "stop-request"
 
     private static var sharedDirectory: URL? {
         FileManager.default
@@ -73,6 +84,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private var lastVideoTimestamp = -Double.infinity
     private var audioConverter: ScreenShareAudioConverter?
     private var audioWriteHandle: FileHandle?
+    private var isFinishing = false
 
     private static func error(_ description: String) -> NSError {
         NSError(domain: "com.gruiachiscop.BetterTG.BroadcastUpload", code: 1, userInfo: [

@@ -36,6 +36,7 @@ final class CallScreenShareReceiver: @unchecked Sendable {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: directory.appending(path: Self.extensionHeartbeatName))
             try? FileManager.default.removeItem(at: directory.appending(path: Self.frameName))
+            try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
             writeAppHeartbeat(in: directory)
 
             let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -56,6 +57,7 @@ final class CallScreenShareReceiver: @unchecked Sendable {
             updateActive(false)
             guard let directory = Self.sharedDirectory else { return }
             try? FileManager.default.removeItem(at: directory.appending(path: Self.appHeartbeatName))
+            try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
         }
     }
 
@@ -63,6 +65,7 @@ final class CallScreenShareReceiver: @unchecked Sendable {
         queue.async { [self] in
             suppressesHeartbeat = true
             guard let directory = Self.sharedDirectory else { return }
+            try? Data().write(to: directory.appending(path: Self.stopRequestName), options: .atomic)
             try? FileManager.default.removeItem(at: directory.appending(path: Self.appHeartbeatName))
         }
     }
@@ -75,6 +78,7 @@ final class CallScreenShareReceiver: @unchecked Sendable {
     private static let extensionHeartbeatName = "extension-heartbeat"
     private static let frameName = "frame.bin"
     private static let audioName = "audio.bin"
+    private static let stopRequestName = "stop-request"
     private static let headerSize = MemoryLayout<UInt32>.size * 6
 
     private static var sharedDirectory: URL? {
@@ -212,6 +216,7 @@ final class CallScreenShareReceiver: @unchecked Sendable {
             resetAudioReader()
             if suppressesHeartbeat {
                 suppressesHeartbeat = false
+                try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
                 writeAppHeartbeat(in: directory)
             }
             return
