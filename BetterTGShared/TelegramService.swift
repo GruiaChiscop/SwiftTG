@@ -454,6 +454,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setProfilePhoto(isPublic: Bool?, photo: InputChatPhoto?) async throws -> Ok
     func setOption(name: String?, value: OptionValue?) async throws -> Ok
     func getOption(name: String?) async throws -> OptionValue
+    func getApplicationConfig() async throws -> JsonValue
     func getAutosaveSettings() async throws -> AutosaveSettings
     func setAutosaveSettings(scope: AutosaveSettingsScope?, settings: ScopeAutosaveSettings?) async throws -> Ok
     func getDefaultMessageAutoDeleteTime() async throws -> MessageAutoDeleteTime
@@ -515,6 +516,10 @@ extension TelegramSession: TelegramService {
 
     func getOption(name: String?) async throws -> OptionValue {
         try await client.getOption(name: name)
+    }
+
+    func getApplicationConfig() async throws -> JsonValue {
+        try await client.getApplicationConfig()
     }
 
     func getAutosaveSettings() async throws -> AutosaveSettings {

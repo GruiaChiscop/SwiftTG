@@ -941,7 +941,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         engineStartCallId = callId
         engineStartTask = Task { [weak self] in
             guard let self else { return }
-            let proxy = await configuredCallProxy()
+            async let configuredProxy = configuredCallProxy()
+            async let configuredStunMarking = configuredStunMarkingEnabled()
+            let (proxy, enableStunMarking) = await (configuredProxy, configuredStunMarking)
             defer {
                 if engineStartCallId == callId {
                     engineStartCallId = nil
@@ -949,7 +951,13 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 }
             }
             guard !Task.isCancelled, activeCall?.id == callId, !isEngineRunning else { return }
-            startEngine(call: call, info: info, version: version, proxy: proxy)
+            startEngine(
+                call: call,
+                info: info,
+                version: version,
+                proxy: proxy,
+                enableStunMarking: enableStunMarking,
+            )
         }
     }
 
@@ -958,6 +966,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         info: CallStateReady,
         version: String,
         proxy: TelegramCallEngine.ProxyServer?,
+        enableStunMarking: Bool,
     ) {
         isEngineRunning = true
         startBatteryMonitoring()
@@ -974,6 +983,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 // Telegram-iOS keeps VoIP-over-TCP behind its disabled-by-default experimental
                 // switch. SwiftTG has no equivalent switch, so use the same production default.
                 allowTCP: false,
+                enableStunMarking: enableStunMarking,
                 dataSaving: TelegramCallSettings.usesLessData ? .always : .never,
                 proxy: proxy,
             ),
@@ -1123,6 +1133,20 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         } catch {
             log("[Call] couldn't load proxy configuration: \(error)")
             return nil
+        }
+    }
+
+    private func configuredStunMarkingEnabled() async -> Bool {
+        do {
+            let configuration = try await service.getApplicationConfig()
+            guard case .jsonValueObject(let object) = configuration,
+                  let member = object.members.first(where: { $0.key == "voip_enable_stun_marking" }),
+                  case .jsonValueBoolean(let value) = member.value
+            else { return true }
+            return value.value
+        } catch {
+            log("[Call] couldn't load STUN marking configuration: \(error)")
+            return true
         }
     }
 
