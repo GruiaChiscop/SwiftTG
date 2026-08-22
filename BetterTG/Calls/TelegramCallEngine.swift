@@ -34,6 +34,7 @@ final class TelegramCallEngine: @unchecked Sendable {
 
     enum DataSaving: Sendable {
         case never
+        case cellular
         case always
     }
 
@@ -364,6 +365,7 @@ final class TelegramCallEngine: @unchecked Sendable {
     private static func dataSaving(from setting: DataSaving) -> OngoingCallDataSavingWebrtc {
         switch setting {
         case .never: .never
+        case .cellular: .cellular
         case .always: .always
         }
     }

@@ -971,6 +971,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         isEngineRunning = true
         startBatteryMonitoring()
         let callId = call.id
+        let dataSaving: TelegramCallEngine.DataSaving =
+            switch TelegramCallSettings.dataSaving {
+            case .never: .never
+            case .cellular: .cellular
+            case .always: .always
+            }
         engine.start(
             configuration: .init(
                 version: version,
@@ -984,7 +990,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 // switch. SwiftTG has no equivalent switch, so use the same production default.
                 allowTCP: false,
                 enableStunMarking: enableStunMarking,
-                dataSaving: TelegramCallSettings.usesLessData ? .always : .never,
+                dataSaving: dataSaving,
                 proxy: proxy,
             ),
             muted: isMuted,

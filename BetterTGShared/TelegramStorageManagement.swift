@@ -108,7 +108,11 @@ struct TelegramStorageSettingsView: View {
             }
 
             Section {
-                Toggle("Use Less Data for Calls", isOn: $usesLessDataForCalls)
+                Picker("Use Less Data for Calls", selection: $callDataSaving) {
+                    ForEach(TelegramCallDataSaving.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
             } footer: {
                 Text(
                     "Using less data may improve your experience on bad networks, but will slightly decrease audio quality.",
@@ -256,7 +260,8 @@ struct TelegramStorageSettingsView: View {
 
     @AppStorage(TelegramKeepMediaPolicy.defaultsKey) private var keepMediaDays = TelegramKeepMediaPolicy.forever
         .rawValue
-    @AppStorage(TelegramCallSettings.useLessDataDefaultsKey) private var usesLessDataForCalls = false
+    @AppStorage(TelegramCallSettings.dataSavingDefaultsKey) private var callDataSaving = TelegramCallSettings
+        .dataSaving
     @State private var cachedFileCount = 0
     @State private var cachedFilesSize: Int64 = 0
     @State private var canIgnoreSensitiveContentRestrictions = false
