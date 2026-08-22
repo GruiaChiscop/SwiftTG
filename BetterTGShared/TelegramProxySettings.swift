@@ -149,6 +149,14 @@ struct TelegramProxySettingsView: View {
                     }
                 }
             }
+
+            if enabledSocks5Proxy != nil {
+                Section {
+                    Toggle("Use for calls", isOn: $usesProxyForCalls)
+                } footer: {
+                    Text("Proxy servers may degrade the quality of your calls.")
+                }
+            }
         }
         .navigationTitle("Proxy")
         .toolbar {
@@ -181,6 +189,7 @@ struct TelegramProxySettingsView: View {
 
     // MARK: Private
 
+    @AppStorage(TelegramCallSettings.useProxyForCallsDefaultsKey) private var usesProxyForCalls = false
     @State private var editingProxy: AddedProxy?
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -192,6 +201,16 @@ struct TelegramProxySettingsView: View {
     private let statusStore = TelegramProxyStatusStore.shared
 
     private var hasEnabledProxy: Bool { proxies.contains { $0.isEnabled } }
+
+    private var enabledSocks5Proxy: AddedProxy? {
+        proxies.first { proxy in
+            guard proxy.isEnabled else { return false }
+            if case .proxyTypeSocks5 = proxy.proxy.type {
+                return true
+            }
+            return false
+        }
+    }
 
     private var errorIsPresented: Binding<Bool> {
         Binding(

@@ -61,6 +61,13 @@ final class TelegramCallEngine: @unchecked Sendable {
         let password: String
     }
 
+    struct ProxyServer: Sendable {
+        let host: String
+        let port: Int32
+        let username: String
+        let password: String
+    }
+
     struct Configuration: Sendable {
         let version: String
         let customParameters: String?
@@ -70,6 +77,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         let maxLayer: Int32
         let allowP2P: Bool
         let dataSaving: DataSaving
+        let proxy: ProxyServer?
     }
 
     struct StopResult: Sendable {
@@ -114,6 +122,14 @@ final class TelegramCallEngine: @unchecked Sendable {
             self.generation = generation
             let isAdoptingPreparedAudioDevice = audioDevice != nil
             let audioDevice = audioDeviceLocked()
+            let proxy = configuration.proxy.map {
+                VoipProxyServerWebrtc(
+                    host: $0.host,
+                    port: $0.port,
+                    username: $0.username,
+                    password: $0.password,
+                )
+            }
             let connections = configuration.connections.map {
                 OngoingCallConnectionDescriptionWebrtc(
                     reflectorId: $0.reflectorId,
@@ -130,7 +146,7 @@ final class TelegramCallEngine: @unchecked Sendable {
                 version: configuration.version,
                 customParameters: configuration.customParameters,
                 queue: contextQueue,
-                proxy: nil,
+                proxy: proxy,
                 networkType: Self.networkType(for: networkKind),
                 dataSaving: Self.dataSaving(from: configuration.dataSaving),
                 derivedState: Data(),

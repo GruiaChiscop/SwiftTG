@@ -411,6 +411,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var ownsProximityMonitoring = false
     private var ownsBatteryMonitoring = false
     private var isEngineRunning = false
+    private var engineStartCallId: Int?
+    private var engineStartTask: Task<Void, Never>?
     private var isLowBattery = false
     private var networkKind = TelegramCallEngine.NetworkKind.wifi
     private var pendingSystemAction: PendingSystemAction?
@@ -877,7 +879,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     private func startEngine(call: Call, info: CallStateReady) {
-        guard !isEngineRunning else { return }
+        guard !isEngineRunning, engineStartCallId == nil else { return }
         guard let version = Self.pickVersion(from: info.protocol.libraryVersions) else {
             log("No mutually supported call protocol version")
             stopRingback()
@@ -885,6 +887,28 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             return
         }
 
+        let callId = call.id
+        engineStartCallId = callId
+        engineStartTask = Task { [weak self] in
+            guard let self else { return }
+            let proxy = await configuredCallProxy()
+            defer {
+                if engineStartCallId == callId {
+                    engineStartCallId = nil
+                    engineStartTask = nil
+                }
+            }
+            guard !Task.isCancelled, activeCall?.id == callId, !isEngineRunning else { return }
+            startEngine(call: call, info: info, version: version, proxy: proxy)
+        }
+    }
+
+    private func startEngine(
+        call: Call,
+        info: CallStateReady,
+        version: String,
+        proxy: TelegramCallEngine.ProxyServer?,
+    ) {
         isEngineRunning = true
         startBatteryMonitoring()
         let callId = call.id
@@ -898,6 +922,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 maxLayer: Int32(info.protocol.maxLayer),
                 allowP2P: info.allowP2p,
                 dataSaving: TelegramCallSettings.usesLessData ? .always : .never,
+                proxy: proxy,
             ),
             muted: isMuted,
             lowBattery: isLowBattery,
@@ -1027,6 +1052,25 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         log(
             "[Call] audio route changed reason=\(reason.map(String.init) ?? "unknown") selected=\(selectedAudioRoute.name)",
         )
+    }
+
+    private func configuredCallProxy() async -> TelegramCallEngine.ProxyServer? {
+        guard TelegramCallSettings.usesProxyForCalls else { return nil }
+        do {
+            let proxies = try await service.getProxies().proxies
+            guard let proxy = proxies.first(where: \.isEnabled) else { return nil }
+            guard case .proxyTypeSocks5(let credentials) = proxy.proxy.type else { return nil }
+            log("[Call] using configured SOCKS5 proxy")
+            return TelegramCallEngine.ProxyServer(
+                host: proxy.proxy.server,
+                port: Int32(clamping: proxy.proxy.port),
+                username: credentials.username,
+                password: credentials.password,
+            )
+        } catch {
+            log("[Call] couldn't load proxy configuration: \(error)")
+            return nil
+        }
     }
 
     private func refreshAudioRoutes() {
@@ -1364,6 +1408,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         logCallId: Int? = nil,
         finalTone: TelegramCallTone? = nil,
     ) {
+        engineStartTask?.cancel()
+        engineStartTask = nil
+        engineStartCallId = nil
         screenShareReceiver?.stop()
         screenShareReceiver = nil
         screenShareCapturer = nil
