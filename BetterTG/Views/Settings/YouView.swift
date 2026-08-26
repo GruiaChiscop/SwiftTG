@@ -88,6 +88,16 @@ struct YouView: View {
                     Label("Appearance", systemImage: "paintpalette")
                 }
             }
+
+            #if DEBUG
+            Section("Developer") {
+                NavigationLink {
+                    ConferenceLabView()
+                } label: {
+                    Label("Conference Lab", systemImage: "person.3")
+                }
+            }
+            #endif
         }
         .navigationTitle("You")
         .task {

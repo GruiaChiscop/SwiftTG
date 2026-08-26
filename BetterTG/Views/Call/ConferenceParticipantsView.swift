@@ -1,7 +1,6 @@
 // ConferenceParticipantsView.swift
 
 import SwiftUI
-import TDLibKit
 
 // MARK: - ConferenceParticipantsView
 
@@ -10,11 +9,9 @@ import TDLibKit
 struct ConferenceParticipantsView: View {
     // MARK: Internal
 
-    let participants: [GroupCallParticipant]
-    let invitedUserIds: [Int64]
+    let participants: [ConferenceParticipantPresentation]
     let participantCount: Int
-    let speakingParticipantIds: Set<MessageSender>
-    let isLocalMuted: Bool
+    let connectionStatus: String?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -22,24 +19,14 @@ struct ConferenceParticipantsView: View {
                 Text("Group Call")
                     .font(.title.bold())
                     .accessibilityAddTraits(.isHeader)
-                Text(participantCountDescription)
+                Text(connectionStatus ?? participantCountDescription)
                     .foregroundStyle(.secondary)
             }
 
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(participants, id: \.participantId) { participant in
-                        ConferenceParticipantRow(
-                            participant: participant,
-                            isSpeaking: speakingParticipantIds.contains(participant.participantId),
-                            isLocalMuted: isLocalMuted,
-                        )
-                        Divider()
-                            .padding(.leading, 64)
-                    }
-
-                    ForEach(invitedUserIds, id: \.self) { userId in
-                        ConferenceParticipantRow(invitedUserId: userId)
+                    ForEach(participants) { participant in
+                        ConferenceParticipantRow(participant: participant)
                         Divider()
                             .padding(.leading, 64)
                     }

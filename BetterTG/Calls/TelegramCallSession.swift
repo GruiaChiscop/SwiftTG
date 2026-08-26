@@ -193,6 +193,76 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         })
     }
 
+    var conferenceParticipantPresentations: [ConferenceParticipantPresentation] {
+        let speakingParticipantIds = conferenceSpeakingParticipantIds
+        let joined = conferenceParticipants.map { participant in
+            let userId: Int64?
+            let chatId: Int64?
+            let id: String
+            switch participant.participantId {
+            case .messageSenderUser(let sender):
+                userId = sender.userId
+                chatId = nil
+                id = "user-\(sender.userId)"
+            case .messageSenderChat(let sender):
+                userId = nil
+                chatId = sender.chatId
+                id = "chat-\(sender.chatId)"
+            }
+
+            let participantIsSpeaking = speakingParticipantIds.contains(participant.participantId)
+            let participantIsMuted = participant.isCurrentUser
+                ? isMuted
+                : participant.isMutedForAllUsers || participant.isMutedForCurrentUser
+            let subtitle: String =
+                if participant.isCurrentUser {
+                    "You"
+                } else if participantIsSpeaking {
+                    "Speaking"
+                } else if participant.isHandRaised {
+                    "Hand raised"
+                } else if participantIsMuted {
+                    "Muted"
+                } else {
+                    participant.bio.isEmpty ? "Listening" : participant.bio
+                }
+
+            return ConferenceParticipantPresentation(
+                id: id,
+                userId: userId,
+                chatId: chatId,
+                title: nil,
+                subtitle: subtitle,
+                isSpeaking: participantIsSpeaking,
+                isMuted: participantIsMuted,
+                isHandRaised: participant.isHandRaised,
+                isInvited: false,
+            )
+        }
+        let invited = pendingConferenceInvitedUserIds.map { userId in
+            ConferenceParticipantPresentation(
+                id: "invited-user-\(userId)",
+                userId: userId,
+                chatId: nil,
+                title: nil,
+                subtitle: "Invited",
+                isSpeaking: false,
+                isMuted: false,
+                isHandRaised: false,
+                isInvited: true,
+            )
+        }
+        return joined + invited
+    }
+
+    var conferenceConnectionStatus: String? {
+        guard let groupCallCoordinator else { return nil }
+        if case .connected = groupCallCoordinator.state {
+            return nil
+        }
+        return "Connecting"
+    }
+
     var canUpgradeToConference: Bool {
         guard !isUpgradingToConference,
               groupCallCoordinator == nil,

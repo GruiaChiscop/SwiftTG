@@ -8,18 +8,8 @@ import SwiftUI
 struct ConferenceParticipantRow: View {
     // MARK: Lifecycle
 
-    init(participant: GroupCallParticipant, isSpeaking: Bool, isLocalMuted: Bool) {
+    init(participant: ConferenceParticipantPresentation) {
         self.participant = participant
-        self.isSpeaking = isSpeaking
-        self.isLocalMuted = isLocalMuted
-        self.invitedUserId = nil
-    }
-
-    init(invitedUserId: Int64) {
-        self.participant = nil
-        self.isSpeaking = false
-        self.isLocalMuted = false
-        self.invitedUserId = invitedUserId
     }
 
     // MARK: Internal
@@ -34,7 +24,7 @@ struct ConferenceParticipantRow: View {
             )
             .frame(width: 44, height: 44)
             .overlay {
-                if isSpeaking {
+                if participant.isSpeaking {
                     Circle()
                         .stroke(.green, lineWidth: 2)
                 }
@@ -71,37 +61,19 @@ struct ConferenceParticipantRow: View {
     @State private var chat: Chat?
     @State private var user: User?
 
-    private let participant: GroupCallParticipant?
-    private let isSpeaking: Bool
-    private let isLocalMuted: Bool
-    private let invitedUserId: Int64?
-    private let service: any TelegramService = TDLib.shared.service
+    private let participant: ConferenceParticipantPresentation
 
-    private var userId: Int64? {
-        if let invitedUserId {
-            return invitedUserId
-        }
-        guard let participant, case .messageSenderUser(let sender) = participant.participantId else { return nil }
-        return sender.userId
-    }
-
-    private var chatId: Int64? {
-        guard let participant, case .messageSenderChat(let sender) = participant.participantId else { return nil }
-        return sender.chatId
-    }
+    private var userId: Int64? { participant.userId }
+    private var chatId: Int64? { participant.chatId }
 
     private var profileIdentity: String {
-        if let userId {
-            return "user-\(userId)"
-        }
-        if let chatId {
-            return "chat-\(chatId)"
-        }
-        return "unknown"
+        participant.id
     }
 
     private var displayTitle: String {
-        if let user {
+        if let title = participant.title {
+            return title
+        } else if let user {
             return telegramUserDisplayName(user)
         }
         if let chat {
@@ -116,55 +88,32 @@ struct ConferenceParticipantRow: View {
         user?.profilePhoto?.minithumbnail ?? chat?.photo?.minithumbnail
     }
 
-    private var isMuted: Bool {
-        guard let participant else { return false }
-        if participant.isCurrentUser {
-            return isLocalMuted
-        }
-        return participant.isMutedForAllUsers || participant.isMutedForCurrentUser
-    }
-
-    private var statusDescription: String {
-        guard invitedUserId == nil, let participant else { return "Invited" }
-        if participant.isCurrentUser {
-            return "You"
-        }
-        if isSpeaking {
-            return "Speaking"
-        }
-        if participant.isHandRaised {
-            return "Hand raised"
-        }
-        if isMuted {
-            return "Muted"
-        }
-        return participant.bio.isEmpty ? "Listening" : participant.bio
-    }
+    private var statusDescription: String { participant.subtitle }
 
     private var statusSystemImage: String {
-        if invitedUserId != nil {
+        if participant.isInvited {
             return "person.crop.circle.badge.clock"
         }
-        if isSpeaking {
+        if participant.isSpeaking {
             return "mic.fill"
         }
-        if participant?.isHandRaised == true {
+        if participant.isHandRaised {
             return "hand.raised.fill"
         }
-        if isMuted {
+        if participant.isMuted {
             return "mic.slash.fill"
         }
         return "mic.fill"
     }
 
     private var statusColor: Color {
-        if isSpeaking {
+        if participant.isSpeaking {
             return .green
         }
-        if participant?.isHandRaised == true {
+        if participant.isHandRaised {
             return .orange
         }
-        if isMuted {
+        if participant.isMuted {
             return .red
         }
         return .secondary
@@ -173,6 +122,8 @@ struct ConferenceParticipantRow: View {
     @MainActor private func loadProfile() async {
         user = nil
         chat = nil
+        guard participant.title == nil else { return }
+        let service = TDLib.shared.service
         do {
             if let userId {
                 let loadedUser = try await service.getUser(userId: userId)

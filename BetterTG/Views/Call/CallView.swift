@@ -87,11 +87,9 @@ struct CallView: View {
 
                 if session.showsConferenceCallUI {
                     ConferenceParticipantsView(
-                        participants: session.conferenceParticipants,
-                        invitedUserIds: session.pendingConferenceInvitedUserIds,
+                        participants: session.conferenceParticipantPresentations,
                         participantCount: session.conferenceParticipantCount,
-                        speakingParticipantIds: session.conferenceSpeakingParticipantIds,
-                        isLocalMuted: session.isMuted,
+                        connectionStatus: session.conferenceConnectionStatus,
                     )
                     .frame(maxHeight: .infinity)
                     .padding(.bottom, 12)
