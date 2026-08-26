@@ -501,6 +501,47 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         problems: [TelegramCallRatingProblem]?,
         rating: Int?,
     ) async throws -> Ok
+
+    func createGroupCall(joinParameters: GroupCallJoinParameters?) async throws -> GroupCallInfo
+    func joinGroupCall(
+        inputGroupCall: InputGroupCall?,
+        joinParameters: GroupCallJoinParameters?,
+    ) async throws -> GroupCallInfo
+    func getGroupCall(groupCallId: Int?) async throws -> GroupCall
+    func inviteGroupCallParticipant(
+        groupCallId: Int?,
+        isVideo: Bool?,
+        userId: Int64?,
+    ) async throws -> InviteGroupCallParticipantResult
+    func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok
+    func encryptGroupCallData(
+        data: Data?,
+        dataChannel: GroupCallDataChannel?,
+        groupCallId: Int?,
+        unencryptedPrefixSize: Int?,
+    ) async throws -> TdData
+    func encryptGroupCallData(
+        data: Data,
+        dataChannel: GroupCallDataChannel,
+        groupCallId: Int,
+        unencryptedPrefixSize: Int,
+        completion: @escaping @Sendable (Data?) -> Void,
+    )
+    func decryptGroupCallData(
+        data: Data?,
+        dataChannel: GroupCallDataChannel?,
+        groupCallId: Int?,
+        participantId: MessageSender?,
+    ) async throws -> TdData
+    func decryptGroupCallData(
+        data: Data,
+        dataChannel: GroupCallDataChannel?,
+        groupCallId: Int,
+        participantId: MessageSender,
+        completion: @escaping @Sendable (Data?) -> Void,
+    )
+    func leaveGroupCall(groupCallId: Int?) async throws -> Ok
+    func endGroupCall(groupCallId: Int?) async throws -> Ok
 }
 
 // MARK: - TelegramSession + TelegramService
@@ -1959,6 +2000,118 @@ extension TelegramSession: TelegramService {
             problems: tdlibProblems,
             rating: rating,
         )
+    }
+
+    func createGroupCall(joinParameters: GroupCallJoinParameters?) async throws -> GroupCallInfo {
+        try await client.createGroupCall(joinParameters: joinParameters)
+    }
+
+    func joinGroupCall(
+        inputGroupCall: InputGroupCall?,
+        joinParameters: GroupCallJoinParameters?,
+    ) async throws -> GroupCallInfo {
+        try await client.joinGroupCall(
+            inputGroupCall: inputGroupCall,
+            joinParameters: joinParameters,
+        )
+    }
+
+    func getGroupCall(groupCallId: Int?) async throws -> GroupCall {
+        try await client.getGroupCall(groupCallId: groupCallId)
+    }
+
+    func inviteGroupCallParticipant(
+        groupCallId: Int?,
+        isVideo: Bool?,
+        userId: Int64?,
+    ) async throws -> InviteGroupCallParticipantResult {
+        try await client.inviteGroupCallParticipant(
+            groupCallId: groupCallId,
+            isVideo: isVideo,
+            userId: userId,
+        )
+    }
+
+    func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok {
+        try await client.loadGroupCallParticipants(groupCallId: groupCallId, limit: limit)
+    }
+
+    func encryptGroupCallData(
+        data: Data?,
+        dataChannel: GroupCallDataChannel?,
+        groupCallId: Int?,
+        unencryptedPrefixSize: Int?,
+    ) async throws -> TdData {
+        try await client.encryptGroupCallData(
+            data: data,
+            dataChannel: dataChannel,
+            groupCallId: groupCallId,
+            unencryptedPrefixSize: unencryptedPrefixSize,
+        )
+    }
+
+    func encryptGroupCallData(
+        data: Data,
+        dataChannel: GroupCallDataChannel,
+        groupCallId: Int,
+        unencryptedPrefixSize: Int,
+        completion: @escaping @Sendable (Data?) -> Void,
+    ) {
+        do {
+            try client.encryptGroupCallData(
+                data: data,
+                dataChannel: dataChannel,
+                groupCallId: groupCallId,
+                unencryptedPrefixSize: unencryptedPrefixSize,
+            ) { result in
+                completion(try? result.get().data)
+            }
+        } catch {
+            completion(nil)
+        }
+    }
+
+    func decryptGroupCallData(
+        data: Data?,
+        dataChannel: GroupCallDataChannel?,
+        groupCallId: Int?,
+        participantId: MessageSender?,
+    ) async throws -> TdData {
+        try await client.decryptGroupCallData(
+            data: data,
+            dataChannel: dataChannel,
+            groupCallId: groupCallId,
+            participantId: participantId,
+        )
+    }
+
+    func decryptGroupCallData(
+        data: Data,
+        dataChannel: GroupCallDataChannel?,
+        groupCallId: Int,
+        participantId: MessageSender,
+        completion: @escaping @Sendable (Data?) -> Void,
+    ) {
+        do {
+            try client.decryptGroupCallData(
+                data: data,
+                dataChannel: dataChannel,
+                groupCallId: groupCallId,
+                participantId: participantId,
+            ) { result in
+                completion(try? result.get().data)
+            }
+        } catch {
+            completion(nil)
+        }
+    }
+
+    func leaveGroupCall(groupCallId: Int?) async throws -> Ok {
+        try await client.leaveGroupCall(groupCallId: groupCallId)
+    }
+
+    func endGroupCall(groupCallId: Int?) async throws -> Ok {
+        try await client.endGroupCall(groupCallId: groupCallId)
     }
 }
 

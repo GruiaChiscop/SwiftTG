@@ -191,6 +191,18 @@ import TDLibKit
         }
     }
 
+    /// Telegram-iOS replaces the private peer handle with an opaque conference handle as soon as
+    /// the group transport takes over, so CallKit and Recents describe the ongoing call correctly.
+    func updateCurrentCallAsConference() {
+        guard let uuid = currentCallUUID else { return }
+        let handle = CXHandle(type: .generic, value: uuid.uuidString)
+        provider.reportCall(
+            with: uuid,
+            updated: Self.update(handle: handle, displayName: "Group Call"),
+        )
+        log("[CallKit] updated uuid=\(uuid) as conference")
+    }
+
     /// Reports a placeholder incoming call immediately, before TDLib has told us who it's from -
     /// PushKit requires a `CXProvider` report within a very tight window of every VoIP push, well
     /// before there's time to fetch the caller's name. `reportIncoming(_:)` below reconciles this

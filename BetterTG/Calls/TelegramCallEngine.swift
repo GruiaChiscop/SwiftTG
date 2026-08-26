@@ -214,6 +214,30 @@ final class TelegramCallEngine: @unchecked Sendable {
         }
     }
 
+    /// Starts conference negotiation with the same audio device that is serving the private call.
+    /// The device never crosses the main actor and the private context remains alive until the
+    /// conference is connected, matching Telegram-iOS's overlap during an upgrade.
+    func prepareGroupCall(
+        engine groupCallEngine: TelegramGroupCallEngine,
+        configuration: TelegramGroupCallEngine.Configuration,
+        audioSessionActive: Bool,
+        joinPayloadReady: @escaping @Sendable (_ payload: String, _ audioSourceId: Int) -> Void,
+        networkStateChanged: @escaping @Sendable (TelegramGroupCallEngine.NetworkState) -> Void,
+        signalBarsChanged: @escaping @Sendable (Int32) -> Void,
+    ) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            groupCallEngine.prepareJoin(
+                configuration: configuration,
+                sharedAudioDevice: audioDeviceLocked(),
+                audioSessionActive: audioSessionActive,
+                joinPayloadReady: joinPayloadReady,
+                networkStateChanged: networkStateChanged,
+                signalBarsChanged: signalBarsChanged,
+            )
+        }
+    }
+
     func setMuted(_ muted: Bool) {
         queue.async { [weak self] in
             self?.isMuted = muted
@@ -263,6 +287,12 @@ final class TelegramCallEngine: @unchecked Sendable {
     func addExternalAudioData(_ data: Data) {
         queue.async { [weak self] in
             self?.context?.addExternalAudioData(data)
+        }
+    }
+
+    func deactivateIncomingAudio() {
+        queue.async { [weak self] in
+            self?.context?.deactivateIncomingAudio()
         }
     }
 
@@ -316,6 +346,24 @@ final class TelegramCallEngine: @unchecked Sendable {
                 retainAudioDeviceFor: retentionDuration,
                 completion: completion,
             )
+        }
+    }
+
+    /// Tears down only the private-call context after a conference has taken over the shared
+    /// device. The conference remains its sole owner and CallKit's active audio session is left
+    /// untouched.
+    func stopForGroupCallTransition(completion: (@Sendable (StopResult?) -> Void)? = nil) {
+        queue.async { [weak self] in
+            guard let self else {
+                completion?(nil)
+                return
+            }
+            stopLocked(
+                clearPendingSignaling: true,
+                preserveAudioDevice: true,
+                completion: completion,
+            )
+            audioDevice = nil
         }
     }
 

@@ -130,6 +130,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var remoteVideoState = TelegramCallEngine.RemoteVideoState.inactive
     private(set) var remoteBatteryLevel = TelegramCallEngine.RemoteBatteryLevel.normal
     private(set) var signalBars: Int?
+    private(set) var groupCallCoordinator: TelegramGroupCallCoordinator?
+    private(set) var isUpgradingToConference = false
     private(set) var isLocalVideoEnabled = false
     private(set) var localVideoView: UIView?
     private(set) var cameraPreviewView: UIView?
@@ -156,8 +158,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     var shouldShowMinimizedCallBar: Bool { activeCall != nil && isCallViewMinimized }
 
+    var isConferenceCall: Bool { groupCallCoordinator != nil }
+
+    var canUpgradeToConference: Bool {
+        guard !isUpgradingToConference,
+              groupCallCoordinator == nil,
+              engineState == .connected,
+              case .callStateReady(let ready) = activeCall?.state
+        else { return false }
+        return ready.isGroupCallSupported
+    }
+
     var canToggleVideo: Bool {
-        guard !isRequestingVideo, !showsCameraPreview else { return false }
+        guard groupCallCoordinator == nil, !isRequestingVideo, !showsCameraPreview else { return false }
         return isLocalVideoEnabled || engineState == .connected || engineState == .reconnecting
     }
 
@@ -204,6 +217,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     /// The same cold-wake race applies to End; End takes precedence over an earlier Answer.
     func endFromSystem(completion: @escaping (Bool) -> Void = { _ in }) {
+        if let groupCallCoordinator {
+            if conferenceHasReplacedPrivateCall {
+                groupCallCoordinator.leave(endForEveryone: false)
+                completion(true)
+                return
+            }
+            resetConferencePreparation(groupCallCoordinator)
+        }
         guard activeCall != nil else {
             pendingSystemAction = .end
             log("[Call] deferring system End until TDLib publishes the call")
@@ -224,6 +245,38 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     func setMuted(_ muted: Bool) {
         isMuted = muted
         engine.setMuted(muted)
+        groupCallCoordinator?.setMuted(muted)
+    }
+
+    func upgradeToConference(inviting userId: Int64, isVideo: Bool) {
+        guard canUpgradeToConference, let call = activeCall else { return }
+        let generation = UUID()
+        conferenceTransitionGeneration = generation
+        conferenceHasReplacedPrivateCall = false
+        conferenceAudioWasMoved = false
+        isUpgradingToConference = true
+
+        let coordinator = TelegramGroupCallCoordinator(service: service)
+        configureConferenceCallbacks(coordinator)
+        coordinator.onPrepared = { [weak self, weak coordinator] prepared in
+            guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            commitConferenceUpgrade(
+                coordinator: coordinator,
+                prepared: prepared,
+                sourceCall: call,
+                invitedUserId: userId,
+                invitedWithVideo: isVideo,
+                generation: generation,
+            )
+        }
+        groupCallCoordinator = coordinator
+        log("[GroupCall] creating conference from private callId=\(call.id)")
+        coordinator.create(
+            isMuted: isMuted,
+            privateCallEngine: engine,
+            audioSessionActive: isEffectiveAudioSessionActive,
+            prioritizeVP8: false,
+        )
     }
 
     func toggleSpeaker() {
@@ -435,6 +488,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var isRequestingRemoteVideoView = false
     private var remoteVideoGeneration = UUID()
     private var pictureInPictureController: CallPictureInPictureController?
+    private var conferenceTransitionTask: Task<Void, Never>?
+    private var conferenceTransitionGeneration = UUID()
+    private var conferenceHasReplacedPrivateCall = false
+    private var conferenceAudioWasMoved = false
 
     private var shouldRouteVideoToSpeaker: Bool {
         activeCall?.isVideo == true || isLocalVideoEnabled || remoteVideoState != .inactive
@@ -662,12 +719,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         guard let call else {
             // `callPublisher` starts with nil. It is not an ended call and must not dismiss a fresh
             // CallKit placeholder or erase an Answer/End action received during a cold launch.
+            guard groupCallCoordinator == nil else { return }
             guard activeCall != nil || reportedIncomingCallId != nil || isEngineRunning else { return }
             finishCurrentCall(notifyCallKit: true)
             return
         }
 
         log("[Call] id=\(call.id) isOutgoing=\(call.isOutgoing) state=\(Self.describe(call.state))")
+        if case .callStateDiscarded(let discarded) = call.state,
+           case .callDiscardReasonUpgradeToGroupCall(let upgrade) = discarded.reason
+        {
+            handleConferenceUpgrade(call: call, inviteLink: upgrade.inviteLink)
+            return
+        }
         if Self.isTerminal(call.state) {
             guard lastFinishedCallId != call.id else {
                 log("[Call] ignoring follow-up terminal update for callId=\(call.id)")
@@ -747,6 +811,219 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         default:
             break
         }
+    }
+
+    private func handleConferenceUpgrade(call: Call, inviteLink: String) {
+        guard lastFinishedCallId != call.id else {
+            log("[Call] ignoring follow-up conference upgrade for callId=\(call.id)")
+            return
+        }
+        lastFinishedCallId = call.id
+
+        // Keep the last non-terminal private-call value as the presentation source while the
+        // conference connects. TDLib may publish nil immediately after this discarded update.
+        if activeCall?.id != call.id {
+            activeCall = call
+        }
+        conferenceHasReplacedPrivateCall = true
+        isUpgradingToConference = false
+        guard groupCallCoordinator == nil else {
+            log("[GroupCall] private callId=\(call.id) switched to the conference already being prepared")
+            moveAudioToConferenceIfReady()
+            return
+        }
+
+        conferenceAudioWasMoved = false
+        cancelPendingToneCleanup()
+        stopRingback()
+        let coordinator = TelegramGroupCallCoordinator(service: service)
+        configureConferenceCallbacks(coordinator)
+        groupCallCoordinator = coordinator
+        log("[GroupCall] joining conference from private callId=\(call.id)")
+        coordinator.join(
+            inviteLink: inviteLink,
+            isMuted: isMuted,
+            privateCallEngine: engine,
+            audioSessionActive: isEffectiveAudioSessionActive,
+            prioritizeVP8: false,
+        )
+    }
+
+    private func configureConferenceCallbacks(_ coordinator: TelegramGroupCallCoordinator) {
+        coordinator.onConnected = { [weak self, weak coordinator] in
+            guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            moveAudioToConferenceIfReady()
+        }
+        coordinator.onSignalBarsChanged = { [weak self, weak coordinator] bars in
+            guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            signalBars = bars
+        }
+        coordinator.onFailed = { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            handleConferenceStopped(coordinator, endReason: .failed)
+        }
+        coordinator.onEnded = { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            handleConferenceStopped(coordinator, endReason: .remoteEnded)
+        }
+    }
+
+    private func commitConferenceUpgrade(
+        coordinator: TelegramGroupCallCoordinator,
+        prepared: TelegramGroupCallCoordinator.PreparedCall,
+        sourceCall: Call,
+        invitedUserId: Int64,
+        invitedWithVideo: Bool,
+        generation: UUID,
+    ) {
+        guard conferenceTransitionGeneration == generation,
+              groupCallCoordinator === coordinator,
+              activeCall?.id == sourceCall.id
+        else { return }
+
+        conferenceTransitionTask?.cancel()
+        conferenceTransitionTask = Task { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            let duration = connectedAt.map { max(0, Int(Foundation.Date().timeIntervalSince($0))) } ?? 0
+            do {
+                _ = try await service.discardCall(
+                    callId: sourceCall.id,
+                    connectionId: 0,
+                    duration: duration,
+                    inviteLink: prepared.inviteLink,
+                    isDisconnected: false,
+                    isVideo: sourceCall.isVideo,
+                )
+                guard conferenceTransitionGeneration == generation,
+                      groupCallCoordinator === coordinator
+                else { return }
+
+                conferenceHasReplacedPrivateCall = true
+                moveAudioToConferenceIfReady()
+                do {
+                    _ = try await coordinator.invite(userId: invitedUserId, isVideo: invitedWithVideo)
+                    guard conferenceTransitionGeneration == generation,
+                          groupCallCoordinator === coordinator
+                    else { return }
+                    log("[GroupCall] invited userId=\(invitedUserId) video=\(invitedWithVideo)")
+                } catch {
+                    guard conferenceTransitionGeneration == generation,
+                          groupCallCoordinator === coordinator
+                    else { return }
+                    log("[GroupCall] couldn't invite userId=\(invitedUserId): \(error)")
+                }
+            } catch {
+                guard conferenceTransitionGeneration == generation,
+                      groupCallCoordinator === coordinator
+                else { return }
+                log("[GroupCall] couldn't switch private callId=\(sourceCall.id): \(error)")
+                resetConferencePreparation(coordinator)
+            }
+        }
+    }
+
+    private func moveAudioToConferenceIfReady() {
+        guard conferenceHasReplacedPrivateCall,
+              !conferenceAudioWasMoved,
+              let coordinator = groupCallCoordinator,
+              case .connected = coordinator.state
+        else { return }
+        conferenceAudioWasMoved = true
+        isUpgradingToConference = false
+        log("[GroupCall] conference connected; moving incoming audio from the private call")
+        coordinator.activateIncomingAudio()
+        engine.deactivateIncomingAudio()
+        if selectedAudioRoute.kind == .builtIn {
+            selectAudioRoute(.speaker)
+        }
+        CallKitManager.shared.updateCurrentCallAsConference()
+        finishPrivateEngineTransition()
+    }
+
+    private func handleConferenceStopped(
+        _ coordinator: TelegramGroupCallCoordinator,
+        endReason: EndReason,
+    ) {
+        if conferenceHasReplacedPrivateCall {
+            finishConference(coordinator, endReason: endReason)
+        } else {
+            resetConferencePreparation(coordinator)
+        }
+    }
+
+    private func resetConferencePreparation(_ coordinator: TelegramGroupCallCoordinator) {
+        guard groupCallCoordinator === coordinator else { return }
+        clearConferenceCallbacks(coordinator)
+        if coordinator.groupCall != nil {
+            coordinator.leave(endForEveryone: true)
+        } else {
+            coordinator.cancel()
+        }
+        conferenceTransitionTask?.cancel()
+        conferenceTransitionTask = nil
+        conferenceTransitionGeneration = UUID()
+        groupCallCoordinator = nil
+        isUpgradingToConference = false
+        conferenceHasReplacedPrivateCall = false
+        conferenceAudioWasMoved = false
+    }
+
+    private func finishPrivateEngineTransition() {
+        engineStartTask?.cancel()
+        engineStartTask = nil
+        engineStartCallId = nil
+        screenShareReceiver?.stop()
+        screenShareReceiver = nil
+        screenShareCapturer = nil
+        isScreenSharing = false
+        pictureInPictureController?.stop()
+        pictureInPictureController = nil
+        pictureInPictureSourceView = nil
+        engine.stopForGroupCallTransition()
+        isPreCallAudioDevicePrepared = false
+        isEngineRunning = false
+        videoAudioRouteTask?.cancel()
+        videoAudioRouteTask = nil
+        stopBatteryMonitoring()
+        engineState = .connected
+        remoteVideoState = .inactive
+        remoteBatteryLevel = .normal
+        isRequestingVideo = false
+        isLocalVideoEnabled = false
+        localVideoView = nil
+        cameraPreviewView = nil
+        videoCapturer = nil
+        videoGeneration = UUID()
+        remoteVideoView = nil
+        isRequestingRemoteVideoView = false
+        remoteVideoGeneration = UUID()
+        isUsingFrontCamera = true
+        showsCameraPreview = false
+        showsCameraPermissionAlert = false
+    }
+
+    private func finishConference(
+        _ coordinator: TelegramGroupCallCoordinator,
+        endReason: EndReason,
+    ) {
+        guard groupCallCoordinator === coordinator else { return }
+        clearConferenceCallbacks(coordinator)
+        conferenceTransitionTask?.cancel()
+        conferenceTransitionTask = nil
+        conferenceTransitionGeneration = UUID()
+        groupCallCoordinator = nil
+        isUpgradingToConference = false
+        conferenceHasReplacedPrivateCall = false
+        conferenceAudioWasMoved = false
+        finishCurrentCall(notifyCallKit: true, endReason: endReason)
+    }
+
+    private func clearConferenceCallbacks(_ coordinator: TelegramGroupCallCoordinator) {
+        coordinator.onPrepared = nil
+        coordinator.onConnected = nil
+        coordinator.onSignalBarsChanged = nil
+        coordinator.onFailed = nil
+        coordinator.onEnded = nil
     }
 
     private func answerActiveCall() {
@@ -894,6 +1171,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             "[Call] audio session effective=\(active) CallKit=\(isCallKitAudioSessionActive) interrupted=\(isAudioInterrupted) mediaServices=\(areMediaServicesAvailable)",
         )
         engine.setAudioSessionActive(active)
+        groupCallCoordinator?.setAudioSessionActive(active)
     }
 
     private func applyNetworkKind(_ kind: TelegramCallEngine.NetworkKind) {
@@ -1579,6 +1857,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         debugInformationCallId: Int? = nil,
         logCallId: Int? = nil,
     ) {
+        if let coordinator = groupCallCoordinator {
+            resetConferencePreparation(coordinator)
+        }
         let hadCall = activeCall != nil || reportedIncomingCallId != nil || isEngineRunning
         let wasOutgoing = activeCall?.isOutgoing == true
         let selectedTerminalTone = terminalToneStartedAt == nil ? terminalTone : Self.endedTone

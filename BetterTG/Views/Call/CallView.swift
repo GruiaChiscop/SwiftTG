@@ -53,6 +53,29 @@ struct CallView: View {
                         .background(.ultraThinMaterial, in: .circle)
 
                     Spacer()
+
+                    if session.canUpgradeToConference {
+                        Button {
+                            showsConferenceParticipantPicker = true
+                        } label: {
+                            Label {
+                                Text("Add Participant")
+                            } icon: {
+                                Image("CallNavigationAddPerson")
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .frame(width: 40, height: 40)
+                            }
+                            .labelStyle(.iconOnly)
+                        }
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: .circle)
+                    } else if session.isUpgradingToConference {
+                        ProgressView()
+                            .frame(width: 40, height: 40)
+                            .background(.ultraThinMaterial, in: .circle)
+                            .accessibilityLabel("Preparing conference")
+                    }
                 }
 
                 Spacer(minLength: 24)
@@ -186,6 +209,14 @@ struct CallView: View {
         .sheet(isPresented: cameraPreviewPresentation) {
             CallCameraPreviewView()
         }
+        .sheet(isPresented: $showsConferenceParticipantPicker) {
+            NavigationStack {
+                ConferenceParticipantPicker(excludedUserId: session.activeCall?.userId) { userId, isVideo in
+                    session.upgradeToConference(inviting: userId, isVideo: isVideo)
+                }
+            }
+            .preferredColorScheme(.dark)
+        }
         .onAppear(perform: acquireIdleTimer)
         .onDisappear(perform: releaseIdleTimer)
         .task(id: session.activeCall?.userId) {
@@ -208,6 +239,7 @@ struct CallView: View {
     @Environment(\.openURL) private var openURL
     @State private var idleTimerToken: UUID?
     @State private var isLocalVideoPrimary = false
+    @State private var showsConferenceParticipantPicker = false
     @State private var user: User?
     @State private var session = TelegramCallSession.shared
 
