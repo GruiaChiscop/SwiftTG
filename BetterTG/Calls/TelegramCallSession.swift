@@ -133,6 +133,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var groupCallCoordinator: TelegramGroupCallCoordinator?
     private(set) var isUpgradingToConference = false
     private(set) var isInvitingConferenceParticipant = false
+    private(set) var conferenceParticipantActionId: String?
     private(set) var isLocalVideoEnabled = false
     private(set) var localVideoView: UIView?
     private(set) var cameraPreviewView: UIView?
@@ -237,6 +238,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 isMuted: participantIsMuted,
                 isHandRaised: participant.isHandRaised,
                 isInvited: false,
+                muteAction: conferenceMuteAction(for: participant),
+                canRemove: groupCallCoordinator?.groupCall?.isOwned == true
+                    && !participant.isCurrentUser
+                    && userId != nil,
             )
         }
         let invited = pendingConferenceInvitedUserIds.map { userId in
@@ -250,6 +255,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 isMuted: false,
                 isHandRaised: false,
                 isInvited: true,
+                canRemove: groupCallCoordinator?.groupCall?.isOwned == true,
             )
         }
         return joined + invited
@@ -261,6 +267,15 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             return nil
         }
         return "Connecting"
+    }
+
+    var conferenceVerificationEmojis: [String] {
+        groupCallCoordinator?.verificationEmojis ?? []
+    }
+
+    var conferenceInviteURL: URL? {
+        guard let inviteLink = groupCallCoordinator?.groupCall?.inviteLink, !inviteLink.isEmpty else { return nil }
+        return URL(string: inviteLink)
     }
 
     var canUpgradeToConference: Bool {
@@ -438,6 +453,69 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             guard groupCallCoordinator === coordinator else { return }
             isInvitingConferenceParticipant = false
             conferenceInviteTask = nil
+        }
+    }
+
+    func setConferenceParticipantMuted(
+        _ participant: ConferenceParticipantPresentation,
+        action: ConferenceParticipantMuteAction,
+    ) {
+        guard conferenceParticipantActionId == nil,
+              let coordinator = groupCallCoordinator,
+              let groupCallParticipant = conferenceParticipant(id: participant.id)
+        else { return }
+
+        let generation = UUID()
+        conferenceParticipantActionGeneration = generation
+        conferenceParticipantActionId = participant.id
+        conferenceParticipantActionTask = Task { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            do {
+                try await coordinator.setParticipantMuted(
+                    groupCallParticipant.participantId,
+                    isMuted: action.isMuted,
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                log("[GroupCall] couldn't perform \(action.title) for \(participant.id): \(error)")
+            }
+            guard groupCallCoordinator === coordinator,
+                  conferenceParticipantActionGeneration == generation
+            else { return }
+            conferenceParticipantActionId = nil
+            conferenceParticipantActionTask = nil
+        }
+    }
+
+    func removeConferenceParticipant(_ participant: ConferenceParticipantPresentation) {
+        guard conferenceParticipantActionId == nil,
+              let userId = participant.userId,
+              let coordinator = groupCallCoordinator,
+              coordinator.groupCall?.isOwned == true
+        else { return }
+
+        let generation = UUID()
+        conferenceParticipantActionGeneration = generation
+        conferenceParticipantActionId = participant.id
+        conferenceParticipantActionTask = Task { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            do {
+                try await coordinator.removeParticipant(userId: userId)
+                guard groupCallCoordinator === coordinator,
+                      conferenceParticipantActionGeneration == generation
+                else { return }
+                conferenceInvitedUserIds.remove(userId)
+            } catch is CancellationError {
+                return
+            } catch {
+                log("[GroupCall] couldn't remove userId=\(userId): \(error)")
+            }
+            guard groupCallCoordinator === coordinator,
+                  conferenceParticipantActionGeneration == generation
+            else { return }
+            conferenceParticipantActionId = nil
+            conferenceParticipantActionTask = nil
         }
     }
 
@@ -652,7 +730,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var pictureInPictureController: CallPictureInPictureController?
     private var conferenceTransitionTask: Task<Void, Never>?
     private var conferenceInviteTask: Task<Void, Never>?
+    private var conferenceParticipantActionTask: Task<Void, Never>?
     private var conferenceTransitionGeneration = UUID()
+    private var conferenceParticipantActionGeneration = UUID()
     private var conferenceHasReplacedPrivateCall = false
     private var conferenceAudioWasMoved = false
     private var conferenceInvitedUserIds = Set<Int64>()
@@ -877,6 +957,36 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             log("Error writing temporary call log: \(error)")
             return nil
         }
+    }
+
+    private func conferenceParticipant(id: String) -> GroupCallParticipant? {
+        conferenceParticipants.first { participant in
+            switch participant.participantId {
+            case .messageSenderUser(let sender):
+                id == "user-\(sender.userId)"
+            case .messageSenderChat(let sender):
+                id == "chat-\(sender.chatId)"
+            }
+        }
+    }
+
+    private func conferenceMuteAction(
+        for participant: GroupCallParticipant,
+    ) -> ConferenceParticipantMuteAction? {
+        guard !participant.isCurrentUser else { return nil }
+        if participant.isMutedForCurrentUser, participant.canBeUnmutedForCurrentUser {
+            return .unmuteForCurrentUser
+        }
+        if participant.isMutedForAllUsers {
+            return participant.canBeUnmutedForAllUsers ? .allowToSpeak : nil
+        }
+        if participant.canBeMutedForAllUsers {
+            return .mute
+        }
+        if participant.canBeMutedForCurrentUser {
+            return .muteForCurrentUser
+        }
+        return nil
     }
 
     private func handle(call: Call?) {
@@ -1128,10 +1238,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceTransitionTask = nil
         conferenceInviteTask?.cancel()
         conferenceInviteTask = nil
+        conferenceParticipantActionTask?.cancel()
+        conferenceParticipantActionTask = nil
         conferenceTransitionGeneration = UUID()
+        conferenceParticipantActionGeneration = UUID()
         groupCallCoordinator = nil
         isUpgradingToConference = false
         isInvitingConferenceParticipant = false
+        conferenceParticipantActionId = nil
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()
@@ -1181,10 +1295,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceTransitionTask = nil
         conferenceInviteTask?.cancel()
         conferenceInviteTask = nil
+        conferenceParticipantActionTask?.cancel()
+        conferenceParticipantActionTask = nil
         conferenceTransitionGeneration = UUID()
+        conferenceParticipantActionGeneration = UUID()
         groupCallCoordinator = nil
         isUpgradingToConference = false
         isInvitingConferenceParticipant = false
+        conferenceParticipantActionId = nil
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()

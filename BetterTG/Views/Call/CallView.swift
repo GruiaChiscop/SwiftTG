@@ -57,29 +57,27 @@ struct CallView: View {
 
                     Spacer()
 
-                    if session.canAddConferenceParticipant {
-                        Button {
-                            showsConferenceParticipantPicker = true
-                        } label: {
-                            Label {
-                                Text("Add Participant")
-                            } icon: {
-                                Image("CallNavigationAddPerson")
-                                    .resizable()
-                                    .renderingMode(.template)
-                                    .frame(width: 40, height: 40)
+                    if !session.showsConferenceCallUI {
+                        if session.canAddConferenceParticipant {
+                            Button(action: showConferenceParticipantPicker) {
+                                Label {
+                                    Text("Add Participant")
+                                } icon: {
+                                    Image("CallNavigationAddPerson")
+                                        .resizable()
+                                        .renderingMode(.template)
+                                        .frame(width: 40, height: 40)
+                                }
+                                .labelStyle(.iconOnly)
                             }
-                            .labelStyle(.iconOnly)
-                        }
-                        .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: .circle)
-                    } else if session.isUpgradingToConference || session.isInvitingConferenceParticipant {
-                        ProgressView()
                             .frame(width: 40, height: 40)
                             .background(.ultraThinMaterial, in: .circle)
-                            .accessibilityLabel(
-                                session.isUpgradingToConference ? "Preparing conference" : "Adding participant",
-                            )
+                        } else if session.isUpgradingToConference {
+                            ProgressView()
+                                .frame(width: 40, height: 40)
+                                .background(.ultraThinMaterial, in: .circle)
+                                .accessibilityLabel("Preparing conference")
+                        }
                     }
                 }
 
@@ -90,6 +88,13 @@ struct CallView: View {
                         participants: session.conferenceParticipantPresentations,
                         participantCount: session.conferenceParticipantCount,
                         connectionStatus: session.conferenceConnectionStatus,
+                        verificationEmojis: session.conferenceVerificationEmojis,
+                        inviteLink: session.conferenceInviteURL,
+                        isInvitingParticipant: session.isInvitingConferenceParticipant,
+                        performingParticipantActionId: session.conferenceParticipantActionId,
+                        inviteParticipant: showConferenceParticipantPicker,
+                        setParticipantMuted: session.setConferenceParticipantMuted,
+                        removeParticipant: session.removeConferenceParticipant,
                     )
                     .frame(maxHeight: .infinity)
                     .padding(.bottom, 12)
@@ -326,6 +331,10 @@ struct CallView: View {
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         openURL(url)
+    }
+
+    private func showConferenceParticipantPicker() {
+        showsConferenceParticipantPicker = true
     }
 
     private func swapPrimaryVideo() {

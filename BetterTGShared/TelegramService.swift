@@ -513,6 +513,12 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         isVideo: Bool?,
         userId: Int64?,
     ) async throws -> InviteGroupCallParticipantResult
+    func toggleGroupCallParticipantIsMuted(
+        groupCallId: Int?,
+        isMuted: Bool?,
+        participantId: MessageSender?,
+    ) async throws -> Ok
+    func banGroupCallParticipants(groupCallId: Int?, userIds: [TdInt64]?) async throws -> Ok
     func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok
     func encryptGroupCallData(
         data: Data?,
@@ -2030,6 +2036,22 @@ extension TelegramSession: TelegramService {
             isVideo: isVideo,
             userId: userId,
         )
+    }
+
+    func toggleGroupCallParticipantIsMuted(
+        groupCallId: Int?,
+        isMuted: Bool?,
+        participantId: MessageSender?,
+    ) async throws -> Ok {
+        try await client.toggleGroupCallParticipantIsMuted(
+            groupCallId: groupCallId,
+            isMuted: isMuted,
+            participantId: participantId,
+        )
+    }
+
+    func banGroupCallParticipants(groupCallId: Int?, userIds: [TdInt64]?) async throws -> Ok {
+        try await client.banGroupCallParticipants(groupCallId: groupCallId, userIds: userIds)
     }
 
     func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok {

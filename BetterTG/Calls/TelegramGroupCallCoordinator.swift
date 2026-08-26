@@ -96,6 +96,27 @@ import TDLibKit
         )
     }
 
+    func setParticipantMuted(_ participantId: MessageSender, isMuted: Bool) async throws {
+        guard let groupCallId = groupCall?.id else {
+            throw CoordinatorError.notReady
+        }
+        _ = try await service.toggleGroupCallParticipantIsMuted(
+            groupCallId: groupCallId,
+            isMuted: isMuted,
+            participantId: participantId,
+        )
+    }
+
+    func removeParticipant(userId: Int64) async throws {
+        guard let groupCall, groupCall.isOwned else {
+            throw CoordinatorError.notReady
+        }
+        _ = try await service.banGroupCallParticipants(
+            groupCallId: groupCall.id,
+            userIds: [TdInt64(userId)],
+        )
+    }
+
     func setMuted(_ muted: Bool) {
         engine.setMuted(muted)
     }

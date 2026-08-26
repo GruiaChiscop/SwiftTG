@@ -12,6 +12,13 @@ struct ConferenceParticipantsView: View {
     let participants: [ConferenceParticipantPresentation]
     let participantCount: Int
     let connectionStatus: String?
+    let verificationEmojis: [String]
+    let inviteLink: URL?
+    let isInvitingParticipant: Bool
+    let performingParticipantActionId: String?
+    let inviteParticipant: () -> Void
+    let setParticipantMuted: (ConferenceParticipantPresentation, ConferenceParticipantMuteAction) -> Void
+    let removeParticipant: (ConferenceParticipantPresentation) -> Void
 
     var body: some View {
         VStack(spacing: 16) {
@@ -23,13 +30,30 @@ struct ConferenceParticipantsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            ConferenceEncryptionKeyView(emojis: verificationEmojis)
+
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(participants) { participant in
-                        ConferenceParticipantRow(participant: participant)
+                        ConferenceParticipantRow(
+                            participant: participant,
+                            isPerformingAction: performingParticipantActionId == participant.id,
+                            setMuted: { action in
+                                setParticipantMuted(participant, action)
+                            },
+                            remove: {
+                                removeParticipant(participant)
+                            },
+                        )
                         Divider()
                             .padding(.leading, 64)
                     }
+
+                    ConferenceInviteActionsView(
+                        inviteLink: inviteLink,
+                        isInvitingParticipant: isInvitingParticipant,
+                        inviteParticipant: inviteParticipant,
+                    )
                 }
             }
             .background(.white.opacity(0.1), in: .rect(cornerRadius: 20))

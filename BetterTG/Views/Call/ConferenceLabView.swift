@@ -29,6 +29,13 @@ struct ConferenceLabView: View {
                         participants: model.participants,
                         participantCount: model.participantCount,
                         connectionStatus: model.connectionStatus,
+                        verificationEmojis: model.verificationEmojis,
+                        inviteLink: URL(string: "https://t.me/call/conference-lab"),
+                        isInvitingParticipant: false,
+                        performingParticipantActionId: nil,
+                        inviteParticipant: model.inviteParticipant,
+                        setParticipantMuted: model.setParticipantMuted,
+                        removeParticipant: model.removeParticipant,
                     )
                 }
                 .safeAreaPadding()

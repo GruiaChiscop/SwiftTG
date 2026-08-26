@@ -12,6 +12,7 @@ import Observation
 
     private(set) var participants = initialParticipants()
     private(set) var connectionStatus: String?
+    private(set) var verificationEmojis = initialVerificationEmojis
     private(set) var isEnded = false
     private(set) var announcementSequence = 0
     private(set) var lastAnnouncement = ""
@@ -21,6 +22,7 @@ import Observation
     var hasAlex: Bool { participant(named: "Alex") != nil }
     var hasRemovableParticipant: Bool { participants.contains(where: { $0.id != "lab-you" }) }
     var canAddDana: Bool { participant(id: "lab-dana") == nil }
+    var canInviteSorin: Bool { participant(id: "lab-sorin") == nil }
     var isAlexSpeaking: Bool { participant(named: "Alex")?.isSpeaking == true }
     var isAlexMuted: Bool { participant(named: "Alex")?.isMuted == true }
     var isAlexHandRaised: Bool { participant(named: "Alex")?.isHandRaised == true }
@@ -31,6 +33,8 @@ import Observation
         guard let index = participants.firstIndex(where: \.isInvited) else { return }
         participants[index].isInvited = false
         participants[index].subtitle = "Listening"
+        participants[index].muteAction = .mute
+        advanceVerificationEmojis()
         announce("\(participants[index].title ?? "Participant") joined the group call")
     }
 
@@ -42,6 +46,7 @@ import Observation
                 participant.isMuted = false
                 participant.isHandRaised = false
                 participant.subtitle = "Speaking"
+                participant.muteAction = .mute
             } else {
                 participant.subtitle = participant.isMuted ? "Muted" : "Listening"
             }
@@ -56,6 +61,7 @@ import Observation
             participant.isSpeaking = false
             participant.isHandRaised = false
             participant.subtitle = participant.isMuted ? "Muted" : "Listening"
+            participant.muteAction = participant.isMuted ? .allowToSpeak : .mute
         }
         announce(isAlexMuted ? "Alex's microphone is off" : "Alex's microphone is on")
     }
@@ -67,6 +73,7 @@ import Observation
             participant.isSpeaking = false
             participant.isMuted = participant.isHandRaised
             participant.subtitle = participant.isHandRaised ? "Hand raised" : "Listening"
+            participant.muteAction = participant.isHandRaised ? .allowToSpeak : .mute
         }
         announce(isAlexHandRaised ? "Alex raised a hand" : "Alex lowered a hand")
     }
@@ -94,14 +101,71 @@ import Observation
             isMuted: false,
             isHandRaised: false,
             isInvited: false,
+            muteAction: .mute,
+            canRemove: true,
         ))
+        advanceVerificationEmojis()
         announce("Dana joined the group call")
+    }
+
+    func inviteParticipant() {
+        guard canInviteSorin else { return }
+        participants.append(ConferenceParticipantPresentation(
+            id: "lab-sorin",
+            userId: nil,
+            chatId: nil,
+            title: "Sorin",
+            subtitle: "Invited",
+            isSpeaking: false,
+            isMuted: false,
+            isHandRaised: false,
+            isInvited: true,
+            canRemove: true,
+        ))
+        announce("Sorin was invited")
     }
 
     func removeParticipant() {
         guard let index = participants.lastIndex(where: { $0.id != "lab-you" }) else { return }
         let name = participants[index].title ?? "Participant"
+        let wasInvited = participants[index].isInvited
         participants.remove(at: index)
+        if !wasInvited {
+            advanceVerificationEmojis()
+        }
+        announce("\(name) left the group call")
+    }
+
+    func setParticipantMuted(
+        _ participant: ConferenceParticipantPresentation,
+        action: ConferenceParticipantMuteAction,
+    ) {
+        updateParticipant(id: participant.id) { participant in
+            participant.isMuted = action.isMuted
+            participant.isSpeaking = false
+            participant.subtitle = action.isMuted ? "Muted" : "Listening"
+            participant.muteAction =
+ switch action {
+            case .mute:
+                .allowToSpeak
+            case .allowToSpeak:
+                .mute
+            case .muteForCurrentUser:
+                .unmuteForCurrentUser
+            case .unmuteForCurrentUser:
+                .muteForCurrentUser
+            }
+        }
+    }
+
+    func removeParticipant(_ participant: ConferenceParticipantPresentation) {
+        guard let index = participants.firstIndex(where: { $0.id == participant.id }) else { return }
+        let name = participants[index].title ?? "Participant"
+        let wasInvited = participants[index].isInvited
+        participants.remove(at: index)
+        if !wasInvited {
+            advanceVerificationEmojis()
+        }
         announce("\(name) left the group call")
     }
 
@@ -114,11 +178,15 @@ import Observation
     func reset() {
         participants = Self.initialParticipants()
         connectionStatus = nil
+        verificationEmojis = Self.initialVerificationEmojis
         isEnded = false
         announce("Conference laboratory reset")
     }
 
     // MARK: Private
+
+    private static let initialVerificationEmojis = ["🦋", "🌵", "🚀", "🍀"]
+    private static let alternateVerificationEmojis = ["🐳", "🍓", "🎸", "🌙"]
 
     private static func initialParticipants() -> [ConferenceParticipantPresentation] {
         [
@@ -143,6 +211,7 @@ import Observation
                 isMuted: false,
                 isHandRaised: false,
                 isInvited: true,
+                canRemove: true,
             ),
             ConferenceParticipantPresentation(
                 id: "lab-mara",
@@ -154,8 +223,16 @@ import Observation
                 isMuted: false,
                 isHandRaised: false,
                 isInvited: false,
+                muteAction: .mute,
+                canRemove: true,
             ),
         ]
+    }
+
+    private func advanceVerificationEmojis() {
+        verificationEmojis = verificationEmojis == Self.initialVerificationEmojis
+            ? Self.alternateVerificationEmojis
+            : Self.initialVerificationEmojis
     }
 
     private func participant(id: String) -> ConferenceParticipantPresentation? {
