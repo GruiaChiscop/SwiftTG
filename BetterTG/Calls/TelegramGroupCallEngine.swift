@@ -31,6 +31,12 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         let isTransitioningFromBroadcastToRtc: Bool
     }
 
+    struct AudioLevel: Equatable, Sendable {
+        let audioSourceId: UInt32
+        let level: Float
+        let hasVoice: Bool
+    }
+
     struct Configuration: Sendable {
         let encryption: Encryption
         let isActiveByDefault: Bool
@@ -44,6 +50,7 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         audioSessionActive: Bool,
         joinPayloadReady: @escaping @Sendable (_ payload: String, _ audioSourceId: Int) -> Void,
         networkStateChanged: @escaping @Sendable (NetworkState) -> Void,
+        audioLevelsChanged: @escaping @Sendable ([AudioLevel]) -> Void,
         signalBarsChanged: @escaping @Sendable (Int32) -> Void,
     ) {
         queue.async { [weak self] in
@@ -66,7 +73,19 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                         isTransitioningFromBroadcastToRtc: state.isTransitioningFromBroadcastToRtc,
                     ))
                 },
-                audioLevelsUpdated: { _ in },
+                audioLevelsUpdated: { [weak self] values in
+                    guard let self, self.generation == generation else { return }
+                    var levels = [AudioLevel]()
+                    levels.reserveCapacity(values.count / 3)
+                    for index in stride(from: 0, to: values.count - 2, by: 3) {
+                        levels.append(AudioLevel(
+                            audioSourceId: values[index].uint32Value,
+                            level: values[index + 1].floatValue,
+                            hasVoice: values[index + 2].boolValue,
+                        ))
+                    }
+                    audioLevelsChanged(levels)
+                },
                 activityUpdated: { _ in },
                 inputDeviceId: "",
                 outputDeviceId: "",

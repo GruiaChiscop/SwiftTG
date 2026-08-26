@@ -46,6 +46,7 @@ import TDLibKit
     private(set) var participants = [MessageSender: GroupCallParticipant]()
     private(set) var verificationEmojis = [String]()
     private(set) var signalBars: Int?
+    private(set) var speakingAudioSourceIds = Set<UInt32>()
 
     var onPrepared: ((PreparedCall) -> Void)?
     var onConnected: (() -> Void)?
@@ -153,6 +154,8 @@ import TDLibKit
     private var operationTask: Task<Void, Never>?
     private var operationGeneration = UUID()
     private var didReportConnected = false
+    private var speakingCleanupTask: Task<Void, Never>?
+    private var speakingLastActiveAt = [UInt32: TimeInterval]()
 
     private func begin(
         mode: Mode,
@@ -199,6 +202,12 @@ import TDLibKit
                 onSignalBarsChanged?(value)
             }
         }
+        let audioLevelsChanged: @Sendable ([TelegramGroupCallEngine.AudioLevel]) -> Void = { [weak self] levels in
+            Task { @MainActor [weak self] in
+                guard let self, operationGeneration == generation else { return }
+                handleAudioLevels(levels, generation: generation)
+            }
+        }
 
         if let privateCallEngine {
             privateCallEngine.prepareGroupCall(
@@ -207,6 +216,7 @@ import TDLibKit
                 audioSessionActive: audioSessionActive,
                 joinPayloadReady: joinPayloadReady,
                 networkStateChanged: networkStateChanged,
+                audioLevelsChanged: audioLevelsChanged,
                 signalBarsChanged: signalBarsChanged,
             )
         } else {
@@ -216,6 +226,7 @@ import TDLibKit
                 audioSessionActive: audioSessionActive,
                 joinPayloadReady: joinPayloadReady,
                 networkStateChanged: networkStateChanged,
+                audioLevelsChanged: audioLevelsChanged,
                 signalBarsChanged: signalBarsChanged,
             )
         }
@@ -353,6 +364,35 @@ import TDLibKit
         engine.updateMediaChannels(channels)
     }
 
+    private func handleAudioLevels(
+        _ levels: [TelegramGroupCallEngine.AudioLevel],
+        generation: UUID,
+    ) {
+        let timestamp = Foundation.Date.timeIntervalSinceReferenceDate
+        for level in levels where level.level > 0.1 && level.hasVoice {
+            speakingLastActiveAt[level.audioSourceId] = timestamp
+        }
+        speakingAudioSourceIds = Set(speakingLastActiveAt.keys)
+        guard speakingCleanupTask == nil, !speakingLastActiveAt.isEmpty else { return }
+        speakingCleanupTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .milliseconds(500))
+                } catch {
+                    return
+                }
+                guard let self, operationGeneration == generation else { return }
+                let cutoff = Foundation.Date.timeIntervalSinceReferenceDate - 2
+                speakingLastActiveAt = speakingLastActiveAt.filter { $0.value > cutoff }
+                speakingAudioSourceIds = Set(speakingLastActiveAt.keys)
+                if speakingLastActiveAt.isEmpty {
+                    speakingCleanupTask = nil
+                    return
+                }
+            }
+        }
+    }
+
     @discardableResult private func beginNewOperation() -> UUID {
         operationTask?.cancel()
         operationTask = nil
@@ -362,6 +402,10 @@ import TDLibKit
 
     private func reset(to state: State) {
         engine.stop()
+        speakingCleanupTask?.cancel()
+        speakingCleanupTask = nil
+        speakingLastActiveAt.removeAll(keepingCapacity: false)
+        speakingAudioSourceIds.removeAll(keepingCapacity: false)
         encryptionBridge = nil
         groupCall = nil
         participants.removeAll(keepingCapacity: false)

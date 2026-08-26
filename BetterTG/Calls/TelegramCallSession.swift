@@ -161,6 +161,38 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     var isConferenceCall: Bool { groupCallCoordinator != nil }
 
+    var showsConferenceCallUI: Bool { conferenceHasReplacedPrivateCall && conferenceAudioWasMoved }
+
+    var conferenceParticipants: [GroupCallParticipant] {
+        guard let groupCallCoordinator else { return [] }
+        return groupCallCoordinator.participants.values.sorted { $0.order > $1.order }
+    }
+
+    var pendingConferenceInvitedUserIds: [Int64] {
+        let joinedUserIds = Set(conferenceParticipants.compactMap { participant -> Int64? in
+            guard case .messageSenderUser(let user) = participant.participantId else { return nil }
+            return user.userId
+        })
+        return conferenceInvitedUserIds.subtracting(joinedUserIds).sorted()
+    }
+
+    var conferenceParticipantCount: Int {
+        max(groupCallCoordinator?.groupCall?.participantCount ?? 0, conferenceParticipants.count)
+    }
+
+    var conferenceSpeakingParticipantIds: Set<MessageSender> {
+        guard let groupCallCoordinator else { return [] }
+        return Set(conferenceParticipants.compactMap { participant -> MessageSender? in
+            let audioSourceId = participant.isCurrentUser
+                ? 0
+                : UInt32(bitPattern: Int32(truncatingIfNeeded: participant.audioSourceId))
+            guard participant.isSpeaking || groupCallCoordinator.speakingAudioSourceIds.contains(audioSourceId) else {
+                return nil
+            }
+            return participant.participantId
+        })
+    }
+
     var canUpgradeToConference: Bool {
         guard !isUpgradingToConference,
               groupCallCoordinator == nil,

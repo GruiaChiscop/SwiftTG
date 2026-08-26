@@ -25,7 +25,10 @@ struct CallView: View {
                     .accessibilityHidden(true)
             }
 
-            if let primaryVideoView {
+            if session.showsConferenceCallUI {
+                Color.black
+                    .ignoresSafeArea()
+            } else if let primaryVideoView {
                 CallVideoSurfaceView(videoView: primaryVideoView)
                     .id(ObjectIdentifier(primaryVideoView))
                     .ignoresSafeArea()
@@ -34,7 +37,7 @@ struct CallView: View {
                 CallBackground(userId: session.activeCall?.userId)
             }
 
-            if primaryVideoView != nil {
+            if !session.showsConferenceCallUI, primaryVideoView != nil {
                 LinearGradient(
                     colors: [.black.opacity(0.4), .clear, .black.opacity(0.5)],
                     startPoint: .top,
@@ -82,58 +85,70 @@ struct CallView: View {
 
                 Spacer(minLength: 24)
 
-                if primaryVideoView == nil {
-                    CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
-                        .frame(width: 128, height: 128)
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(0.2), lineWidth: 1)
-                        }
-                        .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
-                }
-
-                VStack(spacing: 6) {
-                    Text(displayName)
-                        .font(.largeTitle.bold())
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-
-                    CallStatusView(
-                        call: session.activeCall,
-                        connectedAt: session.connectedAt,
-                        engineState: session.engineState,
-                        signalBars: session.signalBars,
+                if session.showsConferenceCallUI {
+                    ConferenceParticipantsView(
+                        participants: session.conferenceParticipants,
+                        invitedUserIds: session.pendingConferenceInvitedUserIds,
+                        participantCount: session.conferenceParticipantCount,
+                        speakingParticipantIds: session.conferenceSpeakingParticipantIds,
+                        isLocalMuted: session.isMuted,
                     )
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .frame(maxHeight: .infinity)
+                    .padding(.bottom, 12)
+                } else {
+                    if primaryVideoView == nil {
+                        CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
+                            .frame(width: 128, height: 128)
+                            .overlay {
+                                Circle()
+                                    .stroke(.white.opacity(0.2), lineWidth: 1)
+                            }
+                            .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+                    }
 
-                    CallWeakSignalView(
-                        isVisible: session.connectedAt != nil
-                            && session.engineState == .connected
-                            && session.signalBars == 0,
-                    )
-                }
-                .padding(.horizontal)
+                    VStack(spacing: 6) {
+                        Text(displayName)
+                            .font(.largeTitle.bold())
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
 
-                if !session.encryptionEmojis.isEmpty {
-                    CallEncryptionKeyView(
-                        emojis: session.encryptionEmojis,
+                        CallStatusView(
+                            call: session.activeCall,
+                            connectedAt: session.connectedAt,
+                            engineState: session.engineState,
+                            signalBars: session.signalBars,
+                        )
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+
+                        CallWeakSignalView(
+                            isVisible: session.connectedAt != nil
+                                && session.engineState == .connected
+                                && session.signalBars == 0,
+                        )
+                    }
+                    .padding(.horizontal)
+
+                    if !session.encryptionEmojis.isEmpty {
+                        CallEncryptionKeyView(
+                            emojis: session.encryptionEmojis,
+                            peerName: peerShortName,
+                        )
+                        .padding(.top)
+                    }
+
+                    Spacer()
+
+                    CallNoticeView(
+                        isLocalMuted: session.isMuted,
+                        isLocalVideoEnabled: session.isLocalVideoEnabled,
+                        remoteAudioState: session.remoteAudioState,
+                        remoteVideoState: session.remoteVideoState,
+                        remoteBatteryLevel: session.remoteBatteryLevel,
                         peerName: peerShortName,
                     )
-                    .padding(.top)
+                    .padding(.bottom, 12)
                 }
-
-                Spacer()
-
-                CallNoticeView(
-                    isLocalMuted: session.isMuted,
-                    isLocalVideoEnabled: session.isLocalVideoEnabled,
-                    remoteAudioState: session.remoteAudioState,
-                    remoteVideoState: session.remoteVideoState,
-                    remoteBatteryLevel: session.remoteBatteryLevel,
-                    peerName: peerShortName,
-                )
-                .padding(.bottom, 12)
 
                 HStack {
                     if session.isLocalVideoEnabled, !session.isScreenSharing {
@@ -182,7 +197,7 @@ struct CallView: View {
             .safeAreaPadding()
             .padding(.horizontal)
 
-            if let secondaryVideoView {
+            if !session.showsConferenceCallUI, let secondaryVideoView {
                 Button(action: swapPrimaryVideo) {
                     CallVideoSurfaceView(videoView: secondaryVideoView)
                         .id(ObjectIdentifier(secondaryVideoView))

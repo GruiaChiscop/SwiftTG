@@ -223,6 +223,7 @@ final class TelegramCallEngine: @unchecked Sendable {
         audioSessionActive: Bool,
         joinPayloadReady: @escaping @Sendable (_ payload: String, _ audioSourceId: Int) -> Void,
         networkStateChanged: @escaping @Sendable (TelegramGroupCallEngine.NetworkState) -> Void,
+        audioLevelsChanged: @escaping @Sendable ([TelegramGroupCallEngine.AudioLevel]) -> Void,
         signalBarsChanged: @escaping @Sendable (Int32) -> Void,
     ) {
         queue.async { [weak self] in
@@ -233,6 +234,7 @@ final class TelegramCallEngine: @unchecked Sendable {
                 audioSessionActive: audioSessionActive,
                 joinPayloadReady: joinPayloadReady,
                 networkStateChanged: networkStateChanged,
+                audioLevelsChanged: audioLevelsChanged,
                 signalBarsChanged: signalBarsChanged,
             )
         }
