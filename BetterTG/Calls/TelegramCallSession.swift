@@ -132,6 +132,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var signalBars: Int?
     private(set) var groupCallCoordinator: TelegramGroupCallCoordinator?
     private(set) var isUpgradingToConference = false
+    private(set) var isInvitingConferenceParticipant = false
     private(set) var isLocalVideoEnabled = false
     private(set) var localVideoView: UIView?
     private(set) var cameraPreviewView: UIView?
@@ -167,6 +168,34 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
               case .callStateReady(let ready) = activeCall?.state
         else { return false }
         return ready.isGroupCallSupported
+    }
+
+    var canAddConferenceParticipant: Bool {
+        if canUpgradeToConference {
+            return true
+        }
+        guard !isUpgradingToConference,
+              !isInvitingConferenceParticipant,
+              conferenceHasReplacedPrivateCall,
+              let groupCallCoordinator,
+              case .connected = groupCallCoordinator.state
+        else { return false }
+        return true
+    }
+
+    var excludedConferenceParticipantUserIds: Set<Int64> {
+        var userIds = conferenceInvitedUserIds
+        if let userId = activeCall?.userId {
+            userIds.insert(userId)
+        }
+        if let participants = groupCallCoordinator?.participants {
+            for participantId in participants.keys {
+                if case .messageSenderUser(let user) = participantId {
+                    userIds.insert(user.userId)
+                }
+            }
+        }
+        return userIds
     }
 
     var canToggleVideo: Bool {
@@ -255,6 +284,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
         isUpgradingToConference = true
+        conferenceInvitedUserIds = [userId]
 
         let coordinator = TelegramGroupCallCoordinator(service: service)
         configureConferenceCallbacks(coordinator)
@@ -277,6 +307,36 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             audioSessionActive: isEffectiveAudioSessionActive,
             prioritizeVP8: false,
         )
+    }
+
+    func addConferenceParticipant(userId: Int64, isVideo: Bool) {
+        if canUpgradeToConference {
+            upgradeToConference(inviting: userId, isVideo: isVideo)
+            return
+        }
+        guard canAddConferenceParticipant,
+              !excludedConferenceParticipantUserIds.contains(userId),
+              let coordinator = groupCallCoordinator
+        else { return }
+
+        conferenceInviteTask?.cancel()
+        isInvitingConferenceParticipant = true
+        conferenceInvitedUserIds.insert(userId)
+        conferenceInviteTask = Task { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            do {
+                _ = try await coordinator.invite(userId: userId, isVideo: isVideo)
+                guard groupCallCoordinator === coordinator else { return }
+                log("[GroupCall] invited additional userId=\(userId) video=\(isVideo)")
+            } catch {
+                guard groupCallCoordinator === coordinator else { return }
+                conferenceInvitedUserIds.remove(userId)
+                log("[GroupCall] couldn't invite additional userId=\(userId): \(error)")
+            }
+            guard groupCallCoordinator === coordinator else { return }
+            isInvitingConferenceParticipant = false
+            conferenceInviteTask = nil
+        }
     }
 
     func toggleSpeaker() {
@@ -489,9 +549,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var remoteVideoGeneration = UUID()
     private var pictureInPictureController: CallPictureInPictureController?
     private var conferenceTransitionTask: Task<Void, Never>?
+    private var conferenceInviteTask: Task<Void, Never>?
     private var conferenceTransitionGeneration = UUID()
     private var conferenceHasReplacedPrivateCall = false
     private var conferenceAudioWasMoved = false
+    private var conferenceInvitedUserIds = Set<Int64>()
 
     private var shouldRouteVideoToSpeaker: Bool {
         activeCall?.isVideo == true || isLocalVideoEnabled || remoteVideoState != .inactive
@@ -910,6 +972,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     guard conferenceTransitionGeneration == generation,
                           groupCallCoordinator === coordinator
                     else { return }
+                    conferenceInvitedUserIds.remove(invitedUserId)
                     log("[GroupCall] couldn't invite userId=\(invitedUserId): \(error)")
                 }
             } catch {
@@ -961,11 +1024,15 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
         conferenceTransitionTask?.cancel()
         conferenceTransitionTask = nil
+        conferenceInviteTask?.cancel()
+        conferenceInviteTask = nil
         conferenceTransitionGeneration = UUID()
         groupCallCoordinator = nil
         isUpgradingToConference = false
+        isInvitingConferenceParticipant = false
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
+        conferenceInvitedUserIds.removeAll()
     }
 
     private func finishPrivateEngineTransition() {
@@ -1010,11 +1077,15 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         clearConferenceCallbacks(coordinator)
         conferenceTransitionTask?.cancel()
         conferenceTransitionTask = nil
+        conferenceInviteTask?.cancel()
+        conferenceInviteTask = nil
         conferenceTransitionGeneration = UUID()
         groupCallCoordinator = nil
         isUpgradingToConference = false
+        isInvitingConferenceParticipant = false
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
+        conferenceInvitedUserIds.removeAll()
         finishCurrentCall(notifyCallKit: true, endReason: endReason)
     }
 

@@ -54,7 +54,7 @@ struct CallView: View {
 
                     Spacer()
 
-                    if session.canUpgradeToConference {
+                    if session.canAddConferenceParticipant {
                         Button {
                             showsConferenceParticipantPicker = true
                         } label: {
@@ -70,11 +70,13 @@ struct CallView: View {
                         }
                         .frame(width: 40, height: 40)
                         .background(.ultraThinMaterial, in: .circle)
-                    } else if session.isUpgradingToConference {
+                    } else if session.isUpgradingToConference || session.isInvitingConferenceParticipant {
                         ProgressView()
                             .frame(width: 40, height: 40)
                             .background(.ultraThinMaterial, in: .circle)
-                            .accessibilityLabel("Preparing conference")
+                            .accessibilityLabel(
+                                session.isUpgradingToConference ? "Preparing conference" : "Adding participant",
+                            )
                     }
                 }
 
@@ -211,8 +213,9 @@ struct CallView: View {
         }
         .sheet(isPresented: $showsConferenceParticipantPicker) {
             NavigationStack {
-                ConferenceParticipantPicker(excludedUserId: session.activeCall?.userId) { userId, isVideo in
-                    session.upgradeToConference(inviting: userId, isVideo: isVideo)
+                ConferenceParticipantPicker(excludedUserIds: session.excludedConferenceParticipantUserIds) {
+                    userId, isVideo in
+                    session.addConferenceParticipant(userId: userId, isVideo: isVideo)
                 }
             }
             .preferredColorScheme(.dark)

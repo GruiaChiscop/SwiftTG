@@ -11,10 +11,10 @@ struct ConferenceParticipantPicker: View {
     // MARK: Lifecycle
 
     init(
-        excludedUserId: Int64?,
+        excludedUserIds: Set<Int64>,
         onSelect: @escaping (_ userId: Int64, _ isVideo: Bool) -> Void,
     ) {
-        self.excludedUserId = excludedUserId
+        self.excludedUserIds = excludedUserIds
         self.onSelect = onSelect
     }
 
@@ -100,7 +100,7 @@ struct ConferenceParticipantPicker: View {
     @State private var query = ""
     @State private var selectedUserId: Int64?
 
-    private let excludedUserId: Int64?
+    private let excludedUserIds: Set<Int64>
     private let onSelect: (_ userId: Int64, _ isVideo: Bool) -> Void
     private let service: any TelegramService = TDLib.shared.service
 
@@ -120,7 +120,7 @@ struct ConferenceParticipantPicker: View {
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
         return contacts
             .filter { user in
-                guard user.id != excludedUserId, user.haveAccess else { return false }
+                guard !excludedUserIds.contains(user.id), user.haveAccess else { return false }
                 guard case .userTypeRegular = user.type else { return false }
                 guard !normalizedQuery.isEmpty else { return true }
                 return telegramUserDisplayName(user)
