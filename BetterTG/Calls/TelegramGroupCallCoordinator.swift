@@ -50,6 +50,7 @@ import UIKit
     private(set) var speakingAudioSourceIds = Set<UInt32>()
     private(set) var isLocalVideoEnabled = false
     private(set) var isScreenSharing = false
+    private(set) var canUnmuteSelf = true
 
     var onPrepared: ((PreparedCall) -> Void)?
     var onConnected: (() -> Void)?
@@ -58,6 +59,7 @@ import UIKit
     var onEnded: (() -> Void)?
     var onLocalVideoFailed: (() -> Void)?
     var onScreenSharingFailed: (() -> Void)?
+    var onLocalMuteStateChanged: ((Bool) -> Void)?
 
     func create(
         isMuted: Bool,
@@ -123,8 +125,57 @@ import UIKit
     }
 
     func setMuted(_ muted: Bool) {
+        guard muted || canUnmuteSelf else {
+            engine.setMuted(true)
+            onLocalMuteStateChanged?(true)
+            return
+        }
+        guard isMuted != muted else {
+            engine.setMuted(muted)
+            return
+        }
+        let previousValue = isMuted
         isMuted = muted
         engine.setMuted(muted)
+        guard case .connected = state,
+              let groupCallId = groupCall?.id,
+              let participantId = participants.values.first(where: \.isCurrentUser)?.participantId
+        else { return }
+
+        muteUpdateTask?.cancel()
+        let generation = operationGeneration
+        let updateGeneration = UUID()
+        muteUpdateGeneration = updateGeneration
+        pendingMutedValue = muted
+        muteUpdateTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await service.toggleGroupCallParticipantIsMuted(
+                    groupCallId: groupCallId,
+                    isMuted: muted,
+                    participantId: participantId,
+                )
+                guard operationGeneration == generation,
+                      muteUpdateGeneration == updateGeneration
+                else { return }
+                pendingMutedValue = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation,
+                      muteUpdateGeneration == updateGeneration
+                else { return }
+                pendingMutedValue = nil
+                isMuted = previousValue
+                engine.setMuted(previousValue)
+                log("[GroupCall] failed to update local mute state to \(muted): \(error)")
+                onLocalMuteStateChanged?(previousValue)
+            }
+            guard operationGeneration == generation,
+                  muteUpdateGeneration == updateGeneration
+            else { return }
+            muteUpdateTask = nil
+        }
     }
 
     func requestVideo(_ capturer: OngoingCallThreadLocalContextVideoCapturer) {
@@ -271,6 +322,9 @@ import UIKit
     private var videoRejoinGeneration = UUID()
     private var screenSharingTask: Task<Void, Never>?
     private var screenSharingGeneration = UUID()
+    private var muteUpdateTask: Task<Void, Never>?
+    private var muteUpdateGeneration = UUID()
+    private var pendingMutedValue: Bool?
     private var didReportConnected = false
     private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
@@ -543,6 +597,9 @@ import UIKit
                 participants.removeValue(forKey: value.participant.participantId)
             } else {
                 participants[value.participant.participantId] = value.participant
+                if value.participant.isCurrentUser {
+                    handleLocalMuteUpdate(value.participant)
+                }
             }
             refreshMediaChannels()
         case .updateGroupCallVerificationState(let value):
@@ -598,6 +655,22 @@ import UIKit
         }
         engine.updateMediaChannels(channels)
         engine.updateRequestedVideoChannels(videoChannels)
+    }
+
+    private func handleLocalMuteUpdate(_ participant: GroupCallParticipant) {
+        canUnmuteSelf = participant.canUnmuteSelf
+        let serverMuted = participant.isMutedForAllUsers
+        if let pendingMutedValue {
+            if pendingMutedValue == serverMuted {
+                self.pendingMutedValue = nil
+            } else {
+                return
+            }
+        }
+        guard isMuted != serverMuted else { return }
+        isMuted = serverMuted
+        engine.setMuted(serverMuted)
+        onLocalMuteStateChanged?(serverMuted)
     }
 
     private func videoChannel(
@@ -661,6 +734,10 @@ import UIKit
         screenSharingTask = nil
         screenSharingGeneration = UUID()
         screencastEngine.stop()
+        muteUpdateTask?.cancel()
+        muteUpdateTask = nil
+        muteUpdateGeneration = UUID()
+        pendingMutedValue = nil
         operationGeneration = UUID()
         return operationGeneration
     }
@@ -679,6 +756,7 @@ import UIKit
         didReportConnected = false
         isLocalVideoEnabled = false
         isScreenSharing = false
+        canUnmuteSelf = true
         isMuted = false
         self.state = state
         if case .ended = state {

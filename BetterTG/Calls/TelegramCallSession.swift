@@ -372,6 +372,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         return isLocalVideoEnabled || engineState == .connected || engineState == .reconnecting
     }
 
+    var canToggleMute: Bool {
+        guard let groupCallCoordinator else { return true }
+        return !isMuted || groupCallCoordinator.canUnmuteSelf
+    }
+
     /// tgcalls configures the category/mode/options CallKit will later activate. This has to run
     /// before reporting or requesting a CallKit call, matching Telegram-iOS's ordering.
     static func prepareAudioSession() {
@@ -1226,6 +1231,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
             handleConferenceScreenSharingFailure()
         }
+        coordinator.onLocalMuteStateChanged = { [weak self, weak coordinator] muted in
+            guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            handleConferenceLocalMuteStateChanged(muted)
+        }
         coordinator.onFailed = { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
             handleConferenceStopped(coordinator, endReason: .failed)
@@ -1409,6 +1418,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         coordinator.onSignalBarsChanged = nil
         coordinator.onLocalVideoFailed = nil
         coordinator.onScreenSharingFailed = nil
+        coordinator.onLocalMuteStateChanged = nil
         coordinator.onFailed = nil
         coordinator.onEnded = nil
     }
@@ -2116,6 +2126,13 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         log("[GroupCall] stopping local broadcast after screen-sharing join failure")
         screenShareReceiver?.requestBroadcastStop()
         clearScreenSharingState()
+    }
+
+    private func handleConferenceLocalMuteStateChanged(_ muted: Bool) {
+        guard isMuted != muted else { return }
+        isMuted = muted
+        engine.setMuted(muted)
+        CallKitManager.shared.requestSetMuted(muted)
     }
 
     private func clearScreenSharingState() {

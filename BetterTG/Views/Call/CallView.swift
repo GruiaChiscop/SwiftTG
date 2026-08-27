@@ -187,6 +187,7 @@ struct CallView: View {
                         systemImage: session.isMuted ? "mic.slash.fill" : "mic.fill",
                         label: "Mute",
                         isActive: session.isMuted,
+                        isEnabled: session.canToggleMute,
                         action: session.toggleMute,
                     )
                     .frame(maxWidth: .infinity)
