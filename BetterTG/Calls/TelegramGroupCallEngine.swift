@@ -265,6 +265,12 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         }
     }
 
+    func setVolume(audioSourceId: UInt32, volume: Double) {
+        queue.async { [weak self] in
+            self?.context?.setVolumeForSsrc(audioSourceId, volume: volume)
+        }
+    }
+
     func setAudioSessionActive(_ active: Bool) {
         queue.async { [weak self] in
             self?.context?.setManualAudioSessionIsActive(active)

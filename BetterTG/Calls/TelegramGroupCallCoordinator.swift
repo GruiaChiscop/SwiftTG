@@ -60,6 +60,7 @@ import UIKit
     var onLocalVideoFailed: (() -> Void)?
     var onScreenSharingFailed: (() -> Void)?
     var onLocalMuteStateChanged: ((Bool) -> Void)?
+    var onParticipantChanged: ((GroupCallParticipant?, GroupCallParticipant?) -> Void)?
 
     func create(
         isMuted: Bool,
@@ -103,15 +104,32 @@ import UIKit
         )
     }
 
-    func setParticipantMuted(_ participantId: MessageSender, isMuted: Bool) async throws {
+    func setParticipantMuted(
+        _ participant: GroupCallParticipant,
+        isMuted: Bool,
+        forCurrentUser: Bool,
+    ) async throws {
         guard let groupCallId = groupCall?.id else {
             throw CoordinatorError.notReady
         }
-        _ = try await service.toggleGroupCallParticipantIsMuted(
-            groupCallId: groupCallId,
-            isMuted: isMuted,
-            participantId: participantId,
-        )
+        if forCurrentUser {
+            setParticipantVolume(participant, mutedForCurrentUser: isMuted)
+        }
+        do {
+            _ = try await service.toggleGroupCallParticipantIsMuted(
+                groupCallId: groupCallId,
+                isMuted: isMuted,
+                participantId: participant.participantId,
+            )
+        } catch {
+            if forCurrentUser {
+                setParticipantVolume(
+                    participant,
+                    mutedForCurrentUser: participant.isMutedForCurrentUser,
+                )
+            }
+            throw error
+        }
     }
 
     func removeParticipant(userId: Int64) async throws {
@@ -593,13 +611,16 @@ import UIKit
             }
         case .updateGroupCallParticipant(let value):
             guard value.groupCallId == groupCall?.id else { return }
+            let previousParticipant = participants[value.participant.participantId]
             if value.participant.order.isEmpty {
                 participants.removeValue(forKey: value.participant.participantId)
+                onParticipantChanged?(previousParticipant, nil)
             } else {
                 participants[value.participant.participantId] = value.participant
                 if value.participant.isCurrentUser {
                     handleLocalMuteUpdate(value.participant)
                 }
+                onParticipantChanged?(previousParticipant, value.participant)
             }
             refreshMediaChannels()
         case .updateGroupCallVerificationState(let value):
@@ -655,6 +676,35 @@ import UIKit
         }
         engine.updateMediaChannels(channels)
         engine.updateRequestedVideoChannels(videoChannels)
+        for participant in participants.values where !participant.isCurrentUser {
+            setParticipantVolume(
+                participant,
+                mutedForCurrentUser: participant.isMutedForCurrentUser,
+            )
+        }
+    }
+
+    private func setParticipantVolume(
+        _ participant: GroupCallParticipant,
+        mutedForCurrentUser: Bool,
+    ) {
+        let volume = mutedForCurrentUser
+            ? 0
+            : min(2, max(0, Double(participant.volumeLevel) / 10000))
+        if participant.audioSourceId != 0 {
+            engine.setVolume(
+                audioSourceId: UInt32(bitPattern: Int32(truncatingIfNeeded: participant.audioSourceId)),
+                volume: volume,
+            )
+        }
+        if participant.screenSharingAudioSourceId != 0 {
+            engine.setVolume(
+                audioSourceId: UInt32(
+                    bitPattern: Int32(truncatingIfNeeded: participant.screenSharingAudioSourceId),
+                ),
+                volume: volume,
+            )
+        }
     }
 
     private func handleLocalMuteUpdate(_ participant: GroupCallParticipant) {

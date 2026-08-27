@@ -25,6 +25,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     init(service: any TelegramService) {
         self.service = service
+        self.conferenceAccessibilityAnnouncer = ConferenceAccessibilityAnnouncer(service: service)
         service.callPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] call in self?.handle(call: call) }
@@ -529,8 +530,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             guard let self, let coordinator else { return }
             do {
                 try await coordinator.setParticipantMuted(
-                    groupCallParticipant.participantId,
+                    groupCallParticipant,
                     isMuted: action.isMuted,
+                    forCurrentUser: action.isForCurrentUser,
                 )
             } catch is CancellationError {
                 return
@@ -784,6 +786,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private static let endedTonePlaybackDuration: TimeInterval = 1.25
 
     private let service: any TelegramService
+    private let conferenceAccessibilityAnnouncer: ConferenceAccessibilityAnnouncer
     private let engine = TelegramCallEngine()
     private let cellularNetworkInfo = CTTelephonyNetworkInfo()
     private let networkMonitor = NWPathMonitor()
@@ -1215,6 +1218,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     private func configureConferenceCallbacks(_ coordinator: TelegramGroupCallCoordinator) {
+        conferenceAccessibilityAnnouncer.reset()
         coordinator.onConnected = { [weak self, weak coordinator] in
             guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
             moveAudioToConferenceIfReady()
@@ -1234,6 +1238,13 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         coordinator.onLocalMuteStateChanged = { [weak self, weak coordinator] muted in
             guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
             handleConferenceLocalMuteStateChanged(muted)
+        }
+        coordinator.onParticipantChanged = { [weak self, weak coordinator] previous, current in
+            guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            conferenceAccessibilityAnnouncer.participantChanged(
+                previous: previous,
+                current: current,
+            )
         }
         coordinator.onFailed = { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
@@ -1315,6 +1326,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             selectAudioRoute(.speaker)
         }
         CallKitManager.shared.updateCurrentCallAsConference()
+        conferenceAccessibilityAnnouncer.enableAfterInitialSnapshot()
         finishPrivateEngineTransition()
     }
 
@@ -1419,8 +1431,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         coordinator.onLocalVideoFailed = nil
         coordinator.onScreenSharingFailed = nil
         coordinator.onLocalMuteStateChanged = nil
+        coordinator.onParticipantChanged = nil
         coordinator.onFailed = nil
         coordinator.onEnded = nil
+        conferenceAccessibilityAnnouncer.reset()
     }
 
     private func answerActiveCall() {

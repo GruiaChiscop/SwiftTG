@@ -42,4 +42,13 @@ enum ConferenceParticipantMuteAction: Equatable {
             false
         }
     }
+
+    var isForCurrentUser: Bool {
+        switch self {
+        case .muteForCurrentUser, .unmuteForCurrentUser:
+            true
+        case .allowToSpeak, .mute:
+            false
+        }
+    }
 }
