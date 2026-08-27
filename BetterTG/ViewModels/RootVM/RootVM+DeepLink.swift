@@ -32,12 +32,33 @@ extension RootVM {
         }
     }
 
+    func confirmPendingGroupCallJoin() {
+        guard let pending = pendingGroupCallJoin else { return }
+        pendingGroupCallJoin = nil
+        Task {
+            let joined = await TelegramCallSession.shared.joinConference(
+                inviteLink: pending.inviteLink,
+                isMuted: true,
+            )
+            guard !Task.isCancelled, !joined else { return }
+            deepLinkErrorMessage = "Couldn't join this voice chat."
+        }
+    }
+
     @MainActor private func applyDeepLinkAction(_ action: TelegramDeepLinkAction) async {
         switch action {
         case .openChat(let chatId, let messageId):
             await openDeepLinkChat(chatId: chatId, messageId: messageId)
         case .confirmJoin(let info, let inviteLink):
             pendingDeepLinkJoin = TelegramPendingDeepLinkJoin(info: info, inviteLink: inviteLink)
+        case .confirmGroupCallJoin(let pending):
+            guard TelegramCallSession.shared.groupCallCoordinator == nil,
+                  TelegramCallSession.shared.activeCall == nil
+            else {
+                deepLinkErrorMessage = "Another call is already in progress."
+                return
+            }
+            pendingGroupCallJoin = pending
         case .addProxy(let proxy):
             await addDeepLinkProxy(proxy)
         case .openExternally(let url):

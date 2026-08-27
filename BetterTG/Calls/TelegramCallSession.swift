@@ -152,6 +152,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     /// The native CallKit UI remains the sole incoming-answer surface while the call is pending.
     var shouldShowCallView: Bool {
+        if groupCallCoordinator != nil {
+            return !isCallViewMinimized
+        }
         guard let activeCall else { return false }
         if !activeCall.isOutgoing, case .callStatePending = activeCall.state {
             return false
@@ -159,11 +162,15 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         return !isCallViewMinimized
     }
 
-    var shouldShowMinimizedCallBar: Bool { activeCall != nil && isCallViewMinimized }
+    var shouldShowMinimizedCallBar: Bool { hasActiveCallSurface && isCallViewMinimized }
 
     var isConferenceCall: Bool { groupCallCoordinator != nil }
 
-    var showsConferenceCallUI: Bool { conferenceHasReplacedPrivateCall && conferenceAudioWasMoved }
+    var isStandaloneConferenceCall: Bool { groupCallCoordinator != nil && activeCall == nil }
+
+    var showsConferenceCallUI: Bool {
+        conferenceHasReplacedPrivateCall && (conferenceAudioWasMoved || isStandaloneConferenceCall)
+    }
 
     var canEndConferenceForEveryone: Bool {
         showsConferenceCallUI && groupCallCoordinator?.groupCall?.isOwned == true
@@ -404,6 +411,50 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
     }
 
+    func joinConference(inviteLink: String, isMuted: Bool) async -> Bool {
+        guard activeCall == nil,
+              groupCallCoordinator == nil,
+              !inviteLink.isEmpty
+        else { return false }
+
+        let generation = UUID()
+        standaloneConferenceJoinGeneration = generation
+        let microphoneGranted = await AVAudioApplication.requestRecordPermission()
+        guard standaloneConferenceJoinGeneration == generation,
+              activeCall == nil,
+              groupCallCoordinator == nil,
+              microphoneGranted
+        else { return false }
+
+        do {
+            Self.prepareAudioSession()
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            log("[GroupCall] couldn't activate standalone audio session: \(error)")
+            return false
+        }
+
+        isStandaloneConferenceAudioSessionActive = true
+        applyEffectiveAudioSessionState()
+        self.isMuted = isMuted
+        isCallViewMinimized = false
+        conferenceHasReplacedPrivateCall = true
+        conferenceAudioWasMoved = false
+
+        let coordinator = TelegramGroupCallCoordinator(service: service)
+        configureConferenceCallbacks(coordinator)
+        groupCallCoordinator = coordinator
+        log("[GroupCall] joining standalone conference from invite link")
+        coordinator.join(
+            inviteLink: inviteLink,
+            isMuted: isMuted,
+            privateCallEngine: nil,
+            audioSessionActive: isEffectiveAudioSessionActive,
+            prioritizeVP8: false,
+        )
+        return true
+    }
+
     func answer() {
         answerActiveCall()
     }
@@ -420,6 +471,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func end() {
+        if isStandaloneConferenceCall, let groupCallCoordinator {
+            groupCallCoordinator.leave(endForEveryone: false)
+            return
+        }
         requestEndCall(endConferenceForEveryone: false)
     }
 
@@ -457,6 +512,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func toggleMute() {
+        if isStandaloneConferenceCall {
+            setMuted(!isMuted)
+            return
+        }
         CallKitManager.shared.requestSetMuted(!isMuted)
     }
 
@@ -744,7 +803,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func minimizeCallView() {
-        guard activeCall != nil else { return }
+        guard hasActiveCallSurface else { return }
+        if isStandaloneConferenceCall {
+            isCallViewMinimized = true
+            return
+        }
         let hasVideo = isLocalVideoEnabled || remoteVideoState != .inactive
         if hasVideo, pictureInPictureController?.start() == true {
             // Keep the active source view mounted until AVKit finishes its PiP transition.
@@ -757,7 +820,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func restoreCallView() {
-        guard activeCall != nil else { return }
+        guard hasActiveCallSurface else { return }
         isCallViewMinimized = false
         pictureInPictureController?.stop()
     }
@@ -845,9 +908,20 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var conferenceAudioWasMoved = false
     private var conferenceInvitedUserIds = Set<Int64>()
     private var pendingConferenceEndForEveryone = false
+    private var standaloneConferenceJoinGeneration = UUID()
+    private var isStandaloneConferenceAudioSessionActive = false
+
+    private var hasActiveCallSurface: Bool {
+        activeCall != nil || groupCallCoordinator != nil
+    }
 
     private var shouldRouteVideoToSpeaker: Bool {
-        activeCall?.isVideo == true || isLocalVideoEnabled || remoteVideoState != .inactive
+        activeCall?.isVideo == true
+            || isLocalVideoEnabled
+            || remoteVideoState != .inactive
+            || groupCallCoordinator?.participants.values.contains(where: {
+                $0.videoInfo != nil || $0.screenSharingVideoInfo != nil
+            }) == true
     }
 
     private static func ourProtocol() -> CallProtocol {
@@ -1075,6 +1149,18 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
     }
 
+    private func deactivateStandaloneConferenceAudioSessionIfNeeded() {
+        standaloneConferenceJoinGeneration = UUID()
+        guard isStandaloneConferenceAudioSessionActive else { return }
+        isStandaloneConferenceAudioSessionActive = false
+        applyEffectiveAudioSessionState()
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            log("[GroupCall] couldn't deactivate standalone audio session: \(error)")
+        }
+    }
+
     private func conferenceParticipant(id: String) -> GroupCallParticipant? {
         conferenceParticipants.first { participant in
             switch participant.participantId {
@@ -1267,6 +1353,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 previous: previous,
                 current: current,
             )
+            updateVideoAudioRouting()
         }
         coordinator.onFailed = { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
@@ -1387,6 +1474,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()
         pendingConferenceEndForEveryone = false
+        deactivateStandaloneConferenceAudioSessionIfNeeded()
     }
 
     private func finishPrivateEngineTransition() {
@@ -1445,6 +1533,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()
         pendingConferenceEndForEveryone = false
+        deactivateStandaloneConferenceAudioSessionIfNeeded()
         finishCurrentCall(notifyCallKit: true, endReason: endReason)
     }
 
@@ -1599,7 +1688,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     private func applyEffectiveAudioSessionState() {
-        let active = isCallKitAudioSessionActive && !isAudioInterrupted && areMediaServicesAvailable
+        let hasActiveAudioSession = isCallKitAudioSessionActive || isStandaloneConferenceAudioSessionActive
+        let active = hasActiveAudioSession && !isAudioInterrupted && areMediaServicesAvailable
         guard active != isEffectiveAudioSessionActive else { return }
         isEffectiveAudioSessionActive = active
         log(
@@ -1910,7 +2000,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     /// calls the ownership flag still avoids disabling monitoring owned by another component.
     private func updateProximityMonitoring() {
         let device = UIDevice.current
-        if activeCall != nil, shouldRouteVideoToSpeaker {
+        if hasActiveCallSurface, shouldRouteVideoToSpeaker {
             if device.isProximityMonitoringEnabled {
                 device.isProximityMonitoringEnabled = false
                 log("[Call] proximity monitoring force-disabled for video")
@@ -1919,7 +2009,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             return
         }
 
-        let shouldMonitor = activeCall != nil
+        let shouldMonitor = hasActiveCallSurface
             && selectedAudioRoute.kind == .builtIn
         if shouldMonitor, !ownsProximityMonitoring {
             device.isProximityMonitoringEnabled = true
@@ -1936,7 +2026,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     /// briefly reset the route during activation. Wired, Bluetooth, and external routes are never
     /// replaced; only the built-in receiver is promoted to speaker.
     private func updateVideoAudioRouting() {
-        guard activeCall != nil, shouldRouteVideoToSpeaker else {
+        guard hasActiveCallSurface, shouldRouteVideoToSpeaker else {
             videoAudioRouteTask?.cancel()
             videoAudioRouteTask = nil
             updateProximityMonitoring()
@@ -1948,7 +2038,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         guard videoAudioRouteTask == nil else { return }
 
         videoAudioRouteTask = Task { [weak self] in
-            while let self, !Task.isCancelled, activeCall != nil, shouldRouteVideoToSpeaker {
+            while let self, !Task.isCancelled, hasActiveCallSurface, shouldRouteVideoToSpeaker {
                 do {
                     try await Task.sleep(for: .seconds(1))
                 } catch {
@@ -1962,7 +2052,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     private func routeVideoToSpeakerIfNeeded() {
-        guard activeCall != nil,
+        guard hasActiveCallSurface,
               shouldRouteVideoToSpeaker,
               isEffectiveAudioSessionActive,
               selectedAudioRoute.kind == .builtIn
@@ -2002,7 +2092,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private func handleMediaServicesReset() {
         areMediaServicesAvailable = true
         log("[Call] audio media services reset")
-        if activeCall != nil {
+        if hasActiveCallSurface {
             Self.prepareAudioSession()
         }
         applyEffectiveAudioSessionState()
@@ -2169,6 +2259,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private func handleConferenceLocalMuteStateChanged(_ muted: Bool) {
         guard isMuted != muted else { return }
         isMuted = muted
+        guard !isStandaloneConferenceCall else { return }
         engine.setMuted(muted)
         CallKitManager.shared.requestSetMuted(muted)
     }

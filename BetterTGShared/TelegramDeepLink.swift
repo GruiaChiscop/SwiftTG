@@ -15,6 +15,17 @@ struct TelegramPendingDeepLinkJoin: Identifiable {
     var id: String { inviteLink }
 }
 
+// MARK: - TelegramPendingGroupCallJoin
+
+/// Preview information TDLib exposes before joining a conference invite link.
+struct TelegramPendingGroupCallJoin: Identifiable {
+    let inviteLink: String
+    let participantIds: [MessageSender]
+    let totalCount: Int
+
+    var id: String { inviteLink }
+}
+
 // MARK: - TelegramDeepLinkAction
 
 /// What a resolved link means for the app to do next - kept separate from the actual navigation,
@@ -25,6 +36,7 @@ enum TelegramDeepLinkAction {
     /// TDLib already resolved the invite to a chat the user isn't a member of yet - show a
     /// confirmation before actually joining, per `InternalLinkTypeChatInvite`'s own doc comment.
     case confirmJoin(ChatInviteLinkInfo, inviteLink: String)
+    case confirmGroupCallJoin(TelegramPendingGroupCallJoin)
     case addProxy(Proxy)
     case openExternally(URL)
     case unsupported
@@ -75,6 +87,17 @@ enum TelegramDeepLink {
                 return .confirmJoin(info, inviteLink: value.inviteLink)
             }
             return .openChat(chatId: info.chatId, messageId: nil)
+
+        case .internalLinkTypeGroupCall(let value):
+            guard let participants = try? await service.getGroupCallParticipants(
+                inputGroupCall: .inputGroupCallLink(.init(link: value.inviteLink)),
+                limit: 20,
+            ) else { return .unsupported }
+            return .confirmGroupCallJoin(TelegramPendingGroupCallJoin(
+                inviteLink: value.inviteLink,
+                participantIds: participants.participantIds,
+                totalCount: participants.totalCount,
+            ))
 
         case .internalLinkTypeMessage(let value):
             guard let info = try? await service.getMessageLinkInfo(url: value.url), info.chatId != 0 else {

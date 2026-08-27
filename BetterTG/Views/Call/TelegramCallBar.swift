@@ -24,12 +24,18 @@ struct TelegramCallBar: View {
                             .font(.subheadline.bold())
                             .lineLimit(1)
 
-                        CallStatusView(
-                            call: session.activeCall,
-                            connectedAt: session.connectedAt,
-                            engineState: session.engineState,
-                            signalBars: session.signalBars,
-                        )
+                        Group {
+                            if session.isConferenceCall {
+                                Text(session.conferenceConnectionStatus ?? "Group Call")
+                            } else {
+                                CallStatusView(
+                                    call: session.activeCall,
+                                    connectedAt: session.connectedAt,
+                                    engineState: session.engineState,
+                                    signalBars: session.signalBars,
+                                )
+                            }
+                        }
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
@@ -61,6 +67,9 @@ struct TelegramCallBar: View {
     @State private var user: User?
 
     private var displayName: String {
+        if session.isConferenceCall {
+            return "Group Call"
+        }
         guard let user else { return "Telegram" }
         let name = [user.firstName, user.lastName].filter { !$0.isEmpty }.joined(separator: " ")
         return name.isEmpty ? "Telegram" : name

@@ -74,6 +74,28 @@ struct RootView: View {
             )
         }
         .alert(
+            "Join Voice Chat?",
+            isPresented: Binding(
+                get: { rootVM.pendingGroupCallJoin != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        rootVM.pendingGroupCallJoin = nil
+                    }
+                },
+            ),
+            presenting: rootVM.pendingGroupCallJoin,
+        ) { _ in
+            Button("Join", action: rootVM.confirmPendingGroupCallJoin)
+            Button("Cancel", role: .cancel) { rootVM.pendingGroupCallJoin = nil }
+        } message: { pending in
+            Text(
+                pending.totalCount == 1
+                    ? "1 participant is in this voice chat. You will join with your microphone off."
+                    :
+                    "\(pending.totalCount) participants are in this voice chat. You will join with your microphone off.",
+            )
+        }
+        .alert(
             "Link Error",
             isPresented: Binding(
                 get: { rootVM.deepLinkErrorMessage != nil },
