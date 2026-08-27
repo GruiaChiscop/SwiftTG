@@ -232,6 +232,33 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         }
     }
 
+    func requestVideo(
+        _ capturer: OngoingCallThreadLocalContextVideoCapturer,
+        joinPayloadReady: @escaping @Sendable (_ payload: String, _ audioSourceId: Int) -> Void,
+    ) {
+        queue.async { [weak self] in
+            guard let self, let context else { return }
+            let requestGeneration = generation
+            context.requestVideo(capturer) { [weak self] payload, sourceId in
+                guard let self, generation == requestGeneration else { return }
+                joinPayloadReady(payload, Int(sourceId))
+            }
+        }
+    }
+
+    func disableVideo(
+        joinPayloadReady: @escaping @Sendable (_ payload: String, _ audioSourceId: Int) -> Void,
+    ) {
+        queue.async { [weak self] in
+            guard let self, let context else { return }
+            let requestGeneration = generation
+            context.disableVideo { [weak self] payload, sourceId in
+                guard let self, generation == requestGeneration else { return }
+                joinPayloadReady(payload, Int(sourceId))
+            }
+        }
+    }
+
     func setMuted(_ muted: Bool) {
         queue.async { [weak self] in
             self?.context?.setIsMuted(muted)

@@ -362,7 +362,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     var canToggleVideo: Bool {
-        guard groupCallCoordinator == nil, !isRequestingVideo, !showsCameraPreview else { return false }
+        guard !isRequestingVideo, !showsCameraPreview else { return false }
+        if let groupCallCoordinator {
+            guard showsConferenceCallUI,
+                  !isScreenSharing,
+                  case .connected = groupCallCoordinator.state
+            else { return false }
+            return isLocalVideoEnabled || groupCallCoordinator.groupCall?.canEnableVideo == true
+        }
         return isLocalVideoEnabled || engineState == .connected || engineState == .reconnecting
     }
 
@@ -589,7 +596,26 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             disableLocalVideo()
             return
         }
-        guard canToggleVideo, let callId = activeCall?.id else { return }
+        guard canToggleVideo else { return }
+        if let coordinator = groupCallCoordinator {
+            isRequestingVideo = true
+            Task { [weak self, weak coordinator] in
+                guard let self, let coordinator else { return }
+                let isAuthorized = await Self.requestCameraAccess()
+                guard groupCallCoordinator === coordinator else {
+                    isRequestingVideo = false
+                    return
+                }
+                isRequestingVideo = false
+                guard isAuthorized else {
+                    showsCameraPermissionAlert = true
+                    return
+                }
+                prepareCameraPreview()
+            }
+            return
+        }
+        guard let callId = activeCall?.id else { return }
         isRequestingVideo = true
         Task { [weak self] in
             guard let self else { return }
@@ -626,7 +652,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     func confirmCameraPreview() {
         guard showsCameraPreview,
-              activeCall != nil,
+              activeCall != nil || groupCallCoordinator != nil,
               let videoCapturer
         else {
             cancelCameraPreview()
@@ -637,7 +663,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         localVideoView = cameraPreviewView
         cameraPreviewView = nil
         updateVideoAudioRouting()
-        engine.requestVideo(videoCapturer)
+        if let groupCallCoordinator {
+            groupCallCoordinator.requestVideo(videoCapturer)
+        } else {
+            engine.requestVideo(videoCapturer)
+        }
         refreshPictureInPictureController()
     }
 
@@ -1189,6 +1219,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
             signalBars = bars
         }
+        coordinator.onLocalVideoFailed = { [weak self, weak coordinator] in
+            guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            handleConferenceLocalVideoFailure()
+        }
         coordinator.onFailed = { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
             handleConferenceStopped(coordinator, endReason: .failed)
@@ -1370,6 +1404,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         coordinator.onPrepared = nil
         coordinator.onConnected = nil
         coordinator.onSignalBarsChanged = nil
+        coordinator.onLocalVideoFailed = nil
         coordinator.onFailed = nil
         coordinator.onEnded = nil
     }
@@ -2052,7 +2087,21 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     private func disableLocalVideo() {
         guard isLocalVideoEnabled else { return }
-        engine.disableVideo()
+        if let groupCallCoordinator {
+            groupCallCoordinator.disableVideo()
+        } else {
+            engine.disableVideo()
+        }
+        clearLocalVideoState()
+    }
+
+    private func handleConferenceLocalVideoFailure() {
+        guard isLocalVideoEnabled else { return }
+        log("[GroupCall] clearing local video after rejoin failure")
+        clearLocalVideoState()
+    }
+
+    private func clearLocalVideoState() {
         videoGeneration = UUID()
         isLocalVideoEnabled = false
         localVideoView = nil

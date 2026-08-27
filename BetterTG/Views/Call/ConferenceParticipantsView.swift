@@ -11,6 +11,7 @@ struct ConferenceParticipantsView: View {
     // MARK: Internal
 
     let participants: [ConferenceParticipantPresentation]
+    let localVideoView: UIView?
     let videos: [ConferenceVideoPresentation]
     let participantCount: Int
     let connectionStatus: String?
@@ -35,9 +36,13 @@ struct ConferenceParticipantsView: View {
 
             ConferenceEncryptionKeyView(emojis: verificationEmojis)
 
-            if !videos.isEmpty {
-                ConferenceVideoGrid(videos: videos, requestVideoView: requestVideoView)
-                    .frame(height: 200)
+            if localVideoView != nil || !videos.isEmpty {
+                ConferenceVideoGrid(
+                    localVideoView: localVideoView,
+                    videos: videos,
+                    requestVideoView: requestVideoView,
+                )
+                .frame(height: 200)
             }
 
             ScrollView {

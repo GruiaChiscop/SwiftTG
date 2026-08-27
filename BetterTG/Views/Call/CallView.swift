@@ -86,6 +86,7 @@ struct CallView: View {
                 if session.showsConferenceCallUI {
                     ConferenceParticipantsView(
                         participants: session.conferenceParticipantPresentations,
+                        localVideoView: session.localVideoView,
                         videos: session.conferenceVideoPresentations,
                         participantCount: session.conferenceParticipantCount,
                         connectionStatus: session.conferenceConnectionStatus,

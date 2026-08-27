@@ -48,12 +48,14 @@ import UIKit
     private(set) var verificationEmojis = [String]()
     private(set) var signalBars: Int?
     private(set) var speakingAudioSourceIds = Set<UInt32>()
+    private(set) var isLocalVideoEnabled = false
 
     var onPrepared: ((PreparedCall) -> Void)?
     var onConnected: (() -> Void)?
     var onSignalBarsChanged: ((Int) -> Void)?
     var onFailed: (() -> Void)?
     var onEnded: (() -> Void)?
+    var onLocalVideoFailed: (() -> Void)?
 
     func create(
         isMuted: Bool,
@@ -119,7 +121,36 @@ import UIKit
     }
 
     func setMuted(_ muted: Bool) {
+        isMuted = muted
         engine.setMuted(muted)
+    }
+
+    func requestVideo(_ capturer: OngoingCallThreadLocalContextVideoCapturer) {
+        let generation = operationGeneration
+        engine.requestVideo(capturer) { [weak self] payload, audioSourceId in
+            Task { @MainActor [weak self] in
+                self?.submitVideoRejoin(
+                    payload: payload,
+                    audioSourceId: audioSourceId,
+                    isVideoEnabled: true,
+                    generation: generation,
+                )
+            }
+        }
+    }
+
+    func disableVideo() {
+        let generation = operationGeneration
+        engine.disableVideo { [weak self] payload, audioSourceId in
+            Task { @MainActor [weak self] in
+                self?.submitVideoRejoin(
+                    payload: payload,
+                    audioSourceId: audioSourceId,
+                    isVideoEnabled: false,
+                    generation: generation,
+                )
+            }
+        }
     }
 
     func setAudioSessionActive(_ active: Bool) {
@@ -182,7 +213,10 @@ import UIKit
     private var cancellables = Set<AnyCancellable>()
     private var operationTask: Task<Void, Never>?
     private var operationGeneration = UUID()
+    private var videoRejoinTask: Task<Void, Never>?
+    private var videoRejoinGeneration = UUID()
     private var didReportConnected = false
+    private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
     private var speakingLastActiveAt = [UInt32: TimeInterval]()
 
@@ -198,6 +232,7 @@ import UIKit
         let bridge = TelegramGroupCallEncryptionBridge(service: service)
         encryptionBridge = bridge
         state = .preparing
+        self.isMuted = isMuted
 
         let configuration = TelegramGroupCallEngine.Configuration(
             encryption: bridge.makeEncryption(),
@@ -341,6 +376,59 @@ import UIKit
         }
     }
 
+    private func submitVideoRejoin(
+        payload: String,
+        audioSourceId: Int,
+        isVideoEnabled: Bool,
+        generation: UUID,
+    ) {
+        guard operationGeneration == generation,
+              let groupCall,
+              !groupCall.inviteLink.isEmpty,
+              case .connected = state
+        else { return }
+
+        videoRejoinTask?.cancel()
+        let rejoinGeneration = UUID()
+        videoRejoinGeneration = rejoinGeneration
+        let groupCallId = groupCall.id
+        let inviteLink = groupCall.inviteLink
+        videoRejoinTask = Task { [weak self] in
+            guard let self else { return }
+            let parameters = GroupCallJoinParameters(
+                audioSourceId: audioSourceId,
+                isMuted: isMuted,
+                isMyVideoEnabled: isVideoEnabled,
+                payload: payload,
+            )
+            do {
+                let info = try await service.joinGroupCall(
+                    inputGroupCall: .inputGroupCallLink(.init(link: inviteLink)),
+                    joinParameters: parameters,
+                )
+                guard operationGeneration == generation,
+                      videoRejoinGeneration == rejoinGeneration,
+                      self.groupCall?.id == groupCallId
+                else { return }
+                engine.applyJoinResponse(info.joinPayload)
+                isLocalVideoEnabled = isVideoEnabled
+                log("[GroupCall] local video rejoined enabled=\(isVideoEnabled)")
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation,
+                      videoRejoinGeneration == rejoinGeneration
+                else { return }
+                log("[GroupCall] local video rejoin failed enabled=\(isVideoEnabled): \(error)")
+                onLocalVideoFailed?()
+            }
+            guard operationGeneration == generation,
+                  videoRejoinGeneration == rejoinGeneration
+            else { return }
+            videoRejoinTask = nil
+        }
+    }
+
     private func handle(_ update: Update) {
         switch update {
         case .updateGroupCall(let value):
@@ -466,6 +554,9 @@ import UIKit
     @discardableResult private func beginNewOperation() -> UUID {
         operationTask?.cancel()
         operationTask = nil
+        videoRejoinTask?.cancel()
+        videoRejoinTask = nil
+        videoRejoinGeneration = UUID()
         operationGeneration = UUID()
         return operationGeneration
     }
@@ -482,6 +573,8 @@ import UIKit
         verificationEmojis = []
         signalBars = nil
         didReportConnected = false
+        isLocalVideoEnabled = false
+        isMuted = false
         self.state = state
         if case .ended = state {
             onEnded?()

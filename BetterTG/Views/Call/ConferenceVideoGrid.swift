@@ -6,12 +6,18 @@ import UIKit
 // MARK: - ConferenceVideoGrid
 
 struct ConferenceVideoGrid: View {
+    let localVideoView: UIView?
     let videos: [ConferenceVideoPresentation]
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
     var body: some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 8) {
+                if let localVideoView {
+                    ConferenceLocalVideoTileView(videoView: localVideoView)
+                        .frame(width: 168, height: 200)
+                }
+
                 ForEach(videos) { video in
                     ConferenceVideoTileView(
                         video: video,
