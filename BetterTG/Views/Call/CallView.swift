@@ -1,5 +1,6 @@
 // CallView.swift
 
+import AVFoundation
 import SwiftUI
 import TDLibKit
 import UIKit
@@ -57,7 +58,33 @@ struct CallView: View {
 
                     Spacer()
 
-                    if !session.showsConferenceCallUI {
+                    if session.showsConferenceCallUI {
+                        Menu("More", systemImage: "ellipsis") {
+                            if session.conferenceHasIncomingVideo {
+                                Menu("Incoming Video Quality", systemImage: "gearshape") {
+                                    Picker(
+                                        "Incoming Video Quality",
+                                        selection: conferenceIncomingVideoQualityBinding,
+                                    ) {
+                                        ForEach(ConferenceIncomingVideoQuality.allCases) { quality in
+                                            Text(quality.title)
+                                                .tag(quality)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if #available(iOS 15.0, *), session.canToggleMute {
+                                Button("Microphone Modes", systemImage: "waveform") {
+                                    AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+                                }
+                            }
+                        }
+                        .labelStyle(.iconOnly)
+                        .font(.title3.bold())
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: .circle)
+                    } else {
                         if session.canAddConferenceParticipant {
                             Button(action: showConferenceParticipantPicker) {
                                 Label {
@@ -295,6 +322,15 @@ struct CallView: View {
                 if !isPresented {
                     session.cancelCameraPreview()
                 }
+            },
+        )
+    }
+
+    private var conferenceIncomingVideoQualityBinding: Binding<ConferenceIncomingVideoQuality> {
+        Binding(
+            get: { session.conferenceIncomingVideoQuality },
+            set: { quality in
+                session.setConferenceIncomingVideoQuality(quality)
             },
         )
     }

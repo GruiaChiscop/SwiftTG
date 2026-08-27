@@ -188,11 +188,21 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         }
     }
 
-    func updateRequestedVideoChannels(_ channels: [VideoChannel]) {
+    func updateRequestedVideoChannels(
+        _ channels: [VideoChannel],
+        maximumQuality: ConferenceIncomingVideoQuality,
+    ) {
         queue.async { [weak self] in
             guard let self else { return }
             requestedVideoChannels = channels
-            context?.setRequestedVideoChannels(channels.map { channel in
+            let requestedChannels = maximumQuality == .audioOnly ? [] : channels
+            let maximumEngineQuality: OngoingGroupCallRequestedVideoQuality =
+                switch maximumQuality {
+                case .audioOnly, .p180: .thumbnail
+                case .p360: .medium
+                case .p720: .full
+                }
+            context?.setRequestedVideoChannels(requestedChannels.map { channel in
                 OngoingGroupCallRequestedVideoChannel(
                     audioSsrc: channel.audioSourceId,
                     userId: channel.peerId,
@@ -204,7 +214,7 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                         )
                     },
                     minQuality: .thumbnail,
-                    maxQuality: channel.isScreenSharing ? .full : .medium,
+                    maxQuality: maximumEngineQuality,
                 )
             })
         }

@@ -51,6 +51,7 @@ import UIKit
     private(set) var isLocalVideoEnabled = false
     private(set) var isScreenSharing = false
     private(set) var canUnmuteSelf = true
+    private(set) var incomingVideoQuality = ConferenceIncomingVideoQuality.p720
 
     var onPrepared: ((PreparedCall) -> Void)?
     var onConnected: (() -> Void)?
@@ -277,6 +278,12 @@ import UIKit
 
     func setAudioSessionActive(_ active: Bool) {
         engine.setAudioSessionActive(active)
+    }
+
+    func setIncomingVideoQuality(_ quality: ConferenceIncomingVideoQuality) {
+        guard incomingVideoQuality != quality else { return }
+        incomingVideoQuality = quality
+        refreshMediaChannels()
     }
 
     func activateIncomingAudio() {
@@ -675,7 +682,10 @@ import UIKit
             }
         }
         engine.updateMediaChannels(channels)
-        engine.updateRequestedVideoChannels(videoChannels)
+        engine.updateRequestedVideoChannels(
+            videoChannels,
+            maximumQuality: incomingVideoQuality,
+        )
         for participant in participants.values where !participant.isCurrentUser {
             setParticipantVolume(
                 participant,
@@ -807,6 +817,7 @@ import UIKit
         isLocalVideoEnabled = false
         isScreenSharing = false
         canUnmuteSelf = true
+        incomingVideoQuality = .p720
         isMuted = false
         self.state = state
         if case .ended = state {

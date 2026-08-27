@@ -274,7 +274,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     var conferenceVideoPresentations: [ConferenceVideoPresentation] {
-        conferenceParticipants.flatMap { participant -> [ConferenceVideoPresentation] in
+        guard conferenceIncomingVideoQuality != .audioOnly else { return [] }
+        return conferenceParticipants.flatMap { participant -> [ConferenceVideoPresentation] in
             guard !participant.isCurrentUser else { return [] }
             let userId: Int64?
             let chatId: Int64?
@@ -334,6 +335,17 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     var conferenceInviteURL: URL? {
         guard let inviteLink = groupCallCoordinator?.groupCall?.inviteLink, !inviteLink.isEmpty else { return nil }
         return URL(string: inviteLink)
+    }
+
+    var conferenceIncomingVideoQuality: ConferenceIncomingVideoQuality {
+        groupCallCoordinator?.incomingVideoQuality ?? .p720
+    }
+
+    var conferenceHasIncomingVideo: Bool {
+        conferenceParticipants.contains { participant in
+            !participant.isCurrentUser
+                && (participant.videoInfo != nil || participant.screenSharingVideoInfo != nil)
+        }
     }
 
     var canUpgradeToConference: Bool {
@@ -660,6 +672,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             return
         }
         groupCallCoordinator.makeIncomingVideoView(endpointId: endpointId, completion: completion)
+    }
+
+    func setConferenceIncomingVideoQuality(_ quality: ConferenceIncomingVideoQuality) {
+        groupCallCoordinator?.setIncomingVideoQuality(quality)
     }
 
     func toggleSpeaker() {
