@@ -144,15 +144,19 @@ import TDLibKit
 
     /// App-initiated hangups must travel through CallKit too. This keeps the system call UI and
     /// TDLib lifecycle on the same transaction, matching Telegram-iOS's `endCall(uuid:)` flow.
-    func requestEndCall() {
+    func requestEndCall(onFailure: @escaping () -> Void = {}) {
         guard let uuid = currentCallUUID else {
             // SwiftUI writes `false` back into the presentation binding when the call's terminal
             // update dismisses CallView. That is not a new system End action and must never be
             // deferred onto the next call.
             log("[CallKit] ignoring app End request with no active CallKit call")
+            onFailure()
             return
         }
-        guard !isRequestingEndCall, !isEndingLocally else { return }
+        guard !isRequestingEndCall, !isEndingLocally else {
+            onFailure()
+            return
+        }
         isRequestingEndCall = true
         Task { [weak self] in
             guard let self else { return }
@@ -163,6 +167,7 @@ import TDLibKit
                     isRequestingEndCall = false
                 }
                 log("CallKit end request failed: \(error)")
+                onFailure()
             }
         }
     }

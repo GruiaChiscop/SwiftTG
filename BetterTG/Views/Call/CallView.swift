@@ -196,9 +196,26 @@ struct CallView: View {
                         systemImage: "phone.down.fill",
                         label: "End",
                         isDestructive: true,
-                        action: session.end,
+                        action: endCall,
                     )
                     .frame(maxWidth: .infinity)
+                    .confirmationDialog(
+                        "Are you sure you want to leave this voice chat?",
+                        isPresented: $showsConferenceLeaveConfirmation,
+                        titleVisibility: .visible,
+                    ) {
+                        Button("End Voice Chat", role: .destructive) {
+                            showsConferenceEndConfirmation = true
+                        }
+                        Button("Leave Voice Chat", action: session.end)
+                        Button("Cancel", role: .cancel) {}
+                    }
+                    .alert("End voice chat", isPresented: $showsConferenceEndConfirmation) {
+                        Button("End", role: .destructive, action: session.endConferenceForEveryone)
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Are you sure you want to end this voice chat?")
+                    }
                 }
                 .frame(maxWidth: 420)
             }
@@ -265,6 +282,8 @@ struct CallView: View {
     @Environment(\.openURL) private var openURL
     @State private var idleTimerToken: UUID?
     @State private var isLocalVideoPrimary = false
+    @State private var showsConferenceEndConfirmation = false
+    @State private var showsConferenceLeaveConfirmation = false
     @State private var showsConferenceParticipantPicker = false
     @State private var user: User?
     @State private var session = TelegramCallSession.shared
@@ -340,6 +359,14 @@ struct CallView: View {
 
     private func showConferenceParticipantPicker() {
         showsConferenceParticipantPicker = true
+    }
+
+    private func endCall() {
+        if session.canEndConferenceForEveryone {
+            showsConferenceLeaveConfirmation = true
+        } else {
+            session.end()
+        }
     }
 
     private func swapPrimaryVideo() {

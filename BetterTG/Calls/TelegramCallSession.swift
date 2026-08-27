@@ -165,6 +165,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     var showsConferenceCallUI: Bool { conferenceHasReplacedPrivateCall && conferenceAudioWasMoved }
 
+    var canEndConferenceForEveryone: Bool {
+        showsConferenceCallUI && groupCallCoordinator?.groupCall?.isOwned == true
+    }
+
     var conferenceParticipants: [GroupCallParticipant] {
         guard let groupCallCoordinator else { return [] }
         return groupCallCoordinator.participants.values.sorted { $0.order > $1.order }
@@ -416,14 +420,24 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     }
 
     func end() {
-        CallKitManager.shared.requestEndCall()
+        requestEndCall(endConferenceForEveryone: false)
+    }
+
+    func endConferenceForEveryone() {
+        guard canEndConferenceForEveryone else {
+            end()
+            return
+        }
+        requestEndCall(endConferenceForEveryone: true)
     }
 
     /// The same cold-wake race applies to End; End takes precedence over an earlier Answer.
     func endFromSystem(completion: @escaping (Bool) -> Void = { _ in }) {
         if let groupCallCoordinator {
             if conferenceHasReplacedPrivateCall {
-                groupCallCoordinator.leave(endForEveryone: false)
+                let endForEveryone = pendingConferenceEndForEveryone
+                pendingConferenceEndForEveryone = false
+                groupCallCoordinator.leave(endForEveryone: endForEveryone)
                 completion(true)
                 return
             }
@@ -830,6 +844,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var conferenceHasReplacedPrivateCall = false
     private var conferenceAudioWasMoved = false
     private var conferenceInvitedUserIds = Set<Int64>()
+    private var pendingConferenceEndForEveryone = false
 
     private var shouldRouteVideoToSpeaker: Bool {
         activeCall?.isVideo == true || isLocalVideoEnabled || remoteVideoState != .inactive
@@ -1050,6 +1065,13 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         } catch {
             log("Error writing temporary call log: \(error)")
             return nil
+        }
+    }
+
+    private func requestEndCall(endConferenceForEveryone: Bool) {
+        pendingConferenceEndForEveryone = endConferenceForEveryone
+        CallKitManager.shared.requestEndCall { [weak self] in
+            self?.pendingConferenceEndForEveryone = false
         }
     }
 
@@ -1364,6 +1386,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()
+        pendingConferenceEndForEveryone = false
     }
 
     private func finishPrivateEngineTransition() {
@@ -1421,6 +1444,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()
+        pendingConferenceEndForEveryone = false
         finishCurrentCall(notifyCallKit: true, endReason: endReason)
     }
 
