@@ -86,6 +86,7 @@ struct CallView: View {
                 if session.showsConferenceCallUI {
                     ConferenceParticipantsView(
                         participants: session.conferenceParticipantPresentations,
+                        videos: session.conferenceVideoPresentations,
                         participantCount: session.conferenceParticipantCount,
                         connectionStatus: session.conferenceConnectionStatus,
                         verificationEmojis: session.conferenceVerificationEmojis,
@@ -95,6 +96,7 @@ struct CallView: View {
                         inviteParticipant: showConferenceParticipantPicker,
                         setParticipantMuted: session.setConferenceParticipantMuted,
                         removeParticipant: session.removeConferenceParticipant,
+                        requestVideoView: session.requestConferenceVideoView,
                     )
                     .frame(maxHeight: .infinity)
                     .padding(.bottom, 12)

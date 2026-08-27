@@ -1,15 +1,17 @@
 // ConferenceParticipantsView.swift
 
 import SwiftUI
+import UIKit
 
 // MARK: - ConferenceParticipantsView
 
-/// The list portion of Telegram-iOS's conference screen. Video tiles and participant actions are
-/// intentionally separate follow-up layers; this view owns only participant identity and status.
+/// The participant area of Telegram-iOS's conference screen, including requested remote video
+/// endpoints and the audio-only participant list.
 struct ConferenceParticipantsView: View {
     // MARK: Internal
 
     let participants: [ConferenceParticipantPresentation]
+    let videos: [ConferenceVideoPresentation]
     let participantCount: Int
     let connectionStatus: String?
     let verificationEmojis: [String]
@@ -19,6 +21,7 @@ struct ConferenceParticipantsView: View {
     let inviteParticipant: () -> Void
     let setParticipantMuted: (ConferenceParticipantPresentation, ConferenceParticipantMuteAction) -> Void
     let removeParticipant: (ConferenceParticipantPresentation) -> Void
+    let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
     var body: some View {
         VStack(spacing: 16) {
@@ -31,6 +34,11 @@ struct ConferenceParticipantsView: View {
             }
 
             ConferenceEncryptionKeyView(emojis: verificationEmojis)
+
+            if !videos.isEmpty {
+                ConferenceVideoGrid(videos: videos, requestVideoView: requestVideoView)
+                    .frame(height: 200)
+            }
 
             ScrollView {
                 LazyVStack(spacing: 0) {

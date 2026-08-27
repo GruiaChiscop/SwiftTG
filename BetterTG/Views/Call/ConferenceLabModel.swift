@@ -11,6 +11,7 @@ import Observation
     // MARK: Internal
 
     private(set) var participants = initialParticipants()
+    private(set) var videos = initialVideos()
     private(set) var connectionStatus: String?
     private(set) var verificationEmojis = initialVerificationEmojis
     private(set) var isEnded = false
@@ -28,6 +29,9 @@ import Observation
     var isAlexHandRaised: Bool { participant(named: "Alex")?.isHandRaised == true }
     var isCurrentUserMuted: Bool { participant(id: "lab-you")?.isMuted == true }
     var isReconnecting: Bool { connectionStatus != nil }
+    var isMaraCameraEnabled: Bool { videos.contains(where: { $0.id == "lab-mara-camera" }) }
+    var isAlexScreenSharing: Bool { videos.contains(where: { $0.id == "lab-alex-screen" }) }
+    var isAlexConnected: Bool { participant(named: "Alex")?.isInvited == false }
 
     func connectInvitedParticipant() {
         guard let index = participants.firstIndex(where: \.isInvited) else { return }
@@ -128,8 +132,10 @@ import Observation
     func removeParticipant() {
         guard let index = participants.lastIndex(where: { $0.id != "lab-you" }) else { return }
         let name = participants[index].title ?? "Participant"
+        let participantId = participants[index].id
         let wasInvited = participants[index].isInvited
         participants.remove(at: index)
+        videos.removeAll(where: { $0.participantId == participantId })
         if !wasInvited {
             advanceVerificationEmojis()
         }
@@ -163,6 +169,7 @@ import Observation
         let name = participants[index].title ?? "Participant"
         let wasInvited = participants[index].isInvited
         participants.remove(at: index)
+        videos.removeAll(where: { $0.participantId == participant.id })
         if !wasInvited {
             advanceVerificationEmojis()
         }
@@ -175,8 +182,26 @@ import Observation
         announce("Group call ended")
     }
 
+    func toggleMaraCamera() {
+        if isMaraCameraEnabled {
+            videos.removeAll(where: { $0.id == "lab-mara-camera" })
+        } else {
+            videos.append(Self.maraCamera)
+        }
+    }
+
+    func toggleAlexScreenSharing() {
+        guard isAlexConnected else { return }
+        if isAlexScreenSharing {
+            videos.removeAll(where: { $0.id == "lab-alex-screen" })
+        } else {
+            videos.append(Self.alexScreen)
+        }
+    }
+
     func reset() {
         participants = Self.initialParticipants()
+        videos = Self.initialVideos()
         connectionStatus = nil
         verificationEmojis = Self.initialVerificationEmojis
         isEnded = false
@@ -187,6 +212,31 @@ import Observation
 
     private static let initialVerificationEmojis = ["🦋", "🌵", "🚀", "🍀"]
     private static let alternateVerificationEmojis = ["🐳", "🍓", "🎸", "🌙"]
+
+    private static let maraCamera = ConferenceVideoPresentation(
+        id: "lab-mara-camera",
+        participantId: "lab-mara",
+        endpointId: "lab-mara-camera-endpoint",
+        userId: nil,
+        chatId: nil,
+        title: "Mara",
+        isScreenSharing: false,
+        isPaused: false,
+    )
+    private static let alexScreen = ConferenceVideoPresentation(
+        id: "lab-alex-screen",
+        participantId: "lab-alex",
+        endpointId: "lab-alex-screen-endpoint",
+        userId: nil,
+        chatId: nil,
+        title: "Alex",
+        isScreenSharing: true,
+        isPaused: false,
+    )
+
+    private static func initialVideos() -> [ConferenceVideoPresentation] {
+        [maraCamera]
+    }
 
     private static func initialParticipants() -> [ConferenceParticipantPresentation] {
         [

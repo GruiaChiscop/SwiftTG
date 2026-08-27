@@ -261,6 +261,52 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         return joined + invited
     }
 
+    var conferenceVideoPresentations: [ConferenceVideoPresentation] {
+        conferenceParticipants.flatMap { participant -> [ConferenceVideoPresentation] in
+            guard !participant.isCurrentUser else { return [] }
+            let userId: Int64?
+            let chatId: Int64?
+            let participantId: String
+            switch participant.participantId {
+            case .messageSenderUser(let sender):
+                userId = sender.userId
+                chatId = nil
+                participantId = "user-\(sender.userId)"
+            case .messageSenderChat(let sender):
+                userId = nil
+                chatId = sender.chatId
+                participantId = "chat-\(sender.chatId)"
+            }
+
+            var result = [ConferenceVideoPresentation]()
+            if let videoInfo = participant.videoInfo {
+                result.append(ConferenceVideoPresentation(
+                    id: "camera-\(videoInfo.endpointId)",
+                    participantId: participantId,
+                    endpointId: videoInfo.endpointId,
+                    userId: userId,
+                    chatId: chatId,
+                    title: nil,
+                    isScreenSharing: false,
+                    isPaused: videoInfo.isPaused,
+                ))
+            }
+            if let screenSharingVideoInfo = participant.screenSharingVideoInfo {
+                result.append(ConferenceVideoPresentation(
+                    id: "screen-\(screenSharingVideoInfo.endpointId)",
+                    participantId: participantId,
+                    endpointId: screenSharingVideoInfo.endpointId,
+                    userId: userId,
+                    chatId: chatId,
+                    title: nil,
+                    isScreenSharing: true,
+                    isPaused: screenSharingVideoInfo.isPaused,
+                ))
+            }
+            return result
+        }
+    }
+
     var conferenceConnectionStatus: String? {
         guard let groupCallCoordinator else { return nil }
         if case .connected = groupCallCoordinator.state {
@@ -517,6 +563,17 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             conferenceParticipantActionId = nil
             conferenceParticipantActionTask = nil
         }
+    }
+
+    func requestConferenceVideoView(
+        endpointId: String,
+        completion: @escaping @MainActor (UIView?) -> Void,
+    ) {
+        guard let groupCallCoordinator else {
+            completion(nil)
+            return
+        }
+        groupCallCoordinator.makeIncomingVideoView(endpointId: endpointId, completion: completion)
     }
 
     func toggleSpeaker() {

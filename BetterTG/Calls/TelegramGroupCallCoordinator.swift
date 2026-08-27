@@ -5,6 +5,7 @@ import Foundation
 import Observation
 import TDLibKit
 @preconcurrency import TgVoipWebrtc
+import UIKit
 
 // MARK: - TelegramGroupCallCoordinator
 
@@ -127,6 +128,13 @@ import TDLibKit
 
     func activateIncomingAudio() {
         engine.activateIncomingAudio()
+    }
+
+    func makeIncomingVideoView(
+        endpointId: String,
+        completion: @escaping @MainActor (UIView?) -> Void,
+    ) {
+        engine.makeIncomingVideoView(endpointId: endpointId, completion: completion)
     }
 
     func leave(endForEveryone: Bool) {
@@ -359,6 +367,7 @@ import TDLibKit
 
     private func refreshMediaChannels() {
         var channels = [TelegramGroupCallEngine.MediaChannel]()
+        var videoChannels = [TelegramGroupCallEngine.VideoChannel]()
         for participant in participants.values {
             let peerId: Int64 =
                 switch participant.participantId {
@@ -381,8 +390,48 @@ import TDLibKit
                     peerId: peerId,
                 ))
             }
+            guard !participant.isCurrentUser, participant.audioSourceId != 0 else { continue }
+            if let videoInfo = participant.videoInfo {
+                videoChannels.append(videoChannel(
+                    participant: participant,
+                    peerId: peerId,
+                    videoInfo: videoInfo,
+                    isScreenSharing: false,
+                ))
+            }
+            if let screenSharingVideoInfo = participant.screenSharingVideoInfo {
+                videoChannels.append(videoChannel(
+                    participant: participant,
+                    peerId: peerId,
+                    videoInfo: screenSharingVideoInfo,
+                    isScreenSharing: true,
+                ))
+            }
         }
         engine.updateMediaChannels(channels)
+        engine.updateRequestedVideoChannels(videoChannels)
+    }
+
+    private func videoChannel(
+        participant: GroupCallParticipant,
+        peerId: Int64,
+        videoInfo: GroupCallParticipantVideoInfo,
+        isScreenSharing: Bool,
+    ) -> TelegramGroupCallEngine.VideoChannel {
+        TelegramGroupCallEngine.VideoChannel(
+            audioSourceId: UInt32(bitPattern: Int32(truncatingIfNeeded: participant.audioSourceId)),
+            peerId: peerId,
+            endpointId: videoInfo.endpointId,
+            sourceGroups: videoInfo.sourceGroups.map { group in
+                TelegramGroupCallEngine.VideoChannel.SourceGroup(
+                    semantics: group.semantics,
+                    sourceIds: group.sourceIds.map {
+                        UInt32(bitPattern: Int32(truncatingIfNeeded: $0))
+                    },
+                )
+            },
+            isScreenSharing: isScreenSharing,
+        )
     }
 
     private func handleAudioLevels(

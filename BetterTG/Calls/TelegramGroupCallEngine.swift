@@ -2,6 +2,7 @@
 
 import Foundation
 @preconcurrency import TgVoipWebrtc
+import UIKit
 
 // MARK: - TelegramGroupCallEngine
 
@@ -24,6 +25,19 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
     struct MediaChannel: Equatable, Sendable {
         let audioSourceId: UInt32
         let peerId: Int64
+    }
+
+    struct VideoChannel: Equatable, Sendable {
+        struct SourceGroup: Equatable, Sendable {
+            let semantics: String
+            let sourceIds: [UInt32]
+        }
+
+        let audioSourceId: UInt32
+        let peerId: Int64
+        let endpointId: String
+        let sourceGroups: [SourceGroup]
+        let isScreenSharing: Bool
     }
 
     struct NetworkState: Equatable, Sendable {
@@ -174,6 +188,50 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         }
     }
 
+    func updateRequestedVideoChannels(_ channels: [VideoChannel]) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            requestedVideoChannels = channels
+            context?.setRequestedVideoChannels(channels.map { channel in
+                OngoingGroupCallRequestedVideoChannel(
+                    audioSsrc: channel.audioSourceId,
+                    userId: channel.peerId,
+                    endpointId: channel.endpointId,
+                    ssrcGroups: channel.sourceGroups.map { group in
+                        OngoingGroupCallSsrcGroup(
+                            semantics: group.semantics,
+                            ssrcs: group.sourceIds.map { NSNumber(value: $0) },
+                        )
+                    },
+                    minQuality: .thumbnail,
+                    maxQuality: channel.isScreenSharing ? .full : .medium,
+                )
+            })
+        }
+    }
+
+    func makeIncomingVideoView(
+        endpointId: String,
+        completion: @escaping @MainActor (UIView?) -> Void,
+    ) {
+        queue.async { [weak self] in
+            guard let context = self?.context else {
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+                return
+            }
+            context.makeIncomingVideoView(
+                withEndpointId: endpointId,
+                requestClone: false,
+            ) { videoView, _ in
+                DispatchQueue.main.async {
+                    completion(videoView)
+                }
+            }
+        }
+    }
+
     func setMuted(_ muted: Bool) {
         queue.async { [weak self] in
             self?.context?.setIsMuted(muted)
@@ -209,12 +267,14 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
     private var context: GroupCallThreadLocalContext?
     private var audioDevice: SharedCallAudioDevice?
     private var mediaChannels = [UInt32: MediaChannel]()
+    private var requestedVideoChannels = [VideoChannel]()
     private var generation = UUID()
 
     private func stopLocked(completion: (@Sendable () -> Void)? = nil) {
         generation = UUID()
         let stopGeneration = generation
         mediaChannels.removeAll(keepingCapacity: false)
+        requestedVideoChannels.removeAll(keepingCapacity: false)
         guard let context else {
             audioDevice = nil
             completion?()

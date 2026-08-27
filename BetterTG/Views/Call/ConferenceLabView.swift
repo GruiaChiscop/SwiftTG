@@ -27,6 +27,7 @@ struct ConferenceLabView: View {
 
                     ConferenceParticipantsView(
                         participants: model.participants,
+                        videos: model.videos,
                         participantCount: model.participantCount,
                         connectionStatus: model.connectionStatus,
                         verificationEmojis: model.verificationEmojis,
@@ -36,6 +37,7 @@ struct ConferenceLabView: View {
                         inviteParticipant: model.inviteParticipant,
                         setParticipantMuted: model.setParticipantMuted,
                         removeParticipant: model.removeParticipant,
+                        requestVideoView: { _, completion in completion(nil) },
                     )
                 }
                 .safeAreaPadding()
@@ -106,6 +108,24 @@ struct ConferenceLabView: View {
                             action: model.endConference,
                         )
                             .disabled(model.isEnded)
+                    }
+
+                    Section("Video") {
+                        Button(
+                            model.isMaraCameraEnabled ? "Stop Mara's Camera" : "Start Mara's Camera",
+                            systemImage: model.isMaraCameraEnabled ? "video.slash.fill" : "video.fill",
+                            action: model.toggleMaraCamera,
+                        )
+                        .disabled(model.isEnded)
+
+                        Button(
+                            model.isAlexScreenSharing ? "Stop Alex's Screen" : "Share Alex's Screen",
+                            systemImage: model.isAlexScreenSharing
+                                ? "rectangle.on.rectangle.slash"
+                                : "rectangle.on.rectangle",
+                            action: model.toggleAlexScreenSharing,
+                        )
+                        .disabled(!model.isAlexConnected || model.isEnded)
                     }
 
                     Button("Reset", systemImage: "arrow.counterclockwise", action: model.reset)
