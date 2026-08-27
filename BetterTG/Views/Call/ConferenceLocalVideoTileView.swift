@@ -7,14 +7,14 @@ import UIKit
 
 struct ConferenceLocalVideoTileView: View {
     let videoView: UIView
+    let isScreenSharing: Bool
 
     var body: some View {
         CallVideoSurfaceView(videoView: videoView)
             .id(ObjectIdentifier(videoView))
-            .aspectRatio(3 / 4, contentMode: .fill)
             .clipShape(.rect(cornerRadius: 16))
             .overlay(alignment: .bottomLeading) {
-                Text("You")
+                Text(isScreenSharing ? "Your Screen" : "You")
                     .font(.caption.bold())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
@@ -22,6 +22,6 @@ struct ConferenceLocalVideoTileView: View {
                     .padding(8)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("You, camera")
+            .accessibilityLabel(isScreenSharing ? "Your screen sharing" : "You, camera")
     }
 }

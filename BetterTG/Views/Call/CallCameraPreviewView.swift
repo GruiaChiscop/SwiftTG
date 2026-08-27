@@ -29,9 +29,7 @@ struct CallCameraPreviewView: View {
                 .clipShape(.rect(cornerRadius: 16))
 
                 Picker("Video Source", selection: $selectedSource) {
-                    if !session.isConferenceCall {
-                        Text("Phone Screen").tag(VideoSource.screen)
-                    }
+                    Text("Phone Screen").tag(VideoSource.screen)
                     Text("Front Camera").tag(VideoSource.front)
                     Text("Back Camera").tag(VideoSource.back)
                 }

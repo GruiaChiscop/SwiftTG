@@ -365,10 +365,9 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         guard !isRequestingVideo, !showsCameraPreview else { return false }
         if let groupCallCoordinator {
             guard showsConferenceCallUI,
-                  !isScreenSharing,
                   case .connected = groupCallCoordinator.state
             else { return false }
-            return isLocalVideoEnabled || groupCallCoordinator.groupCall?.canEnableVideo == true
+            return isScreenSharing || isLocalVideoEnabled || groupCallCoordinator.groupCall?.canEnableVideo == true
         }
         return isLocalVideoEnabled || engineState == .connected || engineState == .reconnecting
     }
@@ -1223,6 +1222,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
             handleConferenceLocalVideoFailure()
         }
+        coordinator.onScreenSharingFailed = { [weak self, weak coordinator] in
+            guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            handleConferenceScreenSharingFailure()
+        }
         coordinator.onFailed = { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
             handleConferenceStopped(coordinator, endReason: .failed)
@@ -1405,6 +1408,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         coordinator.onConnected = nil
         coordinator.onSignalBarsChanged = nil
         coordinator.onLocalVideoFailed = nil
+        coordinator.onScreenSharingFailed = nil
         coordinator.onFailed = nil
         coordinator.onEnded = nil
     }
@@ -2016,7 +2020,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             },
             audioReceived: { [weak self] data in
                 guard let self, isScreenSharing else { return }
-                engine.addExternalAudioData(data)
+                if let groupCallCoordinator {
+                    groupCallCoordinator.addScreenSharingAudioData(data)
+                } else {
+                    engine.addExternalAudioData(data)
+                }
             },
             activeChanged: { [weak self] active in
                 self?.setScreenSharingActive(active)
@@ -2050,18 +2058,20 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                     self.localVideoView = videoView
                 }
             }
-            engine.requestVideo(capturer)
+            if let groupCallCoordinator {
+                groupCallCoordinator.startScreenSharing(capturer)
+            } else {
+                engine.requestVideo(capturer)
+            }
             refreshPictureInPictureController()
             log("[Call] screen sharing started")
         } else {
-            engine.disableVideo()
-            videoGeneration = UUID()
-            screenShareCapturer = nil
-            isScreenSharing = false
-            isLocalVideoEnabled = false
-            localVideoView = nil
-            updateVideoAudioRouting()
-            refreshPictureInPictureController()
+            if let groupCallCoordinator {
+                groupCallCoordinator.stopScreenSharing()
+            } else {
+                engine.disableVideo()
+            }
+            clearScreenSharingState()
             log("[Call] screen sharing stopped")
         }
     }
@@ -2099,6 +2109,23 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         guard isLocalVideoEnabled else { return }
         log("[GroupCall] clearing local video after rejoin failure")
         clearLocalVideoState()
+    }
+
+    private func handleConferenceScreenSharingFailure() {
+        guard isScreenSharing else { return }
+        log("[GroupCall] stopping local broadcast after screen-sharing join failure")
+        screenShareReceiver?.requestBroadcastStop()
+        clearScreenSharingState()
+    }
+
+    private func clearScreenSharingState() {
+        videoGeneration = UUID()
+        screenShareCapturer = nil
+        isScreenSharing = false
+        isLocalVideoEnabled = false
+        localVideoView = nil
+        updateVideoAudioRouting()
+        refreshPictureInPictureController()
     }
 
     private func clearLocalVideoState() {

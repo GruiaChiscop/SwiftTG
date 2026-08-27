@@ -12,6 +12,7 @@ struct ConferenceParticipantsView: View {
 
     let participants: [ConferenceParticipantPresentation]
     let localVideoView: UIView?
+    let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
     let participantCount: Int
     let connectionStatus: String?
@@ -39,6 +40,7 @@ struct ConferenceParticipantsView: View {
             if localVideoView != nil || !videos.isEmpty {
                 ConferenceVideoGrid(
                     localVideoView: localVideoView,
+                    isLocalScreenSharing: isLocalScreenSharing,
                     videos: videos,
                     requestVideoView: requestVideoView,
                 )

@@ -17,14 +17,19 @@ final class TelegramGroupCallEncryptionBridge: Sendable {
 
     // MARK: Internal
 
-    func makeEncryption() -> TelegramGroupCallEngine.Encryption {
+    enum Channel: Sendable {
+        case main
+        case screenSharing
+    }
+
+    func makeEncryption(channel: Channel = .main) -> TelegramGroupCallEngine.Encryption {
         TelegramGroupCallEngine.Encryption(
             encrypt: { [self] data, unencryptedPrefixSize in
                 guard let groupCallId = identifier.value else { return nil }
                 return perform { completion in
                     service.encryptGroupCallData(
                         data: data,
-                        dataChannel: .groupCallDataChannelMain,
+                        dataChannel: tdlibChannel(channel),
                         groupCallId: groupCallId,
                         unencryptedPrefixSize: Int(unencryptedPrefixSize),
                         completion: completion,
@@ -36,7 +41,7 @@ final class TelegramGroupCallEncryptionBridge: Sendable {
                 return perform { completion in
                     service.decryptGroupCallData(
                         data: data,
-                        dataChannel: nil,
+                        dataChannel: tdlibChannel(channel),
                         groupCallId: groupCallId,
                         participantId: .messageSenderUser(.init(userId: userId)),
                         completion: completion,
@@ -54,6 +59,15 @@ final class TelegramGroupCallEncryptionBridge: Sendable {
 
     private let service: any TelegramService
     private let identifier = GroupCallIdentifier()
+
+    private func tdlibChannel(_ channel: Channel) -> GroupCallDataChannel {
+        switch channel {
+        case .main:
+            .groupCallDataChannelMain
+        case .screenSharing:
+            .groupCallDataChannelScreenSharing
+        }
+    }
 
     private func perform(_ operation: (@escaping @Sendable (Data?) -> Void) -> Void) -> Data? {
         let request = GroupCallDataRequest()

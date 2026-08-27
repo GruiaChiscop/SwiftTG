@@ -49,6 +49,7 @@ import UIKit
     private(set) var signalBars: Int?
     private(set) var speakingAudioSourceIds = Set<UInt32>()
     private(set) var isLocalVideoEnabled = false
+    private(set) var isScreenSharing = false
 
     var onPrepared: ((PreparedCall) -> Void)?
     var onConnected: (() -> Void)?
@@ -56,6 +57,7 @@ import UIKit
     var onFailed: (() -> Void)?
     var onEnded: (() -> Void)?
     var onLocalVideoFailed: (() -> Void)?
+    var onScreenSharingFailed: (() -> Void)?
 
     func create(
         isMuted: Bool,
@@ -153,6 +155,57 @@ import UIKit
         }
     }
 
+    func startScreenSharing(_ capturer: OngoingCallThreadLocalContextVideoCapturer) {
+        guard case .connected = state, let encryptionBridge else {
+            onScreenSharingFailed?()
+            return
+        }
+        let generation = operationGeneration
+        let screenSharingGeneration = UUID()
+        self.screenSharingGeneration = screenSharingGeneration
+        screenSharingTask?.cancel()
+        screencastEngine.start(
+            capturer: capturer,
+            encryption: encryptionBridge.makeEncryption(channel: .screenSharing),
+        ) { [weak self] payload, audioSourceId in
+            Task { @MainActor [weak self] in
+                self?.submitScreenSharingJoin(
+                    payload: payload,
+                    audioSourceId: audioSourceId,
+                    generation: generation,
+                    screenSharingGeneration: screenSharingGeneration,
+                )
+            }
+        }
+    }
+
+    func addScreenSharingAudioData(_ data: Data) {
+        screencastEngine.addExternalAudioData(data)
+    }
+
+    func stopScreenSharing() {
+        screencastEngine.stop()
+        isScreenSharing = false
+        screenSharingTask?.cancel()
+        screenSharingTask = nil
+        screenSharingGeneration = UUID()
+        guard let groupCallId = groupCall?.id else { return }
+        let generation = operationGeneration
+        screenSharingTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await service.endGroupCallScreenSharing(groupCallId: groupCallId)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation else { return }
+                log("[GroupCall] failed to end screen sharing for groupCallId=\(groupCallId): \(error)")
+            }
+            guard operationGeneration == generation else { return }
+            screenSharingTask = nil
+        }
+    }
+
     func setAudioSessionActive(_ active: Bool) {
         engine.setAudioSessionActive(active)
     }
@@ -209,12 +262,15 @@ import UIKit
 
     private let service: any TelegramService
     private let engine = TelegramGroupCallEngine()
+    private let screencastEngine = TelegramGroupCallScreencastEngine()
     private var encryptionBridge: TelegramGroupCallEncryptionBridge?
     private var cancellables = Set<AnyCancellable>()
     private var operationTask: Task<Void, Never>?
     private var operationGeneration = UUID()
     private var videoRejoinTask: Task<Void, Never>?
     private var videoRejoinGeneration = UUID()
+    private var screenSharingTask: Task<Void, Never>?
+    private var screenSharingGeneration = UUID()
     private var didReportConnected = false
     private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
@@ -429,6 +485,50 @@ import UIKit
         }
     }
 
+    private func submitScreenSharingJoin(
+        payload: String,
+        audioSourceId: Int,
+        generation: UUID,
+        screenSharingGeneration: UUID,
+    ) {
+        guard operationGeneration == generation,
+              self.screenSharingGeneration == screenSharingGeneration,
+              let groupCall
+        else { return }
+        let groupCallId = groupCall.id
+        screenSharingTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let response = try await service.startGroupCallScreenSharing(
+                    audioSourceId: audioSourceId,
+                    groupCallId: groupCallId,
+                    payload: payload,
+                )
+                guard operationGeneration == generation,
+                      self.screenSharingGeneration == screenSharingGeneration,
+                      self.groupCall?.id == groupCallId
+                else { return }
+                screencastEngine.applyJoinResponse(response.text)
+                isScreenSharing = true
+                log("[GroupCall] screen sharing started for groupCallId=\(groupCallId)")
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation,
+                      self.screenSharingGeneration == screenSharingGeneration
+                else { return }
+                screencastEngine.stop()
+                isScreenSharing = false
+                log("[GroupCall] screen sharing failed for groupCallId=\(groupCallId): \(error)")
+                onScreenSharingFailed?()
+            }
+            guard operationGeneration == generation,
+                  self.screenSharingGeneration == screenSharingGeneration
+            else { return }
+            screenSharingTask = nil
+        }
+    }
+
     private func handle(_ update: Update) {
         switch update {
         case .updateGroupCall(let value):
@@ -557,6 +657,10 @@ import UIKit
         videoRejoinTask?.cancel()
         videoRejoinTask = nil
         videoRejoinGeneration = UUID()
+        screenSharingTask?.cancel()
+        screenSharingTask = nil
+        screenSharingGeneration = UUID()
+        screencastEngine.stop()
         operationGeneration = UUID()
         return operationGeneration
     }
@@ -574,6 +678,7 @@ import UIKit
         signalBars = nil
         didReportConnected = false
         isLocalVideoEnabled = false
+        isScreenSharing = false
         isMuted = false
         self.state = state
         if case .ended = state {

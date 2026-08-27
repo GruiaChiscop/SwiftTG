@@ -507,6 +507,12 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         inputGroupCall: InputGroupCall?,
         joinParameters: GroupCallJoinParameters?,
     ) async throws -> GroupCallInfo
+    func startGroupCallScreenSharing(
+        audioSourceId: Int?,
+        groupCallId: Int?,
+        payload: String?,
+    ) async throws -> Text
+    func endGroupCallScreenSharing(groupCallId: Int?) async throws -> Ok
     func getGroupCall(groupCallId: Int?) async throws -> GroupCall
     func inviteGroupCallParticipant(
         groupCallId: Int?,
@@ -2020,6 +2026,22 @@ extension TelegramSession: TelegramService {
             inputGroupCall: inputGroupCall,
             joinParameters: joinParameters,
         )
+    }
+
+    func startGroupCallScreenSharing(
+        audioSourceId: Int?,
+        groupCallId: Int?,
+        payload: String?,
+    ) async throws -> Text {
+        try await client.startGroupCallScreenSharing(
+            audioSourceId: audioSourceId,
+            groupCallId: groupCallId,
+            payload: payload,
+        )
+    }
+
+    func endGroupCallScreenSharing(groupCallId: Int?) async throws -> Ok {
+        try await client.endGroupCallScreenSharing(groupCallId: groupCallId)
     }
 
     func getGroupCall(groupCallId: Int?) async throws -> GroupCall {

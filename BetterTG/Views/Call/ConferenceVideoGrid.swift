@@ -7,6 +7,7 @@ import UIKit
 
 struct ConferenceVideoGrid: View {
     let localVideoView: UIView?
+    let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
@@ -14,8 +15,11 @@ struct ConferenceVideoGrid: View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 8) {
                 if let localVideoView {
-                    ConferenceLocalVideoTileView(videoView: localVideoView)
-                        .frame(width: 168, height: 200)
+                    ConferenceLocalVideoTileView(
+                        videoView: localVideoView,
+                        isScreenSharing: isLocalScreenSharing,
+                    )
+                    .frame(width: isLocalScreenSharing ? 260 : 168, height: 200)
                 }
 
                 ForEach(videos) { video in

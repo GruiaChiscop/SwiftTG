@@ -28,6 +28,7 @@ struct ConferenceLabView: View {
                     ConferenceParticipantsView(
                         participants: model.participants,
                         localVideoView: nil,
+                        isLocalScreenSharing: false,
                         videos: model.videos,
                         participantCount: model.participantCount,
                         connectionStatus: model.connectionStatus,
