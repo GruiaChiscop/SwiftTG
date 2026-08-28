@@ -317,6 +317,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 isHandRaised: participant.isHandRaised,
                 isInvited: false,
                 muteAction: conferenceMuteAction(for: participant),
+                canCancelSpeakRequest: participant.isCurrentUser
+                    && participant.isHandRaised
+                    && groupCallCoordinator?.groupCall?.isVideoChat == true,
                 canRemove: groupCallCoordinator?.groupCall?.isOwned == true
                     && !participant.isCurrentUser
                     && userId != nil,
@@ -485,7 +488,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
               let groupCallCoordinator,
               case .connected = groupCallCoordinator.state
         else { return false }
-        return !groupCallCoordinator.isHandRaised && !groupCallCoordinator.isRaisingHand
+        return !groupCallCoordinator.isHandRaised && !groupCallCoordinator.isUpdatingHandRaised
     }
 
     /// tgcalls configures the category/mode/options CallKit will later activate. This has to run
@@ -647,6 +650,14 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     func raiseConferenceHand() {
         guard canRaiseConferenceHand else { return }
         groupCallCoordinator?.raiseHand()
+    }
+
+    func cancelConferenceSpeakRequest() {
+        guard groupCallCoordinator?.groupCall?.isVideoChat == true,
+              groupCallCoordinator?.isHandRaised == true,
+              groupCallCoordinator?.isUpdatingHandRaised == false
+        else { return }
+        groupCallCoordinator?.lowerHand()
     }
 
     func setMuted(_ muted: Bool) {

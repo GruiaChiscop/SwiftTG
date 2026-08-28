@@ -12,11 +12,13 @@ struct ConferenceParticipantRow: View {
         participant: ConferenceParticipantPresentation,
         isPerformingAction: Bool,
         setMuted: @escaping (ConferenceParticipantMuteAction) -> Void,
+        cancelSpeakRequest: @escaping () -> Void,
         remove: @escaping () -> Void,
     ) {
         self.participant = participant
         self.isPerformingAction = isPerformingAction
         self.setMuted = setMuted
+        self.cancelSpeakRequest = cancelSpeakRequest
         self.remove = remove
     }
 
@@ -28,6 +30,12 @@ struct ConferenceParticipantRow: View {
                 if let muteAction = participant.muteAction {
                     Button(muteAction.title, systemImage: muteAction.systemImage) {
                         setMuted(muteAction)
+                    }
+                }
+
+                if participant.canCancelSpeakRequest {
+                    Button("Cancel Request to Speak", systemImage: "hand.raised.slash") {
+                        cancelSpeakRequest()
                     }
                 }
 
@@ -63,10 +71,11 @@ struct ConferenceParticipantRow: View {
     private let participant: ConferenceParticipantPresentation
     private let isPerformingAction: Bool
     private let setMuted: (ConferenceParticipantMuteAction) -> Void
+    private let cancelSpeakRequest: () -> Void
     private let remove: () -> Void
 
     private var hasActions: Bool {
-        participant.muteAction != nil || participant.canRemove
+        participant.muteAction != nil || participant.canCancelSpeakRequest || participant.canRemove
     }
 
     private var userId: Int64? { participant.userId }

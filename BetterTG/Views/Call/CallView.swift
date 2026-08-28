@@ -124,6 +124,7 @@ struct CallView: View {
                         performingParticipantActionId: session.conferenceParticipantActionId,
                         inviteParticipant: showConferenceParticipantPicker,
                         setParticipantMuted: session.setConferenceParticipantMuted,
+                        cancelSpeakRequest: session.cancelConferenceSpeakRequest,
                         removeParticipant: session.removeConferenceParticipant,
                         loadMoreParticipants: session.loadMoreConferenceParticipants,
                         requestVideoView: session.requestConferenceVideoView,

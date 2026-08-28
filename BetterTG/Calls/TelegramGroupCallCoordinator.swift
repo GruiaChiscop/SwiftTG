@@ -52,7 +52,7 @@ import UIKit
     private(set) var isLocalVideoEnabled = false
     private(set) var isScreenSharing = false
     private(set) var canUnmuteSelf = true
-    private(set) var isRaisingHand = false
+    private(set) var isUpdatingHandRaised = false
     private(set) var incomingVideoQuality = ConferenceIncomingVideoQuality.p720
     private(set) var messageCharacterLimit = 128
 
@@ -280,37 +280,11 @@ import UIKit
     }
 
     func raiseHand() {
-        guard case .connected = state,
-              let groupCall,
-              groupCall.isVideoChat,
-              !isHandRaised,
-              !isRaisingHand,
-              let participantId = participants.values.first(where: \.isCurrentUser)?.participantId
-        else { return }
+        setHandRaised(true)
+    }
 
-        isRaisingHand = true
-        handRaiseTask?.cancel()
-        let generation = operationGeneration
-        handRaiseTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                _ = try await service.toggleGroupCallParticipantIsHandRaised(
-                    groupCallId: groupCall.id,
-                    isHandRaised: true,
-                    participantId: participantId,
-                )
-                guard operationGeneration == generation, self.groupCall?.id == groupCall.id else { return }
-                isRaisingHand = false
-                handRaiseTask = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                guard operationGeneration == generation, self.groupCall?.id == groupCall.id else { return }
-                isRaisingHand = false
-                handRaiseTask = nil
-                log("[GroupCall] couldn't raise hand: \(error)")
-            }
-        }
+    func lowerHand() {
+        setHandRaised(false)
     }
 
     func requestVideo(_ capturer: OngoingCallThreadLocalContextVideoCapturer) {
@@ -481,7 +455,7 @@ import UIKit
     private var muteUpdateTask: Task<Void, Never>?
     private var muteUpdateGeneration = UUID()
     private var pendingMutedValue: Bool?
-    private var handRaiseTask: Task<Void, Never>?
+    private var handUpdateTask: Task<Void, Never>?
     private var didReportConnected = false
     private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
@@ -507,6 +481,40 @@ import UIKit
             }
         }
         return preferences
+    }
+
+    private func setHandRaised(_ isHandRaised: Bool) {
+        guard case .connected = state,
+              let groupCall,
+              groupCall.isVideoChat,
+              self.isHandRaised != isHandRaised,
+              !isUpdatingHandRaised,
+              let participantId = participants.values.first(where: \.isCurrentUser)?.participantId
+        else { return }
+
+        isUpdatingHandRaised = true
+        handUpdateTask?.cancel()
+        let generation = operationGeneration
+        handUpdateTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await service.toggleGroupCallParticipantIsHandRaised(
+                    groupCallId: groupCall.id,
+                    isHandRaised: isHandRaised,
+                    participantId: participantId,
+                )
+                guard operationGeneration == generation, self.groupCall?.id == groupCall.id else { return }
+                isUpdatingHandRaised = false
+                handUpdateTask = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation, self.groupCall?.id == groupCall.id else { return }
+                isUpdatingHandRaised = false
+                handUpdateTask = nil
+                log("[GroupCall] couldn't update raised hand to \(isHandRaised): \(error)")
+            }
+        }
     }
 
     private func begin(
@@ -941,9 +949,6 @@ import UIKit
                 participants[value.participant.participantId] = value.participant
                 if value.participant.isCurrentUser {
                     handleLocalMuteUpdate(value.participant)
-                    if value.participant.isHandRaised {
-                        isRaisingHand = false
-                    }
                 }
                 onParticipantChanged?(previousParticipant, value.participant)
             }
@@ -1206,9 +1211,9 @@ import UIKit
         muteUpdateTask = nil
         muteUpdateGeneration = UUID()
         pendingMutedValue = nil
-        handRaiseTask?.cancel()
-        handRaiseTask = nil
-        isRaisingHand = false
+        handUpdateTask?.cancel()
+        handUpdateTask = nil
+        isUpdatingHandRaised = false
         messageConfigurationTask?.cancel()
         messageConfigurationTask = nil
         messageExpirationTask?.cancel()
@@ -1236,7 +1241,7 @@ import UIKit
         isLocalVideoEnabled = false
         isScreenSharing = false
         canUnmuteSelf = true
-        isRaisingHand = false
+        isUpdatingHandRaised = false
         incomingVideoQuality = .p720
         isMuted = false
         self.state = state
