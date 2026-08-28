@@ -293,6 +293,15 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
             let participantIsMuted = participant.isCurrentUser
                 ? isMuted
                 : participant.isMutedForAllUsers || participant.isMutedForCurrentUser
+            let canManageConference =
+                if let groupCall = groupCallCoordinator?.groupCall {
+                    groupCall.canBeManaged || groupCall.isOwned
+                } else {
+                    false
+                }
+            let canAdjustVolume = !participant.isMutedForCurrentUser
+                && !(participant.isMutedForAllUsers && !participant.canUnmuteSelf)
+                && (canManageConference || !participant.isCurrentUser)
             let subtitle: String =
                 if participant.isCurrentUser {
                     "You"
@@ -317,6 +326,8 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 isHandRaised: participant.isHandRaised,
                 isInvited: false,
                 muteAction: conferenceMuteAction(for: participant),
+                volumeLevel: participant.volumeLevel,
+                canAdjustVolume: canAdjustVolume,
                 canCancelSpeakRequest: participant.isCurrentUser
                     && participant.isHandRaised
                     && groupCallCoordinator?.groupCall?.isVideoChat == true,
@@ -763,6 +774,31 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
             conferenceParticipantActionId = nil
             conferenceParticipantActionTask = nil
         }
+    }
+
+    func setConferenceParticipantVolume(
+        _ presentation: ConferenceParticipantPresentation,
+        volumeLevel: Int,
+        synchronize: Bool,
+    ) {
+        guard let coordinator = groupCallCoordinator,
+              let participant = conferenceParticipant(id: presentation.id),
+              presentation.canAdjustVolume
+        else { return }
+
+        if synchronize,
+           volumeLevel == 0,
+           let muteAction = presentation.muteAction,
+           muteAction.isMuted
+        {
+            setConferenceParticipantMuted(presentation, action: muteAction)
+            return
+        }
+        coordinator.setParticipantVolumeLevel(
+            participant,
+            volumeLevel: synchronize && volumeLevel == 0 ? 1 : volumeLevel,
+            synchronize: synchronize,
+        )
     }
 
     func removeConferenceParticipant(_ participant: ConferenceParticipantPresentation) {

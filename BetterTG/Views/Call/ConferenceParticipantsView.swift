@@ -22,6 +22,7 @@ struct ConferenceParticipantsView: View {
     let performingParticipantActionId: String?
     let inviteParticipant: () -> Void
     let setParticipantMuted: (ConferenceParticipantPresentation, ConferenceParticipantMuteAction) -> Void
+    let setParticipantVolume: (ConferenceParticipantPresentation, Int, Bool) -> Void
     let cancelSpeakRequest: () -> Void
     let removeParticipant: (ConferenceParticipantPresentation) -> Void
     let loadMoreParticipants: () -> Void
@@ -57,6 +58,9 @@ struct ConferenceParticipantsView: View {
                             isPerformingAction: performingParticipantActionId == participant.id,
                             setMuted: { action in
                                 setParticipantMuted(participant, action)
+                            },
+                            setVolume: { volumeLevel, synchronize in
+                                setParticipantVolume(participant, volumeLevel, synchronize)
                             },
                             cancelSpeakRequest: cancelSpeakRequest,
                             remove: {

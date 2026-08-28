@@ -188,6 +188,51 @@ import UIKit
         }
     }
 
+    func setParticipantVolumeLevel(
+        _ participant: GroupCallParticipant,
+        volumeLevel: Int,
+        synchronize: Bool,
+    ) {
+        guard let groupCall,
+              participants[participant.participantId] != nil
+        else { return }
+
+        let boundedVolumeLevel = min(20000, max(0, volumeLevel))
+        applyParticipantVolume(participant, volumeLevel: boundedVolumeLevel)
+        guard synchronize, boundedVolumeLevel > 0 else { return }
+
+        volumeUpdateTask?.cancel()
+        let generation = operationGeneration
+        let groupCallId = groupCall.id
+        let participantId = participant.participantId
+        volumeUpdateTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await service.setGroupCallParticipantVolumeLevel(
+                    groupCallId: groupCallId,
+                    participantId: participantId,
+                    volumeLevel: boundedVolumeLevel,
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation,
+                      self.groupCall?.id == groupCallId,
+                      let currentParticipant = participants[participantId]
+                else { return }
+                setParticipantVolume(
+                    currentParticipant,
+                    mutedForCurrentUser: currentParticipant.isMutedForCurrentUser,
+                )
+                log("[GroupCall] couldn't update participant volume: \(error)")
+            }
+            guard operationGeneration == generation,
+                  self.groupCall?.id == groupCallId
+            else { return }
+            volumeUpdateTask = nil
+        }
+    }
+
     func removeParticipant(userId: Int64) async throws {
         guard let groupCall, groupCall.isOwned else {
             throw CoordinatorError.notReady
@@ -456,6 +501,7 @@ import UIKit
     private var muteUpdateGeneration = UUID()
     private var pendingMutedValue: Bool?
     private var handUpdateTask: Task<Void, Never>?
+    private var volumeUpdateTask: Task<Void, Never>?
     private var didReportConnected = false
     private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
@@ -1034,9 +1080,17 @@ import UIKit
         _ participant: GroupCallParticipant,
         mutedForCurrentUser: Bool,
     ) {
-        let volume = mutedForCurrentUser
-            ? 0
-            : min(2, max(0, Double(participant.volumeLevel) / 10000))
+        applyParticipantVolume(
+            participant,
+            volumeLevel: mutedForCurrentUser ? 0 : participant.volumeLevel,
+        )
+    }
+
+    private func applyParticipantVolume(
+        _ participant: GroupCallParticipant,
+        volumeLevel: Int,
+    ) {
+        let volume = min(2, max(0, Double(volumeLevel) / 10000))
         if participant.audioSourceId != 0 {
             engine.setVolume(
                 audioSourceId: UInt32(bitPattern: Int32(truncatingIfNeeded: participant.audioSourceId)),
@@ -1214,6 +1268,8 @@ import UIKit
         handUpdateTask?.cancel()
         handUpdateTask = nil
         isUpdatingHandRaised = false
+        volumeUpdateTask?.cancel()
+        volumeUpdateTask = nil
         messageConfigurationTask?.cancel()
         messageConfigurationTask = nil
         messageExpirationTask?.cancel()

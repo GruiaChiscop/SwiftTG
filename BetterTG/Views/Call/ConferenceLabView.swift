@@ -38,6 +38,7 @@ struct ConferenceLabView: View {
                         performingParticipantActionId: nil,
                         inviteParticipant: model.inviteParticipant,
                         setParticipantMuted: model.setParticipantMuted,
+                        setParticipantVolume: { _, _, _ in },
                         cancelSpeakRequest: {},
                         removeParticipant: model.removeParticipant,
                         loadMoreParticipants: {},

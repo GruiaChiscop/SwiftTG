@@ -12,12 +12,14 @@ struct ConferenceParticipantRow: View {
         participant: ConferenceParticipantPresentation,
         isPerformingAction: Bool,
         setMuted: @escaping (ConferenceParticipantMuteAction) -> Void,
+        setVolume: @escaping (Int, Bool) -> Void,
         cancelSpeakRequest: @escaping () -> Void,
         remove: @escaping () -> Void,
     ) {
         self.participant = participant
         self.isPerformingAction = isPerformingAction
         self.setMuted = setMuted
+        self.setVolume = setVolume
         self.cancelSpeakRequest = cancelSpeakRequest
         self.remove = remove
     }
@@ -30,6 +32,12 @@ struct ConferenceParticipantRow: View {
                 if let muteAction = participant.muteAction {
                     Button(muteAction.title, systemImage: muteAction.systemImage) {
                         setMuted(muteAction)
+                    }
+                }
+
+                if participant.canAdjustVolume {
+                    Button("Volume", systemImage: "speaker.wave.2") {
+                        showsVolumeControl = true
                     }
                 }
 
@@ -57,6 +65,13 @@ struct ConferenceParticipantRow: View {
                 Button("Remove", role: .destructive, action: remove)
                 Button("Cancel", role: .cancel) {}
             }
+            .sheet(isPresented: $showsVolumeControl) {
+                ConferenceParticipantVolumeView(
+                    participantName: displayTitle,
+                    initialVolumeLevel: participant.volumeLevel,
+                    setVolume: setVolume,
+                )
+            }
         } else {
             rowContent
         }
@@ -67,15 +82,20 @@ struct ConferenceParticipantRow: View {
     @State private var chat: Chat?
     @State private var user: User?
     @State private var showsRemoveConfirmation = false
+    @State private var showsVolumeControl = false
 
     private let participant: ConferenceParticipantPresentation
     private let isPerformingAction: Bool
     private let setMuted: (ConferenceParticipantMuteAction) -> Void
+    private let setVolume: (Int, Bool) -> Void
     private let cancelSpeakRequest: () -> Void
     private let remove: () -> Void
 
     private var hasActions: Bool {
-        participant.muteAction != nil || participant.canCancelSpeakRequest || participant.canRemove
+        participant.muteAction != nil
+            || participant.canAdjustVolume
+            || participant.canCancelSpeakRequest
+            || participant.canRemove
     }
 
     private var userId: Int64? { participant.userId }

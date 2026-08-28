@@ -16,6 +16,8 @@ struct ConferenceParticipantPresentation: Identifiable, Equatable {
     var isHandRaised: Bool
     var isInvited: Bool
     var muteAction: ConferenceParticipantMuteAction?
+    var volumeLevel = 10000
+    var canAdjustVolume = false
     var canCancelSpeakRequest = false
     var canRemove = false
 }

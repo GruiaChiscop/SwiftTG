@@ -534,6 +534,11 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         isHandRaised: Bool?,
         participantId: MessageSender?,
     ) async throws -> Ok
+    func setGroupCallParticipantVolumeLevel(
+        groupCallId: Int?,
+        participantId: MessageSender?,
+        volumeLevel: Int?,
+    ) async throws -> Ok
     func banGroupCallParticipants(groupCallId: Int?, userIds: [TdInt64]?) async throws -> Ok
     func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok
     func sendGroupCallMessage(
@@ -2110,6 +2115,18 @@ extension TelegramSession: TelegramService {
             groupCallId: groupCallId,
             isHandRaised: isHandRaised,
             participantId: participantId,
+        )
+    }
+
+    func setGroupCallParticipantVolumeLevel(
+        groupCallId: Int?,
+        participantId: MessageSender?,
+        volumeLevel: Int?,
+    ) async throws -> Ok {
+        try await client.setGroupCallParticipantVolumeLevel(
+            groupCallId: groupCallId,
+            participantId: participantId,
+            volumeLevel: volumeLevel,
         )
     }
 
