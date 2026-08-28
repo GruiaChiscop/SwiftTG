@@ -23,6 +23,7 @@ struct ConferenceParticipantsView: View {
     let inviteParticipant: () -> Void
     let setParticipantMuted: (ConferenceParticipantPresentation, ConferenceParticipantMuteAction) -> Void
     let setParticipantVolume: (ConferenceParticipantPresentation, Int, Bool) -> Void
+    let openParticipantConversation: (ConferenceParticipantPresentation) -> Void
     let cancelSpeakRequest: () -> Void
     let removeParticipant: (ConferenceParticipantPresentation) -> Void
     let loadMoreParticipants: () -> Void
@@ -61,6 +62,9 @@ struct ConferenceParticipantsView: View {
                             },
                             setVolume: { volumeLevel, synchronize in
                                 setParticipantVolume(participant, volumeLevel, synchronize)
+                            },
+                            openConversation: {
+                                openParticipantConversation(participant)
                             },
                             cancelSpeakRequest: cancelSpeakRequest,
                             remove: {

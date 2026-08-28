@@ -13,6 +13,7 @@ struct ConferenceParticipantRow: View {
         isPerformingAction: Bool,
         setMuted: @escaping (ConferenceParticipantMuteAction) -> Void,
         setVolume: @escaping (Int, Bool) -> Void,
+        openConversation: @escaping () -> Void,
         cancelSpeakRequest: @escaping () -> Void,
         remove: @escaping () -> Void,
     ) {
@@ -20,6 +21,7 @@ struct ConferenceParticipantRow: View {
         self.isPerformingAction = isPerformingAction
         self.setMuted = setMuted
         self.setVolume = setVolume
+        self.openConversation = openConversation
         self.cancelSpeakRequest = cancelSpeakRequest
         self.remove = remove
     }
@@ -29,21 +31,27 @@ struct ConferenceParticipantRow: View {
     var body: some View {
         if hasActions {
             Menu {
-                if let muteAction = participant.muteAction {
-                    Button(muteAction.title, systemImage: muteAction.systemImage) {
-                        setMuted(muteAction)
-                    }
-                }
-
                 if participant.canAdjustVolume {
                     Button("Volume", systemImage: "speaker.wave.2") {
                         showsVolumeControl = true
                     }
                 }
 
+                if let muteAction = participant.muteAction {
+                    Button(muteAction.title, systemImage: muteAction.systemImage) {
+                        setMuted(muteAction)
+                    }
+                }
+
                 if participant.canCancelSpeakRequest {
                     Button("Cancel Request to Speak", systemImage: "hand.raised.slash") {
                         cancelSpeakRequest()
+                    }
+                }
+
+                if participant.canOpenConversation {
+                    Button(openConversationTitle, systemImage: openConversationSystemImage) {
+                        openConversation()
                     }
                 }
 
@@ -80,6 +88,7 @@ struct ConferenceParticipantRow: View {
     // MARK: Private
 
     @State private var chat: Chat?
+    @State private var isChannelIdentity = false
     @State private var user: User?
     @State private var showsRemoveConfirmation = false
     @State private var showsVolumeControl = false
@@ -88,12 +97,14 @@ struct ConferenceParticipantRow: View {
     private let isPerformingAction: Bool
     private let setMuted: (ConferenceParticipantMuteAction) -> Void
     private let setVolume: (Int, Bool) -> Void
+    private let openConversation: () -> Void
     private let cancelSpeakRequest: () -> Void
     private let remove: () -> Void
 
     private var hasActions: Bool {
         participant.muteAction != nil
             || participant.canAdjustVolume
+            || participant.canOpenConversation
             || participant.canCancelSpeakRequest
             || participant.canRemove
     }
@@ -124,6 +135,20 @@ struct ConferenceParticipantRow: View {
     }
 
     private var statusDescription: String { participant.subtitle }
+
+    private var openConversationTitle: String {
+        if participant.userId != nil {
+            return "Send Message"
+        }
+        return isChannelIdentity ? "Open Channel" : "Open Group"
+    }
+
+    private var openConversationSystemImage: String {
+        if participant.userId != nil {
+            return "message"
+        }
+        return isChannelIdentity ? "megaphone" : "person.2"
+    }
 
     private var statusSystemImage: String {
         if participant.isInvited {
@@ -205,6 +230,7 @@ struct ConferenceParticipantRow: View {
     @MainActor private func loadProfile() async {
         user = nil
         chat = nil
+        isChannelIdentity = false
         guard participant.title == nil else { return }
         let service = TDLib.shared.service
         do {
@@ -216,6 +242,12 @@ struct ConferenceParticipantRow: View {
                 let loadedChat = try await service.getChat(chatId: chatId)
                 try Task.checkCancellation()
                 chat = loadedChat
+                if case .chatTypeSupergroup(let supergroupType) = loadedChat.type,
+                   let supergroup = try? await service.getSupergroup(supergroupId: supergroupType.supergroupId)
+                {
+                    guard !Task.isCancelled else { return }
+                    isChannelIdentity = supergroup.isChannel
+                }
             }
         } catch is CancellationError {
             return

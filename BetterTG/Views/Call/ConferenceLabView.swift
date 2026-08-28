@@ -39,6 +39,7 @@ struct ConferenceLabView: View {
                         inviteParticipant: model.inviteParticipant,
                         setParticipantMuted: model.setParticipantMuted,
                         setParticipantVolume: { _, _, _ in },
+                        openParticipantConversation: { _ in },
                         cancelSpeakRequest: {},
                         removeParticipant: model.removeParticipant,
                         loadMoreParticipants: {},

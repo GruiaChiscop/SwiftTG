@@ -18,6 +18,7 @@ struct ConferenceParticipantPresentation: Identifiable, Equatable {
     var muteAction: ConferenceParticipantMuteAction?
     var volumeLevel = 10000
     var canAdjustVolume = false
+    var canOpenConversation = false
     var canCancelSpeakRequest = false
     var canRemove = false
 }

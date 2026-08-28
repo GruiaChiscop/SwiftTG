@@ -328,6 +328,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 muteAction: conferenceMuteAction(for: participant),
                 volumeLevel: participant.volumeLevel,
                 canAdjustVolume: canAdjustVolume,
+                canOpenConversation: !participant.isCurrentUser,
                 canCancelSpeakRequest: participant.isCurrentUser
                     && participant.isHandRaised
                     && groupCallCoordinator?.groupCall?.isVideoChat == true,
@@ -801,6 +802,43 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         )
     }
 
+    func openConferenceParticipantConversation(_ participant: ConferenceParticipantPresentation) {
+        guard participant.canOpenConversation,
+              let coordinator = groupCallCoordinator,
+              participant.userId != nil || participant.chatId != nil
+        else { return }
+
+        conferenceConversationNavigationTask?.cancel()
+        let generation = UUID()
+        conferenceConversationNavigationGeneration = generation
+        conferenceConversationNavigationTask = Task { [weak self, weak coordinator] in
+            guard let self, let coordinator else { return }
+            let rootViewModel = RootVM.shared
+            let customChat: CustomChat? =
+                if let userId = participant.userId {
+                    await rootViewModel.getPrivateCustomChat(userId: userId)
+                } else if let chatId = participant.chatId {
+                    await rootViewModel.getCustomChat(from: chatId)
+                } else {
+                    nil
+                }
+
+            guard !Task.isCancelled,
+                  groupCallCoordinator === coordinator,
+                  conferenceConversationNavigationGeneration == generation
+            else { return }
+            guard let customChat else {
+                log("[GroupCall] couldn't open conversation for \(participant.id)")
+                conferenceConversationNavigationTask = nil
+                return
+            }
+
+            minimizeCallView()
+            rootViewModel.navigate(to: .customChat(customChat))
+            conferenceConversationNavigationTask = nil
+        }
+    }
+
     func removeConferenceParticipant(_ participant: ConferenceParticipantPresentation) {
         guard conferenceParticipantActionId == nil,
               let userId = participant.userId,
@@ -1159,8 +1197,10 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     private var conferenceTransitionTask: Task<Void, Never>?
     private var conferenceInviteTask: Task<Void, Never>?
     private var conferenceParticipantActionTask: Task<Void, Never>?
+    private var conferenceConversationNavigationTask: Task<Void, Never>?
     private var conferenceTransitionGeneration = UUID()
     private var conferenceParticipantActionGeneration = UUID()
+    private var conferenceConversationNavigationGeneration = UUID()
     private var conferenceHasReplacedPrivateCall = false
     private var conferenceAudioWasMoved = false
     private var conferenceInvitedUserIds = Set<Int64>()
@@ -1980,8 +2020,11 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         conferenceInviteTask = nil
         conferenceParticipantActionTask?.cancel()
         conferenceParticipantActionTask = nil
+        conferenceConversationNavigationTask?.cancel()
+        conferenceConversationNavigationTask = nil
         conferenceTransitionGeneration = UUID()
         conferenceParticipantActionGeneration = UUID()
+        conferenceConversationNavigationGeneration = UUID()
         groupCallCoordinator = nil
         isUpgradingToConference = false
         isInvitingConferenceParticipant = false
@@ -2046,8 +2089,11 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         conferenceInviteTask = nil
         conferenceParticipantActionTask?.cancel()
         conferenceParticipantActionTask = nil
+        conferenceConversationNavigationTask?.cancel()
+        conferenceConversationNavigationTask = nil
         conferenceTransitionGeneration = UUID()
         conferenceParticipantActionGeneration = UUID()
+        conferenceConversationNavigationGeneration = UUID()
         groupCallCoordinator = nil
         isUpgradingToConference = false
         isInvitingConferenceParticipant = false
