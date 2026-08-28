@@ -165,6 +165,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     var showsConferenceInvitationError = false
     private(set) var conferenceInvitationErrorMessage = "SwiftTG couldn't invite this participant."
     var pendingCallRating: CallRatingRequest?
+    private(set) var callRatingSuccessToken: UUID?
 
     var onIncomingCall: ((Call) -> Void)?
     var onIncomingConferenceInvitation: ((IncomingConferenceInvitation) -> Void)?
@@ -944,6 +945,11 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         pendingCallRating = nil
     }
 
+    func dismissCallRatingSuccess(token: UUID) {
+        guard callRatingSuccessToken == token else { return }
+        callRatingSuccessToken = nil
+    }
+
     func minimizeCallView() {
         guard hasActiveCallSurface else { return }
         if isStandaloneConferenceCall {
@@ -1010,6 +1016,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         )
         guard pendingCallRating?.id == request.id else { return }
         pendingCallRating = nil
+        if rating < 4 {
+            callRatingSuccessToken = UUID()
+        }
         log("[Call] sent rating=\(rating) for callId=\(request.callId)")
     }
 

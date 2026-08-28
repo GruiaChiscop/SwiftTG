@@ -1,6 +1,7 @@
 // RootView.swift
 
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     // MARK: Internal
@@ -40,6 +41,16 @@ struct RootView: View {
             }
         }
         .transition(.opacity)
+        .overlay {
+            if callSession.callRatingSuccessToken != nil {
+                CallFeedbackSuccessView()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: callSession.callRatingSuccessToken)
+        .task(id: callSession.callRatingSuccessToken) {
+            await presentCallRatingSuccessIfNeeded()
+        }
         .task(id: rootVM.loggedIn) {
             guard rootVM.loggedIn else { return }
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: TDLib.shared.service)
@@ -157,4 +168,21 @@ struct RootView: View {
 
     @State private var rootVM = RootVM.shared
     @State private var callSession = TelegramCallSession.shared
+
+    private func presentCallRatingSuccessIfNeeded() async {
+        guard let token = callSession.callRatingSuccessToken else { return }
+        do {
+            try await Task.sleep(for: .milliseconds(300))
+        } catch {
+            return
+        }
+        guard callSession.callRatingSuccessToken == token else { return }
+        UIAccessibility.post(notification: .announcement, argument: "Thanks for your feedback")
+        do {
+            try await Task.sleep(for: .seconds(2))
+        } catch {
+            return
+        }
+        callSession.dismissCallRatingSuccess(token: token)
+    }
 }

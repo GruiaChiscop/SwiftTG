@@ -12,30 +12,7 @@ struct CallRatingView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    HStack {
-                        ForEach(1...5, id: \.self) { value in
-                            Spacer(minLength: 0)
-                            Button(
-                                value == 1 ? "1 star" : "\(value) stars",
-                                systemImage: value <= rating ? "star.fill" : "star",
-                            ) {
-                                rating = value
-                            }
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.plain)
-                            .font(.title2)
-                            .foregroundStyle(value <= rating ? .yellow : .secondary)
-                            .frame(minWidth: 44, minHeight: 44)
-                            .accessibilityAddTraits(value == rating ? .isSelected : [])
-                            Spacer(minLength: 0)
-                        }
-                    }
-                } header: {
-                    Text("How was the call quality?")
-                }
-
-                if (1...3).contains(rating) {
+                if includesDetails {
                     Section("What went wrong?") {
                         ForEach(availableProblems) { problem in
                             Button {
@@ -64,17 +41,49 @@ struct CallRatingView: View {
                             "This won't reveal the contents of your conversation, but will help us fix the issue sooner.",
                         )
                     }
+                } else {
+                    Section {
+                        VStack(spacing: 12) {
+                            Text("Please rate the quality\nof your Telegram call")
+                                .font(.headline)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+
+                            HStack {
+                                ForEach(1...5, id: \.self) { value in
+                                    Spacer(minLength: 0)
+                                    Button(
+                                        value == 1 ? "1 star" : "\(value) stars",
+                                        systemImage: value <= rating ? "star.fill" : "star",
+                                    ) {
+                                        selectRating(value)
+                                    }
+                                    .labelStyle(.iconOnly)
+                                    .buttonStyle(.plain)
+                                    .font(.title2)
+                                    .foregroundStyle(value <= rating ? .yellow : .secondary)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .accessibilityAddTraits(value == rating ? .isSelected : [])
+                                    Spacer(minLength: 0)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
                 }
             }
-            .navigationTitle("Call Feedback")
+            .navigationTitle(includesDetails ? "Call Feedback" : "Rate Call")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Not Now", action: session.dismissCallRating)
+                        .disabled(isSubmitting)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Send", action: submit)
-                        .disabled(rating == 0 || isSubmitting)
+                if includesDetails {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Send", action: submit)
+                            .disabled(isSubmitting)
+                    }
                 }
             }
             .overlay {
@@ -107,6 +116,10 @@ struct CallRatingView: View {
         TelegramCallRatingProblem.allCases.filter { request.isVideo || !$0.isVideoRelated }
     }
 
+    private var includesDetails: Bool {
+        (1...3).contains(rating)
+    }
+
     private func toggle(_ problem: TelegramCallRatingProblem) {
         if selectedProblems.contains(problem) {
             selectedProblems.remove(problem)
@@ -116,8 +129,8 @@ struct CallRatingView: View {
     }
 
     private func submit() {
+        guard rating != 0, !isSubmitting else { return }
         isSubmitting = true
-        let includesDetails = (1...3).contains(rating)
         let problems = includesDetails ? Array(selectedProblems) : []
         let comment = includesDetails ? comment.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         Task {
@@ -136,6 +149,14 @@ struct CallRatingView: View {
                 showsSubmissionError = true
             }
             isSubmitting = false
+        }
+    }
+
+    private func selectRating(_ value: Int) {
+        guard !isSubmitting else { return }
+        rating = value
+        if value >= 4 {
+            submit()
         }
     }
 }
