@@ -31,23 +31,37 @@ enum TelegramCallRatingProblem: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .distortedSpeech:
-            "Distorted speech"
+            "Speech was distorted"
         case .distortedVideo:
-            "Distorted video"
+            "Video was distorted"
         case .dropped:
             "Call ended unexpectedly"
         case .echo:
             "I heard my own voice"
         case .interruptions:
-            "Audio kept cutting out"
+            "The other side kept disappearing"
         case .noise:
-            "Background noise"
+            "I heard background noise"
         case .pixelatedVideo:
             "Pixelated video"
         case .silentLocal:
-            "I couldn't hear the other person"
+            "I couldn't hear the other side"
         case .silentRemote:
-            "The other person couldn't hear me"
+            "The other side couldn't hear me"
+        }
+    }
+
+    var hashtag: String {
+        switch self {
+        case .distortedSpeech: "distorted_speech"
+        case .distortedVideo: "distorted_video"
+        case .dropped: "dropped"
+        case .echo: "echo"
+        case .interruptions: "interruptions"
+        case .noise: "noise"
+        case .pixelatedVideo: "pixelated_video"
+        case .silentLocal: "silent_local"
+        case .silentRemote: "silent_remote"
         }
     }
 }

@@ -131,7 +131,7 @@ extension ChatVM {
             ) else { return }
             self.service.mergeMessageHistory(chatId: chatId, messages: [rootMessage])
             await main {
-                self.loadedMessageIds.insert(rootMessage.id)
+                _ = self.loadedMessageIds.insert(rootMessage.id)
             }
         }
     }

@@ -938,6 +938,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     }
 
     func dismissCallRating() {
+        if let callId = pendingCallRating?.callId {
+            callRatingLogCapture.discard(callId: callId)
+        }
         pendingCallRating = nil
     }
 
@@ -969,13 +972,41 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         rating: Int,
         problems: [TelegramCallRatingProblem],
         comment: String,
+        includeTechnicalInformation: Bool,
     ) async throws {
         guard pendingCallRating?.id == request.id else { return }
+        let logURL = includeTechnicalInformation
+            ? await callRatingLogCapture.url(callId: request.callId)
+            : nil
+        try Task.checkCancellation()
+        guard pendingCallRating?.id == request.id else { return }
+        let feedbackComment = Self.callFeedbackComment(comment: comment, problems: problems)
         _ = try await service.sendCallRating(
             callId: request.callId,
-            comment: comment.isEmpty ? nil : comment,
+            comment: feedbackComment.isEmpty ? nil : feedbackComment,
             problems: problems,
             rating: rating,
+        )
+
+        var shouldRetainLogForUpload = false
+        if logURL != nil || !feedbackComment.isEmpty {
+            do {
+                shouldRetainLogForUpload = try await sendCallFeedbackToSupport(
+                    comment: feedbackComment,
+                    logURL: logURL,
+                )
+            } catch {
+                // Rating the call is authoritative. Telegram-iOS also sends the technical message
+                // as a separate best-effort operation, so a support-upload failure must not submit
+                // the rating twice when the user retries.
+                if !(error is CancellationError) {
+                    log("[Call] couldn't send rating details to Telegram support: \(error)")
+                }
+            }
+        }
+        callRatingLogCapture.discard(
+            callId: request.callId,
+            fileDeletionDelay: shouldRetainLogForUpload ? 300 : 0,
         )
         guard pendingCallRating?.id == request.id else { return }
         pendingCallRating = nil
@@ -1005,9 +1036,11 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     )
     private static let terminalToneLifetime: TimeInterval = 2
     private static let endedTonePlaybackDuration: TimeInterval = 1.25
+    private static let callFeedbackUserId: Int64 = 4_244_000
 
     private let service: any TelegramService
     private let conferenceAccessibilityAnnouncer: ConferenceAccessibilityAnnouncer
+    private let callRatingLogCapture = CallRatingLogCapture()
     private let engine = TelegramCallEngine()
     private let cellularNetworkInfo = CTTelephonyNetworkInfo()
     private let networkMonitor = NWPathMonitor()
@@ -1275,10 +1308,10 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         }
     }
 
-    private nonisolated static func writeTemporaryCallLog(_ callLog: String) -> URL? {
+    private nonisolated static func writeTemporaryCallLog(_ callLog: String, callId: Int) -> URL? {
         let url = FileManager.default
             .temporaryDirectory
-            .appending(path: "SwiftTG-Call-\(UUID().uuidString).log")
+            .appending(path: "SwiftTG-Call-\(callId)-\(UUID().uuidString).log.json")
         do {
             try Data(callLog.utf8).write(to: url, options: .atomic)
             return url
@@ -1290,6 +1323,14 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
 
     private static func isRingingConferenceInvitation(_ content: MessageGroupCall) -> Bool {
         !content.isActive && !content.wasMissed && content.duration == 0
+    }
+
+    private static func callFeedbackComment(
+        comment: String,
+        problems: [TelegramCallRatingProblem],
+    ) -> String {
+        let hashtags = problems.map { "#\($0.hashtag)" }.joined(separator: " ")
+        return [comment, hashtags].filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     private func restoreCallView(stoppingPictureInPicture: Bool) {
@@ -1305,6 +1346,24 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         CallKitManager.shared.requestEndCall { [weak self] in
             self?.pendingConferenceEndForEveryone = false
         }
+    }
+
+    private func sendCallFeedbackToSupport(comment: String, logURL: URL?) async throws -> Bool {
+        let chat = try await service.createPrivateChat(force: false, userId: Self.callFeedbackUserId)
+        let formattedComment = FormattedText(entities: [], text: comment)
+        let content: InputMessageContent =
+            if let logURL {
+                TelegramMessageSending.documentContent(url: logURL, caption: formattedComment)
+            } else {
+                TelegramMessageSending.textContent(formattedComment)
+            }
+        _ = try await TelegramMessageSending.send(
+            service: service,
+            chatId: chat.id,
+            contents: [content],
+            replyTo: nil,
+        )
+        return logURL != nil
     }
 
     private func deactivateStandaloneConferenceAudioSessionIfNeeded() {
@@ -1566,12 +1625,19 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 } else {
                     nil
                 }
+            if let previousCallId = pendingCallRating?.callId, previousCallId != ratingRequest?.callId {
+                callRatingLogCapture.discard(callId: previousCallId)
+            }
+            if let ratingRequest {
+                callRatingLogCapture.begin(callId: ratingRequest.callId)
+            }
             finishCurrentCall(
                 notifyCallKit: true,
                 endReason: Self.endReason(for: call.state),
                 terminalTone: Self.terminalTone(for: call.state),
                 debugInformationCallId: debugInformationCallId,
                 logCallId: logCallId,
+                ratingLogCallId: ratingRequest?.callId,
             )
             pendingCallRating = ratingRequest
             return
@@ -1585,6 +1651,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
             isCallViewMinimized = false
         }
         if pendingCallRating?.callId != call.id {
+            if let previousCallId = pendingCallRating?.callId {
+                callRatingLogCapture.discard(callId: previousCallId)
+            }
             pendingCallRating = nil
         }
         activeCall = call
@@ -2712,6 +2781,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     private func stopEngine(
         debugInformationCallId: Int? = nil,
         logCallId: Int? = nil,
+        ratingLogCallId: Int? = nil,
         finalTone: TelegramCallTone? = nil,
     ) {
         engineStartTask?.cancel()
@@ -2725,16 +2795,20 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         pictureInPictureController = nil
         pictureInPictureSourceView = nil
         let retentionDuration = finalTone == nil ? 0 : Self.terminalToneLifetime
-        if debugInformationCallId != nil || logCallId != nil {
+        if debugInformationCallId != nil || logCallId != nil || ratingLogCallId != nil {
             let service = service
+            let callRatingLogCapture = callRatingLogCapture
             engine.stop(finalTone: finalTone, retainAudioDeviceFor: retentionDuration) { result in
+                let ratingLogURL = ratingLogCallId.flatMap { callId in
+                    result?.callLog.flatMap { Self.writeTemporaryCallLog($0, callId: callId) }
+                }
+                let requestedLogURL = logCallId.flatMap { callId in
+                    result?.callLog.flatMap { Self.writeTemporaryCallLog($0, callId: callId) }
+                }
+                if let ratingLogCallId {
+                    callRatingLogCapture.finish(callId: ratingLogCallId, url: ratingLogURL)
+                }
                 guard let result else { return }
-                let logURL: URL? =
-                    if logCallId != nil, let callLog = result.callLog {
-                        Self.writeTemporaryCallLog(callLog)
-                    } else {
-                        nil
-                    }
                 Task {
                     if let debugInformationCallId, let debugInformation = result.debugInformation {
                         do {
@@ -2747,14 +2821,14 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                             log("Error sending call debug information: \(error)")
                         }
                     }
-                    if let logCallId, let logURL {
-                        defer { try? FileManager.default.removeItem(at: logURL) }
+                    if let logCallId, let requestedLogURL {
                         do {
-                            _ = try await service.sendCallLog(callId: logCallId, path: logURL.path)
+                            _ = try await service.sendCallLog(callId: logCallId, path: requestedLogURL.path)
                             log("[Call] sent requested call log for callId=\(logCallId)")
                         } catch {
                             log("Error sending call log: \(error)")
                         }
+                        try? FileManager.default.removeItem(at: requestedLogURL)
                     }
                 }
             }
@@ -2801,6 +2875,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         terminalTone: TelegramCallTone? = nil,
         debugInformationCallId: Int? = nil,
         logCallId: Int? = nil,
+        ratingLogCallId: Int? = nil,
     ) {
         if let coordinator = groupCallCoordinator {
             resetConferencePreparation(coordinator)
@@ -2822,6 +2897,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         stopEngine(
             debugInformationCallId: debugInformationCallId,
             logCallId: logCallId,
+            ratingLogCallId: ratingLogCallId,
             finalTone: didStartTerminalTone ? selectedTerminalTone : nil,
         )
         if notifyCallKit, hadCall {

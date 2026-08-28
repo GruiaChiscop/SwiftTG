@@ -27,6 +27,7 @@ struct CallRatingView: View {
                             .font(.title2)
                             .foregroundStyle(value <= rating ? .yellow : .secondary)
                             .frame(minWidth: 44, minHeight: 44)
+                            .accessibilityAddTraits(value == rating ? .isSelected : [])
                             Spacer(minLength: 0)
                         }
                     }
@@ -51,13 +52,21 @@ struct CallRatingView: View {
                         }
                     }
 
-                    Section("Additional details") {
-                        TextField("Add a comment", text: $comment, axis: .vertical)
+                    Section {
+                        TextField("Add an optional comment", text: $comment, axis: .vertical)
                             .lineLimit(3...6)
+                    }
+
+                    Section {
+                        Toggle("Include technical information", isOn: $includesTechnicalInformation)
+                    } footer: {
+                        Text(
+                            "This won't reveal the contents of your conversation, but will help us fix the issue sooner.",
+                        )
                     }
                 }
             }
-            .navigationTitle("Rate Call")
+            .navigationTitle("Call Feedback")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -87,6 +96,7 @@ struct CallRatingView: View {
     @State private var rating = 0
     @State private var selectedProblems = Set<TelegramCallRatingProblem>()
     @State private var comment = ""
+    @State private var includesTechnicalInformation = true
     @State private var isSubmitting = false
     @State private var showsSubmissionError = false
     @State private var submissionErrorMessage = ""
@@ -117,6 +127,7 @@ struct CallRatingView: View {
                     rating: rating,
                     problems: problems,
                     comment: comment,
+                    includeTechnicalInformation: includesDetails && includesTechnicalInformation,
                 )
             } catch is CancellationError {
                 // Dismissing the view cancels its work; no user-facing error is needed.
