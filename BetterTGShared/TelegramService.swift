@@ -523,6 +523,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         isVideo: Bool?,
         userId: Int64?,
     ) async throws -> InviteGroupCallParticipantResult
+    func declineGroupCallInvitation(chatId: Int64?, messageId: Int64?) async throws -> Ok
     func toggleGroupCallParticipantIsMuted(
         groupCallId: Int?,
         isMuted: Bool?,
@@ -530,6 +531,11 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     ) async throws -> Ok
     func banGroupCallParticipants(groupCallId: Int?, userIds: [TdInt64]?) async throws -> Ok
     func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok
+    func sendGroupCallMessage(
+        groupCallId: Int?,
+        paidMessageStarCount: Int64?,
+        text: FormattedText?,
+    ) async throws -> Ok
     func encryptGroupCallData(
         data: Data?,
         dataChannel: GroupCallDataChannel?,
@@ -2074,6 +2080,10 @@ extension TelegramSession: TelegramService {
         )
     }
 
+    func declineGroupCallInvitation(chatId: Int64?, messageId: Int64?) async throws -> Ok {
+        try await client.declineGroupCallInvitation(chatId: chatId, messageId: messageId)
+    }
+
     func toggleGroupCallParticipantIsMuted(
         groupCallId: Int?,
         isMuted: Bool?,
@@ -2092,6 +2102,18 @@ extension TelegramSession: TelegramService {
 
     func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok {
         try await client.loadGroupCallParticipants(groupCallId: groupCallId, limit: limit)
+    }
+
+    func sendGroupCallMessage(
+        groupCallId: Int?,
+        paidMessageStarCount: Int64?,
+        text: FormattedText?,
+    ) async throws -> Ok {
+        try await client.sendGroupCallMessage(
+            groupCallId: groupCallId,
+            paidMessageStarCount: paidMessageStarCount,
+            text: text,
+        )
     }
 
     func encryptGroupCallData(

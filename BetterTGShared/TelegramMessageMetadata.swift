@@ -83,6 +83,8 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
         content.sticker.emoji.isEmpty ? "Sticker" : "Sticker \(content.sticker.emoji)"
     case .messageCall:
         "Call"
+    case .messageGroupCall(let content):
+        content.wasMissed ? "Missed group call" : "Group call"
     case .messageBasicGroupChatCreate, .messageSupergroupChatCreate:
         "Group created"
     case .messageChatChangeTitle:

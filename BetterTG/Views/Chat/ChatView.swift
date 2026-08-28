@@ -237,6 +237,12 @@ struct ChatView: View {
         } message: {
             Text("Allow camera access in Settings to start video calls.")
         }
+        .alert("Microphone Access Required", isPresented: $showsMicrophonePermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow microphone access in Settings to make calls.")
+        }
         .navigationDestination(isPresented: $showsChatInfo) {
             ChatInfoView()
                 .environment(chatVM)
@@ -380,6 +386,7 @@ struct ChatView: View {
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
     @State private var showsCameraPermissionAlert = false
+    @State private var showsMicrophonePermissionAlert = false
     @State private var presentedActionError: PresentedChatActionError?
 
     private var unreadChatCount: Int {
@@ -537,6 +544,9 @@ struct ChatView: View {
         CallKitManager.shared.startOutgoingCall(
             userId: callPeer.id,
             displayName: callPeer.displayName,
+            onMicrophonePermissionDenied: {
+                showsMicrophonePermissionAlert = true
+            },
         )
     }
 
@@ -546,9 +556,13 @@ struct ChatView: View {
             userId: callPeer.id,
             displayName: callPeer.displayName,
             isVideo: true,
-        ) {
-            showsCameraPermissionAlert = true
-        }
+            onMicrophonePermissionDenied: {
+                showsMicrophonePermissionAlert = true
+            },
+            onCameraPermissionDenied: {
+                showsCameraPermissionAlert = true
+            },
+        )
     }
 
     private func openSettings() {

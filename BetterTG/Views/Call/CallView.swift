@@ -125,6 +125,7 @@ struct CallView: View {
                         inviteParticipant: showConferenceParticipantPicker,
                         setParticipantMuted: session.setConferenceParticipantMuted,
                         removeParticipant: session.removeConferenceParticipant,
+                        loadMoreParticipants: session.loadMoreConferenceParticipants,
                         requestVideoView: session.requestConferenceVideoView,
                     )
                     .frame(maxHeight: .infinity)
@@ -219,6 +220,15 @@ struct CallView: View {
                     )
                     .frame(maxWidth: .infinity)
 
+                    if session.showsConferenceCallUI, session.areConferenceMessagesAvailable {
+                        CallControlButton(
+                            systemImage: "message.fill",
+                            label: "Message",
+                            action: showConferenceMessages,
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+
                     CallControlButton(
                         systemImage: "phone.down.fill",
                         label: "End",
@@ -248,6 +258,49 @@ struct CallView: View {
             }
             .safeAreaPadding()
             .padding(.horizontal)
+            .accessibilityHidden(showsConferenceMessages)
+
+            if session.showsConferenceCallUI,
+               !showsConferenceMessages,
+               !session.conferenceMessages.isEmpty
+            {
+                VStack {
+                    Spacer()
+
+                    ConferenceMessageFeedView(messages: session.conferenceMessages)
+                        .frame(maxWidth: 440, maxHeight: 180)
+
+                    Color.clear
+                        .frame(height: 116)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal)
+                .allowsHitTesting(false)
+            }
+
+            if session.showsConferenceCallUI, showsConferenceMessages {
+                Button(action: hideConferenceMessages) {
+                    Color.black
+                        .opacity(0.4)
+                        .ignoresSafeArea()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close messages")
+
+                ConferenceMessagesView(
+                    messages: session.conferenceMessages,
+                    canSend: session.canSendConferenceMessages,
+                    characterLimit: session.conferenceMessageCharacterLimit,
+                    send: { message in
+                        await session.sendConferenceMessage(message)
+                    },
+                    dismiss: hideConferenceMessages,
+                )
+                .frame(maxWidth: 440, maxHeight: .infinity)
+                .padding(.horizontal)
+                .padding(.top, 64)
+                .padding(.bottom, 24)
+            }
 
             if !session.showsConferenceCallUI, let secondaryVideoView {
                 Button(action: swapPrimaryVideo) {
@@ -274,6 +327,11 @@ struct CallView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Allow camera access in Settings to use video during calls.")
+        }
+        .alert("Couldn't Invite Participant", isPresented: $session.showsConferenceInvitationError) {
+            Button("OK") {}
+        } message: {
+            Text(session.conferenceInvitationErrorMessage)
         }
         .sheet(isPresented: cameraPreviewPresentation) {
             CallCameraPreviewView()
@@ -302,6 +360,11 @@ struct CallView: View {
                 isLocalVideoPrimary = false
             }
         }
+        .onChange(of: session.showsConferenceCallUI) { _, isVisible in
+            if !isVisible {
+                showsConferenceMessages = false
+            }
+        }
     }
 
     // MARK: Private
@@ -311,6 +374,7 @@ struct CallView: View {
     @State private var isLocalVideoPrimary = false
     @State private var showsConferenceEndConfirmation = false
     @State private var showsConferenceLeaveConfirmation = false
+    @State private var showsConferenceMessages = false
     @State private var showsConferenceParticipantPicker = false
     @State private var user: User?
     @State private var session = TelegramCallSession.shared
@@ -395,6 +459,14 @@ struct CallView: View {
 
     private func showConferenceParticipantPicker() {
         showsConferenceParticipantPicker = true
+    }
+
+    private func showConferenceMessages() {
+        showsConferenceMessages = true
+    }
+
+    private func hideConferenceMessages() {
+        showsConferenceMessages = false
     }
 
     private func endCall() {

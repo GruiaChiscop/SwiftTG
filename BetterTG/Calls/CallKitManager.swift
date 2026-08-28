@@ -11,8 +11,9 @@ import TDLibKit
 
 /// Reports call lifecycle events to the system (lock-screen call UI, Control Center, CarPlay,
 /// Watch) via `CXProvider`, and relays the resulting actions (answer/end/mute, or a call started
-/// from CallKit's own UI) into `TelegramCallSession`. Apple requires every VoIP call - incoming or
-/// outgoing - to go through this, not just calls that arrive via a VoIP push.
+/// from CallKit's own UI) into `TelegramCallSession`. SwiftTG currently enables this integration
+/// unconditionally; matching Telegram-iOS's optional system-integration setting requires a second,
+/// fully in-app audio-session and incoming-call path rather than merely bypassing `CXProvider`.
 @MainActor final class CallKitManager: NSObject {
     // MARK: Lifecycle
 
@@ -46,6 +47,9 @@ import TDLibKit
     func start() {
         let session = TelegramCallSession.shared
         session.onIncomingCall = { [weak self] call in self?.reportIncoming(call) }
+        session.onIncomingConferenceInvitation = { [weak self] invitation in
+            self?.reportIncomingConferenceInvitation(invitation)
+        }
         session.onCallConnected = { [weak self] in self?.reportConnected() }
         session.onCallEnded = { [weak self] reason in self?.reportEnded(reason: reason) }
     }
@@ -58,6 +62,7 @@ import TDLibKit
         userId: Int64,
         displayName: String,
         isVideo: Bool = false,
+        onMicrophonePermissionDenied: @escaping () -> Void = {},
         onCameraPermissionDenied: @escaping () -> Void = {},
     ) {
         guard currentCallUUID == nil, !isRequestingOutgoingCall else {
@@ -71,6 +76,7 @@ import TDLibKit
             guard granted else {
                 isRequestingOutgoingCall = false
                 log("[CallKit] microphone permission denied; outgoing call not started")
+                onMicrophonePermissionDenied()
                 return
             }
             if isVideo {
@@ -92,6 +98,7 @@ import TDLibKit
             let uuid = UUID()
             currentCallUUID = uuid
             currentUserId = userId
+            isCurrentCallPlaceholder = false
             isCurrentCallOutgoing = true
             isRequestingOutgoingCall = false
 
@@ -231,6 +238,7 @@ import TDLibKit
         TelegramCallSession.prepareAudioSession()
         currentCallUUID = uuid
         currentTelegramCallUniqueId = callUniqueId
+        isCurrentCallPlaceholder = true
         isCurrentCallOutgoing = false
         log("[CallKit] reportIncomingPlaceholder uuid=\(uuid)")
         provider.reportNewIncomingCall(
@@ -254,9 +262,9 @@ import TDLibKit
     /// produced a matching call (e.g. the caller hung up before the push finished processing) -
     /// without this, that placeholder would ring forever.
     func endPlaceholderIfStillPending() {
-        guard let uuid = currentCallUUID, currentUserId == nil else {
+        guard let uuid = currentCallUUID, isCurrentCallPlaceholder else {
             log(
-                "[CallKit] endPlaceholderIfStillPending no-op, currentCallUUID=\(currentCallUUID?.uuidString ?? "nil") currentUserId=\(currentUserId.map(String.init) ?? "nil")",
+                "[CallKit] endPlaceholderIfStillPending no-op, currentCallUUID=\(currentCallUUID?.uuidString ?? "nil") isPlaceholder=\(isCurrentCallPlaceholder)",
             )
             return
         }
@@ -277,6 +285,7 @@ import TDLibKit
     private var currentUserId: Int64?
     private var currentTelegramCallUniqueId: Int64?
     private var recentlyEndedCallUniqueIds = [Int64: Foundation.Date]()
+    private var isCurrentCallPlaceholder = false
     private var isCurrentCallOutgoing = false
     private var isEndingLocally = false
     private var isRequestingEndCall = false
@@ -426,6 +435,7 @@ import TDLibKit
         }
         currentUserId = call.userId
         currentTelegramCallUniqueId = call.uniqueId.rawValue
+        isCurrentCallPlaceholder = false
         isCurrentCallOutgoing = false
         let handle = Self.telegramCallHandle(userId: call.userId)
         provider.reportCall(
@@ -441,6 +451,61 @@ import TDLibKit
             provider.reportCall(
                 with: uuid,
                 updated: Self.update(handle: handle, displayName: name, hasVideo: call.isVideo),
+            )
+        }
+    }
+
+    private func reportIncomingConferenceInvitation(
+        _ invitation: TelegramCallSession.IncomingConferenceInvitation,
+    ) {
+        let uuid: UUID
+        if let existing = currentCallUUID {
+            uuid = existing
+            log("[CallKit] reconciling conference invitation with placeholder uuid=\(uuid)")
+        } else {
+            uuid = UUID()
+            TelegramCallSession.prepareAudioSession()
+            currentCallUUID = uuid
+            provider.reportNewIncomingCall(
+                with: uuid,
+                update: Self.update(
+                    handle: invitation.inviterUserId.map(Self.telegramCallHandle)
+                        ?? Self.callKitHandle(displayName: invitation.displayTitle),
+                    displayName: invitation.displayTitle ?? "Group Call",
+                    hasVideo: invitation.isVideo,
+                ),
+            ) { [weak self] error in
+                guard let error else { return }
+                Task { @MainActor [weak self] in
+                    log("[CallKit] failed to report incoming conference invitation: \(error)")
+                    self?.clearCurrentCall(ifMatching: uuid)
+                }
+            }
+        }
+
+        currentUserId = invitation.inviterUserId
+        currentTelegramCallUniqueId = invitation.uniqueId
+        isCurrentCallPlaceholder = false
+        isCurrentCallOutgoing = false
+        let handle = invitation.inviterUserId.map(Self.telegramCallHandle)
+            ?? Self.callKitHandle(displayName: invitation.displayTitle)
+        provider.reportCall(
+            with: uuid,
+            updated: Self.update(
+                handle: handle,
+                displayName: invitation.displayTitle ?? "Group Call",
+                hasVideo: invitation.isVideo,
+            ),
+        )
+
+        guard invitation.displayTitle == nil, let inviterUserId = invitation.inviterUserId else { return }
+        Task { [weak self] in
+            guard let self, let user = try? await TDLib.shared.service.getUser(userId: inviterUserId) else { return }
+            let name = [user.firstName, user.lastName].filter { !$0.isEmpty }.joined(separator: " ")
+            guard !name.isEmpty, currentCallUUID == uuid else { return }
+            provider.reportCall(
+                with: uuid,
+                updated: Self.update(handle: handle, displayName: name, hasVideo: invitation.isVideo),
             )
         }
     }
@@ -484,6 +549,7 @@ import TDLibKit
         currentCallUUID = nil
         currentUserId = nil
         currentTelegramCallUniqueId = nil
+        isCurrentCallPlaceholder = false
         isCurrentCallOutgoing = false
         isEndingLocally = false
         isRequestingEndCall = false
@@ -573,6 +639,7 @@ extension CallKitManager: @MainActor CXProviderDelegate {
             TelegramCallSession.prepareAudioSession()
             currentCallUUID = action.callUUID
             currentUserId = resumedUserId
+            isCurrentCallPlaceholder = false
             isCurrentCallOutgoing = true
             userId = resumedUserId
             log("[CallKit] resolved system start action to Telegram userId=\(resumedUserId)")

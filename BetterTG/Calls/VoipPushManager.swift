@@ -260,6 +260,16 @@ extension VoipPushManager: @MainActor PKPushRegistryDelegate {
         let didReportPlaceholder = CallKitManager.shared.reportIncomingPlaceholder(
             callUniqueId: Self.callUniqueId(from: userInfo),
         )
+        if let invitation = Self.conferenceInvitation(from: userInfo) {
+            TelegramCallSession.shared.receiveConferenceInvitationPayload(
+                chatId: invitation.inviterUserId,
+                messageId: invitation.messageId,
+                uniqueId: invitation.groupCallId,
+                inviterUserId: invitation.inviterUserId,
+                displayTitle: invitation.displayTitle,
+                isVideo: invitation.isVideo,
+            )
+        }
         // PushKit only requires that CallKit has been reported synchronously. Network/TDLib work
         // must not hold the system completion handler for several seconds.
         completion()
@@ -295,13 +305,40 @@ extension VoipPushManager: @MainActor PKPushRegistryDelegate {
     }
 
     private static func callUniqueId(from userInfo: [AnyHashable: Any]) -> Int64? {
-        if let value = userInfo["call_id"] as? String {
+        int64Value(userInfo["call_id"]) ?? int64Value(userInfo["group_call_id"])
+    }
+
+    private static func conferenceInvitation(
+        from userInfo: [AnyHashable: Any],
+    ) -> ConferenceInvitationPayload? {
+        guard let inviterUserId = int64Value(userInfo["from_id"]),
+              let groupCallId = int64Value(userInfo["group_call_id"]),
+              let messageId = int64Value(userInfo["msg_id"])
+        else { return nil }
+        return ConferenceInvitationPayload(
+            inviterUserId: inviterUserId,
+            groupCallId: groupCallId,
+            messageId: messageId,
+            displayTitle: userInfo["from_title"] as? String,
+            isVideo: boolValue(userInfo["video"]),
+        )
+    }
+
+    private static func int64Value(_ value: Any?) -> Int64? {
+        if let value = value as? String {
             return Int64(value)
         }
-        if let value = userInfo["call_id"] as? NSNumber {
-            return value.int64Value
+        return (value as? NSNumber)?.int64Value
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool {
+        if let value = value as? Bool {
+            return value
         }
-        return nil
+        if let value = value as? String {
+            return value == "1" || value.caseInsensitiveCompare("true") == .orderedSame
+        }
+        return (value as? NSNumber)?.boolValue ?? false
     }
 
     private static func jsonPayload(from userInfo: [AnyHashable: Any]) throws -> String {
@@ -318,6 +355,16 @@ extension VoipPushManager: @MainActor PKPushRegistryDelegate {
         }
         return json
     }
+}
+
+// MARK: - ConferenceInvitationPayload
+
+private struct ConferenceInvitationPayload {
+    let inviterUserId: Int64
+    let groupCallId: Int64
+    let messageId: Int64
+    let displayTitle: String?
+    let isVideo: Bool
 }
 
 // MARK: - VoipPushError

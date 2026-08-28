@@ -55,7 +55,11 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         let encryption: Encryption
         let isActiveByDefault: Bool
         let isMuted: Bool
+        let outgoingAudioBitrateKbit: Int32?
         let prioritizeVP8: Bool
+        let useReferenceImpl: Bool
+        let logPath: String
+        let statsLogPath: String
     }
 
     func prepareJoin(
@@ -133,14 +137,14 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                     completion(nil)
                     return GroupCallBroadcastPartTask()
                 },
-                outgoingAudioBitrateKbit: 32,
+                outgoingAudioBitrateKbit: configuration.outgoingAudioBitrateKbit ?? 32,
                 videoContentType: .none,
                 enableNoiseSuppression: false,
                 disableAudioInput: false,
                 enableSystemMute: false,
                 prioritizeVP8: configuration.prioritizeVP8,
-                logPath: "",
-                statsLogPath: "",
+                logPath: configuration.logPath,
+                statsLogPath: configuration.statsLogPath,
                 onMutedSpeechActivityDetected: nil,
                 audioDevice: audioDevice,
                 isConference: true,
@@ -152,7 +156,7 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                         configuration.encryption.decrypt(data, userId)
                     }
                 },
-                useReferenceImpl: false,
+                useReferenceImpl: configuration.useReferenceImpl,
             )
             context.signalBarsChanged = { [weak self] value in
                 guard let self, self.generation == generation else { return }
@@ -179,6 +183,19 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                 isUnifiedBroadcast: false,
             )
             context.setJoinResponsePayload(payload)
+        }
+    }
+
+    func emitJoinPayload(
+        completion: @escaping @Sendable (_ payload: String, _ audioSourceId: Int) -> Void,
+    ) {
+        queue.async { [weak self] in
+            guard let self, let context else { return }
+            let requestGeneration = generation
+            context.emitJoinPayload { [weak self] payload, sourceId in
+                guard let self, generation == requestGeneration else { return }
+                completion(payload, Int(sourceId))
+            }
         }
     }
 

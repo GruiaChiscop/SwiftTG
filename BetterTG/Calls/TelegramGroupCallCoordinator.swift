@@ -45,6 +45,7 @@ import UIKit
     private(set) var state = State.idle
     private(set) var groupCall: GroupCall?
     private(set) var participants = [MessageSender: GroupCallParticipant]()
+    private(set) var messages = [Int: GroupCallMessage]()
     private(set) var verificationEmojis = [String]()
     private(set) var signalBars: Int?
     private(set) var speakingAudioSourceIds = Set<UInt32>()
@@ -52,6 +53,7 @@ import UIKit
     private(set) var isScreenSharing = false
     private(set) var canUnmuteSelf = true
     private(set) var incomingVideoQuality = ConferenceIncomingVideoQuality.p720
+    private(set) var messageCharacterLimit = 128
 
     var onPrepared: ((PreparedCall) -> Void)?
     var onConnected: (() -> Void)?
@@ -86,9 +88,28 @@ import UIKit
         prioritizeVP8: Bool,
     ) {
         begin(
-            mode: .join(inviteLink: inviteLink),
+            mode: .join(.inputGroupCallLink(.init(link: inviteLink))),
             isMuted: isMuted,
             privateCallEngine: privateCallEngine,
+            audioSessionActive: audioSessionActive,
+            prioritizeVP8: prioritizeVP8,
+        )
+    }
+
+    func join(
+        invitationChatId: Int64,
+        invitationMessageId: Int64,
+        isMuted: Bool,
+        audioSessionActive: Bool,
+        prioritizeVP8: Bool,
+    ) {
+        begin(
+            mode: .join(.inputGroupCallMessage(.init(
+                chatId: invitationChatId,
+                messageId: invitationMessageId,
+            ))),
+            isMuted: isMuted,
+            privateCallEngine: nil,
             audioSessionActive: audioSessionActive,
             prioritizeVP8: prioritizeVP8,
         )
@@ -103,6 +124,35 @@ import UIKit
             isVideo: isVideo,
             userId: userId,
         )
+    }
+
+    func cancelInvitation(chatId: Int64, messageId: Int64) async throws {
+        _ = try await service.declineGroupCallInvitation(chatId: chatId, messageId: messageId)
+    }
+
+    func loadMoreParticipants() {
+        guard !isLoadingMoreParticipants,
+              let groupCall,
+              !groupCall.loadedAllParticipants
+        else { return }
+        isLoadingMoreParticipants = true
+        let generation = operationGeneration
+        let groupCallId = groupCall.id
+        participantLoadingTask?.cancel()
+        participantLoadingTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await service.loadGroupCallParticipants(groupCallId: groupCallId, limit: 100)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation, self.groupCall?.id == groupCallId else { return }
+                log("[GroupCall] couldn't load more participants: \(error)")
+            }
+            guard operationGeneration == generation, self.groupCall?.id == groupCallId else { return }
+            isLoadingMoreParticipants = false
+            participantLoadingTask = nil
+        }
     }
 
     func setParticipantMuted(
@@ -140,6 +190,33 @@ import UIKit
         _ = try await service.banGroupCallParticipants(
             groupCallId: groupCall.id,
             userIds: [TdInt64(userId)],
+        )
+    }
+
+    func sendMessage(_ text: String) async throws {
+        guard let groupCall,
+              groupCall.areMessagesAllowed,
+              groupCall.canSendMessages
+        else {
+            throw CoordinatorError.notReady
+        }
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        guard trimmedText.count <= messageCharacterLimit else {
+            throw CoordinatorError.messageTooLong
+        }
+        let generation = operationGeneration
+        let groupCallId = groupCall.id
+        let entities = try await service.getTextEntities(text: trimmedText).entities
+        guard operationGeneration == generation,
+              self.groupCall?.id == groupCallId
+        else {
+            throw CancellationError()
+        }
+        _ = try await service.sendGroupCallMessage(
+            groupCallId: groupCallId,
+            paidMessageStarCount: nil,
+            text: FormattedText(entities: entities, text: trimmedText),
         )
     }
 
@@ -329,11 +406,18 @@ import UIKit
 
     private enum Mode: Sendable {
         case create
-        case join(inviteLink: String)
+        case join(InputGroupCall)
     }
 
     private enum CoordinatorError: Swift.Error {
         case notReady
+        case messageTooLong
+    }
+
+    private struct EnginePreferences {
+        var outgoingAudioBitrateKbit: Int32?
+        var prioritizeVP8 = false
+        var useReferenceImpl = false
     }
 
     private let service: any TelegramService
@@ -342,7 +426,15 @@ import UIKit
     private var encryptionBridge: TelegramGroupCallEncryptionBridge?
     private var cancellables = Set<AnyCancellable>()
     private var operationTask: Task<Void, Never>?
+    private var enginePreparationTask: Task<Void, Never>?
     private var operationGeneration = UUID()
+    private var currentInputGroupCall: InputGroupCall?
+    private var rejoinTask: Task<Void, Never>?
+    private var rejoinRetryTask: Task<Void, Never>?
+    private var rejoinGeneration = UUID()
+    private var isRequestingRejoinPayload = false
+    private var participantLoadingTask: Task<Void, Never>?
+    private var isLoadingMoreParticipants = false
     private var videoRejoinTask: Task<Void, Never>?
     private var videoRejoinGeneration = UUID()
     private var screenSharingTask: Task<Void, Never>?
@@ -354,6 +446,28 @@ import UIKit
     private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
     private var speakingLastActiveAt = [UInt32: TimeInterval]()
+    private var messageConfigurationTask: Task<Void, Never>?
+    private var messageExpirationTask: Task<Void, Never>?
+    private var messageLifetime = 10
+
+    private static func enginePreferences(from configuration: JsonValue) -> EnginePreferences {
+        guard case .jsonValueObject(let object) = configuration else { return EnginePreferences() }
+        var preferences = EnginePreferences()
+        for member in object.members {
+            guard case .jsonValueNumber(let number) = member.value else { continue }
+            switch member.key {
+            case "voice_chat_send_bitrate":
+                preferences.outgoingAudioBitrateKbit = Int32(clamping: Int(number.value))
+            case "ios_calls_prioritize_vp8":
+                preferences.prioritizeVP8 = number.value != 0
+            case "ios_calls_group_reference_impl":
+                preferences.useReferenceImpl = number.value != 0
+            default:
+                break
+            }
+        }
+        return preferences
+    }
 
     private func begin(
         mode: Mode,
@@ -368,12 +482,60 @@ import UIKit
         encryptionBridge = bridge
         state = .preparing
         self.isMuted = isMuted
+        messageLifetime = 10
+        messageCharacterLimit = 128
+        configureMessages(generation: generation)
+
+        enginePreparationTask = Task { [weak self, weak privateCallEngine] in
+            guard let self else { return }
+            var preferences = EnginePreferences()
+            do {
+                let configuration = try await service.getApplicationConfig()
+                guard operationGeneration == generation else { return }
+                preferences = Self.enginePreferences(from: configuration)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation else { return }
+                log("[GroupCall] couldn't load engine app configuration: \(error)")
+            }
+            guard operationGeneration == generation, case .preparing = state else { return }
+            prepareEngine(
+                mode: mode,
+                isMuted: isMuted,
+                privateCallEngine: privateCallEngine,
+                audioSessionActive: audioSessionActive,
+                fallbackPrioritizeVP8: prioritizeVP8,
+                preferences: preferences,
+                generation: generation,
+                bridge: bridge,
+            )
+            enginePreparationTask = nil
+        }
+    }
+
+    private func prepareEngine(
+        mode: Mode,
+        isMuted: Bool,
+        privateCallEngine: TelegramCallEngine?,
+        audioSessionActive: Bool,
+        fallbackPrioritizeVP8: Bool,
+        preferences: EnginePreferences,
+        generation: UUID,
+        bridge: TelegramGroupCallEncryptionBridge,
+    ) {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+        let logIdentifier = UUID().uuidString
 
         let configuration = TelegramGroupCallEngine.Configuration(
             encryption: bridge.makeEncryption(),
             isActiveByDefault: privateCallEngine == nil,
             isMuted: isMuted,
-            prioritizeVP8: prioritizeVP8,
+            outgoingAudioBitrateKbit: preferences.outgoingAudioBitrateKbit,
+            prioritizeVP8: preferences.prioritizeVP8 || fallbackPrioritizeVP8,
+            useReferenceImpl: preferences.useReferenceImpl,
+            logPath: temporaryDirectory.appending(path: "SwiftTG-GroupCall-\(logIdentifier).log").path,
+            statsLogPath: temporaryDirectory.appending(path: "SwiftTG-GroupCall-\(logIdentifier)-Stats.json").path,
         )
         let joinPayloadReady: @Sendable (String, Int) -> Void = { [weak self] payload, audioSourceId in
             Task { @MainActor [weak self] in
@@ -455,9 +617,9 @@ import UIKit
                     switch mode {
                     case .create:
                         try await service.createGroupCall(joinParameters: parameters)
-                    case .join(let inviteLink):
+                    case .join(let inputGroupCall):
                         try await service.joinGroupCall(
-                            inputGroupCall: .inputGroupCallLink(.init(link: inviteLink)),
+                            inputGroupCall: inputGroupCall,
                             joinParameters: parameters,
                         )
                     }
@@ -485,9 +647,16 @@ import UIKit
                 }
 
                 groupCall = call
+                currentInputGroupCall =
+                    switch mode {
+                    case .create:
+                        .inputGroupCallLink(.init(link: call.inviteLink))
+                    case .join(let inputGroupCall):
+                        inputGroupCall
+                    }
                 state = .connecting(groupCallId: call.id, inviteLink: call.inviteLink)
                 engine.applyJoinResponse(info.joinPayload)
-                _ = try? await service.loadGroupCallParticipants(groupCallId: call.id, limit: 100)
+                loadMoreParticipants()
                 guard operationGeneration == generation else { return }
                 onPrepared?(PreparedCall(groupCallId: call.id, inviteLink: call.inviteLink))
             } catch {
@@ -508,6 +677,110 @@ import UIKit
             }
         } else {
             state = .connecting(groupCallId: groupCall.id, inviteLink: groupCall.inviteLink)
+        }
+    }
+
+    private func requestRejoin() {
+        guard rejoinTask == nil,
+              !isRequestingRejoinPayload,
+              let groupCall,
+              let inputGroupCall = currentInputGroupCall
+        else { return }
+
+        let generation = operationGeneration
+        let groupCallId = groupCall.id
+        let requestGeneration = UUID()
+        rejoinGeneration = requestGeneration
+        isRequestingRejoinPayload = true
+        state = .connecting(groupCallId: groupCall.id, inviteLink: groupCall.inviteLink)
+        log("[GroupCall] rejoin requested for groupCallId=\(groupCallId)")
+        engine.emitJoinPayload { [weak self] payload, audioSourceId in
+            Task { @MainActor [weak self] in
+                self?.submitRejoin(
+                    inputGroupCall: inputGroupCall,
+                    payload: payload,
+                    audioSourceId: audioSourceId,
+                    groupCallId: groupCallId,
+                    generation: generation,
+                    requestGeneration: requestGeneration,
+                )
+            }
+        }
+    }
+
+    private func submitRejoin(
+        inputGroupCall: InputGroupCall,
+        payload: String,
+        audioSourceId: Int,
+        groupCallId: Int,
+        generation: UUID,
+        requestGeneration: UUID,
+    ) {
+        guard operationGeneration == generation,
+              rejoinGeneration == requestGeneration,
+              rejoinTask == nil,
+              groupCall?.id == groupCallId
+        else { return }
+        isRequestingRejoinPayload = false
+
+        rejoinTask = Task { [weak self] in
+            guard let self else { return }
+            let parameters = GroupCallJoinParameters(
+                audioSourceId: audioSourceId,
+                isMuted: isMuted,
+                isMyVideoEnabled: isLocalVideoEnabled,
+                payload: payload,
+            )
+            do {
+                let info = try await service.joinGroupCall(
+                    inputGroupCall: inputGroupCall,
+                    joinParameters: parameters,
+                )
+                guard operationGeneration == generation,
+                      rejoinGeneration == requestGeneration,
+                      groupCall?.id == groupCallId
+                else { return }
+                engine.applyJoinResponse(info.joinPayload)
+                let refreshedCall = try await service.getGroupCall(groupCallId: groupCallId)
+                guard operationGeneration == generation,
+                      rejoinGeneration == requestGeneration,
+                      groupCall?.id == groupCallId
+                else { return }
+                groupCall = refreshedCall
+                log("[GroupCall] rejoined groupCallId=\(groupCallId)")
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation,
+                      rejoinGeneration == requestGeneration
+                else { return }
+                log("[GroupCall] rejoin failed for groupCallId=\(groupCallId): \(error)")
+                rejoinTask = nil
+                scheduleRejoinRetry(generation: generation, groupCallId: groupCallId)
+                return
+            }
+            guard operationGeneration == generation,
+                  rejoinGeneration == requestGeneration
+            else { return }
+            rejoinTask = nil
+        }
+    }
+
+    private func scheduleRejoinRetry(generation: UUID, groupCallId: Int) {
+        rejoinRetryTask?.cancel()
+        rejoinRetryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(2))
+            } catch {
+                return
+            }
+            guard let self,
+                  operationGeneration == generation,
+                  groupCall?.id == groupCallId,
+                  groupCall?.needRejoin == true
+            else { return }
+            rejoinRetryTask = nil
+            requestRejoin()
         }
     }
 
@@ -615,6 +888,8 @@ import UIKit
             groupCall = value.groupCall
             if !value.groupCall.isActive {
                 reset(to: .ended)
+            } else if value.groupCall.needRejoin {
+                requestRejoin()
             }
         case .updateGroupCallParticipant(let value):
             guard value.groupCallId == groupCall?.id else { return }
@@ -633,6 +908,19 @@ import UIKit
         case .updateGroupCallVerificationState(let value):
             guard value.groupCallId == groupCall?.id else { return }
             verificationEmojis = value.emojis
+        case .updateNewGroupCallMessage(let value):
+            guard value.groupCallId == groupCall?.id else { return }
+            messages[value.message.messageId] = value.message
+            expireMessagesAndScheduleNext()
+        case .updateGroupCallMessageSendFailed(let value):
+            guard value.groupCallId == groupCall?.id else { return }
+            log("[GroupCall] messageId=\(value.messageId) failed to send: \(value.error)")
+        case .updateGroupCallMessagesDeleted(let value):
+            guard value.groupCallId == groupCall?.id else { return }
+            for messageId in value.messageIds {
+                messages.removeValue(forKey: messageId)
+            }
+            expireMessagesAndScheduleNext()
         default:
             break
         }
@@ -784,9 +1072,86 @@ import UIKit
         }
     }
 
+    private func configureMessages(generation: UUID) {
+        messageConfigurationTask?.cancel()
+        messageConfigurationTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                async let configuration = service.getApplicationConfig()
+                async let messageLength = service.getOption(name: "group_call_message_text_length_max")
+                let (loadedConfiguration, loadedMessageLength) = try await (configuration, messageLength)
+                guard operationGeneration == generation else { return }
+                applyMessageConfiguration(loadedConfiguration)
+                if case .optionValueInteger(let value) = loadedMessageLength {
+                    messageCharacterLimit = max(1, Int(value.value.rawValue))
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation else { return }
+                log("[GroupCall] couldn't load message configuration: \(error)")
+            }
+            guard operationGeneration == generation else { return }
+            expireMessagesAndScheduleNext()
+            messageConfigurationTask = nil
+        }
+    }
+
+    private func applyMessageConfiguration(_ configuration: JsonValue) {
+        guard case .jsonValueObject(let object) = configuration else { return }
+        for member in object.members {
+            guard case .jsonValueNumber(let number) = member.value else { continue }
+            switch member.key {
+            case "group_call_message_ttl":
+                messageLifetime = max(0, Int(number.value))
+            default:
+                break
+            }
+        }
+    }
+
+    private func expireMessagesAndScheduleNext() {
+        messageExpirationTask?.cancel()
+        messageExpirationTask = nil
+        let currentTimestamp = Int(Foundation.Date().timeIntervalSince1970)
+        let expiredMessageIds = messages.values.compactMap { message -> Int? in
+            message.date + messageLifetime < currentTimestamp ? message.messageId : nil
+        }
+        for messageId in expiredMessageIds {
+            messages.removeValue(forKey: messageId)
+        }
+        guard let nextExpirationTimestamp = messages.values
+            .map({ $0.date + messageLifetime })
+            .min()
+        else { return }
+
+        let generation = operationGeneration
+        let delaySeconds = max(1, nextExpirationTimestamp - currentTimestamp + 1)
+        messageExpirationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delaySeconds))
+            } catch {
+                return
+            }
+            guard let self, operationGeneration == generation else { return }
+            expireMessagesAndScheduleNext()
+        }
+    }
+
     @discardableResult private func beginNewOperation() -> UUID {
         operationTask?.cancel()
         operationTask = nil
+        enginePreparationTask?.cancel()
+        enginePreparationTask = nil
+        rejoinTask?.cancel()
+        rejoinTask = nil
+        rejoinRetryTask?.cancel()
+        rejoinRetryTask = nil
+        rejoinGeneration = UUID()
+        isRequestingRejoinPayload = false
+        participantLoadingTask?.cancel()
+        participantLoadingTask = nil
+        isLoadingMoreParticipants = false
         videoRejoinTask?.cancel()
         videoRejoinTask = nil
         videoRejoinGeneration = UUID()
@@ -798,6 +1163,10 @@ import UIKit
         muteUpdateTask = nil
         muteUpdateGeneration = UUID()
         pendingMutedValue = nil
+        messageConfigurationTask?.cancel()
+        messageConfigurationTask = nil
+        messageExpirationTask?.cancel()
+        messageExpirationTask = nil
         operationGeneration = UUID()
         return operationGeneration
     }
@@ -809,8 +1178,12 @@ import UIKit
         speakingLastActiveAt.removeAll(keepingCapacity: false)
         speakingAudioSourceIds.removeAll(keepingCapacity: false)
         encryptionBridge = nil
+        currentInputGroupCall = nil
         groupCall = nil
         participants.removeAll(keepingCapacity: false)
+        messages.removeAll(keepingCapacity: false)
+        messageLifetime = 10
+        messageCharacterLimit = 128
         verificationEmojis = []
         signalBars = nil
         didReportConnected = false

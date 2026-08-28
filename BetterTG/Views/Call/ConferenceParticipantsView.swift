@@ -23,6 +23,7 @@ struct ConferenceParticipantsView: View {
     let inviteParticipant: () -> Void
     let setParticipantMuted: (ConferenceParticipantPresentation, ConferenceParticipantMuteAction) -> Void
     let removeParticipant: (ConferenceParticipantPresentation) -> Void
+    let loadMoreParticipants: () -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
     var body: some View {
@@ -60,6 +61,11 @@ struct ConferenceParticipantsView: View {
                                 removeParticipant(participant)
                             },
                         )
+                        .onAppear {
+                            if participant.id == participants.last?.id {
+                                loadMoreParticipants()
+                            }
+                        }
                         Divider()
                             .padding(.leading, 64)
                     }

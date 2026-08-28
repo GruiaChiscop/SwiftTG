@@ -15,6 +15,10 @@ import UIKit
 /// from Sendable fields and crosses the actor boundary into TelegramService's async RPC methods.
 extension CallProtocol: @retroactive @unchecked Sendable {}
 
+// MARK: - InputGroupCall + @retroactive @unchecked Sendable
+
+extension InputGroupCall: @retroactive @unchecked Sendable {}
+
 // MARK: - TelegramCallSession
 
 /// Bridges TDLib's call state/signaling to the vendored tgcalls engine. TelegramCallEngine owns the
@@ -33,6 +37,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         service.callSignalingDataPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] data in self?.handleSignaling(data) }
+            .store(in: &cancellables)
+        service.updatePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] update in self?.handleConferenceInvitationUpdate(update) }
             .store(in: &cancellables)
         CallKitManager.shared
             .audioSessionActivePublisher
@@ -115,9 +123,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         let kind: Kind
     }
 
+    struct IncomingConferenceInvitation: Equatable, Sendable {
+        let chatId: Int64
+        let messageId: Int64
+        let uniqueId: Int64
+        let inviterUserId: Int64?
+        let displayTitle: String?
+        let isVideo: Bool
+    }
+
     static let shared = TelegramCallSession(service: TDLib.shared.service)
 
     private(set) var activeCall: Call?
+    private(set) var incomingConferenceInvitation: IncomingConferenceInvitation?
 
     private(set) var engineState: TelegramCallEngine.State?
     private(set) var isMuted = false
@@ -144,9 +162,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private(set) var showsCameraPreview = false
     private(set) var isScreenSharing = false
     var showsCameraPermissionAlert = false
+    var showsConferenceInvitationError = false
+    private(set) var conferenceInvitationErrorMessage = "SwiftTG couldn't invite this participant."
     var pendingCallRating: CallRatingRequest?
 
     var onIncomingCall: ((Call) -> Void)?
+    var onIncomingConferenceInvitation: ((IncomingConferenceInvitation) -> Void)?
     var onCallConnected: (() -> Void)?
     var onCallEnded: ((EndReason) -> Void)?
 
@@ -191,6 +212,50 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
     var conferenceParticipantCount: Int {
         max(groupCallCoordinator?.groupCall?.participantCount ?? 0, conferenceParticipants.count)
+    }
+
+    var conferenceMessages: [ConferenceMessagePresentation] {
+        guard let groupCallCoordinator else { return [] }
+        return groupCallCoordinator.messages
+            .values
+            .sorted { lhs, rhs in
+                if lhs.date == rhs.date {
+                    return lhs.messageId < rhs.messageId
+                }
+                return lhs.date < rhs.date
+            }
+            .map { message in
+                let userId: Int64?
+                let chatId: Int64?
+                switch message.senderId {
+                case .messageSenderUser(let sender):
+                    userId = sender.userId
+                    chatId = nil
+                case .messageSenderChat(let sender):
+                    userId = nil
+                    chatId = sender.chatId
+                }
+                return ConferenceMessagePresentation(
+                    id: message.messageId,
+                    userId: userId,
+                    chatId: chatId,
+                    formattedText: message.text,
+                    date: Date(timeIntervalSince1970: TimeInterval(message.date)),
+                )
+            }
+    }
+
+    var conferenceMessageCharacterLimit: Int {
+        groupCallCoordinator?.messageCharacterLimit ?? 128
+    }
+
+    var areConferenceMessagesAvailable: Bool {
+        groupCallCoordinator?.groupCall?.areMessagesAllowed == true
+    }
+
+    var canSendConferenceMessages: Bool {
+        guard let groupCall = groupCallCoordinator?.groupCall else { return false }
+        return groupCall.areMessagesAllowed && groupCall.canSendMessages
     }
 
     var conferenceSpeakingParticipantIds: Set<MessageSender> {
@@ -267,7 +332,8 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 isMuted: false,
                 isHandRaised: false,
                 isInvited: true,
-                canRemove: groupCallCoordinator?.groupCall?.isOwned == true,
+                canRemove: groupCallCoordinator?.groupCall?.isOwned == true
+                    && conferenceInvitationMessages[userId] != nil,
             )
         }
         return joined + invited
@@ -467,6 +533,24 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         return true
     }
 
+    func receiveConferenceInvitationPayload(
+        chatId: Int64,
+        messageId: Int64,
+        uniqueId: Int64,
+        inviterUserId: Int64?,
+        displayTitle: String?,
+        isVideo: Bool,
+    ) {
+        registerIncomingConferenceInvitation(IncomingConferenceInvitation(
+            chatId: chatId,
+            messageId: messageId,
+            uniqueId: uniqueId,
+            inviterUserId: inviterUserId,
+            displayTitle: displayTitle,
+            isVideo: isVideo,
+        ))
+    }
+
     func answer() {
         answerActiveCall()
     }
@@ -474,6 +558,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     /// CallKit can deliver Answer before TDLib publishes the call after a cold VoIP wake. Keep the
     /// action and apply it to the first real call rather than fulfilling and losing it.
     func answerFromSystem() {
+        if incomingConferenceInvitation != nil {
+            answerIncomingConferenceInvitation()
+            return
+        }
         guard activeCall != nil else {
             pendingSystemAction = .answer
             log("[Call] deferring system Answer until TDLib publishes the call")
@@ -509,6 +597,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 return
             }
             resetConferencePreparation(groupCallCoordinator)
+        }
+        if let invitation = incomingConferenceInvitation {
+            declineIncomingConferenceInvitation(invitation, completion: completion)
+            return
         }
         guard activeCall != nil else {
             pendingSystemAction = .end
@@ -585,13 +677,17 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceInviteTask = Task { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
             do {
-                _ = try await coordinator.invite(userId: userId, isVideo: isVideo)
+                let result = try await coordinator.invite(userId: userId, isVideo: isVideo)
                 guard groupCallCoordinator === coordinator else { return }
-                log("[GroupCall] invited additional userId=\(userId) video=\(isVideo)")
+                handleConferenceInvitationResult(result, userId: userId, isVideo: isVideo)
+            } catch is CancellationError {
+                return
             } catch {
                 guard groupCallCoordinator === coordinator else { return }
                 conferenceInvitedUserIds.remove(userId)
+                conferenceInvitationMessages.removeValue(forKey: userId)
                 log("[GroupCall] couldn't invite additional userId=\(userId): \(error)")
+                presentConferenceInvitationError("SwiftTG couldn't invite this participant. Please try again.")
             }
             guard groupCallCoordinator === coordinator else { return }
             isInvitingConferenceParticipant = false
@@ -645,11 +741,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceParticipantActionTask = Task { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
             do {
-                try await coordinator.removeParticipant(userId: userId)
+                if participant.isInvited, let invitation = conferenceInvitationMessages[userId] {
+                    try await coordinator.cancelInvitation(
+                        chatId: invitation.chatId,
+                        messageId: invitation.messageId,
+                    )
+                } else {
+                    try await coordinator.removeParticipant(userId: userId)
+                }
                 guard groupCallCoordinator === coordinator,
                       conferenceParticipantActionGeneration == generation
                 else { return }
                 conferenceInvitedUserIds.remove(userId)
+                conferenceInvitationMessages.removeValue(forKey: userId)
             } catch is CancellationError {
                 return
             } catch {
@@ -674,8 +778,27 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         groupCallCoordinator.makeIncomingVideoView(endpointId: endpointId, completion: completion)
     }
 
+    func loadMoreConferenceParticipants() {
+        groupCallCoordinator?.loadMoreParticipants()
+    }
+
     func setConferenceIncomingVideoQuality(_ quality: ConferenceIncomingVideoQuality) {
         groupCallCoordinator?.setIncomingVideoQuality(quality)
+    }
+
+    func sendConferenceMessage(_ text: String) async -> Bool {
+        guard let coordinator = groupCallCoordinator else { return false }
+        do {
+            try await coordinator.sendMessage(text)
+            guard groupCallCoordinator === coordinator else { return false }
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            guard groupCallCoordinator === coordinator else { return false }
+            log("[GroupCall] couldn't send message: \(error)")
+            return false
+        }
     }
 
     func toggleSpeaker() {
@@ -866,6 +989,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         case end
     }
 
+    private struct ConferenceInvitationMessage: Sendable {
+        let chatId: Int64
+        let messageId: Int64
+    }
+
     private static let ringingTone = TelegramCallTone.load(resourceName: "voip_ringback", loopCount: 1_000_000)
     private static let connectingTone = TelegramCallTone.load(resourceName: "voip_connecting", loopCount: 1_000_000)
     private static let busyTone = TelegramCallTone.load(resourceName: "voip_busy", loopCount: 3)
@@ -923,9 +1051,11 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
     private var conferenceHasReplacedPrivateCall = false
     private var conferenceAudioWasMoved = false
     private var conferenceInvitedUserIds = Set<Int64>()
+    private var conferenceInvitationMessages = [Int64: ConferenceInvitationMessage]()
     private var pendingConferenceEndForEveryone = false
     private var standaloneConferenceJoinGeneration = UUID()
     private var isStandaloneConferenceAudioSessionActive = false
+    private var incomingConferenceUsesCallKit = false
 
     private var hasActiveCallSurface: Bool {
         activeCall != nil || groupCallCoordinator != nil
@@ -1158,6 +1288,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
     }
 
+    private static func isRingingConferenceInvitation(_ content: MessageGroupCall) -> Bool {
+        !content.isActive && !content.wasMissed && content.duration == 0
+    }
+
     private func requestEndCall(endConferenceForEveryone: Bool) {
         pendingConferenceEndForEveryone = endConferenceForEveryone
         CallKitManager.shared.requestEndCall { [weak self] in
@@ -1205,6 +1339,178 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
             return .muteForCurrentUser
         }
         return nil
+    }
+
+    private func handleConferenceInvitationResult(
+        _ result: InviteGroupCallParticipantResult,
+        userId: Int64,
+        isVideo: Bool,
+    ) {
+        switch result {
+        case .inviteGroupCallParticipantResultSuccess(let success):
+            conferenceInvitationMessages[userId] = ConferenceInvitationMessage(
+                chatId: success.chatId,
+                messageId: success.messageId,
+            )
+            log("[GroupCall] invited userId=\(userId) video=\(isVideo)")
+        case .inviteGroupCallParticipantResultUserAlreadyParticipant:
+            conferenceInvitedUserIds.remove(userId)
+            conferenceInvitationMessages.removeValue(forKey: userId)
+            log("[GroupCall] userId=\(userId) is already a participant")
+        case .inviteGroupCallParticipantResultUserPrivacyRestricted:
+            conferenceInvitedUserIds.remove(userId)
+            conferenceInvitationMessages.removeValue(forKey: userId)
+            log("[GroupCall] userId=\(userId) couldn't be invited because of privacy settings")
+            presentConferenceInvitationError("This user can't be invited because of their privacy settings.")
+        case .inviteGroupCallParticipantResultUserWasBanned:
+            conferenceInvitedUserIds.remove(userId)
+            conferenceInvitationMessages.removeValue(forKey: userId)
+            log("[GroupCall] userId=\(userId) couldn't be invited because they are banned")
+            presentConferenceInvitationError("This user can't be invited because they were removed from the call.")
+        }
+    }
+
+    private func presentConferenceInvitationError(_ message: String) {
+        conferenceInvitationErrorMessage = message
+        showsConferenceInvitationError = true
+    }
+
+    private func handleConferenceInvitationUpdate(_ update: Update) {
+        switch update {
+        case .updateNewMessage(let value):
+            let message = value.message
+            guard !message.isOutgoing,
+                  case .messageGroupCall(let content) = message.content
+            else { return }
+            if Self.isRingingConferenceInvitation(content) {
+                let inviterUserId: Int64? =
+                    if case .messageSenderUser(let sender) = message.senderId {
+                        sender.userId
+                    } else {
+                        nil
+                    }
+                registerIncomingConferenceInvitation(IncomingConferenceInvitation(
+                    chatId: message.chatId,
+                    messageId: message.id,
+                    uniqueId: content.uniqueId.rawValue,
+                    inviterUserId: inviterUserId,
+                    displayTitle: nil,
+                    isVideo: content.isVideo,
+                ))
+            }
+        case .updateMessageContent(let value):
+            guard let invitation = incomingConferenceInvitation,
+                  invitation.chatId == value.chatId,
+                  invitation.messageId == value.messageId
+            else { return }
+            guard case .messageGroupCall(let content) = value.newContent,
+                  Self.isRingingConferenceInvitation(content)
+            else {
+                finishIncomingConferenceInvitation(reason: .unanswered)
+                return
+            }
+        case .updateDeleteMessages(let value):
+            guard let invitation = incomingConferenceInvitation,
+                  invitation.chatId == value.chatId,
+                  value.messageIds.contains(invitation.messageId)
+            else { return }
+            finishIncomingConferenceInvitation(reason: .unanswered)
+        default:
+            break
+        }
+    }
+
+    private func registerIncomingConferenceInvitation(_ invitation: IncomingConferenceInvitation) {
+        guard activeCall == nil, groupCallCoordinator == nil else {
+            log("[GroupCall] ignoring incoming conference invitation while another call is active")
+            return
+        }
+        guard incomingConferenceInvitation != invitation else { return }
+        incomingConferenceInvitation = invitation
+        incomingConferenceUsesCallKit = true
+        Self.prepareAudioSession()
+        log(
+            "[GroupCall] incoming invitation chatId=\(invitation.chatId) messageId=\(invitation.messageId)",
+        )
+        onIncomingConferenceInvitation?(invitation)
+
+        if pendingSystemAction == .end {
+            pendingSystemAction = nil
+            declineIncomingConferenceInvitation(invitation)
+        } else if pendingSystemAction == .answer {
+            pendingSystemAction = nil
+            answerIncomingConferenceInvitation()
+        }
+    }
+
+    private func answerIncomingConferenceInvitation() {
+        guard let invitation = incomingConferenceInvitation,
+              activeCall == nil,
+              groupCallCoordinator == nil
+        else { return }
+
+        incomingConferenceInvitation = nil
+        isMuted = false
+        isCallViewMinimized = false
+        conferenceHasReplacedPrivateCall = true
+        conferenceAudioWasMoved = false
+
+        let coordinator = TelegramGroupCallCoordinator(service: service)
+        configureConferenceCallbacks(coordinator)
+        groupCallCoordinator = coordinator
+        log(
+            "[GroupCall] accepting invitation chatId=\(invitation.chatId) messageId=\(invitation.messageId)",
+        )
+        coordinator.join(
+            invitationChatId: invitation.chatId,
+            invitationMessageId: invitation.messageId,
+            isMuted: false,
+            audioSessionActive: isEffectiveAudioSessionActive,
+            prioritizeVP8: false,
+        )
+    }
+
+    private func declineIncomingConferenceInvitation(
+        _ invitation: IncomingConferenceInvitation,
+        completion: @escaping (Bool) -> Void = { _ in },
+    ) {
+        Task { [weak self] in
+            guard let self else {
+                completion(false)
+                return
+            }
+            do {
+                _ = try await service.declineGroupCallInvitation(
+                    chatId: invitation.chatId,
+                    messageId: invitation.messageId,
+                )
+            } catch is CancellationError {
+                completion(false)
+                return
+            } catch {
+                log("[GroupCall] couldn't decline incoming invitation: \(error)")
+            }
+            guard incomingConferenceInvitation == invitation else {
+                completion(true)
+                return
+            }
+            incomingConferenceInvitation = nil
+            incomingConferenceUsesCallKit = false
+            pendingSystemAction = nil
+            onCallEnded?(.unanswered)
+            completion(true)
+        }
+    }
+
+    private func finishIncomingConferenceInvitation(reason: EndReason) {
+        guard incomingConferenceInvitation != nil else { return }
+        incomingConferenceInvitation = nil
+        pendingSystemAction = nil
+        let notifyCallKit = incomingConferenceUsesCallKit
+        incomingConferenceUsesCallKit = false
+        if notifyCallKit {
+            onCallEnded?(reason)
+        }
     }
 
     private func handle(call: Call?) {
@@ -1365,6 +1671,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
         coordinator.onParticipantChanged = { [weak self, weak coordinator] previous, current in
             guard let self, let coordinator, groupCallCoordinator === coordinator else { return }
+            if let current, case .messageSenderUser(let sender) = current.participantId {
+                conferenceInvitedUserIds.remove(sender.userId)
+                conferenceInvitationMessages.removeValue(forKey: sender.userId)
+            }
             conferenceAccessibilityAnnouncer.participantChanged(
                 previous: previous,
                 current: current,
@@ -1414,17 +1724,28 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
                 conferenceHasReplacedPrivateCall = true
                 moveAudioToConferenceIfReady()
                 do {
-                    _ = try await coordinator.invite(userId: invitedUserId, isVideo: invitedWithVideo)
+                    let result = try await coordinator.invite(
+                        userId: invitedUserId,
+                        isVideo: invitedWithVideo,
+                    )
                     guard conferenceTransitionGeneration == generation,
                           groupCallCoordinator === coordinator
                     else { return }
-                    log("[GroupCall] invited userId=\(invitedUserId) video=\(invitedWithVideo)")
+                    handleConferenceInvitationResult(
+                        result,
+                        userId: invitedUserId,
+                        isVideo: invitedWithVideo,
+                    )
+                } catch is CancellationError {
+                    return
                 } catch {
                     guard conferenceTransitionGeneration == generation,
                           groupCallCoordinator === coordinator
                     else { return }
                     conferenceInvitedUserIds.remove(invitedUserId)
+                    conferenceInvitationMessages.removeValue(forKey: invitedUserId)
                     log("[GroupCall] couldn't invite userId=\(invitedUserId): \(error)")
+                    presentConferenceInvitationError("SwiftTG couldn't invite this participant. Please try again.")
                 }
             } catch {
                 guard conferenceTransitionGeneration == generation,
@@ -1452,7 +1773,19 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         }
         CallKitManager.shared.updateCurrentCallAsConference()
         conferenceAccessibilityAnnouncer.enableAfterInitialSnapshot()
-        finishPrivateEngineTransition()
+        let preservedLocalMedia: Bool
+        if isScreenSharing, let screenShareCapturer {
+            coordinator.startScreenSharing(screenShareCapturer)
+            preservedLocalMedia = true
+            log("[GroupCall] transferred local screen sharing from the private call")
+        } else if isLocalVideoEnabled, let videoCapturer {
+            coordinator.requestVideo(videoCapturer)
+            preservedLocalMedia = true
+            log("[GroupCall] transferred local camera from the private call")
+        } else {
+            preservedLocalMedia = false
+        }
+        finishPrivateEngineTransition(preservingLocalMedia: preservedLocalMedia)
     }
 
     private func handleConferenceStopped(
@@ -1489,18 +1822,21 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()
+        conferenceInvitationMessages.removeAll()
         pendingConferenceEndForEveryone = false
         deactivateStandaloneConferenceAudioSessionIfNeeded()
     }
 
-    private func finishPrivateEngineTransition() {
+    private func finishPrivateEngineTransition(preservingLocalMedia: Bool) {
         engineStartTask?.cancel()
         engineStartTask = nil
         engineStartCallId = nil
-        screenShareReceiver?.stop()
-        screenShareReceiver = nil
-        screenShareCapturer = nil
-        isScreenSharing = false
+        if !preservingLocalMedia {
+            screenShareReceiver?.stop()
+            screenShareReceiver = nil
+            screenShareCapturer = nil
+            isScreenSharing = false
+        }
         pictureInPictureController?.stop()
         pictureInPictureController = nil
         pictureInPictureSourceView = nil
@@ -1514,17 +1850,20 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         remoteVideoState = .inactive
         remoteBatteryLevel = .normal
         isRequestingVideo = false
-        isLocalVideoEnabled = false
-        localVideoView = nil
+        if !preservingLocalMedia {
+            isLocalVideoEnabled = false
+            localVideoView = nil
+            videoCapturer = nil
+            videoGeneration = UUID()
+            isUsingFrontCamera = true
+        }
         cameraPreviewView = nil
-        videoCapturer = nil
-        videoGeneration = UUID()
         remoteVideoView = nil
         isRequestingRemoteVideoView = false
         remoteVideoGeneration = UUID()
-        isUsingFrontCamera = true
         showsCameraPreview = false
         showsCameraPermissionAlert = false
+        updateVideoAudioRouting()
     }
 
     private func finishConference(
@@ -1532,6 +1871,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         endReason: EndReason,
     ) {
         guard groupCallCoordinator === coordinator else { return }
+        let notifyIncomingConferenceCallKit = incomingConferenceUsesCallKit
         clearConferenceCallbacks(coordinator)
         conferenceTransitionTask?.cancel()
         conferenceTransitionTask = nil
@@ -1548,9 +1888,14 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         conferenceHasReplacedPrivateCall = false
         conferenceAudioWasMoved = false
         conferenceInvitedUserIds.removeAll()
+        conferenceInvitationMessages.removeAll()
+        incomingConferenceUsesCallKit = false
         pendingConferenceEndForEveryone = false
         deactivateStandaloneConferenceAudioSessionIfNeeded()
         finishCurrentCall(notifyCallKit: true, endReason: endReason)
+        if notifyIncomingConferenceCallKit {
+            onCallEnded?(endReason)
+        }
     }
 
     private func clearConferenceCallbacks(_ coordinator: TelegramGroupCallCoordinator) {
@@ -1713,6 +2058,15 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         )
         engine.setAudioSessionActive(active)
         groupCallCoordinator?.setAudioSessionActive(active)
+        if active,
+           groupCallCoordinator == nil,
+           let call = activeCall,
+           case .callStateReady(let info) = call.state,
+           !isEngineRunning,
+           engineStartCallId == nil
+        {
+            startEngine(call: call, info: info)
+        }
     }
 
     private func applyNetworkKind(_ kind: TelegramCallEngine.NetworkKind) {
@@ -1787,6 +2141,10 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         proxy: TelegramCallEngine.ProxyServer?,
         enableStunMarking: Bool,
     ) {
+        guard isEffectiveAudioSessionActive else {
+            log("[Call] deferring native call context until CallKit activates the audio session")
+            return
+        }
         isEngineRunning = true
         startBatteryMonitoring()
         let callId = call.id
@@ -1850,7 +2208,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         if call.isVideo, AVCaptureDevice.authorizationStatus(for: .video) == .authorized {
             enableLocalVideo()
         }
-        engine.setTone(Self.connectingTone)
+        engine.setTone(call.isVideo ? nil : Self.connectingTone)
     }
 
     private func handleEngineState(
@@ -1865,7 +2223,7 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
         engineState = state
         switch state {
         case .initializing, .reconnecting:
-            engine.setTone(Self.connectingTone)
+            engine.setTone(activeCall?.isVideo == true ? nil : Self.connectingTone)
         case .connected, .failed, .unknown:
             engine.setTone(nil)
         }

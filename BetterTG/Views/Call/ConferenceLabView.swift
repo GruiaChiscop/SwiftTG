@@ -39,6 +39,7 @@ struct ConferenceLabView: View {
                         inviteParticipant: model.inviteParticipant,
                         setParticipantMuted: model.setParticipantMuted,
                         removeParticipant: model.removeParticipant,
+                        loadMoreParticipants: {},
                         requestVideoView: { _, completion in completion(nil) },
                     )
                 }

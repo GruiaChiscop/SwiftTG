@@ -136,7 +136,7 @@ final class TelegramCallEngine: @unchecked Sendable {
                     password: $0.password,
                 )
             }
-            let connections = configuration.connections.map {
+            let convertedConnections = configuration.connections.map {
                 OngoingCallConnectionDescriptionWebrtc(
                     reflectorId: $0.reflectorId,
                     hasStun: $0.hasStun,
@@ -146,6 +146,28 @@ final class TelegramCallEngine: @unchecked Sendable {
                     port: $0.port,
                     username: $0.username,
                     password: $0.password,
+                )
+            }
+            let signalingReflector: OngoingCallConnectionDescriptionWebrtc? =
+                if configuration.version == "12.0.0" {
+                    nil
+                } else {
+                    convertedConnections.first { $0.hasTcp && $0.username == "reflector" }
+                }
+            let connections = signalingReflector == nil
+                ? convertedConnections
+                : convertedConnections.filter { !($0.hasTcp && $0.username == "reflector") }
+            if let signalingReflector,
+               let peerTag = Self.data(fromHexadecimalString: signalingReflector.password)
+            {
+                signalingConnectionManager = TelegramCallSignalingConnectionManager(
+                    queue: queue,
+                    host: signalingReflector.ip,
+                    port: UInt16(clamping: signalingReflector.port),
+                    peerTag: peerTag,
+                    dataReceived: { [weak self] data in
+                        self?.context?.addSignaling(data)
+                    },
                 )
             }
             let context = OngoingCallThreadLocalContextWebrtc(
@@ -165,7 +187,10 @@ final class TelegramCallEngine: @unchecked Sendable {
                 enableStunMarking: configuration.enableStunMarking,
                 logPath: "",
                 statsLogPath: "",
-                sendSignalingData: sendSignaling,
+                sendSignalingData: { [weak self] data in
+                    self?.signalingConnectionManager?.send(data)
+                    sendSignaling(data)
+                },
                 videoCapturer: nil,
                 preferredVideoCodec: nil,
                 audioInputDeviceId: "",
@@ -188,6 +213,7 @@ final class TelegramCallEngine: @unchecked Sendable {
 
             self.audioDevice = audioDevice
             self.context = context
+            signalingConnectionManager?.start()
             context.setIsMuted(muted)
             context.setIsLowBatteryLevel(lowBattery)
             if !isAdoptingPreparedAudioDevice {
@@ -387,6 +413,7 @@ final class TelegramCallEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-engine")
     private let contextQueue: CallContextQueue
     private var context: OngoingCallThreadLocalContextWebrtc?
+    private var signalingConnectionManager: TelegramCallSignalingConnectionManager?
     private var videoOutputDisposables = [UUID: GroupCallDisposable]()
     private var audioDevice: SharedCallAudioDevice?
     private var pendingSignaling = [Data]()
@@ -496,6 +523,20 @@ final class TelegramCallEngine: @unchecked Sendable {
         return StopResult(callLog: debugLog, debugInformation: debugInformation)
     }
 
+    private static func data(fromHexadecimalString string: String) -> Data? {
+        guard string.count.isMultiple(of: 2) else { return nil }
+        var data = Data()
+        data.reserveCapacity(string.count / 2)
+        var index = string.startIndex
+        while index < string.endIndex {
+            let nextIndex = string.index(index, offsetBy: 2)
+            guard let byte = UInt8(string[index..<nextIndex], radix: 16) else { return nil }
+            data.append(byte)
+            index = nextIndex
+        }
+        return data.count == 16 ? data : nil
+    }
+
     /// Must only be called on `queue`; keeping construction here also prevents the Objective-C
     /// audio device, which is not Sendable, from crossing an actor or executor boundary.
     private func audioDeviceLocked() -> SharedCallAudioDevice {
@@ -514,6 +555,8 @@ final class TelegramCallEngine: @unchecked Sendable {
         retainAudioDeviceFor retentionDuration: TimeInterval = 0,
         completion: (@Sendable (StopResult?) -> Void)? = nil,
     ) {
+        signalingConnectionManager?.stop()
+        signalingConnectionManager = nil
         generation = UUID()
         let stopGeneration = generation
         for disposable in videoOutputDisposables.values {
