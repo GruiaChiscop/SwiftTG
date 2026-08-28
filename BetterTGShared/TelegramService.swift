@@ -529,6 +529,11 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         isMuted: Bool?,
         participantId: MessageSender?,
     ) async throws -> Ok
+    func toggleGroupCallParticipantIsHandRaised(
+        groupCallId: Int?,
+        isHandRaised: Bool?,
+        participantId: MessageSender?,
+    ) async throws -> Ok
     func banGroupCallParticipants(groupCallId: Int?, userIds: [TdInt64]?) async throws -> Ok
     func loadGroupCallParticipants(groupCallId: Int?, limit: Int?) async throws -> Ok
     func sendGroupCallMessage(
@@ -2092,6 +2097,18 @@ extension TelegramSession: TelegramService {
         try await client.toggleGroupCallParticipantIsMuted(
             groupCallId: groupCallId,
             isMuted: isMuted,
+            participantId: participantId,
+        )
+    }
+
+    func toggleGroupCallParticipantIsHandRaised(
+        groupCallId: Int?,
+        isHandRaised: Bool?,
+        participantId: MessageSender?,
+    ) async throws -> Ok {
+        try await client.toggleGroupCallParticipantIsHandRaised(
+            groupCallId: groupCallId,
+            isHandRaised: isHandRaised,
             participantId: participantId,
         )
     }

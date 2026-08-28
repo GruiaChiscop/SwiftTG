@@ -76,8 +76,10 @@ struct CallRatingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Not Now", action: session.dismissCallRating)
-                        .disabled(isSubmitting)
+                    Button("Not Now") {
+                        session.dismissCallRating(request: request)
+                    }
+                    .disabled(isSubmitting)
                 }
                 if includesDetails {
                     ToolbarItem(placement: .confirmationAction) {
@@ -96,6 +98,9 @@ struct CallRatingView: View {
             .interactiveDismissDisabled(isSubmitting)
             .alert("Couldn't Send Rating", isPresented: $showsSubmissionError) {} message: {
                 Text(submissionErrorMessage)
+            }
+            .onDisappear {
+                session.dismissCallRating(request: request)
             }
         }
     }

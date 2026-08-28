@@ -223,14 +223,25 @@ struct CallView: View {
                     )
                     .frame(maxWidth: .infinity)
 
-                    CallControlButton(
-                        systemImage: session.isMuted ? "mic.slash.fill" : "mic.fill",
-                        label: "Mute",
-                        isActive: session.isMuted,
-                        isEnabled: session.canToggleMute,
-                        action: session.toggleMute,
-                    )
-                    .frame(maxWidth: .infinity)
+                    if session.shouldShowConferenceRaiseHandControl {
+                        CallControlButton(
+                            systemImage: "hand.raised.fill",
+                            label: "Raise Hand",
+                            isActive: session.isConferenceHandRaised,
+                            isEnabled: session.canRaiseConferenceHand,
+                            action: session.raiseConferenceHand,
+                        )
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        CallControlButton(
+                            systemImage: session.isMuted ? "mic.slash.fill" : "mic.fill",
+                            label: "Mute",
+                            isActive: session.isMuted,
+                            isEnabled: session.canToggleMute,
+                            action: session.toggleMute,
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
 
                     if session.showsConferenceCallUI, session.areConferenceMessagesAvailable {
                         CallControlButton(

@@ -52,6 +52,7 @@ import UIKit
     private(set) var isLocalVideoEnabled = false
     private(set) var isScreenSharing = false
     private(set) var canUnmuteSelf = true
+    private(set) var isRaisingHand = false
     private(set) var incomingVideoQuality = ConferenceIncomingVideoQuality.p720
     private(set) var messageCharacterLimit = 128
 
@@ -64,6 +65,10 @@ import UIKit
     var onScreenSharingFailed: (() -> Void)?
     var onLocalMuteStateChanged: ((Bool) -> Void)?
     var onParticipantChanged: ((GroupCallParticipant?, GroupCallParticipant?) -> Void)?
+
+    var isHandRaised: Bool {
+        participants.values.first(where: \.isCurrentUser)?.isHandRaised == true
+    }
 
     func create(
         isMuted: Bool,
@@ -274,6 +279,40 @@ import UIKit
         }
     }
 
+    func raiseHand() {
+        guard case .connected = state,
+              let groupCall,
+              groupCall.isVideoChat,
+              !isHandRaised,
+              !isRaisingHand,
+              let participantId = participants.values.first(where: \.isCurrentUser)?.participantId
+        else { return }
+
+        isRaisingHand = true
+        handRaiseTask?.cancel()
+        let generation = operationGeneration
+        handRaiseTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await service.toggleGroupCallParticipantIsHandRaised(
+                    groupCallId: groupCall.id,
+                    isHandRaised: true,
+                    participantId: participantId,
+                )
+                guard operationGeneration == generation, self.groupCall?.id == groupCall.id else { return }
+                isRaisingHand = false
+                handRaiseTask = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation, self.groupCall?.id == groupCall.id else { return }
+                isRaisingHand = false
+                handRaiseTask = nil
+                log("[GroupCall] couldn't raise hand: \(error)")
+            }
+        }
+    }
+
     func requestVideo(_ capturer: OngoingCallThreadLocalContextVideoCapturer) {
         let generation = operationGeneration
         engine.requestVideo(capturer) { [weak self] payload, audioSourceId in
@@ -442,6 +481,7 @@ import UIKit
     private var muteUpdateTask: Task<Void, Never>?
     private var muteUpdateGeneration = UUID()
     private var pendingMutedValue: Bool?
+    private var handRaiseTask: Task<Void, Never>?
     private var didReportConnected = false
     private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
@@ -901,6 +941,9 @@ import UIKit
                 participants[value.participant.participantId] = value.participant
                 if value.participant.isCurrentUser {
                     handleLocalMuteUpdate(value.participant)
+                    if value.participant.isHandRaised {
+                        isRaisingHand = false
+                    }
                 }
                 onParticipantChanged?(previousParticipant, value.participant)
             }
@@ -1163,6 +1206,9 @@ import UIKit
         muteUpdateTask = nil
         muteUpdateGeneration = UUID()
         pendingMutedValue = nil
+        handRaiseTask?.cancel()
+        handRaiseTask = nil
+        isRaisingHand = false
         messageConfigurationTask?.cancel()
         messageConfigurationTask = nil
         messageExpirationTask?.cancel()
@@ -1190,6 +1236,7 @@ import UIKit
         isLocalVideoEnabled = false
         isScreenSharing = false
         canUnmuteSelf = true
+        isRaisingHand = false
         incomingVideoQuality = .p720
         isMuted = false
         self.state = state

@@ -159,9 +159,7 @@ struct RootView: View {
         )) {
             CallView()
         }
-        .sheet(item: $callSession.pendingCallRating) { request in
-            CallRatingView(request: request)
-        }
+        .sheet(item: $callSession.pendingCallRating, content: CallRatingView.init)
     }
 
     // MARK: Private

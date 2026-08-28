@@ -468,6 +468,26 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         return !isMuted || groupCallCoordinator.canUnmuteSelf
     }
 
+    var shouldShowConferenceRaiseHandControl: Bool {
+        guard showsConferenceCallUI,
+              let groupCallCoordinator,
+              groupCallCoordinator.groupCall?.isVideoChat == true
+        else { return false }
+        return isMuted && !groupCallCoordinator.canUnmuteSelf
+    }
+
+    var isConferenceHandRaised: Bool {
+        groupCallCoordinator?.isHandRaised == true
+    }
+
+    var canRaiseConferenceHand: Bool {
+        guard shouldShowConferenceRaiseHandControl,
+              let groupCallCoordinator,
+              case .connected = groupCallCoordinator.state
+        else { return false }
+        return !groupCallCoordinator.isHandRaised && !groupCallCoordinator.isRaisingHand
+    }
+
     /// tgcalls configures the category/mode/options CallKit will later activate. This has to run
     /// before reporting or requesting a CallKit call, matching Telegram-iOS's ordering.
     static func prepareAudioSession() {
@@ -622,6 +642,11 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
             return
         }
         CallKitManager.shared.requestSetMuted(!isMuted)
+    }
+
+    func raiseConferenceHand() {
+        guard canRaiseConferenceHand else { return }
+        groupCallCoordinator?.raiseHand()
     }
 
     func setMuted(_ muted: Bool) {
@@ -938,10 +963,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         }
     }
 
-    func dismissCallRating() {
-        if let callId = pendingCallRating?.callId {
-            callRatingLogCapture.discard(callId: callId)
-        }
+    func dismissCallRating(request: CallRatingRequest) {
+        callRatingLogCapture.discard(callId: request.callId)
+        guard pendingCallRating?.id == request.id else { return }
         pendingCallRating = nil
     }
 
@@ -1765,6 +1789,16 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 previous: previous,
                 current: current,
             )
+            if let previous,
+               let current,
+               current.isCurrentUser,
+               !previous.canUnmuteSelf,
+               current.canUnmuteSelf,
+               previous.isHandRaised,
+               UIAccessibility.isVoiceOverRunning
+            {
+                UIAccessibility.post(notification: .announcement, argument: "You can now speak")
+            }
             updateVideoAudioRouting()
         }
         coordinator.onFailed = { [weak self, weak coordinator] in
