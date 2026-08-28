@@ -132,13 +132,25 @@ struct CallView: View {
                     .padding(.bottom, 12)
                 } else {
                     if primaryVideoView == nil {
-                        CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
-                            .frame(width: 128, height: 128)
-                            .overlay {
-                                Circle()
-                                    .stroke(.white.opacity(0.2), lineWidth: 1)
+                        if session.isScreenSharing {
+                            VStack(spacing: 12) {
+                                Image(systemName: "rectangle.on.rectangle")
+                                    .font(.system(size: 42, weight: .medium))
+                                    .accessibilityHidden(true)
+                                Text("You are sharing your screen")
+                                    .font(.headline)
                             }
-                            .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+                            .padding(24)
+                            .background(.ultraThinMaterial, in: .rect(cornerRadius: 20))
+                        } else {
+                            CallPeerAvatar(user: user, fallbackTitle: displayName, userId: session.activeCall?.userId)
+                                .frame(width: 128, height: 128)
+                                .overlay {
+                                    Circle()
+                                        .stroke(.white.opacity(0.2), lineWidth: 1)
+                                }
+                                .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+                        }
                     }
 
                     VStack(spacing: 6) {
@@ -402,6 +414,7 @@ struct CallView: View {
     private var primaryVideoView: UIView? {
         if isLocalVideoPrimary,
            session.isLocalVideoEnabled,
+           !session.isScreenSharing,
            let localVideoView = session.localVideoView
         {
             return localVideoView
@@ -409,7 +422,10 @@ struct CallView: View {
         if session.remoteVideoState != .inactive, let remoteVideoView = session.remoteVideoView {
             return remoteVideoView
         }
-        if session.isLocalVideoEnabled, let localVideoView = session.localVideoView {
+        if session.isLocalVideoEnabled,
+           !session.isScreenSharing,
+           let localVideoView = session.localVideoView
+        {
             return localVideoView
         }
         return nil
@@ -417,6 +433,7 @@ struct CallView: View {
 
     private var secondaryVideoView: UIView? {
         guard session.isLocalVideoEnabled,
+              !session.isScreenSharing,
               let localVideoView = session.localVideoView,
               session.remoteVideoState != .inactive,
               let remoteVideoView = session.remoteVideoView

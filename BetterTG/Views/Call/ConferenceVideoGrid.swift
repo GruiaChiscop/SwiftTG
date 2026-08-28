@@ -14,7 +14,7 @@ struct ConferenceVideoGrid: View {
     var body: some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 8) {
-                if let localVideoView {
+                if localVideoView != nil || isLocalScreenSharing {
                     ConferenceLocalVideoTileView(
                         videoView: localVideoView,
                         isScreenSharing: isLocalScreenSharing,

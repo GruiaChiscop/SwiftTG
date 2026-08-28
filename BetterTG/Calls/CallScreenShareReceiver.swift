@@ -2,6 +2,7 @@
 
 import CoreMedia
 import CoreVideo
+import Darwin
 import Foundation
 import ImageIO
 @preconcurrency import TgVoipWebrtc
@@ -35,8 +36,9 @@ final class CallScreenShareReceiver: @unchecked Sendable {
             guard let self, timer == nil, let directory = Self.sharedDirectory else { return }
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: directory.appending(path: Self.extensionHeartbeatName))
-            try? FileManager.default.removeItem(at: directory.appending(path: Self.frameName))
             try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
+            prepareFrameMap(in: directory)
+            prepareAudioPipe(in: directory)
             writeAppHeartbeat(in: directory)
 
             let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -51,13 +53,15 @@ final class CallScreenShareReceiver: @unchecked Sendable {
         queue.async { [self] in
             timer?.cancel()
             timer = nil
-            lastFrameModificationDate = nil
-            resetAudioReader()
+            closeFrameMap()
+            closeAudioPipe()
             suppressesHeartbeat = false
             updateActive(false)
             guard let directory = Self.sharedDirectory else { return }
             try? FileManager.default.removeItem(at: directory.appending(path: Self.appHeartbeatName))
             try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
+            try? FileManager.default.removeItem(at: directory.appending(path: Self.frameMapName))
+            try? FileManager.default.removeItem(at: directory.appending(path: Self.audioPipeName))
         }
     }
 
@@ -76,10 +80,12 @@ final class CallScreenShareReceiver: @unchecked Sendable {
     private static let directoryName = "call-screen-share"
     private static let appHeartbeatName = "app-heartbeat"
     private static let extensionHeartbeatName = "extension-heartbeat"
-    private static let frameName = "frame.bin"
-    private static let audioName = "audio.bin"
+    private static let frameMapName = "frame.map"
+    private static let audioPipeName = "audio.pipe"
     private static let stopRequestName = "stop-request"
     private static let headerSize = MemoryLayout<UInt32>.size * 6
+    private static let frameMapHeaderSize = MemoryLayout<UInt32>.size * 2
+    private static let frameMapCapacity = 16 * 1024 * 1024
 
     private static var sharedDirectory: URL? {
         FileManager.default
@@ -92,11 +98,13 @@ final class CallScreenShareReceiver: @unchecked Sendable {
     private let activeChanged: @MainActor @Sendable (Bool) -> Void
     private let queue = DispatchQueue(label: "com.gruiachiscop.BetterTG.call-screen-share", qos: .userInitiated)
     private var timer: DispatchSourceTimer?
-    private var lastFrameModificationDate: Date?
+    private var frameFileDescriptor: Int32 = -1
+    private var frameMemory: UnsafeMutableRawPointer?
+    private var lastFrameSequence: UInt32 = 0
     private var isActive = false
     private var lastHeartbeatWrite = Date.distantPast
     private var suppressesHeartbeat = false
-    private var audioReadHandle: FileHandle?
+    private var audioReadSource: DispatchSourceRead?
     private var pendingAudioData = Data()
 
     private static func isExtensionActive(in directory: URL, now: Date) -> Bool {
@@ -212,8 +220,6 @@ final class CallScreenShareReceiver: @unchecked Sendable {
         let extensionIsActive = Self.isExtensionActive(in: directory, now: now)
         updateActive(extensionIsActive)
         guard extensionIsActive else {
-            lastFrameModificationDate = nil
-            resetAudioReader()
             if suppressesHeartbeat {
                 suppressesHeartbeat = false
                 try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
@@ -222,16 +228,7 @@ final class CallScreenShareReceiver: @unchecked Sendable {
             return
         }
 
-        pollAudio(directory: directory)
-
-        let frameURL = directory.appending(path: Self.frameName)
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: frameURL.path),
-              let modificationDate = attributes[.modificationDate] as? Date,
-              modificationDate != lastFrameModificationDate,
-              let data = try? Data(contentsOf: frameURL, options: .mappedIfSafe),
-              let frame = Self.decodeFrame(data)
-        else { return }
-        lastFrameModificationDate = modificationDate
+        guard let data = readMappedFrame(), let frame = Self.decodeFrame(data) else { return }
         Task { @MainActor [frameReceived] in frameReceived(frame) }
     }
 
@@ -248,19 +245,97 @@ final class CallScreenShareReceiver: @unchecked Sendable {
         Task { @MainActor [activeChanged] in activeChanged(active) }
     }
 
-    private func pollAudio(directory: URL) {
-        if audioReadHandle == nil {
-            audioReadHandle = try? FileHandle(forReadingFrom: directory.appending(path: Self.audioName))
+    private func prepareFrameMap(in directory: URL) {
+        closeFrameMap()
+        let url = directory.appending(path: Self.frameMapName)
+        let descriptor = Darwin.open(url.path, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0, ftruncate(descriptor, off_t(Self.frameMapCapacity)) == 0 else {
+            if descriptor >= 0 {
+                Darwin.close(descriptor)
+            }
+            return
         }
-        guard let chunk = try? audioReadHandle?.readToEnd(), !chunk.isEmpty else { return }
-        pendingAudioData.append(chunk)
+        let memory = mmap(
+            nil,
+            Self.frameMapCapacity,
+            PROT_READ | PROT_WRITE,
+            MAP_SHARED,
+            descriptor,
+            0,
+        )
+        guard memory != MAP_FAILED else {
+            Darwin.close(descriptor)
+            return
+        }
+        frameFileDescriptor = descriptor
+        frameMemory = memory
+        lastFrameSequence = 0
+    }
+
+    private func closeFrameMap() {
+        if let frameMemory {
+            munmap(frameMemory, Self.frameMapCapacity)
+        }
+        if frameFileDescriptor >= 0 {
+            Darwin.close(frameFileDescriptor)
+        }
+        frameMemory = nil
+        frameFileDescriptor = -1
+        lastFrameSequence = 0
+    }
+
+    private func readMappedFrame() -> Data? {
+        guard frameFileDescriptor >= 0, let frameMemory,
+              flock(frameFileDescriptor, LOCK_SH | LOCK_NB) == 0
+        else { return nil }
+        defer { flock(frameFileDescriptor, LOCK_UN) }
+
+        let sequence = frameMemory.load(fromByteOffset: 0, as: UInt32.self)
+        guard sequence != 0, sequence != lastFrameSequence else { return nil }
+        let length = Int(frameMemory.load(fromByteOffset: MemoryLayout<UInt32>.size, as: UInt32.self))
+        guard length > 0, length <= Self.frameMapCapacity - Self.frameMapHeaderSize else { return nil }
+        let data = Data(bytes: frameMemory.advanced(by: Self.frameMapHeaderSize), count: length)
+        lastFrameSequence = sequence
+        return data
+    }
+
+    private func prepareAudioPipe(in directory: URL) {
+        closeAudioPipe()
+        let url = directory.appending(path: Self.audioPipeName)
+        unlink(url.path)
+        guard mkfifo(url.path, S_IRUSR | S_IWUSR) == 0 else { return }
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_NONBLOCK)
+        guard descriptor >= 0 else { return }
+
+        let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
+        source.setEventHandler { [weak self] in self?.readAudio(from: descriptor) }
+        source.setCancelHandler { Darwin.close(descriptor) }
+        audioReadSource = source
+        source.resume()
+    }
+
+    private func closeAudioPipe() {
+        audioReadSource?.cancel()
+        audioReadSource = nil
+        pendingAudioData.removeAll(keepingCapacity: true)
+    }
+
+    private func readAudio(from descriptor: Int32) {
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                Darwin.read(descriptor, bytes.baseAddress, bytes.count)
+            }
+            guard count > 0 else { break }
+            pendingAudioData.append(contentsOf: buffer.prefix(count))
+        }
 
         while pendingAudioData.count >= MemoryLayout<UInt32>.size {
             let length = pendingAudioData.withUnsafeBytes {
                 Int($0.loadUnaligned(as: UInt32.self))
             }
             guard length > 0, length <= 1_048_576 else {
-                resetAudioReader()
+                pendingAudioData.removeAll(keepingCapacity: true)
                 return
             }
             let packetSize = MemoryLayout<UInt32>.size + length
@@ -269,11 +344,5 @@ final class CallScreenShareReceiver: @unchecked Sendable {
             pendingAudioData.removeSubrange(0..<packetSize)
             Task { @MainActor [audioReceived] in audioReceived(audio) }
         }
-    }
-
-    private func resetAudioReader() {
-        try? audioReadHandle?.close()
-        audioReadHandle = nil
-        pendingAudioData.removeAll(keepingCapacity: true)
     }
 }

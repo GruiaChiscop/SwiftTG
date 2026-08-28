@@ -947,7 +947,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
             isCallViewMinimized = true
             return
         }
-        let hasVideo = isLocalVideoEnabled || remoteVideoState != .inactive
+        // Never put our own screencast in PiP. Capturing that PiP again creates a feedback loop;
+        // Telegram-iOS likewise renders a local "sharing" placeholder instead of the broadcast.
+        let hasVideo = (isLocalVideoEnabled && !isScreenSharing) || remoteVideoState != .inactive
         if hasVideo, pictureInPictureController?.start() == true {
             // Keep the active source view mounted until AVKit finishes its PiP transition.
             return
@@ -959,9 +961,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     }
 
     func restoreCallView() {
-        guard hasActiveCallSurface else { return }
-        isCallViewMinimized = false
-        pictureInPictureController?.stop()
+        restoreCallView(stoppingPictureInPicture: true)
     }
 
     func submitCallRating(
@@ -1290,6 +1290,14 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
 
     private static func isRingingConferenceInvitation(_ content: MessageGroupCall) -> Bool {
         !content.isActive && !content.wasMissed && content.duration == 0
+    }
+
+    private func restoreCallView(stoppingPictureInPicture: Bool) {
+        guard hasActiveCallSurface else { return }
+        isCallViewMinimized = false
+        if stoppingPictureInPicture {
+            pictureInPictureController?.stop()
+        }
     }
 
     private func requestEndCall(endConferenceForEveryone: Bool) {
@@ -2554,22 +2562,13 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 disableLocalVideo()
             }
             let capturer = OngoingCallThreadLocalContextVideoCapturer.withExternalSampleBufferProvider()
-            let generation = UUID()
-            videoGeneration = generation
+            videoGeneration = UUID()
             screenShareCapturer = capturer
             isScreenSharing = true
             isLocalVideoEnabled = true
             isUsingFrontCamera = true
+            localVideoView = nil
             updateVideoAudioRouting()
-            capturer.makeOutgoingVideoView(false) { [weak self] videoView, _ in
-                MainActor.assumeIsolated {
-                    guard let self,
-                          self.videoGeneration == generation,
-                          self.isScreenSharing
-                    else { return }
-                    self.localVideoView = videoView
-                }
-            }
             if let groupCallCoordinator {
                 groupCallCoordinator.startScreenSharing(capturer)
             } else {
@@ -2665,7 +2664,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         let isIncoming: Bool
         if remoteVideoState != .inactive {
             isIncoming = true
-        } else if isLocalVideoEnabled {
+        } else if isLocalVideoEnabled, !isScreenSharing {
             isIncoming = false
         } else {
             pictureInPictureController?.stop()
@@ -2693,7 +2692,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 completion(false)
                 return
             }
-            restoreCallView()
+            // AVKit is already stopping PiP while it asks us to restore the interface. Calling
+            // `stopPictureInPicture()` again from this delegate callback is reentrant.
+            restoreCallView(stoppingPictureInPicture: false)
             completion(true)
         }
         controller.didStartPictureInPicture = { [weak self] in
