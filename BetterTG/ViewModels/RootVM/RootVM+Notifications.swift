@@ -113,9 +113,17 @@ extension RootVM {
     /// backgrounded/killed notifications go through the plain system push path untouched, same as
     /// before.
     @MainActor func handleNotificationGroupUpdate(_ group: UpdateNotificationGroup) {
-        guard UIApplication.shared.applicationState == .active,
-              currentlyOpenChatId != group.chatId
-        else { return }
+        guard UIApplication.shared.applicationState == .active else { return }
+
+        // A group update for the chat that's already on screen means those messages are being
+        // read - clear any system notifications that were delivered for it while backgrounded.
+        if currentlyOpenChatId == group.chatId {
+            Task { @MainActor [weak self] in
+                guard let self, let chat = await getCustomChat(from: group.chatId)?.chat else { return }
+                TelegramDeliveredNotifications.clear(for: chat)
+            }
+            return
+        }
 
         for notification in group.addedNotifications {
             // Matches `MacSessionModel+Notifications.swift`'s own freshness check - avoids

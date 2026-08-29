@@ -171,6 +171,9 @@ import TDLibKit
         let chatId = customChat.chat.id
         isChatTranslationEnabled = TelegramChatTranslationPreferences.isEnabled(chatId: chatId)
         Task { _ = try? await service.openChat(chatId: chatId) }
+        // Opening the chat reads its messages; drop any lingering system notifications for it so
+        // Notification Center doesn't keep stale banners after the user taps one to get here.
+        TelegramDeliveredNotifications.clear(for: customChat.chat)
         setPublishers()
         startVideoChatObservation()
         refreshConversationStatus()
