@@ -12,6 +12,7 @@ struct ConferenceVideoStripView: View {
     let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
     let isCompact: Bool
+    let selectLocalVideo: () -> Void
     let selectVideo: (ConferenceVideoPresentation) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
@@ -19,10 +20,13 @@ struct ConferenceVideoStripView: View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 8) {
                 if localVideoView != nil || isLocalScreenSharing {
-                    ConferenceLocalVideoTileView(
-                        videoView: localVideoView,
-                        isScreenSharing: isLocalScreenSharing,
-                    )
+                    Button(action: selectLocalVideo) {
+                        ConferenceLocalVideoTileView(
+                            videoView: localVideoView,
+                            isScreenSharing: isLocalScreenSharing,
+                        )
+                    }
+                    .buttonStyle(.plain)
                     .frame(width: localVideoWidth, height: tileHeight)
                 }
 

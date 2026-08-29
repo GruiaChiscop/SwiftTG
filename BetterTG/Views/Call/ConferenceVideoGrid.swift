@@ -15,7 +15,29 @@ struct ConferenceVideoGrid: View {
 
     var body: some View {
         Group {
-            if let expandedVideo {
+            if isLocalVideoExpanded {
+                VStack(spacing: 8) {
+                    ConferenceLocalVideoStageView(
+                        videoView: localVideoView,
+                        isScreenSharing: isLocalScreenSharing,
+                        isPinned: pinnedVideoId == localVideoId,
+                        collapse: collapseExpandedVideo,
+                        togglePin: togglePin,
+                    )
+                    .frame(height: 260)
+
+                    ConferenceVideoStripView(
+                        localVideoView: nil,
+                        isLocalScreenSharing: false,
+                        videos: videos,
+                        isCompact: true,
+                        selectLocalVideo: {},
+                        selectVideo: expand,
+                        requestVideoView: requestVideoView,
+                    )
+                    .frame(height: 104)
+                }
+            } else if let expandedVideo {
                 VStack(spacing: 8) {
                     ConferenceVideoStageView(
                         video: expandedVideo,
@@ -31,6 +53,7 @@ struct ConferenceVideoGrid: View {
                         isLocalScreenSharing: isLocalScreenSharing,
                         videos: videos.filter { $0.id != expandedVideo.id },
                         isCompact: true,
+                        selectLocalVideo: expandLocalVideo,
                         selectVideo: expand,
                         requestVideoView: requestVideoView,
                     )
@@ -42,6 +65,7 @@ struct ConferenceVideoGrid: View {
                     isLocalScreenSharing: isLocalScreenSharing,
                     videos: videos,
                     isCompact: false,
+                    selectLocalVideo: expandLocalVideo,
                     selectVideo: expand,
                     requestVideoView: requestVideoView,
                 )
@@ -70,19 +94,45 @@ struct ConferenceVideoGrid: View {
         return videos.first(where: { $0.id == expandedVideoId })
     }
 
+    private var isLocalVideoExpanded: Bool {
+        guard let localVideoId else { return false }
+        return expandedVideoId == localVideoId
+    }
+
+    private var localVideoId: String? {
+        if isLocalScreenSharing {
+            return "local-screen"
+        }
+        if localVideoView != nil {
+            return "local-camera"
+        }
+        return nil
+    }
+
     private var speakingVideoId: String? {
         videos.first(where: { $0.isSpeaking && $0.isScreenSharing })?.id
             ?? videos.first(where: { $0.isSpeaking })?.id
     }
 
     private var videoIds: [String] {
-        videos.map(\.id)
+        if let localVideoId {
+            return [localVideoId] + videos.map(\.id)
+        }
+        return videos.map(\.id)
     }
 
     private func expand(_ video: ConferenceVideoPresentation) {
         let wasCollapsed = expandedVideoId == nil
         expandedVideoId = video.id
         pinnedVideoId = wasCollapsed && video.isScreenSharing ? video.id : nil
+        focusedSpeakerAutoSwitchDeadline = .now.addingTimeInterval(3)
+    }
+
+    private func expandLocalVideo() {
+        guard let localVideoId else { return }
+        let wasCollapsed = expandedVideoId == nil
+        expandedVideoId = localVideoId
+        pinnedVideoId = wasCollapsed && isLocalScreenSharing ? localVideoId : nil
         focusedSpeakerAutoSwitchDeadline = .now.addingTimeInterval(3)
     }
 
@@ -98,24 +148,33 @@ struct ConferenceVideoGrid: View {
     }
 
     private func reconcileExpandedVideo() {
-        if let pinnedVideoId, !videos.contains(where: { $0.id == pinnedVideoId }) {
+        if let pinnedVideoId, !videoIds.contains(pinnedVideoId) {
             self.pinnedVideoId = nil
         }
         guard let expandedVideoId else {
-            if let screenShare = videos.first(where: \ConferenceVideoPresentation.isScreenSharing) {
+            if isLocalScreenSharing, let localVideoId {
+                expandedVideoId = localVideoId
+                pinnedVideoId = localVideoId
+            } else if let screenShare = videos.first(where: \ConferenceVideoPresentation.isScreenSharing) {
                 expandedVideoId = screenShare.id
                 pinnedVideoId = screenShare.id
             }
             return
         }
-        guard !videos.contains(where: { $0.id == expandedVideoId }) else { return }
-        if let screenShare = videos.first(where: \ConferenceVideoPresentation.isScreenSharing) {
+        guard !videoIds.contains(expandedVideoId) else { return }
+        if isLocalScreenSharing, let localVideoId {
+            self.expandedVideoId = localVideoId
+            pinnedVideoId = localVideoId
+        } else if let screenShare = videos.first(where: \ConferenceVideoPresentation.isScreenSharing) {
             self.expandedVideoId = screenShare.id
             pinnedVideoId = screenShare.id
         } else if let firstVideo = videos.first {
             self.expandedVideoId = firstVideo.id
             pinnedVideoId = nil
             focusedSpeakerAutoSwitchDeadline = .now.addingTimeInterval(1)
+        } else if let localVideoId {
+            self.expandedVideoId = localVideoId
+            pinnedVideoId = nil
         } else {
             collapseExpandedVideo()
         }
