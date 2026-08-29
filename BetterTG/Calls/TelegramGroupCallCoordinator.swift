@@ -421,6 +421,13 @@ import UIKit
         refreshMediaChannels()
     }
 
+    func setCentralVideo(endpointId: String?, isExpanded: Bool) {
+        guard centralVideoEndpointId != endpointId || hasCentralVideo != isExpanded else { return }
+        centralVideoEndpointId = endpointId
+        hasCentralVideo = isExpanded
+        refreshMediaChannels()
+    }
+
     func activateIncomingAudio() {
         engine.activateIncomingAudio()
     }
@@ -509,6 +516,8 @@ import UIKit
     private var messageConfigurationTask: Task<Void, Never>?
     private var messageExpirationTask: Task<Void, Never>?
     private var messageLifetime = 10
+    private var centralVideoEndpointId: String?
+    private var hasCentralVideo = false
 
     private static func enginePreferences(from configuration: JsonValue) -> EnginePreferences {
         guard case .jsonValueObject(let object) = configuration else { return EnginePreferences() }
@@ -1067,6 +1076,8 @@ import UIKit
         engine.updateRequestedVideoChannels(
             videoChannels,
             maximumQuality: incomingVideoQuality,
+            centralEndpointId: centralVideoEndpointId,
+            hasCentralVideo: hasCentralVideo,
         )
         for participant in participants.values where !participant.isCurrentUser {
             setParticipantVolume(
@@ -1299,6 +1310,8 @@ import UIKit
         canUnmuteSelf = true
         isUpdatingHandRaised = false
         incomingVideoQuality = .p720
+        centralVideoEndpointId = nil
+        hasCentralVideo = false
         isMuted = false
         self.state = state
         if case .ended = state {

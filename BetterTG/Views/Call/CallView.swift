@@ -129,6 +129,7 @@ struct CallView: View {
                         cancelSpeakRequest: session.cancelConferenceSpeakRequest,
                         removeParticipant: session.removeConferenceParticipant,
                         loadMoreParticipants: session.loadMoreConferenceParticipants,
+                        setCentralVideo: session.setConferenceCentralVideo,
                         requestVideoView: session.requestConferenceVideoView,
                     )
                     .frame(maxHeight: .infinity)

@@ -902,6 +902,10 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         groupCallCoordinator?.setIncomingVideoQuality(quality)
     }
 
+    func setConferenceCentralVideo(endpointId: String?, isExpanded: Bool) {
+        groupCallCoordinator?.setCentralVideo(endpointId: endpointId, isExpanded: isExpanded)
+    }
+
     func sendConferenceMessage(_ text: String) async -> Bool {
         guard let coordinator = groupCallCoordinator else { return false }
         do {

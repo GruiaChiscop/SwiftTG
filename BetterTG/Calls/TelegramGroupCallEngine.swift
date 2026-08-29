@@ -208,19 +208,28 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
     func updateRequestedVideoChannels(
         _ channels: [VideoChannel],
         maximumQuality: ConferenceIncomingVideoQuality,
+        centralEndpointId: String?,
+        hasCentralVideo: Bool,
     ) {
         queue.async { [weak self] in
             guard let self else { return }
             requestedVideoChannels = channels
             let requestedChannels = maximumQuality == .audioOnly ? [] : channels
-            let maximumEngineQuality: OngoingGroupCallRequestedVideoQuality =
-                switch maximumQuality {
-                case .audioOnly, .p180: .thumbnail
-                case .p360: .medium
-                case .p720: .full
-                }
             context?.setRequestedVideoChannels(requestedChannels.map { channel in
-                OngoingGroupCallRequestedVideoChannel(
+                let maximumEngineQuality: OngoingGroupCallRequestedVideoQuality =
+                    switch maximumQuality {
+                    case .audioOnly, .p180:
+                        .thumbnail
+                    case .p360:
+                        hasCentralVideo && channel.endpointId != centralEndpointId ? .thumbnail : .medium
+                    case .p720:
+                        if hasCentralVideo {
+                            channel.endpointId == centralEndpointId ? .full : .thumbnail
+                        } else {
+                            .medium
+                        }
+                    }
+                return OngoingGroupCallRequestedVideoChannel(
                     audioSsrc: channel.audioSourceId,
                     userId: channel.peerId,
                     endpointId: channel.endpointId,

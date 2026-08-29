@@ -11,6 +11,7 @@ struct ConferenceVideoGrid: View {
     let localVideoView: UIView?
     let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
+    let setCentralVideo: (_ endpointId: String?, _ isExpanded: Bool) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
     var body: some View {
@@ -78,8 +79,14 @@ struct ConferenceVideoGrid: View {
         .onChange(of: speakingVideoId) { _, newValue in
             switchToFocusedSpeakerIfNeeded(newValue)
         }
+        .onChange(of: expandedVideoId, initial: true) { _, newValue in
+            updateCentralVideo(newValue)
+        }
         .task(id: focusedSpeakerAutoSwitchDeadline) {
             await waitForFocusedSpeakerAutoSwitch()
+        }
+        .onDisappear {
+            setCentralVideo(nil, false)
         }
     }
 
@@ -189,6 +196,14 @@ struct ConferenceVideoGrid: View {
         else { return }
         expandedVideoId = videoId
         focusedSpeakerAutoSwitchDeadline = .now.addingTimeInterval(1)
+    }
+
+    private func updateCentralVideo(_ videoId: String?) {
+        guard let videoId else {
+            setCentralVideo(nil, false)
+            return
+        }
+        setCentralVideo(videos.first(where: { $0.id == videoId })?.endpointId, true)
     }
 
     private func waitForFocusedSpeakerAutoSwitch() async {
