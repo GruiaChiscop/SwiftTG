@@ -11,9 +11,11 @@ struct ConferenceVideoTileView: View {
 
     init(
         video: ConferenceVideoPresentation,
+        showsOverlay: Bool = true,
         requestVideoView: @escaping (String, @escaping @MainActor (UIView?) -> Void) -> Void,
     ) {
         self.video = video
+        self.showsOverlay = showsOverlay
         self.requestVideoView = requestVideoView
     }
 
@@ -37,26 +39,28 @@ struct ConferenceVideoTileView: View {
                 .accessibilityHidden(true)
             }
 
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.75)],
-                startPoint: .center,
-                endPoint: .bottom,
-            )
-            .accessibilityHidden(true)
+            if showsOverlay {
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.75)],
+                    startPoint: .center,
+                    endPoint: .bottom,
+                )
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(displayTitle)
-                    .font(.subheadline.bold())
-                    .lineLimit(1)
-                if video.isScreenSharing {
-                    Label("Screen", systemImage: "rectangle.on.rectangle")
-                        .font(.footnote)
-                } else if video.isPaused {
-                    Label("Paused", systemImage: "video.slash.fill")
-                        .font(.footnote)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(displayTitle)
+                        .font(.subheadline.bold())
+                        .lineLimit(1)
+                    if video.isScreenSharing {
+                        Label("Screen", systemImage: "rectangle.on.rectangle")
+                            .font(.footnote)
+                    } else if video.isPaused {
+                        Label("Paused", systemImage: "video.slash.fill")
+                            .font(.footnote)
+                    }
                 }
+                .padding(10)
             }
-            .padding(10)
         }
         .clipShape(.rect(cornerRadius: 16))
         .overlay {
@@ -81,6 +85,7 @@ struct ConferenceVideoTileView: View {
     @State private var requestGeneration = UUID()
 
     private let video: ConferenceVideoPresentation
+    private let showsOverlay: Bool
     private let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
     private var userId: Int64? { video.userId }

@@ -12,6 +12,7 @@ struct ConferenceVideoGrid: View {
     let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
     let setExpanded: (Bool) -> Void
+    let setUIHidden: (Bool) -> Void
     let setCentralVideo: (_ endpointId: String?, _ isExpanded: Bool) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
@@ -23,8 +24,10 @@ struct ConferenceVideoGrid: View {
                         videoView: localVideoView,
                         isScreenSharing: isLocalScreenSharing,
                         isPinned: pinnedVideoId == localVideoId,
+                        isUIHidden: isUIHidden,
                         collapse: collapseExpandedVideo,
                         togglePin: togglePin,
+                        toggleUI: toggleUI,
                     )
                     .frame(maxHeight: .infinity)
 
@@ -37,15 +40,20 @@ struct ConferenceVideoGrid: View {
                         selectVideo: expand,
                         requestVideoView: requestVideoView,
                     )
-                    .frame(height: 104)
+                    .frame(height: isUIHidden ? 0 : 104)
+                    .opacity(isUIHidden ? 0 : 1)
+                    .allowsHitTesting(!isUIHidden)
+                    .accessibilityHidden(isUIHidden)
                 }
             } else if let expandedVideo {
                 VStack(spacing: 8) {
                     ConferenceVideoStageView(
                         video: expandedVideo,
                         isPinned: pinnedVideoId == expandedVideo.id,
+                        isUIHidden: isUIHidden,
                         collapse: collapseExpandedVideo,
                         togglePin: togglePin,
+                        toggleUI: toggleUI,
                         requestVideoView: requestVideoView,
                     )
                     .frame(maxHeight: .infinity)
@@ -59,7 +67,10 @@ struct ConferenceVideoGrid: View {
                         selectVideo: expand,
                         requestVideoView: requestVideoView,
                     )
-                    .frame(height: 104)
+                    .frame(height: isUIHidden ? 0 : 104)
+                    .opacity(isUIHidden ? 0 : 1)
+                    .allowsHitTesting(!isUIHidden)
+                    .accessibilityHidden(isUIHidden)
                 }
             } else {
                 ConferenceVideoStripView(
@@ -83,6 +94,9 @@ struct ConferenceVideoGrid: View {
         .onChange(of: expandedVideoId, initial: true) { _, newValue in
             updateCentralVideo(newValue)
             setExpanded(newValue != nil)
+            if newValue == nil {
+                updateUIHidden(false)
+            }
         }
         .task(id: focusedSpeakerAutoSwitchDeadline) {
             await waitForFocusedSpeakerAutoSwitch()
@@ -90,6 +104,7 @@ struct ConferenceVideoGrid: View {
         .onDisappear {
             setCentralVideo(nil, false)
             setExpanded(false)
+            setUIHidden(false)
         }
     }
 
@@ -97,6 +112,7 @@ struct ConferenceVideoGrid: View {
 
     @State private var expandedVideoId: String?
     @State private var focusedSpeakerAutoSwitchDeadline = Date.distantPast
+    @State private var isUIHidden = false
     @State private var pinnedVideoId: String?
 
     private var expandedVideo: ConferenceVideoPresentation? {
@@ -207,6 +223,15 @@ struct ConferenceVideoGrid: View {
             return
         }
         setCentralVideo(videos.first(where: { $0.id == videoId })?.endpointId, true)
+    }
+
+    private func toggleUI() {
+        updateUIHidden(!isUIHidden)
+    }
+
+    private func updateUIHidden(_ isHidden: Bool) {
+        isUIHidden = isHidden
+        setUIHidden(isHidden)
     }
 
     private func waitForFocusedSpeakerAutoSwitch() async {

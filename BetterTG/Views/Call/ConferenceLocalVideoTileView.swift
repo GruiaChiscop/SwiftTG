@@ -6,8 +6,19 @@ import UIKit
 // MARK: - ConferenceLocalVideoTileView
 
 struct ConferenceLocalVideoTileView: View {
+    // MARK: Lifecycle
+
+    init(videoView: UIView?, isScreenSharing: Bool, showsOverlay: Bool = true) {
+        self.videoView = videoView
+        self.isScreenSharing = isScreenSharing
+        self.showsOverlay = showsOverlay
+    }
+
+    // MARK: Internal
+
     let videoView: UIView?
     let isScreenSharing: Bool
+    let showsOverlay: Bool
 
     var body: some View {
         if isScreenSharing {
@@ -29,12 +40,14 @@ struct ConferenceLocalVideoTileView: View {
                 .id(ObjectIdentifier(videoView))
                 .clipShape(.rect(cornerRadius: 16))
                 .overlay(alignment: .bottomLeading) {
-                    Text("You")
-                        .font(.caption.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(.black.opacity(0.55), in: .capsule)
-                        .padding(8)
+                    if showsOverlay {
+                        Text("You")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(.black.opacity(0.55), in: .capsule)
+                            .padding(8)
+                    }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("You, camera")

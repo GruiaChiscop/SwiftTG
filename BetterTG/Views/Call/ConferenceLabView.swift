@@ -43,6 +43,7 @@ struct ConferenceLabView: View {
                         cancelSpeakRequest: {},
                         removeParticipant: model.removeParticipant,
                         loadMoreParticipants: {},
+                        setUIHidden: { _ in },
                         setCentralVideo: { _, _ in },
                         requestVideoView: { _, completion in completion(nil) },
                     )

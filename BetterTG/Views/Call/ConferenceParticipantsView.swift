@@ -27,6 +27,7 @@ struct ConferenceParticipantsView: View {
     let cancelSpeakRequest: () -> Void
     let removeParticipant: (ConferenceParticipantPresentation) -> Void
     let loadMoreParticipants: () -> Void
+    let setUIHidden: (Bool) -> Void
     let setCentralVideo: (_ endpointId: String?, _ isExpanded: Bool) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
@@ -50,6 +51,7 @@ struct ConferenceParticipantsView: View {
                     isLocalScreenSharing: isLocalScreenSharing,
                     videos: videos,
                     setExpanded: updateVideoExpansion,
+                    setUIHidden: setUIHidden,
                     setCentralVideo: setCentralVideo,
                     requestVideoView: requestVideoView,
                 )

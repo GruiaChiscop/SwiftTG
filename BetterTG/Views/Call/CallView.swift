@@ -107,8 +107,12 @@ struct CallView: View {
                         }
                     }
                 }
+                .opacity(isConferenceUIHidden ? 0 : 1)
+                .allowsHitTesting(!isConferenceUIHidden)
+                .accessibilityHidden(isConferenceUIHidden)
+                .frame(height: isConferenceUIHidden ? 0 : nil)
 
-                Spacer(minLength: 24)
+                Spacer(minLength: isConferenceUIHidden ? 0 : 24)
 
                 if session.showsConferenceCallUI {
                     ConferenceParticipantsView(
@@ -129,6 +133,7 @@ struct CallView: View {
                         cancelSpeakRequest: session.cancelConferenceSpeakRequest,
                         removeParticipant: session.removeConferenceParticipant,
                         loadMoreParticipants: session.loadMoreConferenceParticipants,
+                        setUIHidden: updateConferenceUIHidden,
                         setCentralVideo: session.setConferenceCentralVideo,
                         requestVideoView: session.requestConferenceVideoView,
                     )
@@ -282,6 +287,10 @@ struct CallView: View {
                     }
                 }
                 .frame(maxWidth: 420)
+                .opacity(isConferenceUIHidden ? 0 : 1)
+                .allowsHitTesting(!isConferenceUIHidden)
+                .accessibilityHidden(isConferenceUIHidden)
+                .frame(height: isConferenceUIHidden ? 0 : nil)
             }
             .safeAreaPadding()
             .padding(.horizontal)
@@ -289,6 +298,7 @@ struct CallView: View {
 
             if session.showsConferenceCallUI,
                !showsConferenceMessages,
+               !isConferenceUIHidden,
                !session.conferenceMessages.isEmpty
             {
                 VStack {
@@ -390,6 +400,7 @@ struct CallView: View {
         .onChange(of: session.showsConferenceCallUI) { _, isVisible in
             if !isVisible {
                 showsConferenceMessages = false
+                isConferenceUIHidden = false
             }
         }
     }
@@ -398,6 +409,7 @@ struct CallView: View {
 
     @Environment(\.openURL) private var openURL
     @State private var idleTimerToken: UUID?
+    @State private var isConferenceUIHidden = false
     @State private var isLocalVideoPrimary = false
     @State private var showsConferenceEndConfirmation = false
     @State private var showsConferenceLeaveConfirmation = false
@@ -499,6 +511,10 @@ struct CallView: View {
 
     private func hideConferenceMessages() {
         showsConferenceMessages = false
+    }
+
+    private func updateConferenceUIHidden(_ isHidden: Bool) {
+        isConferenceUIHidden = isHidden
     }
 
     private func endCall() {
