@@ -6,6 +6,8 @@ import TDLibKit
 import Testing
 
 struct TelegramMessageMetadataTests {
+    // MARK: Internal
+
     @Test func `day headings expose today and yesterday`() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
@@ -83,6 +85,55 @@ struct TelegramMessageMetadataTests {
         #expect(telegramMessageContentDescription(.messageExpiredVideoNote) == "Video message expired")
     }
 
+    @Test func `call presentation matches Telegram direction and discard wording`() {
+        let incomingMissed = TelegramCallMessagePresentation(
+            content: callContent(reason: .callDiscardReasonMissed),
+            isOutgoing: false,
+        )
+        let outgoingCancelled = TelegramCallMessagePresentation(
+            content: callContent(reason: .callDiscardReasonDeclined, isVideo: true),
+            isOutgoing: true,
+        )
+        let disconnectedIncoming = TelegramCallMessagePresentation(
+            content: callContent(reason: .callDiscardReasonDisconnected),
+            isOutgoing: false,
+        )
+        let completed = TelegramCallMessagePresentation(
+            content: callContent(reason: .callDiscardReasonHungUp, duration: 125),
+            isOutgoing: false,
+        )
+
+        #expect(incomingMissed.title == "Missed Call")
+        #expect(incomingMissed.isSuccessful == false)
+        #expect(outgoingCancelled.title == "Cancelled Video Call")
+        #expect(outgoingCancelled.isSuccessful == false)
+        #expect(disconnectedIncoming.title == "Cancelled Call")
+        #expect(completed.title == "Incoming Call")
+        #expect(completed.durationDescription == "2 minutes")
+        #expect(completed.contentDescription == "Incoming Call, duration 2 minutes")
+    }
+
+    @Test func `call duration follows Telegram coarse units`() {
+        #expect(telegramCallDurationDescription(2) == "2 seconds")
+        #expect(telegramCallDurationDescription(60) == "1 minute")
+        #expect(telegramCallDurationDescription(3600) == "1 hour")
+        #expect(telegramCallDurationDescription(86400) == "1 day")
+    }
+
+    @Test func `call chat-list preview keeps Telegram title without duration`() {
+        let content = callContent(reason: .callDiscardReasonHungUp, duration: 125)
+        let message = TDLibFixtures.message(
+            id: 30,
+            chatId: 1,
+            date: 100,
+            isOutgoing: true,
+            content: .messageCall(content),
+        )
+
+        #expect(telegramChatListMessageDescription(message) == "Outgoing Call")
+        #expect(telegramMessageContentDescription(message) == "Outgoing Call, duration 2 minutes")
+    }
+
     @Test func `quoted message excerpt normalizes whitespace and limits characters`() {
         #expect(telegramQuotedMessageExcerpt("First\n  second", characterLimit: 20) == "First second")
         #expect(telegramQuotedMessageExcerpt("123456789", characterLimit: 5) == "12345…")
@@ -141,5 +192,20 @@ struct TelegramMessageMetadataTests {
         #expect(telegramReactionActionTitle(heart, existing: existing) == "Remove ❤")
         #expect(telegramReactionActionTitle(thumbsUp, existing: existing) == "👍")
         #expect(telegramReactionDescription(existing) == "Reactions: ❤ 2 in total. You also reacted")
+    }
+
+    // MARK: Private
+
+    private func callContent(
+        reason: CallDiscardReason,
+        duration: Int = 0,
+        isVideo: Bool = false,
+    ) -> MessageCall {
+        MessageCall(
+            discardReason: reason,
+            duration: duration,
+            isVideo: isVideo,
+            uniqueId: 0,
+        )
     }
 }

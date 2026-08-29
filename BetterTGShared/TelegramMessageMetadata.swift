@@ -11,6 +11,12 @@ func telegramMessageContentDescription(_ message: Message) -> String {
     if case .messageSupergroupChatCreate = message.content, message.isChannelPost {
         return "Channel created"
     }
+    if case .messageCall(let content) = message.content {
+        return TelegramCallMessagePresentation(
+            content: content,
+            isOutgoing: message.isOutgoing,
+        ).contentDescription
+    }
     return telegramMessageContentDescription(message.content)
 }
 
@@ -18,6 +24,12 @@ func telegramMessageContentDescription(_ message: Message) -> String {
 /// Match Telegram-iOS by preferring an album caption and otherwise identifying the grouped
 /// media as an album, without guessing an item count that isn't available here.
 func telegramChatListMessageDescription(_ message: Message) -> String {
+    if case .messageCall(let content) = message.content {
+        return TelegramCallMessagePresentation(
+            content: content,
+            isOutgoing: message.isOutgoing,
+        ).title
+    }
     guard message.mediaAlbumId != 0 else {
         return telegramMessageContentDescription(message)
     }

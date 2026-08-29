@@ -110,12 +110,25 @@ struct ChatInfoView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .alert("Camera Access Required", isPresented: $showsCameraPermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow camera access in Settings to start video calls.")
+        }
+        .alert("Microphone Access Required", isPresented: $showsMicrophonePermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow microphone access in Settings to make calls.")
+        }
     }
 
     // MARK: Private
 
     @Environment(ChatVM.self) private var chatVM
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     @State private var errorMessage: String?
     @State private var info: TelegramChatInfoData?
@@ -123,7 +136,9 @@ struct ChatInfoView: View {
     @State private var muteOverride: Bool?
     @State private var showDeleteConfirmation = false
     @State private var showMuteOptions = false
+    @State private var showsCameraPermissionAlert = false
     @State private var showsCommonGroups = false
+    @State private var showsMicrophonePermissionAlert = false
     @State private var showsScheduledMessages = false
     @State private var showsSharedMedia = false
 
@@ -133,7 +148,7 @@ struct ChatInfoView: View {
         !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
     }
 
-    private func identitySection(_: TelegramChatInfoData?) -> some View {
+    private func identitySection(_ info: TelegramChatInfoData?) -> some View {
         Section {
             VStack(spacing: 12) {
                 VStack(spacing: 12) {
@@ -158,17 +173,13 @@ struct ChatInfoView: View {
                 }
                 .accessibilityElement(children: .combine)
 
-                Button {
-                    openConversationSearch()
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "magnifyingglass")
-                        Text("Search")
-                            .font(.caption)
-                    }
-                    .frame(minWidth: 88, minHeight: 44)
-                }
-                .buttonStyle(.bordered)
+                ChatInfoHeaderActionsView(
+                    canStartAudioCall: info?.canStartAudioCall == true,
+                    canStartVideoCall: info?.canStartVideoCall == true,
+                    startAudioCall: startAudioCall,
+                    startVideoCall: startVideoCall,
+                    search: openConversationSearch,
+                )
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -415,6 +426,37 @@ struct ChatInfoView: View {
     private func setMuteDuration(_ duration: Int) {
         muteOverride = duration > 0
         RootVM.shared.setMuteDuration(duration, for: chat)
+    }
+
+    private func startAudioCall() {
+        guard let userId = info?.callUserId, info?.canStartAudioCall == true else { return }
+        CallKitManager.shared.startOutgoingCall(
+            userId: userId,
+            displayName: chat.displayTitle,
+            onMicrophonePermissionDenied: {
+                showsMicrophonePermissionAlert = true
+            },
+        )
+    }
+
+    private func startVideoCall() {
+        guard let userId = info?.callUserId, info?.canStartVideoCall == true else { return }
+        CallKitManager.shared.startOutgoingCall(
+            userId: userId,
+            displayName: chat.displayTitle,
+            isVideo: true,
+            onMicrophonePermissionDenied: {
+                showsMicrophonePermissionAlert = true
+            },
+            onCameraPermissionDenied: {
+                showsCameraPermissionAlert = true
+            },
+        )
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     private func deleteChat(forAll: Bool) {

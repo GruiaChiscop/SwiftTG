@@ -2,6 +2,7 @@
 
 import SwiftUI
 import TDLibKit
+import UIKit
 
 struct MessageView: View {
     // MARK: Internal
@@ -30,6 +31,8 @@ struct MessageView: View {
     @State var selectedStickerPack: TelegramStickerPackReference?
     @State var pendingStickerFromPack: Sticker?
     @State var stickerToEdit: Sticker?
+    @State var showsCameraPermissionAlert = false
+    @State var showsMicrophonePermissionAlert = false
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -175,6 +178,9 @@ struct MessageView: View {
     }
 
     private var hasInlineVisualMetadata: Bool {
+        if customMessage.messageCall != nil {
+            return true
+        }
         guard let formattedText = customMessage.formattedText else { return false }
         return !formattedText.text.isEmpty
     }
@@ -441,6 +447,17 @@ struct MessageView: View {
 
     /// The poll/checklist/media-or-document switch, pre-erased - see `contentColumnPieces`.
     private var contentSection: AnyView {
+        if let messageCall = customMessage.messageCall {
+            return AnyView(
+                MessageCallView(
+                    presentation: TelegramCallMessagePresentation(
+                        content: messageCall,
+                        isOutgoing: customMessage.message.isOutgoing,
+                    ),
+                    dateText: chatVM.dateFormatter.string(from: customMessage.date),
+                ),
+            )
+        }
         if let messagePoll = customMessage.messagePoll {
             return AnyView(
                 TelegramPollView(
@@ -537,10 +554,24 @@ struct MessageView: View {
         }
         .accessibilityHidden(hasAccessibilityGroup)
 
+        if customMessage.messageCall != nil, callPeer != nil {
+            return AnyView(messageAccessibilityElement(
+                Button(action: startCallBack) {
+                    column
+                }
+                .buttonStyle(.plain),
+            ))
+        }
         if isPollMessage || isChecklistMessage {
             return AnyView(column)
         }
         return AnyView(messageAccessibilityElement(column))
+    }
+
+    private var callPeer: (id: Int64, displayName: String)? {
+        guard case .user(let user) = chatVM.customChat.type else { return nil }
+        let name = telegramUserDisplayName(user)
+        return (id: user.id, displayName: name.isEmpty ? chatVM.customChat.displayTitle : name)
     }
 
     /// Each top-level piece below is individually type-erased into `AnyView` and combined via
@@ -604,6 +635,18 @@ struct MessageView: View {
                 Button("OK") {}
             } message: {
                 Text(commentsErrorMessage ?? "")
+            }
+            .alert("Microphone Access Required", isPresented: $showsMicrophonePermissionAlert) {
+                Button("Open Settings", action: openSettings)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Allow microphone access in Settings to make calls.")
+            }
+            .alert("Camera Access Required", isPresented: $showsCameraPermissionAlert) {
+                Button("Open Settings", action: openSettings)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Allow camera access in Settings to start video calls.")
             }
             .alert("Delete message?", isPresented: $showDeleteOptions) {
                 if customMessage.properties.canBeDeletedOnlyForSelf {
@@ -805,5 +848,25 @@ struct MessageView: View {
             content: messageVideoNote,
             service: chatVM.service,
         )
+    }
+
+    private func startCallBack() {
+        guard let callPeer, let messageCall = customMessage.messageCall else { return }
+        CallKitManager.shared.startOutgoingCall(
+            userId: callPeer.id,
+            displayName: callPeer.displayName,
+            isVideo: messageCall.isVideo,
+            onMicrophonePermissionDenied: {
+                showsMicrophonePermissionAlert = true
+            },
+            onCameraPermissionDenied: {
+                showsCameraPermissionAlert = true
+            },
+        )
+    }
+
+    private func openSettings() {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL)
     }
 }
