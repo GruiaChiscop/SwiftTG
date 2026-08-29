@@ -134,6 +134,38 @@ struct TelegramMessageMetadataTests {
         #expect(telegramMessageContentDescription(message) == "Outgoing Call, duration 2 minutes")
     }
 
+    @Test func `group call presentation matches Telegram conference states`() throws {
+        let now = try #require(Calendar(identifier: .gregorian).date(
+            from: DateComponents(year: 2026, month: 8, day: 29, hour: 12),
+        ))
+        let timestamp = Int(now.timeIntervalSince1970)
+        let active = TelegramGroupCallMessagePresentation(
+            content: groupCallContent(otherParticipantCount: 2, isVideo: true),
+            isOutgoing: true,
+            messageDate: timestamp - 10,
+            now: now,
+        )
+        let timedOut = TelegramGroupCallMessagePresentation(
+            content: groupCallContent(),
+            isOutgoing: false,
+            messageDate: timestamp - 31,
+            now: now,
+        )
+        let declined = TelegramGroupCallMessagePresentation(
+            content: groupCallContent(wasMissed: true),
+            isOutgoing: false,
+            messageDate: timestamp,
+            now: now,
+        )
+
+        #expect(active.title == "Outgoing Group Call")
+        #expect(active.callSystemImage == "video.fill")
+        #expect(active.participantDescription == "3 participants")
+        #expect(timedOut.title == "Missed Group Call")
+        #expect(timedOut.isSuccessful == false)
+        #expect(declined.title == "Declined Group Call")
+    }
+
     @Test func `quoted message excerpt normalizes whitespace and limits characters`() {
         #expect(telegramQuotedMessageExcerpt("First\n  second", characterLimit: 20) == "First second")
         #expect(telegramQuotedMessageExcerpt("123456789", characterLimit: 5) == "12345…")
@@ -206,6 +238,23 @@ struct TelegramMessageMetadataTests {
             duration: duration,
             isVideo: isVideo,
             uniqueId: 0,
+        )
+    }
+
+    private func groupCallContent(
+        otherParticipantCount: Int = 0,
+        isVideo: Bool = false,
+        wasMissed: Bool = false,
+    ) -> MessageGroupCall {
+        MessageGroupCall(
+            duration: 0,
+            isActive: false,
+            isVideo: isVideo,
+            otherParticipantIds: (0..<otherParticipantCount).map {
+                .messageSenderUser(.init(userId: Int64($0 + 1)))
+            },
+            uniqueId: TdInt64(1),
+            wasMissed: wasMissed,
         )
     }
 }

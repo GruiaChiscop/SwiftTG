@@ -101,6 +101,7 @@ struct ChatListLoadKey: Hashable, Sendable {
     var deepLinkErrorMessage: String?
     var pendingDeepLinkJoin: TelegramPendingDeepLinkJoin?
     var pendingGroupCallJoin: TelegramPendingGroupCallJoin?
+    var pendingVideoChatJoin: TelegramPendingVideoChatJoin?
     var inAppNotificationBanner: TelegramInAppNotificationBanner?
     var unconfirmedSession: UnconfirmedSession?
     var unconfirmedSessionActionError: String?

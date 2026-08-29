@@ -18,7 +18,8 @@ final class TelegramGroupCallScreencastEngine: @unchecked Sendable {
 
     func start(
         capturer: OngoingCallThreadLocalContextVideoCapturer,
-        encryption: TelegramGroupCallEngine.Encryption,
+        encryption: TelegramGroupCallEngine.Encryption?,
+        isConference: Bool,
         joinPayloadReady: @escaping @Sendable (_ payload: String, _ audioSourceId: Int) -> Void,
     ) {
         queue.async { [weak self] in
@@ -64,13 +65,13 @@ final class TelegramGroupCallScreencastEngine: @unchecked Sendable {
                 statsLogPath: "",
                 onMutedSpeechActivityDetected: nil,
                 audioDevice: audioDevice,
-                isConference: true,
+                isConference: isConference,
                 isActiveByDefault: true,
-                encryptDecrypt: { data, userId, isEncrypt, unencryptedPrefixSize in
-                    if isEncrypt {
-                        encryption.encrypt(data, unencryptedPrefixSize)
-                    } else {
-                        encryption.decrypt(data, userId)
+                encryptDecrypt: encryption.map { encryption in
+                    { data, userId, isEncrypt, unencryptedPrefixSize in
+                        isEncrypt
+                            ? encryption.encrypt(data, unencryptedPrefixSize)
+                            : encryption.decrypt(data, userId)
                     }
                 },
                 useReferenceImpl: false,

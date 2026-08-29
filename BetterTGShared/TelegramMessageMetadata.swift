@@ -17,6 +17,13 @@ func telegramMessageContentDescription(_ message: Message) -> String {
             isOutgoing: message.isOutgoing,
         ).contentDescription
     }
+    if case .messageGroupCall(let content) = message.content {
+        return TelegramGroupCallMessagePresentation(
+            content: content,
+            isOutgoing: message.isOutgoing,
+            messageDate: message.date,
+        ).contentDescription
+    }
     return telegramMessageContentDescription(message.content)
 }
 
@@ -28,6 +35,13 @@ func telegramChatListMessageDescription(_ message: Message) -> String {
         return TelegramCallMessagePresentation(
             content: content,
             isOutgoing: message.isOutgoing,
+        ).title
+    }
+    if case .messageGroupCall(let content) = message.content {
+        return TelegramGroupCallMessagePresentation(
+            content: content,
+            isOutgoing: message.isOutgoing,
+            messageDate: message.date,
         ).title
     }
     guard message.mediaAlbumId != 0 else {
@@ -96,7 +110,7 @@ func telegramMessageContentDescription(_ content: MessageContent) -> String {
     case .messageCall:
         "Call"
     case .messageGroupCall(let content):
-        content.wasMissed ? "Missed group call" : "Group call"
+        content.wasMissed ? "Declined Group Call" : "Group Call"
     case .messageBasicGroupChatCreate, .messageSupergroupChatCreate:
         "Group created"
     case .messageChatChangeTitle:

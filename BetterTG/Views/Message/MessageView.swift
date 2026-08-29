@@ -33,6 +33,7 @@ struct MessageView: View {
     @State var stickerToEdit: Sticker?
     @State var showsCameraPermissionAlert = false
     @State var showsMicrophonePermissionAlert = false
+    @State var showsConferenceJoinError = false
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -178,7 +179,7 @@ struct MessageView: View {
     }
 
     private var hasInlineVisualMetadata: Bool {
-        if customMessage.messageCall != nil {
+        if customMessage.messageCall != nil || customMessage.messageGroupCall != nil {
             return true
         }
         guard let formattedText = customMessage.formattedText else { return false }
@@ -458,6 +459,16 @@ struct MessageView: View {
                 ),
             )
         }
+        if let messageGroupCall = customMessage.messageGroupCall {
+            return AnyView(
+                MessageGroupCallView(
+                    content: messageGroupCall,
+                    isOutgoing: customMessage.message.isOutgoing,
+                    messageDate: customMessage.message.date,
+                    dateText: chatVM.dateFormatter.string(from: customMessage.date),
+                ),
+            )
+        }
         if let messagePoll = customMessage.messagePoll {
             return AnyView(
                 TelegramPollView(
@@ -562,6 +573,14 @@ struct MessageView: View {
                 .buttonStyle(.plain),
             ))
         }
+        if customMessage.messageGroupCall != nil {
+            return AnyView(messageAccessibilityElement(
+                Button(action: openConferenceCall) {
+                    column
+                }
+                .buttonStyle(.plain),
+            ))
+        }
         if isPollMessage || isChecklistMessage {
             return AnyView(column)
         }
@@ -647,6 +666,11 @@ struct MessageView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Allow camera access in Settings to start video calls.")
+            }
+            .alert("Couldn't Open Group Call", isPresented: $showsConferenceJoinError) {
+                Button("OK") {}
+            } message: {
+                Text("This group call is no longer available, or another call is already active.")
             }
             .alert("Delete message?", isPresented: $showDeleteOptions) {
                 if customMessage.properties.canBeDeletedOnlyForSelf {
@@ -863,6 +887,25 @@ struct MessageView: View {
                 showsCameraPermissionAlert = true
             },
         )
+    }
+
+    private func openConferenceCall() {
+        let message = customMessage.message
+        let session = TelegramCallSession.shared
+        if session.groupCallCoordinator != nil {
+            session.restoreCallView()
+            return
+        }
+        Task { @MainActor in
+            let joined = await session.joinConference(
+                chatId: message.chatId,
+                messageId: message.id,
+                isMuted: false,
+            )
+            if !joined {
+                showsConferenceJoinError = true
+            }
+        }
     }
 
     private func openSettings() {

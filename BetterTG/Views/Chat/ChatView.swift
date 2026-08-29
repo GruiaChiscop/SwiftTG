@@ -67,6 +67,13 @@ struct ChatView: View {
                 conversationSearchField
                 Divider()
             } else {
+                if chatVM.hasActiveVideoChat {
+                    ChatVideoChatBannerView(
+                        call: chatVM.videoChatCall,
+                        isChannel: chatVM.customChat.kind == .channel,
+                        join: joinActiveVideoChat,
+                    )
+                }
                 ChatTopBannerView(chatVM: chatVM) {
                     showsPinnedMessages = true
                 }
@@ -548,6 +555,42 @@ struct ChatView: View {
                 showsMicrophonePermissionAlert = true
             },
         )
+    }
+
+    private func joinActiveVideoChat() {
+        let videoChat = chatVM.videoChat
+        guard videoChat.groupCallId != 0 else { return }
+        Task { @MainActor in
+            let session = TelegramCallSession.shared
+            if session.groupCallCoordinator != nil {
+                session.restoreCallView()
+                return
+            }
+
+            let scheduled = chatVM.videoChatCall?.scheduledStartDate ?? 0 > 0
+            if scheduled, chatVM.videoChatCall?.canBeManaged != true {
+                do {
+                    _ = try await chatVM.service.toggleVideoChatEnabledStartNotification(
+                        enabledStartNotification: !(chatVM.videoChatCall?.enabledStartNotification ?? false),
+                        groupCallId: videoChat.groupCallId,
+                    )
+                } catch {
+                    presentedActionError = PresentedChatActionError(message: telegramErrorDescription(error))
+                }
+                return
+            }
+
+            let joined = await session.joinVideoChat(
+                groupCallId: videoChat.groupCallId,
+                participantId: videoChat.defaultParticipantId,
+                startScheduled: scheduled,
+            )
+            if !joined {
+                presentedActionError = PresentedChatActionError(
+                    message: "This voice chat couldn't be opened.",
+                )
+            }
+        }
     }
 
     private func startVideoCall() {

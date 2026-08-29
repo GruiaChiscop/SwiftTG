@@ -16,6 +16,12 @@ struct MainView: View {
                 }
             }
 
+            Tab("Calls", systemImage: "phone.fill", value: MainTab.calls) {
+                NavigationStack {
+                    CallsView(service: rootVM.service)
+                }
+            }
+
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: MainTab.chats) {
                 NavigationStack(path: $rootVM.path) {
                     MainNavigationRootView()
@@ -65,6 +71,7 @@ struct MainView: View {
 
     private enum MainTab: Hashable {
         case contacts
+        case calls
         case chats
         case you
     }

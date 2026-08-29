@@ -19,6 +19,12 @@ extension CallProtocol: @retroactive @unchecked Sendable {}
 
 extension InputGroupCall: @retroactive @unchecked Sendable {}
 
+// MARK: - GroupCallVideoQuality + @retroactive @unchecked Sendable
+
+/// Stateless marker enum (`thumbnail`/`medium`/`full`); crosses into `TelegramService`'s async
+/// `getGroupCallStreamSegment`.
+extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
+
 // MARK: - TelegramCallSession
 
 /// Bridges TDLib's call state/signaling to the vendored tgcalls engine. TelegramCallEngine owns the
@@ -164,6 +170,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     var showsCameraPermissionAlert = false
     var showsConferenceInvitationError = false
     private(set) var conferenceInvitationErrorMessage = "SwiftTG couldn't invite this participant."
+    private(set) var conferenceInvitationFallbackURL: URL?
     var pendingCallRating: CallRatingRequest?
     private(set) var callRatingSuccessToken: UUID?
 
@@ -410,9 +417,22 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     var conferenceConnectionStatus: String? {
         guard let groupCallCoordinator else { return nil }
         if case .connected = groupCallCoordinator.state {
-            return nil
+            let count = conferenceParticipantCount
+            guard count > 0 else { return "Connected" }
+            return "\(count) \(count == 1 ? "participant" : "participants")"
         }
         return "Connecting"
+    }
+
+    var conferenceDisplayTitle: String {
+        guard let call = groupCallCoordinator?.groupCall else { return "Group Call" }
+        if !call.title.isEmpty {
+            return call.title
+        }
+        if call.isRtmpStream {
+            return "Live Stream"
+        }
+        return call.isVideoChat ? "Voice Chat" : "Group Call"
     }
 
     var conferenceVerificationEmojis: [String] {
@@ -530,48 +550,80 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         }
     }
 
-    func joinConference(inviteLink: String, isMuted: Bool) async -> Bool {
-        guard activeCall == nil,
-              groupCallCoordinator == nil,
-              !inviteLink.isEmpty
-        else { return false }
-
-        let generation = UUID()
-        standaloneConferenceJoinGeneration = generation
-        let microphoneGranted = await AVAudioApplication.requestRecordPermission()
-        guard standaloneConferenceJoinGeneration == generation,
-              activeCall == nil,
-              groupCallCoordinator == nil,
-              microphoneGranted
-        else { return false }
-
-        do {
-            Self.prepareAudioSession()
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            log("[GroupCall] couldn't activate standalone audio session: \(error)")
-            return false
-        }
-
-        isStandaloneConferenceAudioSessionActive = true
-        applyEffectiveAudioSessionState()
-        self.isMuted = isMuted
-        isCallViewMinimized = false
-        conferenceHasReplacedPrivateCall = true
-        conferenceAudioWasMoved = false
-
-        let coordinator = TelegramGroupCallCoordinator(service: service)
-        configureConferenceCallbacks(coordinator)
-        groupCallCoordinator = coordinator
-        log("[GroupCall] joining standalone conference from invite link")
-        coordinator.join(
-            inviteLink: inviteLink,
+    func createConference(isMuted: Bool = false) async -> Bool {
+        guard let coordinator = await prepareStandaloneConference(isMuted: isMuted) else { return false }
+        log("[GroupCall] creating standalone conference")
+        coordinator.create(
             isMuted: isMuted,
             privateCallEngine: nil,
             audioSessionActive: isEffectiveAudioSessionActive,
             prioritizeVP8: false,
         )
         return true
+    }
+
+    func joinConference(inviteLink: String, isMuted: Bool) async -> Bool {
+        guard !inviteLink.isEmpty else { return false }
+        return await joinConference(
+            inputGroupCall: .inputGroupCallLink(.init(link: inviteLink)),
+            isMuted: isMuted,
+            sourceDescription: "invite link",
+        )
+    }
+
+    func joinConference(chatId: Int64, messageId: Int64, isMuted: Bool) async -> Bool {
+        await joinConference(
+            inputGroupCall: .inputGroupCallMessage(.init(chatId: chatId, messageId: messageId)),
+            isMuted: isMuted,
+            sourceDescription: "message chatId=\(chatId) messageId=\(messageId)",
+        )
+    }
+
+    func joinVideoChat(
+        groupCallId: Int,
+        inviteHash: String? = nil,
+        participantId: MessageSender? = nil,
+        isMuted: Bool = true,
+        startScheduled: Bool = false,
+    ) async -> Bool {
+        guard groupCallId != 0, activeCall == nil, groupCallCoordinator == nil else { return false }
+        if startScheduled {
+            do {
+                // `startScheduledVideoChat` returns once the server has actually started the call,
+                // so the join RPC below reaches a live call - no client-side scheduled state to wait on.
+                _ = try await service.startScheduledVideoChat(groupCallId: groupCallId)
+            } catch {
+                log("[GroupCall] couldn't start scheduled video chat groupCallId=\(groupCallId): \(error)")
+                return false
+            }
+        }
+        guard let coordinator = await prepareStandaloneConference(isMuted: isMuted) else { return false }
+        log("[GroupCall] joining video chat groupCallId=\(groupCallId)")
+        coordinator.joinVideoChat(
+            groupCallId: groupCallId,
+            inviteHash: inviteHash,
+            participantId: participantId,
+            isMuted: isMuted,
+            audioSessionActive: isEffectiveAudioSessionActive,
+            prioritizeVP8: false,
+        )
+        return true
+    }
+
+    func createVideoChat(chatId: Int64, title: String = "") async -> Bool {
+        guard activeCall == nil, groupCallCoordinator == nil else { return false }
+        do {
+            let created = try await service.createVideoChat(
+                chatId: chatId,
+                isRtmpStream: false,
+                startDate: 0,
+                title: title,
+            )
+            return await joinVideoChat(groupCallId: created.id)
+        } catch {
+            log("[GroupCall] couldn't create video chat in chatId=\(chatId): \(error)")
+            return false
+        }
     }
 
     func receiveConferenceInvitationPayload(
@@ -1490,6 +1542,56 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         return [comment, hashtags].filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
+    private func joinConference(
+        inputGroupCall: InputGroupCall,
+        isMuted: Bool,
+        sourceDescription: String,
+    ) async -> Bool {
+        guard let coordinator = await prepareStandaloneConference(isMuted: isMuted) else { return false }
+        log("[GroupCall] joining standalone conference from \(sourceDescription)")
+        coordinator.join(
+            inputGroupCall: inputGroupCall,
+            isMuted: isMuted,
+            privateCallEngine: nil,
+            audioSessionActive: isEffectiveAudioSessionActive,
+            prioritizeVP8: false,
+        )
+        return true
+    }
+
+    private func prepareStandaloneConference(isMuted: Bool) async -> TelegramGroupCallCoordinator? {
+        guard activeCall == nil, groupCallCoordinator == nil else { return nil }
+
+        let generation = UUID()
+        standaloneConferenceJoinGeneration = generation
+        let microphoneGranted = await AVAudioApplication.requestRecordPermission()
+        guard standaloneConferenceJoinGeneration == generation,
+              activeCall == nil,
+              groupCallCoordinator == nil,
+              microphoneGranted
+        else { return nil }
+
+        do {
+            Self.prepareAudioSession()
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            log("[GroupCall] couldn't activate standalone audio session: \(error)")
+            return nil
+        }
+
+        isStandaloneConferenceAudioSessionActive = true
+        applyEffectiveAudioSessionState()
+        self.isMuted = isMuted
+        isCallViewMinimized = false
+        conferenceHasReplacedPrivateCall = true
+        conferenceAudioWasMoved = false
+
+        let coordinator = TelegramGroupCallCoordinator(service: service)
+        configureConferenceCallbacks(coordinator)
+        groupCallCoordinator = coordinator
+        return coordinator
+    }
+
     private func restoreCallView(stoppingPictureInPicture: Bool) {
         guard hasActiveCallSurface else { return }
         isCallViewMinimized = false
@@ -1572,10 +1674,12 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     ) {
         switch result {
         case .inviteGroupCallParticipantResultSuccess(let success):
-            conferenceInvitationMessages[userId] = ConferenceInvitationMessage(
-                chatId: success.chatId,
-                messageId: success.messageId,
-            )
+            if success.chatId != 0, success.messageId != 0 {
+                conferenceInvitationMessages[userId] = ConferenceInvitationMessage(
+                    chatId: success.chatId,
+                    messageId: success.messageId,
+                )
+            }
             log("[GroupCall] invited userId=\(userId) video=\(isVideo)")
         case .inviteGroupCallParticipantResultUserAlreadyParticipant:
             conferenceInvitedUserIds.remove(userId)
@@ -1585,7 +1689,10 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
             conferenceInvitedUserIds.remove(userId)
             conferenceInvitationMessages.removeValue(forKey: userId)
             log("[GroupCall] userId=\(userId) couldn't be invited because of privacy settings")
-            presentConferenceInvitationError("This user can't be invited because of their privacy settings.")
+            presentConferenceInvitationError(
+                "This user can't be invited because of their privacy settings. Share the call link instead.",
+                fallbackURL: conferenceInviteURL,
+            )
         case .inviteGroupCallParticipantResultUserWasBanned:
             conferenceInvitedUserIds.remove(userId)
             conferenceInvitationMessages.removeValue(forKey: userId)
@@ -1594,8 +1701,9 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         }
     }
 
-    private func presentConferenceInvitationError(_ message: String) {
+    private func presentConferenceInvitationError(_ message: String, fallbackURL: URL? = nil) {
         conferenceInvitationErrorMessage = message
+        conferenceInvitationFallbackURL = fallbackURL
         showsConferenceInvitationError = true
     }
 

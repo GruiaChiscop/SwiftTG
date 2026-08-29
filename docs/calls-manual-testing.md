@@ -52,6 +52,37 @@ the exact step that failed.
 - [ ] Confirm the chat-list preview, conversation search result, and
   pinned-message preview no longer reduce every call to the generic word Call.
 
+### Calls tab and call links
+
+- [ ] Confirm the Calls tab appears between Contacts and Chats and loads recent
+  private and conference calls in reverse chronological order.
+- [ ] Switch between All and Missed and confirm the server-backed results match
+  Telegram-iOS, including declined standalone conferences.
+- [ ] Scroll past the first page and confirm pagination adds entries without
+  duplicates.
+- [ ] Start audio and video calls from call-history rows and from New Call;
+  confirm the contact picker remains visible when permission or startup fails.
+- [ ] Open a conversation from a call row's context menu and return to Calls.
+- [ ] Delete one history item, then clear all call history and confirm the list
+  refreshes on another Telegram client.
+- [ ] Create a New Call Link without joining it, share it, reset it, and confirm
+  the old link stops working while the replacement works.
+- [ ] Start a conference from the new link, then create and delete another unused
+  link.
+
+### Standalone conference messages
+
+- [ ] Confirm incoming and outgoing conference messages show the correct arrow,
+  audio/video icon, participant count, and duration.
+- [ ] Let a fresh unanswered invitation remain visible for 30 seconds and confirm
+  it changes from Incoming Group Call to Missed Group Call without reopening the
+  conversation.
+- [ ] Decline an invitation and confirm the bubble reads Declined Group Call.
+- [ ] Tap an active conference message and confirm the conference opens; tap an
+  expired one and confirm a useful unavailable state.
+- [ ] With another conference already active, tap a conference bubble and confirm
+  BetterTG restores the active call instead of joining a second one.
+
 ### Outgoing call
 
 - [ ] Start an audio call from a private conversation.
@@ -133,6 +164,66 @@ the exact step that failed.
   confirm it and verify the conference ends for all participants.
 - [ ] Confirm reconnecting after a brief interruption does not create duplicate
   local participants or stale UI.
+
+## Group voice chats and channel live streams
+
+### Entry points, banner, and deep links
+
+- [ ] In Chat Info, confirm a group administrator sees Start Voice Chat and a
+  channel administrator sees Start Live Stream; ordinary members must not see a
+  creation action.
+- [ ] Confirm the pre-existing Mute or Unmute control remains in Chat Info and
+  still changes notification state.
+- [ ] Start a voice chat immediately and join it as an ordinary member.
+- [ ] Confirm an active voice chat/live stream banner appears above the message
+  list with its title, participant count, and Join action, and disappears after
+  the call ends.
+- [ ] Minimize a voice chat and confirm the compact bar shows its real title,
+  participant/connection state, Mute, restore, and End controls.
+- [ ] Open public voice-chat and live-stream `t.me` links, confirm the join prompt
+  identifies the chat, and join with the microphone initially muted.
+- [ ] Open an invalid, expired, or inactive video-chat deep link and confirm a
+  useful Link Error is shown.
+
+### Scheduling and reminders
+
+- [ ] Schedule a voice chat at the minimum and maximum allowed boundaries and
+  confirm Telegram rejects dates outside 10 seconds to 8 days.
+- [ ] Confirm the scheduled date appears in Chat Info and in the conversation
+  banner on all clients.
+- [ ] As an ordinary member, enable and disable the start reminder from Chat Info
+  and from the conversation banner.
+- [ ] As an administrator, start the scheduled chat early and confirm members
+  receive the expected update and can join.
+
+### Administration, links, and recording
+
+- [ ] Change the voice-chat title and confirm it updates in the full call UI,
+  minimized bar, Chat Info, and other clients.
+- [ ] Toggle Only Admins Can Unmute New Participants and verify a new listener's
+  mute/raise-hand behavior.
+- [ ] Toggle Allow Messages and confirm the in-call message composer appears or
+  disappears for ordinary participants.
+- [ ] Share listener and speaker links; verify the speaker hash grants the
+  expected unmute capability and the listener link does not.
+- [ ] Revoke the voice-chat invite links and verify previously shared links stop
+  working and replacement links work.
+- [ ] Invite group members from the in-call participant picker and confirm the
+  group receives the expected service message.
+- [ ] Start and stop audio recording, then video recording; confirm recording
+  state is visible and the resulting files arrive in Saved Messages.
+- [ ] End the voice chat for everyone from Manage, cancel once, then confirm it.
+
+### RTMP live stream
+
+- [ ] Create Stream with… and confirm the server URL and stream key match another
+  Telegram client for the same channel/group.
+- [ ] Configure streaming software with those credentials and confirm viewers can
+  open the live stream from the conversation banner and deep link.
+- [ ] Reset the stream key, verify the old key can no longer publish, and publish
+  successfully with the replacement.
+- [ ] Share the server URL/key controls with VoiceOver and confirm the secret key
+  is not announced unexpectedly when focus is elsewhere.
 
 ## Conference participants and moderation
 

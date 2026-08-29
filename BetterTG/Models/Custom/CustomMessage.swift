@@ -146,6 +146,13 @@ import TDLibKit
         return nil
     }
 
+    var messageGroupCall: MessageGroupCall? {
+        if case .messageGroupCall(let messageGroupCall) = message.content {
+            return messageGroupCall
+        }
+        return nil
+    }
+
     var locationPresentation: TelegramLocationPresentation? {
         TelegramLocationPresentation(message.content)
     }

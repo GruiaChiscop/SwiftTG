@@ -92,8 +92,8 @@ import UIKit
         audioSessionActive: Bool,
         prioritizeVP8: Bool,
     ) {
-        begin(
-            mode: .join(.inputGroupCallLink(.init(link: inviteLink))),
+        join(
+            inputGroupCall: .inputGroupCallLink(.init(link: inviteLink)),
             isMuted: isMuted,
             privateCallEngine: privateCallEngine,
             audioSessionActive: audioSessionActive,
@@ -108,11 +108,48 @@ import UIKit
         audioSessionActive: Bool,
         prioritizeVP8: Bool,
     ) {
-        begin(
-            mode: .join(.inputGroupCallMessage(.init(
+        join(
+            inputGroupCall: .inputGroupCallMessage(.init(
                 chatId: invitationChatId,
                 messageId: invitationMessageId,
-            ))),
+            )),
+            isMuted: isMuted,
+            privateCallEngine: nil,
+            audioSessionActive: audioSessionActive,
+            prioritizeVP8: prioritizeVP8,
+        )
+    }
+
+    func join(
+        inputGroupCall: InputGroupCall,
+        isMuted: Bool,
+        privateCallEngine: TelegramCallEngine?,
+        audioSessionActive: Bool,
+        prioritizeVP8: Bool,
+    ) {
+        begin(
+            mode: .join(inputGroupCall),
+            isMuted: isMuted,
+            privateCallEngine: privateCallEngine,
+            audioSessionActive: audioSessionActive,
+            prioritizeVP8: prioritizeVP8,
+        )
+    }
+
+    func joinVideoChat(
+        groupCallId: Int,
+        inviteHash: String? = nil,
+        participantId: MessageSender? = nil,
+        isMuted: Bool,
+        audioSessionActive: Bool,
+        prioritizeVP8: Bool,
+    ) {
+        begin(
+            mode: .videoChat(
+                groupCallId: groupCallId,
+                inviteHash: inviteHash,
+                participantId: participantId,
+            ),
             isMuted: isMuted,
             privateCallEngine: nil,
             audioSessionActive: audioSessionActive,
@@ -123,6 +160,13 @@ import UIKit
     func invite(userId: Int64, isVideo: Bool) async throws -> InviteGroupCallParticipantResult {
         guard let groupCallId = groupCall?.id else {
             throw CoordinatorError.notReady
+        }
+        if groupCall?.isVideoChat == true {
+            _ = try await service.inviteVideoChatParticipants(
+                groupCallId: groupCallId,
+                userIds: [userId],
+            )
+            return .inviteGroupCallParticipantResultSuccess(.init(chatId: 0, messageId: 0))
         }
         return try await service.inviteGroupCallParticipant(
             groupCallId: groupCallId,
@@ -365,13 +409,16 @@ import UIKit
             onScreenSharingFailed?()
             return
         }
+        // A video chat's screencast is server-mixed like its main media - no E2E, plain transport.
+        let isVideoChat = groupCall?.isVideoChat == true
         let generation = operationGeneration
         let screenSharingGeneration = UUID()
         self.screenSharingGeneration = screenSharingGeneration
         screenSharingTask?.cancel()
         screencastEngine.start(
             capturer: capturer,
-            encryption: encryptionBridge.makeEncryption(channel: .screenSharing),
+            encryption: isVideoChat ? nil : encryptionBridge.makeEncryption(channel: .screenSharing),
+            isConference: !isVideoChat,
         ) { [weak self] payload, audioSourceId in
             Task { @MainActor [weak self] in
                 self?.submitScreenSharingJoin(
@@ -471,6 +518,7 @@ import UIKit
     private enum Mode: Sendable {
         case create
         case join(InputGroupCall)
+        case videoChat(groupCallId: Int, inviteHash: String?, participantId: MessageSender?)
     }
 
     private enum CoordinatorError: Swift.Error {
@@ -492,7 +540,7 @@ import UIKit
     private var operationTask: Task<Void, Never>?
     private var enginePreparationTask: Task<Void, Never>?
     private var operationGeneration = UUID()
-    private var currentInputGroupCall: InputGroupCall?
+    private var currentJoinMode: Mode?
     private var rejoinTask: Task<Void, Never>?
     private var rejoinRetryTask: Task<Void, Never>?
     private var rejoinGeneration = UUID()
@@ -534,6 +582,26 @@ import UIKit
             }
         }
         return preferences
+    }
+
+    private static func broadcastScale(durationMilliseconds: Int64) -> Int? {
+        switch durationMilliseconds {
+        case 1000: 0
+        case 500: 1
+        case 250: 2
+        case 125: 3
+        default: nil
+        }
+    }
+
+    private static func groupCallVideoQuality(
+        from quality: TelegramGroupCallEngine.RequestedVideoQuality,
+    ) -> GroupCallVideoQuality {
+        switch quality {
+        case .thumbnail: .groupCallVideoQualityThumbnail
+        case .medium: .groupCallVideoQualityMedium
+        case .full: .groupCallVideoQualityFull
+        }
     }
 
     private func setHandRaised(_ isHandRaised: Bool) {
@@ -648,8 +716,19 @@ import UIKit
         let temporaryDirectory = FileManager.default.temporaryDirectory
         let logIdentifier = UUID().uuidString
 
+        // A chat-bound video chat is server-mixed, not E2E: no frame encryption, plain group-call
+        // transport. `.create` / `.join` (invite link or message) are always E2E conferences.
+        let isVideoChat =
+            if case .videoChat = mode {
+                true
+            } else {
+                false
+            }
+
         let configuration = TelegramGroupCallEngine.Configuration(
-            encryption: bridge.makeEncryption(),
+            encryption: isVideoChat ? nil : bridge.makeEncryption(),
+            isConference: !isVideoChat,
+            broadcast: isVideoChat ? makeBroadcastDataSource(generation: generation) : nil,
             isActiveByDefault: privateCallEngine == nil,
             isMuted: isMuted,
             outgoingAudioBitrateKbit: preferences.outgoingAudioBitrateKbit,
@@ -714,6 +793,75 @@ import UIKit
         }
     }
 
+    /// Fetches broadcast/HLS stream segments through TDLib so tgcalls can play a video chat or live
+    /// stream while its connection is in broadcast mode (see `applyJoinResponse`).
+    private func makeBroadcastDataSource(generation: UUID) -> TelegramGroupCallEngine.BroadcastDataSource {
+        TelegramGroupCallEngine.BroadcastDataSource(
+            currentTimeMilliseconds: { [weak self] in
+                await self?.broadcastCurrentTimeMilliseconds(generation: generation)
+                    ?? Int64(Foundation.Date().timeIntervalSince1970 * 1000)
+            },
+            audioPart: { [weak self] timestamp, duration in
+                await self?.broadcastStreamSegment(
+                    timestampMilliseconds: timestamp,
+                    durationMilliseconds: duration,
+                    channelId: 0,
+                    videoQuality: nil,
+                    generation: generation,
+                )
+            },
+            videoPart: { [weak self] timestamp, duration, channelId, quality in
+                await self?.broadcastStreamSegment(
+                    timestampMilliseconds: timestamp,
+                    durationMilliseconds: duration,
+                    channelId: Int(channelId),
+                    videoQuality: quality,
+                    generation: generation,
+                )
+            },
+        )
+    }
+
+    @MainActor private func broadcastCurrentTimeMilliseconds(generation: UUID) async -> Int64 {
+        let wallClock = Int64(Foundation.Date().timeIntervalSince1970 * 1000)
+        guard operationGeneration == generation, let groupCall, groupCall.isRtmpStream else {
+            return wallClock
+        }
+        guard let stream = try? await service.getGroupCallStreams(groupCallId: groupCall.id).streams.first
+        else { return 0 }
+        return Int64(stream.timeOffset)
+    }
+
+    @MainActor private func broadcastStreamSegment(
+        timestampMilliseconds: Int64,
+        durationMilliseconds: Int64,
+        channelId: Int,
+        videoQuality: TelegramGroupCallEngine.RequestedVideoQuality?,
+        generation: UUID,
+    ) async -> TelegramGroupCallEngine.BroadcastPart? {
+        guard operationGeneration == generation,
+              let groupCallId = groupCall?.id,
+              let scale = Self.broadcastScale(durationMilliseconds: durationMilliseconds)
+        else { return nil }
+        do {
+            let segment = try await service.getGroupCallStreamSegment(
+                channelId: channelId,
+                groupCallId: groupCallId,
+                scale: scale,
+                timeOffset: timestampMilliseconds,
+                videoQuality: videoQuality.map(Self.groupCallVideoQuality(from:)),
+            )
+            guard !segment.data.isEmpty else { return nil }
+            return TelegramGroupCallEngine.BroadcastPart(
+                timestampMilliseconds: timestampMilliseconds,
+                responseTimeSeconds: Foundation.Date().timeIntervalSince1970,
+                oggData: segment.data,
+            )
+        } catch {
+            return nil
+        }
+    }
+
     private func submitJoin(
         mode: Mode,
         payload: String,
@@ -734,49 +882,67 @@ import UIKit
             )
 
             do {
-                let info: GroupCallInfo =
-                    switch mode {
-                    case .create:
-                        try await service.createGroupCall(joinParameters: parameters)
-                    case .join(let inputGroupCall):
-                        try await service.joinGroupCall(
-                            inputGroupCall: inputGroupCall,
-                            joinParameters: parameters,
-                        )
-                    }
+                let joinedGroupCallId: Int
+                let joinPayload: String
+                switch mode {
+                case .create:
+                    let info = try await service.createGroupCall(joinParameters: parameters)
+                    joinedGroupCallId = info.groupCallId
+                    joinPayload = info.joinPayload
+                case .join(let inputGroupCall):
+                    let info = try await service.joinGroupCall(
+                        inputGroupCall: inputGroupCall,
+                        joinParameters: parameters,
+                    )
+                    joinedGroupCallId = info.groupCallId
+                    joinPayload = info.joinPayload
+                case .videoChat(let groupCallId, let inviteHash, let participantId):
+                    let response = try await service.joinVideoChat(
+                        groupCallId: groupCallId,
+                        inviteHash: inviteHash,
+                        joinParameters: parameters,
+                        participantId: participantId,
+                    )
+                    joinedGroupCallId = groupCallId
+                    joinPayload = response.text
+                }
 
                 guard operationGeneration == generation else {
                     _ =
-                        if case .create = mode {
-                            try? await service.endGroupCall(groupCallId: info.groupCallId)
-                        } else {
-                            try? await service.leaveGroupCall(groupCallId: info.groupCallId)
+                        switch mode {
+                        case .create:
+                            try? await service.endGroupCall(groupCallId: joinedGroupCallId)
+                        case .join, .videoChat:
+                            try? await service.leaveGroupCall(groupCallId: joinedGroupCallId)
                         }
                     return
                 }
 
-                bridge.setGroupCallId(info.groupCallId)
-                let call = try await service.getGroupCall(groupCallId: info.groupCallId)
+                // The E2E encryption bridge is unused for a video chat (server-mixed, not E2E).
+                if case .videoChat = mode {} else {
+                    bridge.setGroupCallId(joinedGroupCallId)
+                }
+                let call = try await service.getGroupCall(groupCallId: joinedGroupCallId)
                 guard operationGeneration == generation else {
                     _ =
                         if call.isOwned {
-                            try? await service.endGroupCall(groupCallId: info.groupCallId)
+                            try? await service.endGroupCall(groupCallId: joinedGroupCallId)
                         } else {
-                            try? await service.leaveGroupCall(groupCallId: info.groupCallId)
+                            try? await service.leaveGroupCall(groupCallId: joinedGroupCallId)
                         }
                     return
                 }
 
                 groupCall = call
-                currentInputGroupCall =
+                currentJoinMode =
                     switch mode {
                     case .create:
-                        .inputGroupCallLink(.init(link: call.inviteLink))
-                    case .join(let inputGroupCall):
-                        inputGroupCall
+                        .join(.inputGroupCallLink(.init(link: call.inviteLink)))
+                    case .join, .videoChat:
+                        mode
                     }
                 state = .connecting(groupCallId: call.id, inviteLink: call.inviteLink)
-                engine.applyJoinResponse(info.joinPayload)
+                engine.applyJoinResponse(joinPayload)
                 loadMoreParticipants()
                 guard operationGeneration == generation else { return }
                 onPrepared?(PreparedCall(groupCallId: call.id, inviteLink: call.inviteLink))
@@ -805,7 +971,7 @@ import UIKit
         guard rejoinTask == nil,
               !isRequestingRejoinPayload,
               let groupCall,
-              let inputGroupCall = currentInputGroupCall
+              let joinMode = currentJoinMode
         else { return }
 
         let generation = operationGeneration
@@ -818,7 +984,7 @@ import UIKit
         engine.emitJoinPayload { [weak self] payload, audioSourceId in
             Task { @MainActor [weak self] in
                 self?.submitRejoin(
-                    inputGroupCall: inputGroupCall,
+                    mode: joinMode,
                     payload: payload,
                     audioSourceId: audioSourceId,
                     groupCallId: groupCallId,
@@ -830,7 +996,7 @@ import UIKit
     }
 
     private func submitRejoin(
-        inputGroupCall: InputGroupCall,
+        mode: Mode,
         payload: String,
         audioSourceId: Int,
         groupCallId: Int,
@@ -853,15 +1019,30 @@ import UIKit
                 payload: payload,
             )
             do {
-                let info = try await service.joinGroupCall(
-                    inputGroupCall: inputGroupCall,
-                    joinParameters: parameters,
-                )
+                let joinPayload: String
+                switch mode {
+                case .join(let inputGroupCall):
+                    let info = try await service.joinGroupCall(
+                        inputGroupCall: inputGroupCall,
+                        joinParameters: parameters,
+                    )
+                    joinPayload = info.joinPayload
+                case .videoChat(let groupCallId, let inviteHash, let participantId):
+                    let response = try await service.joinVideoChat(
+                        groupCallId: groupCallId,
+                        inviteHash: inviteHash,
+                        joinParameters: parameters,
+                        participantId: participantId,
+                    )
+                    joinPayload = response.text
+                case .create:
+                    return
+                }
                 guard operationGeneration == generation,
                       rejoinGeneration == requestGeneration,
                       groupCall?.id == groupCallId
                 else { return }
-                engine.applyJoinResponse(info.joinPayload)
+                engine.applyJoinResponse(joinPayload)
                 let refreshedCall = try await service.getGroupCall(groupCallId: groupCallId)
                 guard operationGeneration == generation,
                       rejoinGeneration == requestGeneration,
@@ -1293,7 +1474,7 @@ import UIKit
         speakingLastActiveAt.removeAll(keepingCapacity: false)
         speakingAudioSourceIds.removeAll(keepingCapacity: false)
         encryptionBridge = nil
-        currentInputGroupCall = nil
+        currentJoinMode = nil
         groupCall = nil
         participants.removeAll(keepingCapacity: false)
         messages.removeAll(keepingCapacity: false)

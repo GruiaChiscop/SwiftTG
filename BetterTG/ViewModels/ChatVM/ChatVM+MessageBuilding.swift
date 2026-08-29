@@ -54,7 +54,7 @@ extension ChatVM {
                     messageText.text
                 case .messageAudio, .messageDocument, .messagePhoto, .messageVideo, .messageVoiceNote:
                     telegramMessageFormattedText(message)
-                case .messageCall, .messagePoll, .messageSticker, .messageVideoNote:
+                case .messageCall, .messageGroupCall, .messagePoll, .messageSticker, .messageVideoNote:
                     nil
                 default:
                     FormattedText(entities: [], text: telegramMessageContentDescription(message))

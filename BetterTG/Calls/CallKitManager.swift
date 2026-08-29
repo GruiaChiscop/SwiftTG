@@ -64,9 +64,11 @@ import TDLibKit
         isVideo: Bool = false,
         onMicrophonePermissionDenied: @escaping () -> Void = {},
         onCameraPermissionDenied: @escaping () -> Void = {},
+        completion: @escaping (Bool) -> Void = { _ in },
     ) {
         guard currentCallUUID == nil, !isRequestingOutgoingCall else {
             log("[CallKit] refusing a second outgoing call while another call is active")
+            completion(false)
             return
         }
         isRequestingOutgoingCall = true
@@ -77,6 +79,7 @@ import TDLibKit
                 isRequestingOutgoingCall = false
                 log("[CallKit] microphone permission denied; outgoing call not started")
                 onMicrophonePermissionDenied()
+                completion(false)
                 return
             }
             if isVideo {
@@ -85,12 +88,14 @@ import TDLibKit
                     isRequestingOutgoingCall = false
                     log("[CallKit] camera permission denied; outgoing video call not started")
                     onCameraPermissionDenied()
+                    completion(false)
                     return
                 }
             }
             guard isRequestingOutgoingCall, currentCallUUID == nil else {
                 isRequestingOutgoingCall = false
                 log("[CallKit] outgoing call superseded while waiting for microphone permission")
+                completion(false)
                 return
             }
 
@@ -114,9 +119,11 @@ import TDLibKit
                     updated: Self.update(handle: visibleHandle, displayName: name, hasVideo: isVideo),
                 )
                 Self.donateCallIntent(userId: userId, displayName: name, isVideo: isVideo)
+                completion(true)
             } catch {
                 log("CallKit start request failed: \(error)")
                 clearCurrentCall(ifMatching: uuid)
+                completion(false)
             }
         }
     }

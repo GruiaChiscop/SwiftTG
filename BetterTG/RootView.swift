@@ -107,6 +107,27 @@ struct RootView: View {
             )
         }
         .alert(
+            rootVM.pendingVideoChatJoin?.isLiveStream == true ? "Join Live Stream?" : "Join Voice Chat?",
+            isPresented: Binding(
+                get: { rootVM.pendingVideoChatJoin != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        rootVM.pendingVideoChatJoin = nil
+                    }
+                },
+            ),
+            presenting: rootVM.pendingVideoChatJoin,
+        ) { pending in
+            Button(pending.isLiveStream ? "Watch" : "Join", action: rootVM.confirmPendingVideoChatJoin)
+            Button("Cancel", role: .cancel) { rootVM.pendingVideoChatJoin = nil }
+        } message: { pending in
+            Text(
+                pending.isLiveStream
+                    ? "Watch the live stream from \(pending.title)."
+                    : "Join \(pending.title) with your microphone off.",
+            )
+        }
+        .alert(
             "Link Error",
             isPresented: Binding(
                 get: { rootVM.deepLinkErrorMessage != nil },

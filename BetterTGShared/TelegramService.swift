@@ -366,6 +366,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         senderId: MessageSender?,
         topicId: MessageTopic?,
     ) async throws -> FoundChatMessages
+    func searchCallMessages(limit: Int?, offset: String?, onlyMissed: Bool?) async throws -> FoundMessages
     func searchMessages(
         chatList: ChatList?,
         chatTypeFilter: SearchMessagesChatTypeFilter?,
@@ -383,6 +384,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
         offset: String?,
         query: String?,
     ) async throws -> FoundMessages
+    func deleteAllCallMessages(revoke: Bool?) async throws -> Ok
     func setChatNotificationSettings(chatId: Int64?, notificationSettings: ChatNotificationSettings?) async throws -> Ok
     func setChatDraftMessage(chatId: Int64?, draftMessage: DraftMessage?, topicId: MessageTopic?) async throws -> Ok
     func setAuthenticationPhoneNumber(
@@ -503,10 +505,52 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     ) async throws -> Ok
 
     func createGroupCall(joinParameters: GroupCallJoinParameters?) async throws -> GroupCallInfo
+    func createVideoChat(
+        chatId: Int64?,
+        isRtmpStream: Bool?,
+        startDate: Int?,
+        title: String?,
+    ) async throws -> GroupCallId
     func joinGroupCall(
         inputGroupCall: InputGroupCall?,
         joinParameters: GroupCallJoinParameters?,
     ) async throws -> GroupCallInfo
+    func joinVideoChat(
+        groupCallId: Int?,
+        inviteHash: String?,
+        joinParameters: GroupCallJoinParameters?,
+        participantId: MessageSender?,
+    ) async throws -> Text
+    func getVideoChatAvailableParticipants(chatId: Int64?) async throws -> MessageSenders
+    func setVideoChatDefaultParticipant(chatId: Int64?, defaultParticipantId: MessageSender?) async throws -> Ok
+    func getGroupCallStreams(groupCallId: Int?) async throws -> GroupCallStreams
+    func getGroupCallStreamSegment(
+        channelId: Int?,
+        groupCallId: Int?,
+        scale: Int?,
+        timeOffset: Int64?,
+        videoQuality: GroupCallVideoQuality?,
+    ) async throws -> TdData
+    func startScheduledVideoChat(groupCallId: Int?) async throws -> Ok
+    func toggleVideoChatEnabledStartNotification(
+        enabledStartNotification: Bool?,
+        groupCallId: Int?,
+    ) async throws -> Ok
+    func getVideoChatInviteLink(canSelfUnmute: Bool?, groupCallId: Int?) async throws -> HttpUrl
+    func inviteVideoChatParticipants(groupCallId: Int?, userIds: [Int64]?) async throws -> Ok
+    func revokeGroupCallInviteLink(groupCallId: Int?) async throws -> Ok
+    func setVideoChatTitle(groupCallId: Int?, title: String?) async throws -> Ok
+    func toggleVideoChatMuteNewParticipants(groupCallId: Int?, muteNewParticipants: Bool?) async throws -> Ok
+    func toggleGroupCallAreMessagesAllowed(areMessagesAllowed: Bool?, groupCallId: Int?) async throws -> Ok
+    func startGroupCallRecording(
+        groupCallId: Int?,
+        recordVideo: Bool?,
+        title: String?,
+        usePortraitOrientation: Bool?,
+    ) async throws -> Ok
+    func endGroupCallRecording(groupCallId: Int?) async throws -> Ok
+    func getVideoChatRtmpUrl(chatId: Int64?) async throws -> RtmpUrl
+    func replaceVideoChatRtmpUrl(chatId: Int64?) async throws -> RtmpUrl
     func startGroupCallScreenSharing(
         audioSourceId: Int?,
         groupCallId: Int?,
@@ -786,6 +830,10 @@ extension TelegramSession: TelegramService {
         )
     }
 
+    func searchCallMessages(limit: Int?, offset: String?, onlyMissed: Bool?) async throws -> FoundMessages {
+        try await client.searchCallMessages(limit: limit, offset: offset, onlyMissed: onlyMissed)
+    }
+
     func searchMessages(
         chatList: ChatList?,
         chatTypeFilter: SearchMessagesChatTypeFilter?,
@@ -822,6 +870,10 @@ extension TelegramSession: TelegramService {
             offset: offset,
             query: query,
         )
+    }
+
+    func deleteAllCallMessages(revoke: Bool?) async throws -> Ok {
+        try await client.deleteAllCallMessages(revoke: revoke)
     }
 
     func addChatToList(chatId: Int64?, chatList: ChatList?) async throws -> Ok {
@@ -2038,6 +2090,20 @@ extension TelegramSession: TelegramService {
         try await client.createGroupCall(joinParameters: joinParameters)
     }
 
+    func createVideoChat(
+        chatId: Int64?,
+        isRtmpStream: Bool?,
+        startDate: Int?,
+        title: String?,
+    ) async throws -> GroupCallId {
+        try await client.createVideoChat(
+            chatId: chatId,
+            isRtmpStream: isRtmpStream,
+            startDate: startDate,
+            title: title,
+        )
+    }
+
     func joinGroupCall(
         inputGroupCall: InputGroupCall?,
         joinParameters: GroupCallJoinParameters?,
@@ -2046,6 +2112,127 @@ extension TelegramSession: TelegramService {
             inputGroupCall: inputGroupCall,
             joinParameters: joinParameters,
         )
+    }
+
+    func joinVideoChat(
+        groupCallId: Int?,
+        inviteHash: String?,
+        joinParameters: GroupCallJoinParameters?,
+        participantId: MessageSender?,
+    ) async throws -> Text {
+        try await client.joinVideoChat(
+            groupCallId: groupCallId,
+            inviteHash: inviteHash,
+            joinParameters: joinParameters,
+            participantId: participantId,
+        )
+    }
+
+    func getVideoChatAvailableParticipants(chatId: Int64?) async throws -> MessageSenders {
+        try await client.getVideoChatAvailableParticipants(chatId: chatId)
+    }
+
+    func setVideoChatDefaultParticipant(
+        chatId: Int64?,
+        defaultParticipantId: MessageSender?,
+    ) async throws -> Ok {
+        try await client.setVideoChatDefaultParticipant(
+            chatId: chatId,
+            defaultParticipantId: defaultParticipantId,
+        )
+    }
+
+    func getGroupCallStreams(groupCallId: Int?) async throws -> GroupCallStreams {
+        try await client.getGroupCallStreams(groupCallId: groupCallId)
+    }
+
+    func getGroupCallStreamSegment(
+        channelId: Int?,
+        groupCallId: Int?,
+        scale: Int?,
+        timeOffset: Int64?,
+        videoQuality: GroupCallVideoQuality?,
+    ) async throws -> TdData {
+        try await client.getGroupCallStreamSegment(
+            channelId: channelId,
+            groupCallId: groupCallId,
+            scale: scale,
+            timeOffset: timeOffset,
+            videoQuality: videoQuality,
+        )
+    }
+
+    func startScheduledVideoChat(groupCallId: Int?) async throws -> Ok {
+        try await client.startScheduledVideoChat(groupCallId: groupCallId)
+    }
+
+    func toggleVideoChatEnabledStartNotification(
+        enabledStartNotification: Bool?,
+        groupCallId: Int?,
+    ) async throws -> Ok {
+        try await client.toggleVideoChatEnabledStartNotification(
+            enabledStartNotification: enabledStartNotification,
+            groupCallId: groupCallId,
+        )
+    }
+
+    func getVideoChatInviteLink(canSelfUnmute: Bool?, groupCallId: Int?) async throws -> HttpUrl {
+        try await client.getVideoChatInviteLink(canSelfUnmute: canSelfUnmute, groupCallId: groupCallId)
+    }
+
+    func inviteVideoChatParticipants(groupCallId: Int?, userIds: [Int64]?) async throws -> Ok {
+        try await client.inviteVideoChatParticipants(groupCallId: groupCallId, userIds: userIds)
+    }
+
+    func revokeGroupCallInviteLink(groupCallId: Int?) async throws -> Ok {
+        try await client.revokeGroupCallInviteLink(groupCallId: groupCallId)
+    }
+
+    func setVideoChatTitle(groupCallId: Int?, title: String?) async throws -> Ok {
+        try await client.setVideoChatTitle(groupCallId: groupCallId, title: title)
+    }
+
+    func toggleVideoChatMuteNewParticipants(
+        groupCallId: Int?,
+        muteNewParticipants: Bool?,
+    ) async throws -> Ok {
+        try await client.toggleVideoChatMuteNewParticipants(
+            groupCallId: groupCallId,
+            muteNewParticipants: muteNewParticipants,
+        )
+    }
+
+    func toggleGroupCallAreMessagesAllowed(areMessagesAllowed: Bool?, groupCallId: Int?) async throws -> Ok {
+        try await client.toggleGroupCallAreMessagesAllowed(
+            areMessagesAllowed: areMessagesAllowed,
+            groupCallId: groupCallId,
+        )
+    }
+
+    func startGroupCallRecording(
+        groupCallId: Int?,
+        recordVideo: Bool?,
+        title: String?,
+        usePortraitOrientation: Bool?,
+    ) async throws -> Ok {
+        try await client.startGroupCallRecording(
+            groupCallId: groupCallId,
+            recordVideo: recordVideo,
+            title: title,
+            usePortraitOrientation: usePortraitOrientation,
+        )
+    }
+
+    func endGroupCallRecording(groupCallId: Int?) async throws -> Ok {
+        try await client.endGroupCallRecording(groupCallId: groupCallId)
+    }
+
+    func getVideoChatRtmpUrl(chatId: Int64?) async throws -> RtmpUrl {
+        try await client.getVideoChatRtmpUrl(chatId: chatId)
+    }
+
+    func replaceVideoChatRtmpUrl(chatId: Int64?) async throws -> RtmpUrl {
+        try await client.replaceVideoChatRtmpUrl(chatId: chatId)
     }
 
     func startGroupCallScreenSharing(

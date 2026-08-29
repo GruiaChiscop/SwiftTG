@@ -303,6 +303,11 @@ struct CallView: View {
             Text("Allow camera access in Settings to use video during calls.")
         }
         .alert("Couldn't Invite Participant", isPresented: $session.showsConferenceInvitationError) {
+            if let fallbackURL = session.conferenceInvitationFallbackURL {
+                Button("Copy Invite Link") {
+                    UIPasteboard.general.url = fallbackURL
+                }
+            }
             Button("OK") {}
         } message: {
             Text(session.conferenceInvitationErrorMessage)

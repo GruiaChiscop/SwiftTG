@@ -2,6 +2,7 @@
 
 import SwiftUI
 import TDLibKit
+import UIKit
 
 // MARK: - ChatInfoView
 
@@ -15,6 +16,7 @@ struct ChatInfoView: View {
             if let info {
                 profileInformationSection(info)
                 notificationsSection(info)
+                videoChatSection
                 memberDetailsSection(info)
                 sharedContentSection(info)
                 unofficialAppWarningSection(info)
@@ -51,7 +53,10 @@ struct ChatInfoView: View {
                 )
             }
         }
-        .task(id: chat.id) { await loadInfo() }
+        .task(id: chat.id) {
+            chatVM.refreshVideoChat()
+            await loadInfo()
+        }
         .sheet(isPresented: $showsSharedMedia) {
             SharedMediaView(
                 chatId: chat.id,
@@ -64,12 +69,67 @@ struct ChatInfoView: View {
         .sheet(isPresented: $showsScheduledMessages) {
             ScheduledMessagesView()
         }
+        .sheet(item: $videoChatJoinCandidates) { candidates in
+            VideoChatJoinAsPicker(
+                chatId: chat.id,
+                candidates: candidates,
+                service: chatVM.service,
+            ) { sender in
+                Task { await performVideoChatJoin(participantId: sender) }
+            }
+        }
+        .sheet(isPresented: $showsVideoChatScheduler) {
+            NavigationStack {
+                VideoChatScheduleView(
+                    chatId: chat.id,
+                    service: chatVM.service,
+                ) { call in
+                    applyCreatedVideoChat(call)
+                }
+            }
+        }
+        .sheet(isPresented: $showsRtmpSetup) {
+            NavigationStack {
+                VideoChatRtmpView(
+                    chatId: chat.id,
+                    service: chatVM.service,
+                    createsStream: true,
+                ) { call in
+                    applyCreatedVideoChat(call)
+                }
+            }
+        }
         .popover(isPresented: $showMuteOptions) {
             TelegramMutePresetPopoverContent { duration in
                 setMuteDuration(duration)
                 showMuteOptions = false
             }
             .presentationCompactAdaptation(.popover)
+        }
+        .alert("Start \(videoChatTitle)", isPresented: $showsVideoChatStartOptions) {
+            Button("Start Now") {
+                startVideoChat()
+            }
+            Button("Schedule") {
+                showsVideoChatScheduler = true
+            }
+            Button("Stream with…") {
+                showsRtmpSetup = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .navigationDestination(item: $managedVideoChat) { call in
+            VideoChatManagementView(
+                chatId: chat.id,
+                service: chatVM.service,
+                initialCall: call,
+            ) { updated in
+                if let updated {
+                    chatVM.videoChatCall = updated
+                } else {
+                    chatVM.refreshVideoChat()
+                }
+            }
         }
         .alert(
             "Delete \(chat.displayTitle)?",
@@ -134,6 +194,7 @@ struct ChatInfoView: View {
     @State private var info: TelegramChatInfoData?
     @State private var isLoading = true
     @State private var muteOverride: Bool?
+    @State private var managedVideoChat: GroupCall?
     @State private var showDeleteConfirmation = false
     @State private var showMuteOptions = false
     @State private var showsCameraPermissionAlert = false
@@ -141,11 +202,107 @@ struct ChatInfoView: View {
     @State private var showsMicrophonePermissionAlert = false
     @State private var showsScheduledMessages = false
     @State private var showsSharedMedia = false
+    @State private var showsRtmpSetup = false
+    @State private var showsVideoChatScheduler = false
+    @State private var showsVideoChatStartOptions = false
+    @State private var videoChatJoinCandidates: VideoChatJoinCandidates?
 
     private var chat: CustomChat { chatVM.customChat }
 
+    /// The chat's video chat state is owned by `ChatVM` (kept live from `updateChatVideoChat`).
+    private var videoChat: VideoChat { chatVM.videoChat }
+    private var videoChatDetails: GroupCall? { chatVM.videoChatCall }
+    private var hasActiveVideoChat: Bool { chatVM.hasActiveVideoChat }
+
     private var status: String {
         !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
+    }
+
+    private var videoChatTitle: String {
+        chat.kind == .channel ? "Live Stream" : "Voice Chat"
+    }
+
+    private var canManageVideoChats: Bool {
+        let status: ChatMemberStatus?
+        switch chat.type {
+        case .group(let group):
+            status = group.status
+        case .supergroup(let supergroup):
+            status = supergroup.status
+        case .bot, .user:
+            return false
+        }
+        switch status {
+        case .chatMemberStatusCreator:
+            return true
+        case .chatMemberStatusAdministrator(let administrator):
+            return administrator.rights.canManageVideoChats
+        default:
+            return false
+        }
+    }
+
+    @ViewBuilder private var videoChatSection: some View {
+        if chat.kind == .group || chat.kind == .channel {
+            Section(chat.kind == .channel ? "Live Stream" : "Voice Chat") {
+                if let videoChatDetails, videoChatDetails.scheduledStartDate > 0 {
+                    LabeledContent(
+                        "Scheduled",
+                        value: Foundation.Date(
+                            timeIntervalSince1970: TimeInterval(videoChatDetails.scheduledStartDate),
+                        )
+                        .formatted(date: .abbreviated, time: .shortened),
+                    )
+                }
+
+                if hasActiveVideoChat, let videoChatDetails {
+                    if videoChatDetails.scheduledStartDate > 0 {
+                        if videoChatDetails.canBeManaged {
+                            Button {
+                                startScheduledVideoChat()
+                            } label: {
+                                Label("Start Now", systemImage: "play.fill")
+                            }
+                        }
+                        Button {
+                            toggleVideoChatReminder()
+                        } label: {
+                            Label(
+                                videoChatDetails.enabledStartNotification ? "Turn Off Reminder" : "Set Reminder",
+                                systemImage: videoChatDetails.enabledStartNotification ? "bell.slash" : "bell",
+                            )
+                        }
+                    } else {
+                        Button {
+                            joinVideoChat()
+                        } label: {
+                            Label(
+                                "Join \(videoChatTitle)",
+                                systemImage: chat.kind == .channel
+                                    ? "dot.radiowaves.left.and.right"
+                                    : "waveform",
+                            )
+                        }
+                    }
+                    if videoChatDetails.canBeManaged {
+                        Button {
+                            managedVideoChat = videoChatDetails
+                        } label: {
+                            Label("Manage \(videoChatTitle)", systemImage: "slider.horizontal.3")
+                        }
+                    }
+                } else if canManageVideoChats {
+                    Button {
+                        showsVideoChatStartOptions = true
+                    } label: {
+                        Label(
+                            "Start \(videoChatTitle)",
+                            systemImage: chat.kind == .channel ? "dot.radiowaves.left.and.right" : "waveform",
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private func identitySection(_ info: TelegramChatInfoData?) -> some View {
@@ -244,6 +401,14 @@ struct ChatInfoView: View {
                 if let phoneNumber = info.phoneNumber {
                     LabeledContent("Phone", value: phoneNumber)
                         .textSelection(.enabled)
+                        .contextMenu {
+                            Button("Copy Phone Number", systemImage: "doc.on.doc") {
+                                UIPasteboard.general.string = phoneNumber
+                            }
+                            if let phoneURL = URL(string: "tel:\(phoneNumber.filter { $0.isNumber || $0 == "+" })") {
+                                Link("Call with Phone", destination: phoneURL)
+                            }
+                        }
                 }
 
                 if let username = info.usernames.first,
@@ -540,5 +705,73 @@ struct ChatInfoView: View {
             errorMessage = error.localizedDescription
             info = nil
         }
+    }
+
+    private func startVideoChat() {
+        Task { @MainActor in
+            let started = await TelegramCallSession.shared.createVideoChat(chatId: chat.id)
+            if !started {
+                errorMessage = "The \(videoChatTitle.lowercased()) couldn't be started. Check microphone access and make sure no other call is active."
+            }
+        }
+    }
+
+    private func joinVideoChat() {
+        guard hasActiveVideoChat else { return }
+        Task { @MainActor in
+            if TelegramCallSession.shared.groupCallCoordinator != nil {
+                TelegramCallSession.shared.restoreCallView()
+                return
+            }
+            let identities = await chatVM.videoChatJoinIdentities()
+            if identities.count > 1 {
+                videoChatJoinCandidates = VideoChatJoinCandidates(senders: identities)
+                return
+            }
+            await performVideoChatJoin(participantId: identities.first ?? videoChat.defaultParticipantId)
+        }
+    }
+
+    private func performVideoChatJoin(participantId: MessageSender?) async {
+        let joined = await TelegramCallSession.shared.joinVideoChat(
+            groupCallId: videoChat.groupCallId,
+            participantId: participantId,
+        )
+        if !joined {
+            errorMessage = "The \(videoChatTitle.lowercased()) couldn't be opened."
+        }
+    }
+
+    private func startScheduledVideoChat() {
+        guard hasActiveVideoChat else { return }
+        Task { @MainActor in
+            let joined = await TelegramCallSession.shared.joinVideoChat(
+                groupCallId: videoChat.groupCallId,
+                participantId: videoChat.defaultParticipantId,
+                startScheduled: true,
+            )
+            if !joined {
+                errorMessage = "The \(videoChatTitle.lowercased()) couldn't be started."
+            }
+        }
+    }
+
+    private func toggleVideoChatReminder() {
+        guard let videoChatDetails else { return }
+        Task { @MainActor in
+            do {
+                _ = try await chatVM.service.toggleVideoChatEnabledStartNotification(
+                    enabledStartNotification: !videoChatDetails.enabledStartNotification,
+                    groupCallId: videoChatDetails.id,
+                )
+                chatVM.refreshVideoChat()
+            } catch {
+                errorMessage = telegramErrorDescription(error)
+            }
+        }
+    }
+
+    private func applyCreatedVideoChat(_ call: GroupCall) {
+        chatVM.applyCreatedVideoChat(call)
     }
 }

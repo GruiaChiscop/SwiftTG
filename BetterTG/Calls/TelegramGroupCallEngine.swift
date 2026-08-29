@@ -22,6 +22,35 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
         let decrypt: @Sendable (_ data: Data, _ userId: Int64) -> Data?
     }
 
+    enum RequestedVideoQuality: Sendable {
+        case thumbnail
+        case medium
+        case full
+    }
+
+    struct BroadcastPart: Sendable {
+        let timestampMilliseconds: Int64
+        /// Wall-clock time the segment was produced, in **seconds** - tgcalls reads this field in
+        /// seconds while every other value in this API is milliseconds.
+        let responseTimeSeconds: Double
+        let oggData: Data
+    }
+
+    /// Pulls HLS-style stream segments for a chat-bound video chat / live stream while the tgcalls
+    /// connection is in broadcast mode. `nil` on `Configuration` for an E2E conference (always RTC).
+    struct BroadcastDataSource: Sendable {
+        /// Current stream time in ms - wall clock for a normal broadcast, the stream's `time_offset`
+        /// for an RTMP live stream.
+        let currentTimeMilliseconds: @Sendable () async -> Int64
+        let audioPart: @Sendable (_ timestampMilliseconds: Int64, _ durationMilliseconds: Int64) async -> BroadcastPart?
+        let videoPart: @Sendable (
+            _ timestampMilliseconds: Int64,
+            _ durationMilliseconds: Int64,
+            _ channelId: Int32,
+            _ quality: RequestedVideoQuality,
+        ) async -> BroadcastPart?
+    }
+
     struct MediaChannel: Equatable, Sendable {
         let audioSourceId: UInt32
         let peerId: Int64
@@ -52,7 +81,13 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
     }
 
     struct Configuration: Sendable {
-        let encryption: Encryption
+        /// End-to-end frame encryption. `nil` for a plain (server-mixed) video chat, which is not
+        /// E2E - tgcalls then installs no frame transformer and takes audio levels from the network.
+        let encryption: Encryption?
+        /// `true` for an E2E conference call, `false` for a chat-bound video chat.
+        let isConference: Bool
+        /// Segment source for broadcast mode. `nil` for E2E conferences (which stay RTC).
+        let broadcast: BroadcastDataSource?
         let isActiveByDefault: Bool
         let isMuted: Bool
         let outgoingAudioBitrateKbit: Int32?
@@ -126,16 +161,47 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                     return GroupCallMediaChannelTask()
                 },
                 requestCurrentTime: { completion in
-                    completion(0)
-                    return GroupCallBroadcastPartTask()
+                    guard let broadcast = configuration.broadcast else {
+                        completion(0)
+                        return GroupCallBroadcastPartTask()
+                    }
+                    let task = GroupCallBroadcastPartTask()
+                    task.run {
+                        let time = await broadcast.currentTimeMilliseconds()
+                        if !Task.isCancelled {
+                            completion(time)
+                        }
+                    }
+                    return task
                 },
-                requestAudioBroadcastPart: { _, _, completion in
-                    completion(nil)
-                    return GroupCallBroadcastPartTask()
+                requestAudioBroadcastPart: { timestampMs, durationMs, completion in
+                    guard let broadcast = configuration.broadcast else {
+                        completion(nil)
+                        return GroupCallBroadcastPartTask()
+                    }
+                    let task = GroupCallBroadcastPartTask()
+                    task.run {
+                        let part = await broadcast.audioPart(timestampMs, durationMs)
+                        if !Task.isCancelled {
+                            completion(Self.broadcastPart(part, requestedTimestampMs: timestampMs))
+                        }
+                    }
+                    return task
                 },
-                requestVideoBroadcastPart: { _, _, _, _, completion in
-                    completion(nil)
-                    return GroupCallBroadcastPartTask()
+                requestVideoBroadcastPart: { timestampMs, durationMs, channelId, quality, completion in
+                    guard let broadcast = configuration.broadcast else {
+                        completion(nil)
+                        return GroupCallBroadcastPartTask()
+                    }
+                    let mappedQuality = Self.requestedVideoQuality(from: quality)
+                    let task = GroupCallBroadcastPartTask()
+                    task.run {
+                        let part = await broadcast.videoPart(timestampMs, durationMs, channelId, mappedQuality)
+                        if !Task.isCancelled {
+                            completion(Self.broadcastPart(part, requestedTimestampMs: timestampMs))
+                        }
+                    }
+                    return task
                 },
                 outgoingAudioBitrateKbit: configuration.outgoingAudioBitrateKbit ?? 32,
                 videoContentType: .none,
@@ -147,13 +213,13 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                 statsLogPath: configuration.statsLogPath,
                 onMutedSpeechActivityDetected: nil,
                 audioDevice: audioDevice,
-                isConference: true,
+                isConference: configuration.isConference,
                 isActiveByDefault: configuration.isActiveByDefault,
-                encryptDecrypt: { data, userId, isEncrypt, unencryptedPrefixSize in
-                    if isEncrypt {
-                        configuration.encryption.encrypt(data, unencryptedPrefixSize)
-                    } else {
-                        configuration.encryption.decrypt(data, userId)
+                encryptDecrypt: configuration.encryption.map { encryption in
+                    { data, userId, isEncrypt, unencryptedPrefixSize in
+                        isEncrypt
+                            ? encryption.encrypt(data, unencryptedPrefixSize)
+                            : encryption.decrypt(data, userId)
                     }
                 },
                 useReferenceImpl: configuration.useReferenceImpl,
@@ -175,10 +241,11 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
     }
 
     func applyJoinResponse(_ payload: String) {
+        let selectsBroadcast = Self.joinResponseSelectsBroadcast(payload)
         queue.async { [weak self] in
             guard let context = self?.context else { return }
             context.setConnectionMode(
-                .rtc,
+                selectsBroadcast ? .broadcast : .rtc,
                 keepBroadcastConnectedIfWasEnabled: false,
                 isUnifiedBroadcast: false,
             )
@@ -339,6 +406,44 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
     private var requestedVideoChannels = [VideoChannel]()
     private var generation = UUID()
 
+    private static func broadcastPart(
+        _ part: BroadcastPart?,
+        requestedTimestampMs: Int64,
+    ) -> OngoingGroupCallBroadcastPart {
+        guard let part else {
+            return OngoingGroupCallBroadcastPart(
+                timestampMilliseconds: requestedTimestampMs,
+                responseTimestamp: Date().timeIntervalSince1970,
+                status: .notReady,
+                oggData: Data(),
+            )
+        }
+        return OngoingGroupCallBroadcastPart(
+            timestampMilliseconds: part.timestampMilliseconds,
+            responseTimestamp: part.responseTimeSeconds,
+            status: .success,
+            oggData: part.oggData,
+        )
+    }
+
+    private static func requestedVideoQuality(
+        from quality: OngoingGroupCallRequestedVideoQuality,
+    ) -> RequestedVideoQuality {
+        switch quality {
+        case .thumbnail: .thumbnail
+        case .medium: .medium
+        case .full: .full
+        @unknown default: .thumbnail
+        }
+    }
+
+    private static func joinResponseSelectsBroadcast(_ payload: String) -> Bool {
+        guard let data = payload.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return object["stream"] as? Bool ?? false
+    }
+
     private func stopLocked(completion: (@Sendable () -> Void)? = nil) {
         generation = UUID()
         let stopGeneration = generation
@@ -373,6 +478,29 @@ private final class GroupCallMediaChannelTask: NSObject, OngoingGroupCallMediaCh
 
 // MARK: - GroupCallBroadcastPartTask
 
-private final class GroupCallBroadcastPartTask: NSObject, OngoingGroupCallBroadcastPartTask {
-    func cancel() {}
+/// tgcalls asks for a stream segment synchronously and expects a cancellable handle back; the fetch
+/// itself is an async TDLib call, so the work runs in a `Task` this handle can cancel.
+private final class GroupCallBroadcastPartTask: NSObject, OngoingGroupCallBroadcastPartTask, @unchecked Sendable {
+    // MARK: Internal
+
+    func run(_ operation: @escaping @Sendable () async -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isCancelled else { return }
+        task = Task(operation: operation)
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        isCancelled = true
+        task?.cancel()
+        task = nil
+    }
+
+    // MARK: Private
+
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var isCancelled = false
 }

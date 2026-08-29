@@ -26,6 +26,18 @@ struct TelegramPendingGroupCallJoin: Identifiable {
     var id: String { inviteLink }
 }
 
+// MARK: - TelegramPendingVideoChatJoin
+
+struct TelegramPendingVideoChatJoin: Identifiable {
+    let chatId: Int64
+    let groupCallId: Int
+    let inviteHash: String
+    let title: String
+    let isLiveStream: Bool
+
+    var id: String { "\(chatId):\(groupCallId):\(inviteHash)" }
+}
+
 // MARK: - TelegramDeepLinkAction
 
 /// What a resolved link means for the app to do next - kept separate from the actual navigation,
@@ -37,6 +49,7 @@ enum TelegramDeepLinkAction {
     /// confirmation before actually joining, per `InternalLinkTypeChatInvite`'s own doc comment.
     case confirmJoin(ChatInviteLinkInfo, inviteLink: String)
     case confirmGroupCallJoin(TelegramPendingGroupCallJoin)
+    case confirmVideoChatJoin(TelegramPendingVideoChatJoin)
     case addProxy(Proxy)
     case openExternally(URL)
     case unsupported
@@ -97,6 +110,18 @@ enum TelegramDeepLink {
                 inviteLink: value.inviteLink,
                 participantIds: participants.participantIds,
                 totalCount: participants.totalCount,
+            ))
+
+        case .internalLinkTypeVideoChat(let value):
+            guard let chat = try? await service.searchPublicChat(username: value.chatUsername),
+                  chat.videoChat.groupCallId != 0
+            else { return .unsupported }
+            return .confirmVideoChatJoin(TelegramPendingVideoChatJoin(
+                chatId: chat.id,
+                groupCallId: chat.videoChat.groupCallId,
+                inviteHash: value.inviteHash,
+                title: chat.title,
+                isLiveStream: value.isLiveStream,
             ))
 
         case .internalLinkTypeMessage(let value):
