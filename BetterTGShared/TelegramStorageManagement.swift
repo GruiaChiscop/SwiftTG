@@ -70,6 +70,7 @@ struct TelegramStorageSettingsView: View {
             Section("Storage Usage") {
                 LabeledContent("Cached media", value: formattedCacheSize)
                 LabeledContent("Cached files", value: "\(cachedFileCount)")
+                LabeledContent("Database", value: formattedDatabaseSize)
 
                 Button("Clear Cache", role: .destructive) {
                     confirmsCacheClear = true
@@ -264,6 +265,7 @@ struct TelegramStorageSettingsView: View {
         .dataSaving
     @State private var cachedFileCount = 0
     @State private var cachedFilesSize: Int64 = 0
+    @State private var databaseSize: Int64 = 0
     @State private var canIgnoreSensitiveContentRestrictions = false
     @State private var confirmsCacheClear = false
     @State private var errorMessage: String?
@@ -291,6 +293,12 @@ struct TelegramStorageSettingsView: View {
 
     private var formattedCacheSize: String {
         ByteCountFormatter.string(fromByteCount: cachedFilesSize, countStyle: .file)
+    }
+
+    /// TDLib's own approximate figure for the local database (`getStorageStatisticsFast`) - the
+    /// message/chat store on disk, separate from the media cache above.
+    private var formattedDatabaseSize: String {
+        ByteCountFormatter.string(fromByteCount: databaseSize, countStyle: .file)
     }
 
     private var sensitiveContentBinding: Binding<Bool> {
@@ -343,6 +351,7 @@ struct TelegramStorageSettingsView: View {
             let statistics = try await service.getStorageStatisticsFast()
             cachedFilesSize = statistics.filesSize
             cachedFileCount = statistics.fileCount
+            databaseSize = statistics.databaseSize
         } catch {
             errorMessage = telegramErrorDescription(error)
         }
@@ -367,6 +376,7 @@ struct TelegramStorageSettingsView: View {
             let statistics = try await service.getStorageStatisticsFast()
             cachedFilesSize = statistics.filesSize
             cachedFileCount = statistics.fileCount
+            databaseSize = statistics.databaseSize
         } catch {
             errorMessage = telegramErrorDescription(error)
         }
