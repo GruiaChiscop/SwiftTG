@@ -11,6 +11,7 @@ struct ConferenceVideoGrid: View {
     let localVideoView: UIView?
     let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
+    let setExpanded: (Bool) -> Void
     let setCentralVideo: (_ endpointId: String?, _ isExpanded: Bool) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
@@ -25,7 +26,7 @@ struct ConferenceVideoGrid: View {
                         collapse: collapseExpandedVideo,
                         togglePin: togglePin,
                     )
-                    .frame(height: 260)
+                    .frame(maxHeight: .infinity)
 
                     ConferenceVideoStripView(
                         localVideoView: nil,
@@ -47,7 +48,7 @@ struct ConferenceVideoGrid: View {
                         togglePin: togglePin,
                         requestVideoView: requestVideoView,
                     )
-                    .frame(height: 260)
+                    .frame(maxHeight: .infinity)
 
                     ConferenceVideoStripView(
                         localVideoView: localVideoView,
@@ -81,12 +82,14 @@ struct ConferenceVideoGrid: View {
         }
         .onChange(of: expandedVideoId, initial: true) { _, newValue in
             updateCentralVideo(newValue)
+            setExpanded(newValue != nil)
         }
         .task(id: focusedSpeakerAutoSwitchDeadline) {
             await waitForFocusedSpeakerAutoSwitch()
         }
         .onDisappear {
             setCentralVideo(nil, false)
+            setExpanded(false)
         }
     }
 

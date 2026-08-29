@@ -32,69 +32,81 @@ struct ConferenceParticipantsView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            VStack(spacing: 4) {
-                Text("Group Call")
-                    .font(.title.bold())
-                    .accessibilityAddTraits(.isHeader)
-                Text(connectionStatus ?? participantCountDescription)
-                    .foregroundStyle(.secondary)
-            }
+            if !isVideoExpanded {
+                VStack(spacing: 4) {
+                    Text("Group Call")
+                        .font(.title.bold())
+                        .accessibilityAddTraits(.isHeader)
+                    Text(connectionStatus ?? participantCountDescription)
+                        .foregroundStyle(.secondary)
+                }
 
-            ConferenceEncryptionKeyView(emojis: verificationEmojis)
+                ConferenceEncryptionKeyView(emojis: verificationEmojis)
+            }
 
             if localVideoView != nil || !videos.isEmpty {
                 ConferenceVideoGrid(
                     localVideoView: localVideoView,
                     isLocalScreenSharing: isLocalScreenSharing,
                     videos: videos,
+                    setExpanded: updateVideoExpansion,
                     setCentralVideo: setCentralVideo,
                     requestVideoView: requestVideoView,
                 )
+                .frame(maxHeight: isVideoExpanded ? .infinity : nil)
             }
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(participants) { participant in
-                        ConferenceParticipantRow(
-                            participant: participant,
-                            isPerformingAction: performingParticipantActionId == participant.id,
-                            setMuted: { action in
-                                setParticipantMuted(participant, action)
-                            },
-                            setVolume: { volumeLevel, synchronize in
-                                setParticipantVolume(participant, volumeLevel, synchronize)
-                            },
-                            openConversation: {
-                                openParticipantConversation(participant)
-                            },
-                            cancelSpeakRequest: cancelSpeakRequest,
-                            remove: {
-                                removeParticipant(participant)
-                            },
-                        )
-                        .onAppear {
-                            if participant.id == participants.last?.id {
-                                loadMoreParticipants()
+            if !isVideoExpanded {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(participants) { participant in
+                            ConferenceParticipantRow(
+                                participant: participant,
+                                isPerformingAction: performingParticipantActionId == participant.id,
+                                setMuted: { action in
+                                    setParticipantMuted(participant, action)
+                                },
+                                setVolume: { volumeLevel, synchronize in
+                                    setParticipantVolume(participant, volumeLevel, synchronize)
+                                },
+                                openConversation: {
+                                    openParticipantConversation(participant)
+                                },
+                                cancelSpeakRequest: cancelSpeakRequest,
+                                remove: {
+                                    removeParticipant(participant)
+                                },
+                            )
+                            .onAppear {
+                                if participant.id == participants.last?.id {
+                                    loadMoreParticipants()
+                                }
                             }
+                            Divider()
+                                .padding(.leading, 64)
                         }
-                        Divider()
-                            .padding(.leading, 64)
-                    }
 
-                    ConferenceInviteActionsView(
-                        inviteLink: inviteLink,
-                        isInvitingParticipant: isInvitingParticipant,
-                        inviteParticipant: inviteParticipant,
-                    )
+                        ConferenceInviteActionsView(
+                            inviteLink: inviteLink,
+                            isInvitingParticipant: isInvitingParticipant,
+                            inviteParticipant: inviteParticipant,
+                        )
+                    }
                 }
+                .background(.white.opacity(0.1), in: .rect(cornerRadius: 20))
             }
-            .background(.white.opacity(0.1), in: .rect(cornerRadius: 20))
         }
     }
 
     // MARK: Private
 
+    @State private var isVideoExpanded = false
+
     private var participantCountDescription: String {
         participantCount == 1 ? "1 participant" : "\(participantCount) participants"
+    }
+
+    private func updateVideoExpansion(_ isExpanded: Bool) {
+        isVideoExpanded = isExpanded
     }
 }
