@@ -12,23 +12,35 @@ struct CallControlButton: View {
     var isActive = false
     var isDestructive = false
     var isEnabled = true
+    var showsLabel = true
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: systemImage)
+        Group {
+            if showsLabel {
+                Button(action: action) {
+                    VStack(spacing: 8) {
+                        Image(systemName: systemImage)
+                            .font(.title2)
+                            .frame(width: 64, height: 64)
+                            .background(controlBackground, in: .circle)
+                            .foregroundStyle(controlForeground)
+                            .accessibilityHidden(true)
+
+                        Text(label)
+                            .font(.callout)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+            } else {
+                Button(label, systemImage: systemImage, action: action)
+                    .labelStyle(.iconOnly)
                     .font(.title2)
-                    .frame(width: 64, height: 64)
+                    .frame(width: 56, height: 56)
                     .background(controlBackground, in: .circle)
                     .foregroundStyle(controlForeground)
-                    .accessibilityHidden(true)
-
-                Text(label)
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
         }
         .buttonStyle(.plain)

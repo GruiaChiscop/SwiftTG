@@ -27,6 +27,7 @@ struct ConferenceParticipantsView: View {
     let cancelSpeakRequest: () -> Void
     let removeParticipant: (ConferenceParticipantPresentation) -> Void
     let loadMoreParticipants: () -> Void
+    var prefersTwoColumnLayout = false
     let setUIHidden: (Bool) -> Void
     let setCentralVideo: (_ endpointId: String?, _ isExpanded: Bool) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
@@ -46,7 +47,7 @@ struct ConferenceParticipantsView: View {
             }
 
             GeometryReader { proxy in
-                let usesTwoColumnLayout = proxy.size.width > 588 && hasVideo
+                let usesTwoColumnLayout = (prefersTwoColumnLayout || proxy.size.width > 588) && hasVideo
                 let participantColumnWidth = min(
                     horizontalSizeClass == .regular ? 356 : 340,
                     max(240, proxy.size.width - 354),

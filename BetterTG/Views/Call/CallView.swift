@@ -133,6 +133,7 @@ struct CallView: View {
                         cancelSpeakRequest: session.cancelConferenceSpeakRequest,
                         removeParticipant: session.removeConferenceParticipant,
                         loadMoreParticipants: session.loadMoreConferenceParticipants,
+                        prefersTwoColumnLayout: usesSideConferenceControls,
                         setUIHidden: updateConferenceUIHidden,
                         setCentralVideo: session.setConferenceCentralVideo,
                         requestVideoView: session.requestConferenceVideoView,
@@ -205,96 +206,31 @@ struct CallView: View {
                     )
                     .padding(.bottom, 12)
                 }
-
-                HStack {
-                    if session.isLocalVideoEnabled, !session.isScreenSharing {
-                        CallControlButton(
-                            systemImage: "arrow.triangle.2.circlepath.camera",
-                            label: "Flip",
-                            action: session.flipCamera,
-                        )
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        CallAudioRouteControl(
-                            routes: session.availableAudioRoutes,
-                            selectedRoute: session.selectedAudioRoute,
-                            select: session.selectAudioRoute,
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    CallControlButton(
-                        systemImage: session.isScreenSharing ? "rectangle.on.rectangle.slash" : "video.fill",
-                        label: session.isScreenSharing ? "Stop Sharing" : "Video",
-                        isActive: session.isLocalVideoEnabled,
-                        isEnabled: session.canToggleVideo,
-                        action: session.toggleVideo,
-                    )
-                    .frame(maxWidth: .infinity)
-
-                    if session.shouldShowConferenceRaiseHandControl {
-                        CallControlButton(
-                            systemImage: "hand.raised.fill",
-                            label: "Raise Hand",
-                            isActive: session.isConferenceHandRaised,
-                            isEnabled: session.canRaiseConferenceHand,
-                            action: session.raiseConferenceHand,
-                        )
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        CallControlButton(
-                            systemImage: session.isMuted ? "mic.slash.fill" : "mic.fill",
-                            label: "Mute",
-                            isActive: session.isMuted,
-                            isEnabled: session.canToggleMute,
-                            action: session.toggleMute,
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    if session.showsConferenceCallUI, session.areConferenceMessagesAvailable {
-                        CallControlButton(
-                            systemImage: "message.fill",
-                            label: "Message",
-                            action: showConferenceMessages,
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    CallControlButton(
-                        systemImage: "phone.down.fill",
-                        label: "End",
-                        isDestructive: true,
-                        action: endCall,
-                    )
-                    .frame(maxWidth: .infinity)
-                    .confirmationDialog(
-                        "Are you sure you want to leave this voice chat?",
-                        isPresented: $showsConferenceLeaveConfirmation,
-                        titleVisibility: .visible,
-                    ) {
-                        Button("End Voice Chat", role: .destructive) {
-                            showsConferenceEndConfirmation = true
-                        }
-                        Button("Leave Voice Chat", action: session.end)
-                        Button("Cancel", role: .cancel) {}
-                    }
-                    .alert("End voice chat", isPresented: $showsConferenceEndConfirmation) {
-                        Button("End", role: .destructive, action: session.endConferenceForEveryone)
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Are you sure you want to end this voice chat?")
-                    }
-                }
-                .frame(maxWidth: 420)
-                .opacity(isConferenceUIHidden ? 0 : 1)
-                .allowsHitTesting(!isConferenceUIHidden)
-                .accessibilityHidden(isConferenceUIHidden)
-                .frame(height: isConferenceUIHidden ? 0 : nil)
             }
             .safeAreaPadding()
             .padding(.horizontal)
+            .padding(.trailing, callControlsTrailingInset)
+            .padding(.bottom, callControlsBottomInset)
             .accessibilityHidden(showsConferenceMessages)
+
+            CallControlsView(
+                session: session,
+                isCompact: usesSideConferenceControls,
+                showConferenceMessages: showConferenceMessages,
+                endCall: endCall,
+                showsConferenceEndConfirmation: $showsConferenceEndConfirmation,
+                showsConferenceLeaveConfirmation: $showsConferenceLeaveConfirmation,
+            )
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: usesSideConferenceControls ? .trailing : .bottom,
+            )
+            .safeAreaPadding()
+            .padding(.horizontal)
+            .opacity(isConferenceUIHidden ? 0 : 1)
+            .allowsHitTesting(!isConferenceUIHidden)
+            .accessibilityHidden(isConferenceUIHidden || showsConferenceMessages)
 
             if session.showsConferenceCallUI,
                !showsConferenceMessages,
@@ -308,10 +244,11 @@ struct CallView: View {
                         .frame(maxWidth: 440, maxHeight: 180)
 
                     Color.clear
-                        .frame(height: 116)
+                        .frame(height: usesSideConferenceControls ? 0 : 116)
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal)
+                .padding(.trailing, usesSideConferenceControls ? 104 : 0)
                 .allowsHitTesting(false)
             }
 
@@ -409,6 +346,7 @@ struct CallView: View {
     // MARK: Private
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var idleTimerToken: UUID?
     @State private var isConferenceUIHidden = false
     @State private var isLocalVideoPrimary = false
@@ -430,6 +368,12 @@ struct CallView: View {
         )
     }
 
+    private var usesSideConferenceControls: Bool {
+        session.showsConferenceCallUI
+            && verticalSizeClass == .compact
+            && UIDevice.current.userInterfaceIdiom == .phone
+    }
+
     private var conferenceIncomingVideoQualityBinding: Binding<ConferenceIncomingVideoQuality> {
         Binding(
             get: { session.conferenceIncomingVideoQuality },
@@ -437,6 +381,14 @@ struct CallView: View {
                 session.setConferenceIncomingVideoQuality(quality)
             },
         )
+    }
+
+    private var callControlsBottomInset: CGFloat {
+        isConferenceUIHidden || usesSideConferenceControls ? 0 : 104
+    }
+
+    private var callControlsTrailingInset: CGFloat {
+        isConferenceUIHidden || !usesSideConferenceControls ? 0 : 104
     }
 
     private var primaryVideoView: UIView? {

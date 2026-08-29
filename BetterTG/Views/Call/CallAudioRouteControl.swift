@@ -9,6 +9,7 @@ struct CallAudioRouteControl: View {
 
     let routes: [TelegramCallSession.AudioRoute]
     let selectedRoute: TelegramCallSession.AudioRoute
+    var showsLabel = true
     let select: (TelegramCallSession.AudioRoute) -> Void
 
     var body: some View {
@@ -18,6 +19,7 @@ struct CallAudioRouteControl: View {
                     systemImage: Self.systemImage(for: selectedRoute.kind),
                     title: "Speaker",
                     isActive: selectedRoute.kind == .speaker,
+                    showsLabel: showsLabel,
                 )
             }
             .buttonStyle(.plain)
@@ -41,6 +43,7 @@ struct CallAudioRouteControl: View {
                     systemImage: Self.systemImage(for: selectedRoute.kind),
                     title: "Audio",
                     isActive: selectedRoute.kind != .builtIn,
+                    showsLabel: showsLabel,
                 )
             }
             .accessibilityValue(selectedRoute.name)
