@@ -89,7 +89,18 @@ extension RootVM {
         else { return }
 
         pendingNotificationTarget = nil
-        navigate(to: .customChat(customChat, messageId: nil))
+        openChatReplacingStack(customChat)
+    }
+
+    /// Telegram surfaces a notification's chat as a fresh top-level screen: any chat already
+    /// pushed is replaced, so Back returns to the chat list - not to whichever chat the user
+    /// happened to have open when the notification arrived. Used for both the system push tap
+    /// and the in-app banner tap.
+    @MainActor private func openChatReplacingStack(_ customChat: CustomChat) {
+        if case .customChat(let current, _, _) = path.last, current.id == customChat.id {
+            return
+        }
+        path = [.customChat(customChat)]
     }
 
     private func customChat(forBasicGroupId basicGroupId: Int64) async -> CustomChat? {
@@ -155,7 +166,7 @@ extension RootVM {
         dismissInAppNotification()
         Task { @MainActor [weak self] in
             guard let self, let chat = await getCustomChat(from: banner.chatId) else { return }
-            navigate(to: .customChat(chat))
+            openChatReplacingStack(chat)
         }
     }
 
