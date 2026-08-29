@@ -43,7 +43,7 @@ struct MessageView: View {
         }
         var parts = [String]()
         if case .messageReplyToMessage = customMessage.message.replyTo {
-            parts.append("Replying to \(customMessage.replySenderName ?? "message")")
+            parts.append("Replying to \(customMessage.replySpokenSenderName ?? "message")")
         }
         let translatedText = customMessage.showsTranslation ? customMessage.translatedText?.text : nil
         if let serviceMessageText = customMessage.serviceMessageText {

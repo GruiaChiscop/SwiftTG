@@ -68,6 +68,17 @@ import TDLibKit
     var canBeTranslated = false
     
     var date: Foundation.Date { Date(timeIntervalSince1970: TimeInterval(message.date)) }
+
+    /// How VoiceOver should name whoever the replied-to message is from: "you" when it's the user's
+    /// own message - matching Telegram-iOS's `VoiceOver.Chat.ReplyToYourMessage` - and the resolved
+    /// sender name otherwise. The visual reply header still shows the real name, exactly as
+    /// Telegram-iOS's `ChatMessageReplyInfoNode` does.
+    var replySpokenSenderName: String? {
+        if replyToMessage?.isOutgoing == true {
+            return "you"
+        }
+        return replySenderName
+    }
     
     var messageVoiceNote: MessageVoiceNote? {
         if case .messageVoiceNote(let messageVoiceNote) = message.content {

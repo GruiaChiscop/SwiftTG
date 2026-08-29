@@ -16,10 +16,10 @@ struct ReplyMessageView: View {
             "Replying to \(customMessage.senderUser?.firstName ?? "message"): "
                 + telegramMessageContentDescription(customMessage.message)
         case .replied:
-            if let replySenderName = customMessage.replySenderName,
+            if let replySpokenSenderName = customMessage.replySpokenSenderName,
                let replyToMessage = customMessage.replyToMessage
             {
-                "Reply to \(replySenderName): \(telegramMessageContentDescription(replyToMessage))"
+                "Reply to \(replySpokenSenderName): \(telegramMessageContentDescription(replyToMessage))"
             } else {
                 "Reply"
             }
