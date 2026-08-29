@@ -11,9 +11,15 @@ struct ConferenceVideoGrid: View {
     let localVideoView: UIView?
     let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
+    let participants: [ConferenceParticipantPresentation]
+    let performingParticipantActionId: String?
     let setExpanded: (Bool) -> Void
     let setUIHidden: (Bool) -> Void
     let setCentralVideo: (_ endpointId: String?, _ isExpanded: Bool) -> Void
+    let setParticipantMuted: (ConferenceParticipantPresentation, ConferenceParticipantMuteAction) -> Void
+    let setParticipantVolume: (ConferenceParticipantPresentation, Int, Bool) -> Void
+    let openParticipantConversation: (ConferenceParticipantPresentation) -> Void
+    let removeParticipant: (ConferenceParticipantPresentation) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
     var body: some View {
@@ -36,9 +42,15 @@ struct ConferenceVideoGrid: View {
                         localVideoView: nil,
                         isLocalScreenSharing: false,
                         videos: videos,
+                        participants: participants,
+                        performingParticipantActionId: performingParticipantActionId,
                         isCompact: true,
                         selectLocalVideo: {},
                         selectVideo: expand,
+                        setParticipantMuted: setParticipantMuted,
+                        setParticipantVolume: setParticipantVolume,
+                        openParticipantConversation: openParticipantConversation,
+                        removeParticipant: removeParticipant,
                         requestVideoView: requestVideoView,
                     )
                     .frame(height: hidesUI ? 0 : 104)
@@ -64,9 +76,15 @@ struct ConferenceVideoGrid: View {
                         localVideoView: localVideoView,
                         isLocalScreenSharing: isLocalScreenSharing,
                         videos: videos.filter { $0.id != expandedVideo.id },
+                        participants: participants,
+                        performingParticipantActionId: performingParticipantActionId,
                         isCompact: true,
                         selectLocalVideo: expandLocalVideo,
                         selectVideo: expand,
+                        setParticipantMuted: setParticipantMuted,
+                        setParticipantVolume: setParticipantVolume,
+                        openParticipantConversation: openParticipantConversation,
+                        removeParticipant: removeParticipant,
                         requestVideoView: requestVideoView,
                     )
                     .frame(height: hidesUI ? 0 : 104)
@@ -79,9 +97,15 @@ struct ConferenceVideoGrid: View {
                     localVideoView: localVideoView,
                     isLocalScreenSharing: isLocalScreenSharing,
                     videos: videos,
+                    participants: participants,
+                    performingParticipantActionId: performingParticipantActionId,
                     isCompact: false,
                     selectLocalVideo: expandLocalVideo,
                     selectVideo: expand,
+                    setParticipantMuted: setParticipantMuted,
+                    setParticipantVolume: setParticipantVolume,
+                    openParticipantConversation: openParticipantConversation,
+                    removeParticipant: removeParticipant,
                     requestVideoView: requestVideoView,
                 )
                 .frame(height: 200)

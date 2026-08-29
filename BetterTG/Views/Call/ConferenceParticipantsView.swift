@@ -50,9 +50,15 @@ struct ConferenceParticipantsView: View {
                     localVideoView: localVideoView,
                     isLocalScreenSharing: isLocalScreenSharing,
                     videos: videos,
+                    participants: participants,
+                    performingParticipantActionId: performingParticipantActionId,
                     setExpanded: updateVideoExpansion,
                     setUIHidden: setUIHidden,
                     setCentralVideo: setCentralVideo,
+                    setParticipantMuted: setParticipantMuted,
+                    setParticipantVolume: setParticipantVolume,
+                    openParticipantConversation: openParticipantConversation,
+                    removeParticipant: removeParticipant,
                     requestVideoView: requestVideoView,
                 )
                 .frame(maxHeight: isVideoExpanded ? .infinity : nil)

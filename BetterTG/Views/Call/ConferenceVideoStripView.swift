@@ -11,9 +11,15 @@ struct ConferenceVideoStripView: View {
     let localVideoView: UIView?
     let isLocalScreenSharing: Bool
     let videos: [ConferenceVideoPresentation]
+    let participants: [ConferenceParticipantPresentation]
+    let performingParticipantActionId: String?
     let isCompact: Bool
     let selectLocalVideo: () -> Void
     let selectVideo: (ConferenceVideoPresentation) -> Void
+    let setParticipantMuted: (ConferenceParticipantPresentation, ConferenceParticipantMuteAction) -> Void
+    let setParticipantVolume: (ConferenceParticipantPresentation, Int, Bool) -> Void
+    let openParticipantConversation: (ConferenceParticipantPresentation) -> Void
+    let removeParticipant: (ConferenceParticipantPresentation) -> Void
     let requestVideoView: (String, @escaping @MainActor (UIView?) -> Void) -> Void
 
     var body: some View {
@@ -31,16 +37,39 @@ struct ConferenceVideoStripView: View {
                 }
 
                 ForEach(videos) { video in
-                    Button {
-                        selectVideo(video)
-                    } label: {
-                        ConferenceVideoTileView(
+                    if let participant = participant(for: video) {
+                        ConferenceVideoParticipantTile(
                             video: video,
+                            participant: participant,
+                            isPerformingAction: performingParticipantActionId == participant.id,
+                            select: selectVideo,
+                            setMuted: { action in
+                                setParticipantMuted(participant, action)
+                            },
+                            setVolume: { volumeLevel, synchronize in
+                                setParticipantVolume(participant, volumeLevel, synchronize)
+                            },
+                            openConversation: {
+                                openParticipantConversation(participant)
+                            },
+                            remove: {
+                                removeParticipant(participant)
+                            },
                             requestVideoView: requestVideoView,
                         )
+                        .frame(width: videoWidth(video), height: tileHeight)
+                    } else {
+                        Button {
+                            selectVideo(video)
+                        } label: {
+                            ConferenceVideoTileView(
+                                video: video,
+                                requestVideoView: requestVideoView,
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: videoWidth(video), height: tileHeight)
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: videoWidth(video), height: tileHeight)
                 }
             }
             .scrollTargetLayout()
@@ -60,6 +89,10 @@ struct ConferenceVideoStripView: View {
 
     private var tileHeight: CGFloat {
         isCompact ? 104 : 200
+    }
+
+    private func participant(for video: ConferenceVideoPresentation) -> ConferenceParticipantPresentation? {
+        participants.first(where: { $0.id == video.participantId })
     }
 
     private func videoWidth(_ video: ConferenceVideoPresentation) -> CGFloat {
