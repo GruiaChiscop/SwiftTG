@@ -124,6 +124,12 @@ struct ChatListLoadKey: Hashable, Sendable {
     @ObservationIgnored var shareRequestProcessingTask: Task<Void, Never>?
     @ObservationIgnored var pendingInAppNotificationBanners = [TelegramInAppNotificationBanner]()
     @ObservationIgnored var inAppNotificationDismissTask: Task<Void, Never>?
+    /// When the app most recently came to the foreground. In-app notification banners are only shown
+    /// for notifications dated after this - on launch/reconnect TDLib replays `updateNotificationGroup`
+    /// for every chat that still has pending notifications, and without this gate a whole backlog of
+    /// unread chats would banner and play a sound at once. Mirrors Telegram-iOS's
+    /// `delayNotificatonsUntil` timestamp suppression. See `handleNotificationGroupUpdate`.
+    @ObservationIgnored var notificationBannerActiveSince = Date()
 
     /// The chat currently pushed on screen, if any - `path` is the single shared `NavigationStack`
     /// path every chat opens through (including from the Contacts tab; see `MainView`'s `onChange`

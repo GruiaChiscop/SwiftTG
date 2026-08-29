@@ -69,6 +69,7 @@ import UserNotifications
             case .active:
                 TelegramAppLockController.shared.noteWillEnterForeground()
                 TelegramCallSession.shared.restoreCallViewFromPictureInPictureIfNeeded()
+                RootVM.shared.noteAppBecameActive()
                 Task { await RootVM.shared.processPendingShareRequests() }
             case .background:
                 TelegramAppLockController.shared.noteDidEnterBackground()
