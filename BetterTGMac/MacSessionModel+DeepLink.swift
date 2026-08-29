@@ -37,6 +37,8 @@ extension MacSessionModel {
             pendingDeepLinkJoin = TelegramPendingDeepLinkJoin(info: info, inviteLink: inviteLink)
         case .confirmGroupCallJoin:
             deepLinkErrorMessage = "Group calls aren't supported on macOS yet."
+        case .confirmVideoChatJoin:
+            deepLinkErrorMessage = "Video chats aren't supported on macOS yet."
         case .addProxy(let proxy):
             do {
                 _ = try await service.addProxy(comment: nil, enable: true, proxy: proxy)
