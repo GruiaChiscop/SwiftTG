@@ -5,6 +5,8 @@ import SwiftUI
 // MARK: - ConferenceMessageFeedView
 
 struct ConferenceMessageFeedView: View {
+    // MARK: Internal
+
     let messages: [ConferenceMessagePresentation]
 
     var body: some View {
@@ -25,7 +27,11 @@ struct ConferenceMessageFeedView: View {
                 guard let messageId else { return }
                 proxy.scrollTo(messageId, anchor: .bottom)
             }
-            .animation(.easeInOut(duration: 0.25), value: messages.map(\.id))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: messages.map(\.id))
         }
     }
+
+    // MARK: Private
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 }

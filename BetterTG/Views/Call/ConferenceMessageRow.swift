@@ -33,7 +33,7 @@ struct ConferenceMessageRow: View {
         .background(.ultraThinMaterial, in: .rect(cornerRadius: 18))
         .frame(maxWidth: 330)
         .accessibilityElement(children: .combine)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         .task(id: profileIdentity) {
             await loadProfile()
         }
@@ -41,6 +41,7 @@ struct ConferenceMessageRow: View {
 
     // MARK: Private
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var chat: Chat?
     @State private var user: User?
 

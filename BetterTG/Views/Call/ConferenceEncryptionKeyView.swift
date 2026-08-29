@@ -24,11 +24,12 @@ struct ConferenceEncryptionKeyView: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .animation(.spring(duration: 0.4), value: isExpanded)
+        .animation(reduceMotion ? nil : .spring(duration: 0.4), value: isExpanded)
     }
 
     // MARK: Private
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = false
 
     private var displayedEmojis: [String] {
@@ -56,12 +57,12 @@ struct ConferenceEncryptionKeyView: View {
     private var collapsedContent: some View {
         HStack(spacing: 5) {
             Text(leadingEmojis)
-                .font(.system(size: 20))
+                .font(.title2)
                 .accessibilityHidden(displayedEmojis.isEmpty)
             Text("End-to-end encrypted")
                 .font(.caption.bold())
             Text(trailingEmojis)
-                .font(.system(size: 20))
+                .font(.title2)
                 .accessibilityHidden(displayedEmojis.isEmpty)
         }
         .padding(.horizontal, 10)
@@ -72,7 +73,7 @@ struct ConferenceEncryptionKeyView: View {
     private var expandedContent: some View {
         VStack(spacing: 10) {
             Text(expandedEmojiText)
-                .font(.system(size: 40))
+                .font(.largeTitle)
                 .accessibilityHidden(displayedEmojis.isEmpty)
 
             Text(
