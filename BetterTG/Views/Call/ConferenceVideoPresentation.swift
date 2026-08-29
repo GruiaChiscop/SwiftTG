@@ -13,4 +13,5 @@ struct ConferenceVideoPresentation: Identifiable, Equatable {
     let title: String?
     let isScreenSharing: Bool
     let isPaused: Bool
+    var isSpeaking = false
 }

@@ -48,7 +48,6 @@ struct ConferenceParticipantsView: View {
                     videos: videos,
                     requestVideoView: requestVideoView,
                 )
-                .frame(height: 200)
             }
 
             ScrollView {

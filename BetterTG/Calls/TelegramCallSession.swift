@@ -359,6 +359,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
 
     var conferenceVideoPresentations: [ConferenceVideoPresentation] {
         guard conferenceIncomingVideoQuality != .audioOnly else { return [] }
+        let speakingParticipantIds = conferenceSpeakingParticipantIds
         return conferenceParticipants.flatMap { participant -> [ConferenceVideoPresentation] in
             guard !participant.isCurrentUser else { return [] }
             let userId: Int64?
@@ -386,6 +387,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                     title: nil,
                     isScreenSharing: false,
                     isPaused: videoInfo.isPaused,
+                    isSpeaking: speakingParticipantIds.contains(participant.participantId),
                 ))
             }
             if let screenSharingVideoInfo = participant.screenSharingVideoInfo {
@@ -398,6 +400,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                     title: nil,
                     isScreenSharing: true,
                     isPaused: screenSharingVideoInfo.isPaused,
+                    isSpeaking: speakingParticipantIds.contains(participant.participantId),
                 ))
             }
             return result
