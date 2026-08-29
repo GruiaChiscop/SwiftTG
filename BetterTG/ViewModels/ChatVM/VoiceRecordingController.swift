@@ -50,17 +50,26 @@ import TDLibKit
     }
 
     func mediaStartRecordingVoice() async {
-        Media.shared.stop()
-        Media.shared.setAudioSessionRecord()
-
-        let granted = await AVAudioApplication.requestRecordPermission()
-        if granted {
-            log("Access to Microphone for Voice messages is granted")
-        } else {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            break
+        case .denied:
             log("Access to Microphone for Voice messages is not granted")
             errorShown = true
             return
+        case .undetermined:
+            // First time: only ask. The system alert steals the press that started this, so the
+            // recording would half-start (indicator shows, no send/cancel) once permission lands.
+            // Let the user press-and-hold again to record cleanly inside a live gesture.
+            _ = await AVAudioApplication.requestRecordPermission()
+            return
+        @unknown default:
+            _ = await AVAudioApplication.requestRecordPermission()
+            return
         }
+
+        Media.shared.stop()
+        Media.shared.setAudioSessionRecord()
 
         let url = TelegramVoiceNoteSending.temporaryFileURL()
         savedVoiceNoteUrl = url

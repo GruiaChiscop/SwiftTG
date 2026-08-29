@@ -312,7 +312,7 @@ struct CallsView: View {
                     Task { await openChat(group) }
                 }
                 Button("Details") {
-                    detailGroup=group
+                    detailGroup = group
                 }
             }
             .contextMenu {
