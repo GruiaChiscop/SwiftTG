@@ -847,6 +847,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTG/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SwiftTG uses the camera for video calls, to send photos, record video messages, and scan QR codes to link a device.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "We would like to access your contacts to help you connect with people you know on Telegram.";
@@ -902,6 +903,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTG/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SwiftTG;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SwiftTG uses the camera for video calls, to send photos, record video messages, and scan QR codes to link a device.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "We would like to access your contacts to help you connect with people you know on Telegram.";
