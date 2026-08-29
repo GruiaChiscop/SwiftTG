@@ -6,6 +6,8 @@ import UIKit
 // MARK: - ConferenceLocalVideoStageView
 
 struct ConferenceLocalVideoStageView: View {
+    // MARK: Internal
+
     let videoView: UIView?
     let isScreenSharing: Bool
     let isPinned: Bool
@@ -13,6 +15,7 @@ struct ConferenceLocalVideoStageView: View {
     let collapse: () -> Void
     let togglePin: () -> Void
     let toggleUI: () -> Void
+    let setPinching: (Bool) -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -26,6 +29,9 @@ struct ConferenceLocalVideoStageView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint(isUIHidden ? "Shows call controls" : "Hides call controls")
+            .scaleEffect(magnification, anchor: magnificationAnchor)
+            .zIndex(magnification > 1 ? 1 : 0)
+            .simultaneousGesture(magnifyGesture)
 
             HStack {
                 Button("Back to Video Grid", systemImage: "chevron.down", action: collapse)
@@ -47,5 +53,29 @@ struct ConferenceLocalVideoStageView: View {
             .allowsHitTesting(!isUIHidden)
             .accessibilityHidden(isUIHidden)
         }
+        .onDisappear {
+            setPinching(false)
+        }
+    }
+
+    // MARK: Private
+
+    @GestureState private var magnification: CGFloat = 1
+    @GestureState private var magnificationAnchor = UnitPoint.center
+
+    private var magnifyGesture: some Gesture {
+        MagnifyGesture()
+            .updating($magnification) { value, state, _ in
+                state = min(3, max(1, value.magnification))
+            }
+            .updating($magnificationAnchor) { value, state, _ in
+                state = value.startAnchor
+            }
+            .onChanged { _ in
+                setPinching(true)
+            }
+            .onEnded { _ in
+                setPinching(false)
+            }
     }
 }
