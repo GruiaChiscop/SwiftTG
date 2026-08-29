@@ -68,6 +68,7 @@ import UserNotifications
             switch newPhase {
             case .active:
                 TelegramAppLockController.shared.noteWillEnterForeground()
+                TelegramCallSession.shared.restoreCallViewFromPictureInPictureIfNeeded()
                 Task { await RootVM.shared.processPendingShareRequests() }
             case .background:
                 TelegramAppLockController.shared.noteDidEnterBackground()

@@ -41,6 +41,10 @@ import AVKit
     var didStartPictureInPicture: (() -> Void)?
     var restoreCallInterface: (((Bool) -> Void) -> Void)?
 
+    var isActive: Bool {
+        controller.isPictureInPictureActive
+    }
+
     @discardableResult func start() -> Bool {
         guard controller.isPictureInPicturePossible else { return false }
         controller.startPictureInPicture()

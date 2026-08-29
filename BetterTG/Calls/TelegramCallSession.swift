@@ -1091,6 +1091,14 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         restoreCallView(stoppingPictureInPicture: true)
     }
 
+    func restoreCallViewFromPictureInPictureIfNeeded() {
+        guard hasActiveCallSurface,
+              isCallViewMinimized,
+              pictureInPictureController?.isActive == true
+        else { return }
+        restoreCallView()
+    }
+
     func submitCallRating(
         request: CallRatingRequest,
         rating: Int,
