@@ -27,6 +27,11 @@ struct CallPeerAvatar: View {
             }
         }
         .clipShape(.circle)
+        // Purely decorative. `.accessibilityElement()` collapses the placeholder's initial (a bare
+        // `Text`) into this element so it can't be focused on its own, then `.accessibilityHidden`
+        // removes it - `.accessibilityHidden(true)` on the `Group` alone doesn't reliably reach
+        // that nested `Text`.
+        .accessibilityElement()
         .accessibilityHidden(true)
     }
 
