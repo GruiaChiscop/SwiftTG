@@ -170,6 +170,48 @@ func telegramChatListTimestamp(
     return date.formatted(.dateTime.month(.abbreviated).day())
 }
 
+/// Date label for a Recent Calls row: always carries the time (a call list has few rows and the
+/// time matters), with a relative day name for anything within the past week.
+func telegramCallListTimestamp(
+    _ timestamp: Int,
+    relativeTo now: Foundation.Date = Foundation.Date(),
+    calendar: Calendar = .autoupdatingCurrent,
+) -> String {
+    let date = Foundation.Date(timeIntervalSince1970: TimeInterval(timestamp))
+    let time = date.formatted(date: .omitted, time: .shortened)
+    if calendar.isDateInToday(date) {
+        return time
+    }
+    if calendar.isDateInYesterday(date) {
+        return "Yesterday \(time)"
+    }
+    let dayGap = calendar.dateComponents(
+        [.day],
+        from: calendar.startOfDay(for: date),
+        to: calendar.startOfDay(for: now),
+    )
+    .day ?? .max
+    if (1..<7).contains(dayGap) {
+        return "\(date.formatted(.dateTime.weekday(.abbreviated))) \(time)"
+    }
+    if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+        return "\(date.formatted(.dateTime.month(.abbreviated).day())), \(time)"
+    }
+    return "\(date.formatted(.dateTime.year().month(.abbreviated).day())), \(time)"
+}
+
+/// Call duration as `m:ss`, or `h:mm:ss` once it passes an hour.
+func telegramCallDurationClock(_ seconds: Int) -> String {
+    let value = max(0, seconds)
+    let hours = value / 3600
+    let minutes = (value % 3600) / 60
+    let remainingSeconds = value % 60
+    if hours > 0 {
+        return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+    }
+    return String(format: "%d:%02d", minutes, remainingSeconds)
+}
+
 func telegramMessageDayHeading(
     _ timestamp: Int,
     relativeTo now: Foundation.Date = Foundation.Date(),

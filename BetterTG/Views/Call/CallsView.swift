@@ -3,32 +3,78 @@
 import SwiftUI
 @preconcurrency import TDLibKit
 
-// MARK: - TelegramCallHistoryItem
+// MARK: - CallHistoryParticipant
 
-private struct TelegramCallHistoryItem: Identifiable {
-    let message: Message
+private struct CallHistoryParticipant: Identifiable {
+    let id: Int64
+    let title: String
+    let photo: File?
+    let minithumbnail: Minithumbnail?
+}
+
+// MARK: - CallHistoryGroup
+
+/// A run of consecutive calls with the same peer, collapsed into one row - matching Telegram-iOS's
+/// grouping of back-to-back calls with a `(N)` count.
+private struct CallHistoryGroup: Identifiable {
+    // MARK: Internal
+
+    let entries: [TelegramCallHistoryEntry]
     let chat: Chat
     let user: User
+    /// Up to three other conference participants, for the stacked avatar.
+    let participants: [CallHistoryParticipant]
 
-    var id: String { "\(message.chatId):\(message.id)" }
+    var id: Int64 { top.id }
+    var top: TelegramCallHistoryEntry { entries[0] }
+    var count: Int { entries.count }
+    var isConference: Bool { top.isConference }
+    var isVideo: Bool { entries.contains(where: \.isVideo) }
+    var hasMissed: Bool { entries.contains(where: \.isMissed) }
+    var hasIncoming: Bool { entries.contains(where: { !$0.isOutgoing }) }
+    var hasOutgoing: Bool { entries.contains(where: \.isOutgoing) }
+    var duration: Int { entries.first(where: { $0.duration > 1 })?.duration ?? 0 }
 
-    var isVideo: Bool {
-        switch message.content {
-        case .messageCall(let content): content.isVideo
-        case .messageGroupCall(let content): content.isVideo
-        default: false
+    var title: String { telegramUserDisplayName(user) }
+
+    /// Compact status text: "Missed", "Incoming (2:05)", "Outgoing, Incoming", …
+    var statusText: String {
+        if hasMissed {
+            return "Missed"
         }
+        if hasIncoming, hasOutgoing {
+            return "Outgoing, Incoming"
+        }
+        let direction = hasIncoming ? "Incoming" : "Outgoing"
+        if duration > 1 {
+            return "\(direction) (\(telegramCallDurationClock(duration)))"
+        }
+        return direction
     }
 
-    var isConference: Bool {
-        if case .messageGroupCall = message.content {
-            return true
+    var accessibilityLabel: String {
+        var parts = [title]
+        if count > 1 {
+            parts.append("\(count) calls")
         }
-        return false
+        parts.append(spokenStatus)
+        parts.append(telegramCallListTimestamp(top.date))
+        return parts.joined(separator: ", ")
     }
 
-    var status: String {
-        telegramMessageContentDescription(message)
+    // MARK: Private
+
+    private var spokenStatus: String {
+        let kind = isConference ? "group call" : "call"
+        if hasMissed {
+            return isVideo ? "Missed video \(kind)" : "Missed \(kind)"
+        }
+        if hasIncoming, hasOutgoing {
+            return "Outgoing and incoming \(kind)s"
+        }
+        let direction = hasIncoming ? "Incoming" : "Outgoing"
+        let base = isVideo ? "\(direction) video \(kind)" : "\(direction) \(kind)"
+        return duration > 1 ? "\(base), \(telegramSpokenDuration(duration))" : base
     }
 }
 
@@ -45,23 +91,37 @@ struct CallsView: View {
 
     var body: some View {
         List {
-            ForEach(items) { item in
-                callRow(item)
-                    .swipeActions {
-                        Button("Delete", systemImage: "trash", role: .destructive) {
-                            delete(item)
+            if let activeConferenceTitle {
+                Section {
+                    Button {
+                        TelegramCallSession.shared.restoreCallView()
+                    } label: {
+                        Label("Return to \(activeConferenceTitle)", systemImage: "phone.connection.fill")
+                            .foregroundStyle(.green)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Section("Recent Calls") {
+                ForEach(groups) { group in
+                    callRow(group)
+                        .swipeActions {
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                delete(group)
+                            }
                         }
-                    }
-                    .onAppear {
-                        guard item.id == items.last?.id else { return }
-                        Task { await loadMore() }
-                    }
+                        .onAppear {
+                            guard group.id == groups.last?.id else { return }
+                            Task { await loadMore() }
+                        }
+                }
             }
         }
         .overlay {
-            if isLoading, items.isEmpty {
+            if isLoading, groups.isEmpty {
                 ProgressView("Loading calls…")
-            } else if items.isEmpty {
+            } else if groups.isEmpty {
                 ContentUnavailableView(
                     filter == .missed ? "No Missed Calls" : "No Calls",
                     systemImage: "phone",
@@ -87,7 +147,7 @@ struct CallsView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                if !items.isEmpty {
+                if !groups.isEmpty {
                     Button("Clear", role: .destructive) {
                         showsClearConfirmation = true
                     }
@@ -132,6 +192,23 @@ struct CallsView: View {
                 NewCallLinkView(service: service)
             }
         }
+        .sheet(item: $detailGroup) { group in
+            CallDetailView(
+                title: group.title,
+                userId: group.user.id,
+                photo: group.user.profilePhoto?.small,
+                minithumbnail: group.user.profilePhoto?.minithumbnail,
+                entries: group.entries,
+                onCallBack: { isVideo in
+                    detailGroup = nil
+                    activate(group, videoOverride: isVideo)
+                },
+                onMessage: {
+                    detailGroup = nil
+                    Task { await openChat(group) }
+                },
+            )
+        }
         .navigationDestination(item: $pushedChat) { customChat in
             ChatView(customChat: customChat, backButtonTitleOverride: "Calls")
         }
@@ -150,11 +227,13 @@ struct CallsView: View {
     }
 
     @Bindable private var rootVM = RootVM.shared
+    @State private var session = TelegramCallSession.shared
     @State private var errorMessage: String?
     @State private var filter = Filter.all
     @State private var isLoading = false
-    @State private var items = [TelegramCallHistoryItem]()
+    @State private var groups = [CallHistoryGroup]()
     @State private var nextOffset = ""
+    @State private var detailGroup: CallHistoryGroup?
     @State private var pushedChat: CustomChat?
     @State private var reloadTask: Task<Void, Never>?
     @State private var showsClearConfirmation = false
@@ -162,6 +241,11 @@ struct CallsView: View {
     @State private var showsNewCallLink = false
 
     private let service: any TelegramService
+
+    private var activeConferenceTitle: String? {
+        guard session.groupCallCoordinator != nil else { return nil }
+        return session.conferenceDisplayTitle
+    }
 
     private var errorIsPresented: Binding<Bool> {
         Binding(
@@ -174,51 +258,108 @@ struct CallsView: View {
         )
     }
 
-    private func callRow(_ item: TelegramCallHistoryItem) -> some View {
-        Button {
-            activate(item)
-        } label: {
-            HStack(spacing: 12) {
-                ProfileImageView(
-                    photo: item.user.profilePhoto?.small,
-                    minithumbnail: item.user.profilePhoto?.minithumbnail,
-                    title: telegramUserDisplayName(item.user),
-                    userId: item.user.id,
-                )
-                .frame(width: 48, height: 48)
-                .accessibilityHidden(true)
+    private func callRow(_ group: CallHistoryGroup) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                activate(group)
+            } label: {
+                HStack(spacing: 12) {
+                    callAvatar(group)
+                        .frame(width: 48, height: 48)
+                        .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(telegramUserDisplayName(item.user))
-                        .font(.body.weight(.semibold))
-                    HStack(spacing: 4) {
-                        Image(systemName: directionImage(for: item.message))
-                            .foregroundStyle(isMissed(item.message) ? .red : .green)
-                        Text(item.status)
-                        Text("·")
-                        Text(telegramChatListTimestamp(item.message.date))
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Text(group.title)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            if group.count > 1 {
+                                Text("(\(group.count))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        HStack(spacing: 4) {
+                            if group.hasOutgoing, !group.hasIncoming, !group.hasMissed {
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(group.statusText)
+                                .foregroundStyle(group.hasMissed ? Color.red : Color.secondary)
+                            Text("·")
+                                .foregroundStyle(.secondary)
+                            Text(telegramCallListTimestamp(group.top.date))
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline)
+                        .lineLimit(1)
                     }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: group.isVideo ? "video" : "phone")
+                        .foregroundStyle(.tint)
+                        .accessibilityHidden(true)
                 }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(group.accessibilityLabel)
+            .accessibilityActions {
+                Button("Message") {
+                    Task { await openChat(group) }
+                }
+                Button("Details") {
+                    detailGroup=group
+                }
+            }
+            .contextMenu {
+                Button("Message", systemImage: "message") {
+                    Task { await openChat(group) }
+                }
+            }
 
-                Spacer(minLength: 8)
-
-                Image(systemName: item.isVideo ? "video.fill" : "phone.fill")
+            Button {
+                detailGroup = group
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.title3)
                     .foregroundStyle(.tint)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
             }
-            .contentShape(.rect)
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button("Message", systemImage: "message") {
-                Task { await openChat(item) }
+    }
+
+    @ViewBuilder private func callAvatar(_ group: CallHistoryGroup) -> some View {
+        if group.isConference, !group.participants.isEmpty {
+            ZStack {
+                ForEach(Array(group.participants.prefix(3).enumerated()), id: \.element.id) { index, participant in
+                    ProfileImageView(
+                        photo: participant.photo,
+                        minithumbnail: participant.minithumbnail,
+                        title: participant.title,
+                        userId: participant.id,
+                    )
+                    .frame(width: 30, height: 30)
+                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                    .offset(
+                        x: CGFloat(index) * 12 - CGFloat(min(2, group.participants.count - 1)) * 6,
+                        y: 0,
+                    )
+                }
             }
-            Button(item.isVideo ? "Video Call" : "Call", systemImage: item.isVideo ? "video" : "phone") {
-                activate(item)
-            }
+        } else {
+            ProfileImageView(
+                photo: group.user.profilePhoto?.small,
+                minithumbnail: group.user.profilePhoto?.minithumbnail,
+                title: group.title,
+                userId: group.user.id,
+            )
         }
     }
 
@@ -232,7 +373,7 @@ struct CallsView: View {
                 onlyMissed: filter == .missed,
             )
             guard !Task.isCancelled else { return }
-            items = await resolve(found.messages)
+            groups = await resolve(found.messages)
             nextOffset = found.nextOffset
         } catch is CancellationError {
             return
@@ -253,8 +394,8 @@ struct CallsView: View {
             )
             guard !Task.isCancelled else { return }
             let loaded = await resolve(found.messages)
-            let existingIds = Set(items.map(\.id))
-            items.append(contentsOf: loaded.filter { !existingIds.contains($0.id) })
+            let existingIds = Set(groups.map(\.id))
+            groups.append(contentsOf: loaded.filter { !existingIds.contains($0.id) })
             nextOffset = found.nextOffset
         } catch is CancellationError {
             return
@@ -263,33 +404,72 @@ struct CallsView: View {
         }
     }
 
-    private func resolve(_ messages: [Message]) async -> [TelegramCallHistoryItem] {
-        await messages.concurrentCompactMap { message in
-            guard let chat = try? await service.getChat(chatId: message.chatId) else { return nil }
+    /// Classifies each message, coalesces consecutive runs with the same peer, then resolves the
+    /// peer (and, for a conference, a few participant avatars) once per run.
+    private func resolve(_ messages: [Message]) async -> [CallHistoryGroup] {
+        let entries = messages.compactMap(TelegramCallHistoryEntry.init(message:))
+        var runs = [[TelegramCallHistoryEntry]]()
+        for entry in entries {
+            if var last = runs.last, last.first?.chatId == entry.chatId {
+                last.append(entry)
+                runs[runs.count - 1] = last
+            } else {
+                runs.append([entry])
+            }
+        }
+
+        return await runs.concurrentCompactMap { run in
+            guard let chatId = run.first?.chatId,
+                  let chat = try? await service.getChat(chatId: chatId)
+            else { return nil }
             let userId: Int64
             switch chat.type {
-            case .chatTypePrivate(let value):
-                userId = value.userId
-            case .chatTypeSecret(let value):
-                userId = value.userId
-            case .chatTypeBasicGroup, .chatTypeSupergroup:
-                return nil
+            case .chatTypePrivate(let value): userId = value.userId
+            case .chatTypeSecret(let value): userId = value.userId
+            case .chatTypeBasicGroup, .chatTypeSupergroup: return nil
             }
             guard let user = try? await service.getUser(userId: userId) else { return nil }
-            return TelegramCallHistoryItem(message: message, chat: chat, user: user)
+
+            var participants = [CallHistoryParticipant]()
+            if run.first?.isConference == true {
+                participants = await (run.first?.otherParticipantIds ?? [])
+                    .prefix(3)
+                    .concurrentCompactMap { await resolveParticipant($0) }
+            }
+            return CallHistoryGroup(entries: run, chat: chat, user: user, participants: participants)
         }
     }
 
-    private func activate(_ item: TelegramCallHistoryItem) {
-        if item.isConference {
+    private func resolveParticipant(_ sender: MessageSender) async -> CallHistoryParticipant? {
+        switch sender {
+        case .messageSenderUser(let value):
+            guard let user = try? await service.getUser(userId: value.userId) else { return nil }
+            return CallHistoryParticipant(
+                id: user.id,
+                title: telegramUserDisplayName(user),
+                photo: user.profilePhoto?.small,
+                minithumbnail: user.profilePhoto?.minithumbnail,
+            )
+        case .messageSenderChat(let value):
+            guard let chat = try? await service.getChat(chatId: value.chatId) else { return nil }
+            return CallHistoryParticipant(
+                id: value.chatId,
+                title: chat.title,
+                photo: chat.photo?.small,
+                minithumbnail: chat.photo?.minithumbnail,
+            )
+        }
+    }
+
+    private func activate(_ group: CallHistoryGroup, videoOverride: Bool? = nil) {
+        if group.isConference {
             Task { @MainActor in
-                let session = TelegramCallSession.shared
                 if session.groupCallCoordinator != nil {
                     session.restoreCallView()
                 } else {
                     let joined = await session.joinConference(
-                        chatId: item.message.chatId,
-                        messageId: item.message.id,
+                        chatId: group.top.chatId,
+                        messageId: group.top.id,
                         isMuted: false,
                     )
                     if !joined {
@@ -300,9 +480,9 @@ struct CallsView: View {
             return
         }
         CallKitManager.shared.startOutgoingCall(
-            userId: item.user.id,
-            displayName: telegramUserDisplayName(item.user),
-            isVideo: item.isVideo,
+            userId: group.user.id,
+            displayName: group.title,
+            isVideo: videoOverride ?? group.isVideo,
             onMicrophonePermissionDenied: {
                 errorMessage = "Microphone access is required to make calls."
             },
@@ -312,20 +492,22 @@ struct CallsView: View {
         )
     }
 
-    @MainActor private func openChat(_ item: TelegramCallHistoryItem) async {
-        pushedChat = await rootVM.getCustomChat(from: item.chat.id)
+    @MainActor private func openChat(_ group: CallHistoryGroup) async {
+        pushedChat = await rootVM.getCustomChat(from: group.chat.id)
         if pushedChat == nil {
             errorMessage = "The conversation couldn't be opened."
         }
     }
 
-    private func delete(_ item: TelegramCallHistoryItem) {
-        items.removeAll { $0.id == item.id }
+    private func delete(_ group: CallHistoryGroup) {
+        groups.removeAll { $0.id == group.id }
+        let chatId = group.top.chatId
+        let messageIds = group.entries.map(\.id)
         Task {
             do {
                 _ = try await service.deleteMessages(
-                    chatId: item.message.chatId,
-                    messageIds: [item.message.id],
+                    chatId: chatId,
+                    messageIds: messageIds,
                     revoke: false,
                 )
             } catch {
@@ -338,7 +520,7 @@ struct CallsView: View {
     @MainActor private func clearHistory() async {
         do {
             _ = try await service.deleteAllCallMessages(revoke: false)
-            items = []
+            groups = []
             nextOffset = ""
         } catch {
             errorMessage = telegramErrorDescription(error)
@@ -351,30 +533,6 @@ struct CallsView: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             await reload()
-        }
-    }
-
-    private func directionImage(for message: Message) -> String {
-        message.isOutgoing ? "arrow.up.right" : "arrow.down.left"
-    }
-
-    private func isMissed(_ message: Message) -> Bool {
-        switch message.content {
-        case .messageCall(let content):
-            switch content.discardReason {
-            case .callDiscardReasonDeclined, .callDiscardReasonDisconnected, .callDiscardReasonMissed:
-                true
-            case .callDiscardReasonEmpty, .callDiscardReasonHungUp, .callDiscardReasonUpgradeToGroupCall:
-                false
-            }
-        case .messageGroupCall(let content):
-            TelegramGroupCallMessagePresentation(
-                content: content,
-                isOutgoing: message.isOutgoing,
-                messageDate: message.date,
-            ).isSuccessful == false
-        default:
-            false
         }
     }
 }
