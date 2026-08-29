@@ -1,7 +1,7 @@
 // LoginState.swift
 
 enum LoginState {
-    case phoneNumber, code, twoFactor, emailAddress, emailCode, registration
+    case phoneNumber, code, twoFactor, passwordRecovery, emailAddress, emailCode, registration
 
     // MARK: Internal
 
@@ -9,7 +9,8 @@ enum LoginState {
         switch self {
         case .phoneNumber: "Phone number"
         case .code: "Code"
-        case .twoFactor: "2FA"
+        case .twoFactor: "Password"
+        case .passwordRecovery: "Reset Password"
         case .emailAddress: "Add Email"
         case .emailCode: "Check Your Email"
         case .registration: "Your Info"

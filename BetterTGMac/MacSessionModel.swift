@@ -110,6 +110,11 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var phoneNumber = ""
     var loginCode = ""
     var password = ""
+    var recoveryCode = ""
+    var newPassword = ""
+    var newPasswordHint = ""
+    var isRecoveringPassword = false
+    var showsAccountResetConfirmation = false
     var loginError: String?
     var emailAddress = ""
     var emailCode = ""
@@ -545,6 +550,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         phoneNumber = ""
         loginCode = ""
         password = ""
+        recoveryCode = ""
+        newPassword = ""
+        newPasswordHint = ""
+        isRecoveringPassword = false
         loginError = nil
         isLoadingChats = false
         isLoadingMessages = false

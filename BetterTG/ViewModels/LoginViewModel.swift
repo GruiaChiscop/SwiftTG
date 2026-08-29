@@ -32,6 +32,13 @@ import TDLibKit
     var hint = ""
     var loginState = LoginState.phoneNumber
     var phoneNumber = ""
+    var hasRecoveryEmail = false
+    var recoveryEmailPattern = ""
+    var recoveryCode = ""
+    var newPassword = ""
+    var newPasswordHint = ""
+    var showsAccountResetConfirmation = false
+    var isRequestingPasswordRecovery = false
     var registrationFirstName = ""
     var registrationLastName = ""
     var registrationPhotoData: Data?
@@ -103,6 +110,22 @@ import TDLibKit
                     errorMessage = TelegramLoginGuidance.errorDescription(error)
                 }
             }
+        case .passwordRecovery:
+            let trimmedCode = recoveryCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedCode.isEmpty, !newPassword.isEmpty else { return }
+            errorMessage = nil
+            Task {
+                do {
+                    _ = try await service.recoverAuthenticationPassword(
+                        recoveryCode: trimmedCode,
+                        newPassword: newPassword,
+                        newHint: newPasswordHint.isEmpty ? nil : newPasswordHint,
+                    )
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    errorMessage = TelegramLoginGuidance.errorDescription(error)
+                }
+            }
         case .emailAddress:
             let trimmed = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
@@ -167,6 +190,45 @@ import TDLibKit
         continueLogin()
     }
 
+    /// "Forgot Password?" from the password step. With a recovery email on file, ask Telegram to
+    /// send a code there and move to the recovery step; without one, the only way back in is to
+    /// reset the account, so confirm that first.
+    func startPasswordRecovery() {
+        guard mode == .live, !isRequestingPasswordRecovery else { return }
+        guard hasRecoveryEmail else {
+            showsAccountResetConfirmation = true
+            return
+        }
+        isRequestingPasswordRecovery = true
+        errorMessage = nil
+        Task {
+            defer { isRequestingPasswordRecovery = false }
+            do {
+                _ = try await service.requestAuthenticationPasswordRecovery()
+                recoveryCode = ""
+                newPassword = ""
+                newPasswordHint = ""
+                loginState = .passwordRecovery
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = TelegramLoginGuidance.errorDescription(error)
+            }
+        }
+    }
+
+    func resetAccount() {
+        guard mode == .live else { return }
+        errorMessage = nil
+        Task {
+            do {
+                _ = try await service.deleteAccount(reason: "Forgot password", password: nil)
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = TelegramLoginGuidance.errorDescription(error)
+            }
+        }
+    }
+
     func submitPhoneNumber() {
         if mode == .preview {
             showPhoneConfirmation = false
@@ -224,8 +286,12 @@ import TDLibKit
     private func apply(_ state: AuthorizationState) {
         switch state {
         case .authorizationStateWaitPassword(let value):
-            loginState = .twoFactor
+            if loginState != .passwordRecovery {
+                loginState = .twoFactor
+            }
             hint = value.passwordHint
+            hasRecoveryEmail = value.hasRecoveryEmailAddress
+            recoveryEmailPattern = value.recoveryEmailAddressPattern
         case .authorizationStateWaitCode(let details):
             loginState = .code
             expectedCodeLength = details.codeInfo.type.expectedLength
@@ -281,7 +347,7 @@ import TDLibKit
             guard !code.isEmpty else { return }
             hint = AuthenticationPreviewData.passwordHint
             loginState = .twoFactor
-        case .emailAddress, .emailCode, .registration, .twoFactor:
+        case .emailAddress, .emailCode, .passwordRecovery, .registration, .twoFactor:
             break
         }
     }

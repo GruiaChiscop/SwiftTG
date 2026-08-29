@@ -48,6 +48,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func checkAuthenticationCode(code: String?) async throws -> Ok
     func checkAuthenticationEmailCode(code: EmailAddressAuthentication?) async throws -> Ok
     func checkAuthenticationPassword(password: String?) async throws -> Ok
+    func requestAuthenticationPasswordRecovery() async throws -> Ok
+    func recoverAuthenticationPassword(recoveryCode: String?, newPassword: String?, newHint: String?) async throws -> Ok
+    func deleteAccount(reason: String?, password: String?) async throws -> Ok
     func closeChat(chatId: Int64?) async throws -> Ok
     func createBasicGroupChat(basicGroupId: Int64?, force: Bool?) async throws -> Chat
     func createPrivateChat(force: Bool?, userId: Int64?) async throws -> Chat
@@ -946,6 +949,26 @@ extension TelegramSession: TelegramService {
 
     func checkAuthenticationPassword(password: String?) async throws -> Ok {
         try await client.checkAuthenticationPassword(password: password)
+    }
+
+    func requestAuthenticationPasswordRecovery() async throws -> Ok {
+        try await client.requestAuthenticationPasswordRecovery()
+    }
+
+    func recoverAuthenticationPassword(
+        recoveryCode: String?,
+        newPassword: String?,
+        newHint: String?,
+    ) async throws -> Ok {
+        try await client.recoverAuthenticationPassword(
+            newHint: newHint,
+            newPassword: newPassword,
+            recoveryCode: recoveryCode,
+        )
+    }
+
+    func deleteAccount(reason: String?, password: String?) async throws -> Ok {
+        try await client.deleteAccount(password: password, reason: reason)
     }
 
     func closeChat(chatId: Int64?) async throws -> Ok {

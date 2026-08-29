@@ -28,6 +28,47 @@ extension MacSessionModel {
         }
     }
 
+    /// "Forgot Password?" from the password step. With a recovery email on file, ask Telegram to
+    /// send a code there and switch to the recovery step; otherwise the only way in is an account
+    /// reset, so confirm that first.
+    func startPasswordRecovery() {
+        guard case .authorizationStateWaitPassword(let details) = authorizationState else { return }
+        guard details.hasRecoveryEmailAddress else {
+            showsAccountResetConfirmation = true
+            return
+        }
+        loginError = nil
+        Task {
+            do {
+                _ = try await service.requestAuthenticationPasswordRecovery()
+                recoveryCode = ""
+                newPassword = ""
+                newPasswordHint = ""
+                isRecoveringPassword = true
+            } catch {
+                loginError = TelegramLoginGuidance.errorDescription(error)
+            }
+        }
+    }
+
+    func submitPasswordRecovery() {
+        let trimmed = recoveryCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !newPassword.isEmpty else { return }
+        runLoginRequest {
+            try await self.service.recoverAuthenticationPassword(
+                recoveryCode: trimmed,
+                newPassword: self.newPassword,
+                newHint: self.newPasswordHint.isEmpty ? nil : self.newPasswordHint,
+            )
+        }
+    }
+
+    func resetAccount() {
+        runLoginRequest {
+            try await self.service.deleteAccount(reason: "Forgot password", password: nil)
+        }
+    }
+
     func submitEmailAddress() {
         let trimmed = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

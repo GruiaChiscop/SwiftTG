@@ -100,13 +100,65 @@ struct LoginView: View {
                     }
                 case .twoFactor:
                     loginStateView {
-                        SecureField(model.hint.isEmpty ? "2FA" : model.hint, text: $model.twoFactor)
-                            .focused($focused, equals: .twoFactor)
-                            .textContentType(.password)
-                            .keyboardType(.alphabet)
-                            .padding()
-                            .background(Color.gray6)
-                            .clipShape(.rect(cornerRadius: 10))
+                        VStack(spacing: 12) {
+                            SecureField("Password", text: $model.twoFactor)
+                                .focused($focused, equals: .twoFactor)
+                                .textContentType(.password)
+                                .keyboardType(.alphabet)
+                                .submitLabel(.go)
+                                .onSubmit { model.continueLogin() }
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            Text(model.hint.isEmpty
+                                ? "Enter your two-step verification password."
+                                : "Hint: \(model.hint)")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Button("Forgot Password?") {
+                                model.startPasswordRecovery()
+                            }
+                            .font(.footnote)
+                            .disabled(model.isRequestingPasswordRecovery)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                case .passwordRecovery:
+                    loginStateView {
+                        VStack(spacing: 12) {
+                            TextField("Recovery Code", text: $model.recoveryCode)
+                                .focused($focused, equals: .recoveryCode)
+                                .keyboardType(.numberPad)
+                                .textContentType(.oneTimeCode)
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            SecureField("New Password", text: $model.newPassword)
+                                .focused($focused, equals: .newPassword)
+                                .textContentType(.newPassword)
+                                .keyboardType(.alphabet)
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            TextField("New Hint (optional)", text: $model.newPasswordHint)
+                                .focused($focused, equals: .newPasswordHint)
+                                .keyboardType(.alphabet)
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            Text(model.recoveryEmailPattern.isEmpty
+                                ? "Enter the code sent to your recovery email, then choose a new password."
+                                : "Enter the code sent to \(model.recoveryEmailPattern), then choose a new password.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 case .emailAddress:
                     loginStateView {
@@ -228,6 +280,17 @@ struct LoginView: View {
         } message: {
             Text("Is this the correct number?")
         }
+        .alert("Reset Account?", isPresented: $model.showsAccountResetConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset Account", role: .destructive) {
+                model.resetAccount()
+            }
+        } message: {
+            Text(
+                "You have no recovery email set, so the password can't be restored. "
+                    + "Resetting deletes this account and all its messages. This can't be undone.",
+            )
+        }
         .alert("Terms of Service", isPresented: $model.showsTermsConfirmation) {
             Button("Decline", role: .cancel) {}
             Button("Agree") {
@@ -260,7 +323,10 @@ struct LoginView: View {
         case emailCode
         case firstName
         case lastName
+        case newPassword
+        case newPasswordHint
         case phoneNumber
+        case recoveryCode
         case twoFactor
     }
 
