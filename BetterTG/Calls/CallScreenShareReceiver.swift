@@ -68,6 +68,7 @@ final class CallScreenShareReceiver: @unchecked Sendable {
     func requestBroadcastStop() {
         queue.async { [self] in
             suppressesHeartbeat = true
+            updateActive(false)
             guard let directory = Self.sharedDirectory else { return }
             try? Data().write(to: directory.appending(path: Self.stopRequestName), options: .atomic)
             try? FileManager.default.removeItem(at: directory.appending(path: Self.appHeartbeatName))
@@ -218,15 +219,21 @@ final class CallScreenShareReceiver: @unchecked Sendable {
         }
 
         let extensionIsActive = Self.isExtensionActive(in: directory, now: now)
-        updateActive(extensionIsActive)
-        guard extensionIsActive else {
-            if suppressesHeartbeat {
+        if suppressesHeartbeat {
+            updateActive(false)
+            let stopRequestExists = FileManager.default.fileExists(
+                atPath: directory.appending(path: Self.stopRequestName).path,
+            )
+            if !extensionIsActive || !stopRequestExists {
                 suppressesHeartbeat = false
                 try? FileManager.default.removeItem(at: directory.appending(path: Self.stopRequestName))
                 writeAppHeartbeat(in: directory)
             }
             return
         }
+
+        updateActive(extensionIsActive)
+        guard extensionIsActive else { return }
 
         guard let data = readMappedFrame(), let frame = Self.decodeFrame(data) else { return }
         Task { @MainActor [frameReceived] in frameReceived(frame) }
@@ -328,6 +335,10 @@ final class CallScreenShareReceiver: @unchecked Sendable {
             }
             guard count > 0 else { break }
             pendingAudioData.append(contentsOf: buffer.prefix(count))
+        }
+        guard !suppressesHeartbeat else {
+            pendingAudioData.removeAll(keepingCapacity: true)
+            return
         }
 
         while pendingAudioData.count >= MemoryLayout<UInt32>.size {
