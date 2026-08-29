@@ -54,13 +54,11 @@ struct ConferenceVideoParticipantTile: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Are you sure you want to remove \(displayTitle) from this call?",
-            isPresented: $showsRemoveConfirmation,
-            titleVisibility: .visible,
-        ) {
+        .alert("Remove Participant", isPresented: $showsRemoveConfirmation) {
             Button("Remove", role: .destructive, action: remove)
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to remove \(displayTitle) from this call?")
         }
         .sheet(isPresented: $showsVolumeControl) {
             ConferenceParticipantVolumeView(

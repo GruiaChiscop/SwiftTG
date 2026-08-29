@@ -82,6 +82,24 @@ import TDLibKit
         return false
     }
 
+    private nonisolated static func confirmsConferenceInvitation(
+        _ update: Update,
+        groupCallId: Int64,
+        messageId: Int64,
+    ) -> Bool {
+        switch update {
+        case .updateNewMessage(let value):
+            guard case .messageGroupCall(let content) = value.message.content else { return false }
+            return content.uniqueId.rawValue == groupCallId || value.message.id == messageId
+        case .updateMessageContent(let value):
+            return value.messageId == messageId
+        case .updateDeleteMessages(let value):
+            return value.messageIds.contains(messageId)
+        default:
+            return false
+        }
+    }
+
     /// Races the reactive `authorizationStatePublisher` against a bounded timeout, instead of
     /// polling - resolves the instant TDLib actually becomes ready (the common case takes well
     /// under a second once the session is restoring), with the timeout only as a safety bound for
@@ -154,6 +172,39 @@ import TDLibKit
                         return
                     }
                     if Task.isCancelled {
+                        return
+                    }
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeoutSeconds))
+            }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
+    /// The conference-invitation counterpart to `waitForCallUpdate`. Invitations arrive as an
+    /// `updateNewMessage` carrying `messageGroupCall`, not through `callPublisher`, so this races the
+    /// `updatePublisher` (delivering, changing or deleting that message - any of which hands the
+    /// lifecycle to `TelegramCallSession.handleConferenceInvitationUpdate`) against the timeout. The
+    /// timeout only bounds the stale-push case where the live connection never mentions the message.
+    private func waitForConferenceInvitationConfirmation(
+        groupCallId: Int64,
+        messageId: Int64,
+        timeoutSeconds: Double,
+    ) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for await update in TDLib.shared.service.updatePublisher.values {
+                    if Task.isCancelled {
+                        return
+                    }
+                    if Self.confirmsConferenceInvitation(
+                        update,
+                        groupCallId: groupCallId,
+                        messageId: messageId,
+                    ) {
                         return
                     }
                 }
@@ -260,14 +311,15 @@ extension VoipPushManager: @MainActor PKPushRegistryDelegate {
         let didReportPlaceholder = CallKitManager.shared.reportIncomingPlaceholder(
             callUniqueId: Self.callUniqueId(from: userInfo),
         )
-        if let invitation = Self.conferenceInvitation(from: userInfo) {
+        let conferenceInvitation = Self.conferenceInvitation(from: userInfo)
+        if let conferenceInvitation {
             TelegramCallSession.shared.receiveConferenceInvitationPayload(
-                chatId: invitation.inviterUserId,
-                messageId: invitation.messageId,
-                uniqueId: invitation.groupCallId,
-                inviterUserId: invitation.inviterUserId,
-                displayTitle: invitation.displayTitle,
-                isVideo: invitation.isVideo,
+                chatId: conferenceInvitation.inviterUserId,
+                messageId: conferenceInvitation.messageId,
+                uniqueId: conferenceInvitation.groupCallId,
+                inviterUserId: conferenceInvitation.inviterUserId,
+                displayTitle: conferenceInvitation.displayTitle,
+                isVideo: conferenceInvitation.isVideo,
             )
         }
         // PushKit only requires that CallKit has been reported synchronously. Network/TDLib work
@@ -297,7 +349,20 @@ extension VoipPushManager: @MainActor PKPushRegistryDelegate {
             } catch {
                 log("VoIP push processing failed: \(error)")
             }
-            if didReportPlaceholder {
+            if let conferenceInvitation {
+                // A conference invitation reaches the app as an `updateNewMessage`, not through
+                // `callPublisher`. Wait (bounded) for TDLib's live connection to deliver or retire
+                // that message; if it never does - a stale push for an invitation the server already
+                // retired - `endConferenceInvitationIfUnconfirmed` stops the ring.
+                await self?.waitForConferenceInvitationConfirmation(
+                    groupCallId: conferenceInvitation.groupCallId,
+                    messageId: conferenceInvitation.messageId,
+                    timeoutSeconds: 30,
+                )
+                TelegramCallSession.shared.endConferenceInvitationIfUnconfirmed(
+                    uniqueId: conferenceInvitation.groupCallId,
+                )
+            } else if didReportPlaceholder {
                 await self?.waitForCallUpdate(timeoutSeconds: 25)
                 CallKitManager.shared.endPlaceholderIfStillPending()
             }
@@ -313,12 +378,17 @@ extension VoipPushManager: @MainActor PKPushRegistryDelegate {
     ) -> ConferenceInvitationPayload? {
         guard let inviterUserId = int64Value(userInfo["from_id"]),
               let groupCallId = int64Value(userInfo["group_call_id"]),
-              let messageId = int64Value(userInfo["msg_id"])
+              let serverMessageId = int64Value(userInfo["msg_id"]),
+              serverMessageId > 0
         else { return nil }
         return ConferenceInvitationPayload(
             inviterUserId: inviterUserId,
             groupCallId: groupCallId,
-            messageId: messageId,
+            // The VoIP payload carries a raw MTProto server message id. TDLib's
+            // `declineGroupCallInvitation` / `inputGroupCallMessage` expect a TDLib message id, which
+            // is the server id shifted left by `MessageId::SERVER_ID_SHIFT` (20). The in-app
+            // `updateNewMessage` path already delivers this shifted form via `message.id`.
+            messageId: serverMessageId << 20,
             displayTitle: userInfo["from_title"] as? String,
             isVideo: boolValue(userInfo["video"]),
         )

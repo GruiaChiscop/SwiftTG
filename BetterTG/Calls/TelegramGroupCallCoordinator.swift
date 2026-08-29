@@ -463,7 +463,6 @@ import UIKit
     }
 
     func cancel() {
-        _ = beginNewOperation()
         reset(to: .idle)
     }
 
@@ -513,7 +512,6 @@ import UIKit
     private var isMuted = false
     private var speakingCleanupTask: Task<Void, Never>?
     private var speakingLastActiveAt = [UInt32: TimeInterval]()
-    private var messageConfigurationTask: Task<Void, Never>?
     private var messageExpirationTask: Task<Void, Never>?
     private var messageLifetime = 10
     private var centralVideoEndpointId: String?
@@ -587,22 +585,42 @@ import UIKit
         self.isMuted = isMuted
         messageLifetime = 10
         messageCharacterLimit = 128
-        configureMessages(generation: generation)
 
         enginePreparationTask = Task { [weak self, weak privateCallEngine] in
             guard let self else { return }
             var preferences = EnginePreferences()
+            // A single application-config fetch feeds both the media-engine preferences and the
+            // in-call message settings (TTL / character limit); the two used to fetch it separately.
             do {
                 let configuration = try await service.getApplicationConfig()
                 guard operationGeneration == generation else { return }
                 preferences = Self.enginePreferences(from: configuration)
+                applyMessageConfiguration(configuration)
             } catch is CancellationError {
                 return
             } catch {
                 guard operationGeneration == generation else { return }
-                log("[GroupCall] couldn't load engine app configuration: \(error)")
+                log("[GroupCall] couldn't load call configuration: \(error)")
             }
-            guard operationGeneration == generation, case .preparing = state else { return }
+            guard operationGeneration == generation else { return }
+            do {
+                let messageLengthOption = try await service.getOption(
+                    name: "group_call_message_text_length_max",
+                )
+                if operationGeneration == generation,
+                   case .optionValueInteger(let value) = messageLengthOption
+                {
+                    messageCharacterLimit = max(1, Int(value.value.rawValue))
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard operationGeneration == generation else { return }
+                log("[GroupCall] couldn't load the group-call message length option: \(error)")
+            }
+            guard operationGeneration == generation else { return }
+            expireMessagesAndScheduleNext()
+            guard case .preparing = state else { return }
             prepareEngine(
                 mode: mode,
                 isMuted: isMuted,
@@ -1185,31 +1203,6 @@ import UIKit
         }
     }
 
-    private func configureMessages(generation: UUID) {
-        messageConfigurationTask?.cancel()
-        messageConfigurationTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                async let configuration = service.getApplicationConfig()
-                async let messageLength = service.getOption(name: "group_call_message_text_length_max")
-                let (loadedConfiguration, loadedMessageLength) = try await (configuration, messageLength)
-                guard operationGeneration == generation else { return }
-                applyMessageConfiguration(loadedConfiguration)
-                if case .optionValueInteger(let value) = loadedMessageLength {
-                    messageCharacterLimit = max(1, Int(value.value.rawValue))
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard operationGeneration == generation else { return }
-                log("[GroupCall] couldn't load message configuration: \(error)")
-            }
-            guard operationGeneration == generation else { return }
-            expireMessagesAndScheduleNext()
-            messageConfigurationTask = nil
-        }
-    }
-
     private func applyMessageConfiguration(_ configuration: JsonValue) {
         guard case .jsonValueObject(let object) = configuration else { return }
         for member in object.members {
@@ -1281,8 +1274,6 @@ import UIKit
         isUpdatingHandRaised = false
         volumeUpdateTask?.cancel()
         volumeUpdateTask = nil
-        messageConfigurationTask?.cancel()
-        messageConfigurationTask = nil
         messageExpirationTask?.cancel()
         messageExpirationTask = nil
         operationGeneration = UUID()
@@ -1290,6 +1281,12 @@ import UIKit
     }
 
     private func reset(to state: State) {
+        // Invalidate every in-flight operation before tearing state down. `leave()`/`cancel()`
+        // already do this, but `reset` is also reached directly from `handle(_:)` when a server
+        // update ends the call - without this, a rejoin/join/video/mute continuation could resume
+        // afterwards, pass its now-stale `operationGeneration` check (which `reset` alone never
+        // bumped) and resurrect `groupCall`/`participants` after the call is gone.
+        beginNewOperation()
         engine.stop()
         speakingCleanupTask?.cancel()
         speakingCleanupTask = nil

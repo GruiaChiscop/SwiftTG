@@ -28,7 +28,6 @@ struct ConferenceVideoStageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .buttonStyle(.plain)
-            .accessibilityHint(isUIHidden ? "Shows call controls" : "Hides call controls")
             .accessibilityAction(.escape, collapse)
             .scaleEffect(magnification, anchor: magnificationAnchor)
             .zIndex(magnification > 1 ? 1 : 0)

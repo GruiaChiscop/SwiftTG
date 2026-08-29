@@ -592,6 +592,22 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         ))
     }
 
+    /// A conference invitation surfaced only from a VoIP push has no TDLib-owned lifecycle until the
+    /// live `updateNewMessage` confirms it. `VoipPushManager` waits for that confirmation (bounded)
+    /// and, if it never comes - a stale push for an invitation TDLib already retired - calls this to
+    /// stop the ring rather than letting it hang forever. A no-op once TDLib has taken over
+    /// (`isConfirmed`) or the invitation has already been answered/declined/finished.
+    func endConferenceInvitationIfUnconfirmed(uniqueId: Int64) {
+        guard let invitation = incomingConferenceInvitation,
+              invitation.uniqueId == uniqueId,
+              !incomingConferenceInvitationIsConfirmed,
+              activeCall == nil,
+              groupCallCoordinator == nil
+        else { return }
+        log("[GroupCall] VoIP-push conference invitation was never confirmed by TDLib; ending it")
+        finishIncomingConferenceInvitation(reason: .unanswered)
+    }
+
     func answer() {
         answerActiveCall()
     }
@@ -1172,6 +1188,8 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     private static let terminalToneLifetime: TimeInterval = 2
     private static let endedTonePlaybackDuration: TimeInterval = 1.25
     private static let callFeedbackUserId: Int64 = 4_244_000
+    /// Number of 1s speaker re-assertions after a triggering event before the settle window ends.
+    private static let videoAudioRouteSettleTicks = 5
 
     private let service: any TelegramService
     private let conferenceAccessibilityAnnouncer: ConferenceAccessibilityAnnouncer
@@ -1185,6 +1203,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     private var terminalToneStopTask: Task<Void, Never>?
     private var delayedCallKitEndTask: Task<Void, Never>?
     private var videoAudioRouteTask: Task<Void, Never>?
+    private var videoAudioRouteSettleGeneration = UUID()
     private var terminalToneStartedAt: Foundation.Date?
     private var isPreCallAudioDevicePrepared = false
     private var isCallKitAudioSessionActive = false
@@ -1226,6 +1245,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     private var standaloneConferenceJoinGeneration = UUID()
     private var isStandaloneConferenceAudioSessionActive = false
     private var incomingConferenceUsesCallKit = false
+    private var incomingConferenceInvitationIsConfirmed = false
 
     private var hasActiveCallSurface: Bool {
         activeCall != nil || groupCallCoordinator != nil
@@ -1601,6 +1621,10 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                     displayTitle: nil,
                     isVideo: content.isVideo,
                 ))
+                // TDLib delivered the invitation message and now owns its lifecycle (see the
+                // `.updateMessageContent` / `.updateDeleteMessages` cases below), so
+                // `VoipPushManager`'s unconfirmed-invitation fallback must no longer end it.
+                incomingConferenceInvitationIsConfirmed = true
             }
         case .updateMessageContent(let value):
             guard let invitation = incomingConferenceInvitation,
@@ -1629,18 +1653,50 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
             log("[GroupCall] ignoring incoming conference invitation while another call is active")
             return
         }
+
+        if let existing = incomingConferenceInvitation,
+           existing.chatId == invitation.chatId,
+           existing.messageId == invitation.messageId
+        {
+            // The same invitation from a second source - typically the VoIP push surfaced it first
+            // and TDLib's live `updateNewMessage` is now confirming it. Merge in any detail the
+            // earlier source lacked and refresh CallKit's metadata, but never re-ring.
+            let merged = IncomingConferenceInvitation(
+                chatId: existing.chatId,
+                messageId: existing.messageId,
+                uniqueId: existing.uniqueId != 0 ? existing.uniqueId : invitation.uniqueId,
+                inviterUserId: existing.inviterUserId ?? invitation.inviterUserId,
+                displayTitle: existing.displayTitle ?? invitation.displayTitle,
+                isVideo: existing.isVideo || invitation.isVideo,
+            )
+            if merged != existing {
+                incomingConferenceInvitation = merged
+                onIncomingConferenceInvitation?(merged)
+            }
+            processPendingConferenceInvitationSystemAction()
+            return
+        }
+
         guard incomingConferenceInvitation != invitation else { return }
         incomingConferenceInvitation = invitation
         incomingConferenceUsesCallKit = true
+        // A fresh invitation is unconfirmed until TDLib delivers its `updateNewMessage`. The
+        // `.updateNewMessage` case above re-enters through the merge branch and sets this true.
+        incomingConferenceInvitationIsConfirmed = false
         Self.prepareAudioSession()
         log(
             "[GroupCall] incoming invitation chatId=\(invitation.chatId) messageId=\(invitation.messageId)",
         )
         onIncomingConferenceInvitation?(invitation)
+        processPendingConferenceInvitationSystemAction()
+    }
 
+    private func processPendingConferenceInvitationSystemAction() {
         if pendingSystemAction == .end {
             pendingSystemAction = nil
-            declineIncomingConferenceInvitation(invitation)
+            if let invitation = incomingConferenceInvitation {
+                declineIncomingConferenceInvitation(invitation)
+            }
         } else if pendingSystemAction == .answer {
             pendingSystemAction = nil
             answerIncomingConferenceInvitation()
@@ -1654,6 +1710,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         else { return }
 
         incomingConferenceInvitation = nil
+        incomingConferenceInvitationIsConfirmed = false
         isMuted = false
         isCallViewMinimized = false
         conferenceHasReplacedPrivateCall = true
@@ -1699,6 +1756,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 return
             }
             incomingConferenceInvitation = nil
+            incomingConferenceInvitationIsConfirmed = false
             incomingConferenceUsesCallKit = false
             pendingSystemAction = nil
             onCallEnded?(.unanswered)
@@ -1709,6 +1767,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
     private func finishIncomingConferenceInvitation(reason: EndReason) {
         guard incomingConferenceInvitation != nil else { return }
         incomingConferenceInvitation = nil
+        incomingConferenceInvitationIsConfirmed = false
         pendingSystemAction = nil
         let notifyCallKit = incomingConferenceUsesCallKit
         incomingConferenceUsesCallKit = false
@@ -2070,6 +2129,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         engine.stopForGroupCallTransition()
         isPreCallAudioDevicePrepared = false
         isEngineRunning = false
+        videoAudioRouteSettleGeneration = UUID()
         videoAudioRouteTask?.cancel()
         videoAudioRouteTask = nil
         stopBatteryMonitoring()
@@ -2276,6 +2336,11 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         applyEffectiveAudioSessionState()
         refreshAudioRoutes()
         routeVideoToSpeakerIfNeeded()
+        // CallKit taking over the audio session is the moment it's most likely to bounce the output
+        // route; open a fresh settle window so the re-assertions cover the full handover.
+        if active, hasActiveCallSurface, shouldRouteVideoToSpeaker {
+            startVideoAudioRouteSettle()
+        }
     }
 
     private func applyEffectiveAudioSessionState() {
@@ -2626,11 +2691,12 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         }
     }
 
-    /// Telegram-iOS defaults video calls to speaker and repeatedly restores it because CallKit can
-    /// briefly reset the route during activation. Wired, Bluetooth, and external routes are never
-    /// replaced; only the built-in receiver is promoted to speaker.
+    /// Telegram-iOS defaults video calls to speaker and restores it because CallKit can briefly
+    /// reset the route while it hands over the audio session. Wired, Bluetooth, and external routes
+    /// are never replaced; only the built-in receiver is promoted to speaker.
     private func updateVideoAudioRouting() {
         guard hasActiveCallSurface, shouldRouteVideoToSpeaker else {
+            videoAudioRouteSettleGeneration = UUID()
             videoAudioRouteTask?.cancel()
             videoAudioRouteTask = nil
             updateProximityMonitoring()
@@ -2639,18 +2705,40 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
 
         routeVideoToSpeakerIfNeeded()
         updateProximityMonitoring()
-        guard videoAudioRouteTask == nil else { return }
+        startVideoAudioRouteSettleIfNeeded()
+    }
 
+    /// Re-asserts speaker for a short settle window after a triggering event, then stops and leaves
+    /// the steady state to `handleAudioRouteChange`. Telegram-iOS reacts to route-change events for
+    /// this rather than polling for the whole call; the bounded window covers the case where
+    /// CallKit's own transient reset doesn't surface as a route-change notification we can observe.
+    private func startVideoAudioRouteSettleIfNeeded() {
+        guard videoAudioRouteTask == nil, hasActiveCallSurface, shouldRouteVideoToSpeaker else { return }
+        startVideoAudioRouteSettle()
+    }
+
+    private func startVideoAudioRouteSettle() {
+        videoAudioRouteTask?.cancel()
+        let generation = UUID()
+        videoAudioRouteSettleGeneration = generation
         videoAudioRouteTask = Task { [weak self] in
-            while let self, !Task.isCancelled, hasActiveCallSurface, shouldRouteVideoToSpeaker {
+            for _ in 0..<Self.videoAudioRouteSettleTicks {
                 do {
                     try await Task.sleep(for: .seconds(1))
                 } catch {
                     return
                 }
-                guard !Task.isCancelled else { return }
+                guard let self,
+                      !Task.isCancelled,
+                      videoAudioRouteSettleGeneration == generation,
+                      hasActiveCallSurface,
+                      shouldRouteVideoToSpeaker
+                else { return }
                 routeVideoToSpeakerIfNeeded()
                 updateProximityMonitoring()
+            }
+            if let self, videoAudioRouteSettleGeneration == generation {
+                videoAudioRouteTask = nil
             }
         }
     }
@@ -2990,6 +3078,7 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
         }
         isPreCallAudioDevicePrepared = false
         isEngineRunning = false
+        videoAudioRouteSettleGeneration = UUID()
         videoAudioRouteTask?.cancel()
         videoAudioRouteTask = nil
         stopBatteryMonitoring()

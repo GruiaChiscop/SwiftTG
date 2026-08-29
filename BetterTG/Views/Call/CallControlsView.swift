@@ -89,18 +89,16 @@ struct CallControlsView: View {
             .frame(maxWidth: isCompact ? nil : .infinity)
         }
         .frame(maxWidth: isCompact ? nil : 420)
-        .confirmationDialog(
-            "Are you sure you want to leave this voice chat?",
-            isPresented: $showsConferenceLeaveConfirmation,
-            titleVisibility: .visible,
-        ) {
+        .alert("Leave Voice Chat", isPresented: $showsConferenceLeaveConfirmation) {
             Button("End Voice Chat", role: .destructive) {
                 showsConferenceEndConfirmation = true
             }
             Button("Leave Voice Chat", action: session.end)
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to leave this voice chat?")
         }
-        .alert("End voice chat", isPresented: $showsConferenceEndConfirmation) {
+        .alert("End Voice Chat", isPresented: $showsConferenceEndConfirmation) {
             Button("End", role: .destructive, action: session.endConferenceForEveryone)
             Button("Cancel", role: .cancel) {}
         } message: {
