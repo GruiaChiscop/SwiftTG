@@ -29,6 +29,7 @@ struct ConferenceVideoStageView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint(isUIHidden ? "Shows call controls" : "Hides call controls")
+            .accessibilityAction(.escape, collapse)
             .scaleEffect(magnification, anchor: magnificationAnchor)
             .zIndex(magnification > 1 ? 1 : 0)
             .simultaneousGesture(magnifyGesture)
@@ -56,12 +57,35 @@ struct ConferenceVideoStageView: View {
         .onDisappear {
             setPinching(false)
         }
+        .offset(y: verticalTranslation)
+        .simultaneousGesture(collapseGesture)
     }
 
     // MARK: Private
 
     @GestureState private var magnification: CGFloat = 1
     @GestureState private var magnificationAnchor = UnitPoint.center
+    @GestureState private var verticalTranslation: CGFloat = 0
+
+    private var collapseGesture: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .updating($verticalTranslation) { value, state, _ in
+                guard magnification <= 1.01,
+                      abs(value.translation.height) > abs(value.translation.width)
+                else { return }
+                state = value.translation.height
+            }
+            .onEnded { value in
+                guard magnification <= 1.01,
+                      abs(value.translation.height) > abs(value.translation.width)
+                else { return }
+                if abs(value.translation.height) >= 120
+                    || abs(value.predictedEndTranslation.height) >= 220
+                {
+                    collapse()
+                }
+            }
+    }
 
     private var magnifyGesture: some Gesture {
         MagnifyGesture()
