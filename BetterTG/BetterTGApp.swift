@@ -152,6 +152,13 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
 
     func application(
         _: UIApplication,
+        supportedInterfaceOrientationsFor _: UIWindow?,
+    ) -> UIInterfaceOrientationMask {
+        CallOrientationController.supportedOrientations
+    }
+
+    func application(
+        _: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void,
     ) {

@@ -33,7 +33,7 @@ struct ConferenceParticipantsView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            if !isVideoExpanded {
+            if !isVideoUIHidden {
                 VStack(spacing: 4) {
                     Text("Group Call")
                         .font(.title.bold())
@@ -45,15 +45,24 @@ struct ConferenceParticipantsView: View {
                 ConferenceEncryptionKeyView(emojis: verificationEmojis)
             }
 
-            if localVideoView != nil || !videos.isEmpty {
-                ConferenceVideoGrid(
+            GeometryReader { proxy in
+                let usesTwoColumnLayout = proxy.size.width > 588 && hasVideo
+                let participantColumnWidth = min(
+                    horizontalSizeClass == .regular ? 356 : 340,
+                    max(240, proxy.size.width - 354),
+                )
+                let hidesParticipantList = isVideoUIHidden || (!usesTwoColumnLayout && isVideoExpanded)
+                let contentLayout = usesTwoColumnLayout
+                    ? AnyLayout(HStackLayout(spacing: isVideoUIHidden ? 0 : 14))
+                    : AnyLayout(VStackLayout(spacing: hasVideo && !hidesParticipantList ? 16 : 0))
+                let videoGrid = ConferenceVideoGrid(
                     localVideoView: localVideoView,
                     isLocalScreenSharing: isLocalScreenSharing,
                     videos: videos,
                     participants: participants,
                     performingParticipantActionId: performingParticipantActionId,
                     setExpanded: updateVideoExpansion,
-                    setUIHidden: setUIHidden,
+                    setUIHidden: updateVideoUIHidden,
                     setCentralVideo: setCentralVideo,
                     setParticipantMuted: setParticipantMuted,
                     setParticipantVolume: setParticipantVolume,
@@ -61,54 +70,51 @@ struct ConferenceParticipantsView: View {
                     removeParticipant: removeParticipant,
                     requestVideoView: requestVideoView,
                 )
-                .frame(maxHeight: isVideoExpanded ? .infinity : nil)
-            }
+                let participantList = ConferenceParticipantListView(
+                    participants: participants,
+                    inviteLink: inviteLink,
+                    isInvitingParticipant: isInvitingParticipant,
+                    performingParticipantActionId: performingParticipantActionId,
+                    inviteParticipant: inviteParticipant,
+                    setParticipantMuted: setParticipantMuted,
+                    setParticipantVolume: setParticipantVolume,
+                    openParticipantConversation: openParticipantConversation,
+                    cancelSpeakRequest: cancelSpeakRequest,
+                    removeParticipant: removeParticipant,
+                    loadMoreParticipants: loadMoreParticipants,
+                )
 
-            if !isVideoExpanded {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(participants) { participant in
-                            ConferenceParticipantRow(
-                                participant: participant,
-                                isPerformingAction: performingParticipantActionId == participant.id,
-                                setMuted: { action in
-                                    setParticipantMuted(participant, action)
-                                },
-                                setVolume: { volumeLevel, synchronize in
-                                    setParticipantVolume(participant, volumeLevel, synchronize)
-                                },
-                                openConversation: {
-                                    openParticipantConversation(participant)
-                                },
-                                cancelSpeakRequest: cancelSpeakRequest,
-                                remove: {
-                                    removeParticipant(participant)
-                                },
-                            )
-                            .onAppear {
-                                if participant.id == participants.last?.id {
-                                    loadMoreParticipants()
-                                }
-                            }
-                            Divider()
-                                .padding(.leading, 64)
-                        }
-
-                        ConferenceInviteActionsView(
-                            inviteLink: inviteLink,
-                            isInvitingParticipant: isInvitingParticipant,
-                            inviteParticipant: inviteParticipant,
+                contentLayout {
+                    videoGrid
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: usesTwoColumnLayout || isVideoExpanded ? .infinity : nil,
                         )
-                    }
+                        .frame(height: hasVideo ? nil : 0)
+                        .opacity(hasVideo ? 1 : 0)
+                        .allowsHitTesting(hasVideo)
+                        .accessibilityHidden(!hasVideo)
+
+                    participantList
+                        .frame(width: usesTwoColumnLayout ? (hidesParticipantList ? 0 : participantColumnWidth) : nil)
+                        .frame(height: !usesTwoColumnLayout && hidesParticipantList ? 0 : nil)
+                        .opacity(hidesParticipantList ? 0 : 1)
+                        .allowsHitTesting(!hidesParticipantList)
+                        .accessibilityHidden(hidesParticipantList)
                 }
-                .background(.white.opacity(0.1), in: .rect(cornerRadius: 20))
             }
         }
     }
 
     // MARK: Private
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isVideoExpanded = false
+    @State private var isVideoUIHidden = false
+
+    private var hasVideo: Bool {
+        localVideoView != nil || !videos.isEmpty
+    }
 
     private var participantCountDescription: String {
         participantCount == 1 ? "1 participant" : "\(participantCount) participants"
@@ -116,5 +122,10 @@ struct ConferenceParticipantsView: View {
 
     private func updateVideoExpansion(_ isExpanded: Bool) {
         isVideoExpanded = isExpanded
+    }
+
+    private func updateVideoUIHidden(_ isHidden: Bool) {
+        isVideoUIHidden = isHidden
+        setUIHidden(isHidden)
     }
 }

@@ -382,8 +382,8 @@ struct CallView: View {
             }
             .preferredColorScheme(.dark)
         }
-        .onAppear(perform: acquireIdleTimer)
-        .onDisappear(perform: releaseIdleTimer)
+        .onAppear(perform: callViewAppeared)
+        .onDisappear(perform: callViewDisappeared)
         .task(id: session.activeCall?.userId) {
             user = nil
             isLocalVideoPrimary = false
@@ -398,6 +398,7 @@ struct CallView: View {
             }
         }
         .onChange(of: session.showsConferenceCallUI) { _, isVisible in
+            CallOrientationController.setAllowsLandscape(isVisible)
             if !isVisible {
                 showsConferenceMessages = false
                 isConferenceUIHidden = false
@@ -488,6 +489,16 @@ struct CallView: View {
     private func acquireIdleTimer() {
         guard idleTimerToken == nil else { return }
         idleTimerToken = ApplicationIdleTimer.acquire()
+    }
+
+    private func callViewAppeared() {
+        acquireIdleTimer()
+        CallOrientationController.setAllowsLandscape(session.showsConferenceCallUI)
+    }
+
+    private func callViewDisappeared() {
+        releaseIdleTimer()
+        CallOrientationController.setAllowsLandscape(false)
     }
 
     private func releaseIdleTimer() {
