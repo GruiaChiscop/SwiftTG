@@ -49,6 +49,18 @@ struct ConferenceParticipantRow: View {
                     }
                 }
 
+                if participant.canEditProfile {
+                    Button(profilePhotoActionTitle, systemImage: "camera") {
+                        profileEditor = .photo
+                    }
+                    Button(profileBioActionTitle, systemImage: "info.circle") {
+                        profileEditor = .bio
+                    }
+                    Button("Change Name", systemImage: "pencil") {
+                        profileEditor = .name
+                    }
+                }
+
                 if participant.canOpenConversation {
                     Button(openConversationTitle, systemImage: openConversationSystemImage) {
                         openConversation()
@@ -80,6 +92,13 @@ struct ConferenceParticipantRow: View {
                     setVolume: setVolume,
                 )
             }
+            .sheet(item: $profileEditor, onDismiss: reloadProfile) { mode in
+                EditProfileView(
+                    service: TDLib.shared.service,
+                    showsCancelButton: true,
+                    mode: mode,
+                )
+            }
         } else {
             rowContent
         }
@@ -88,7 +107,10 @@ struct ConferenceParticipantRow: View {
     // MARK: Private
 
     @State private var chat: Chat?
+    @State private var hasLoadedProfileBio: Bool?
     @State private var isChannelIdentity = false
+    @State private var profileEditor: EditProfileMode?
+    @State private var profileReloadSequence = 0
     @State private var user: User?
     @State private var showsRemoveConfirmation = false
     @State private var showsVolumeControl = false
@@ -105,6 +127,7 @@ struct ConferenceParticipantRow: View {
         participant.muteAction != nil
             || participant.canAdjustVolume
             || participant.canOpenConversation
+            || participant.canEditProfile
             || participant.canCancelSpeakRequest
             || participant.canRemove
     }
@@ -148,6 +171,14 @@ struct ConferenceParticipantRow: View {
             return "message"
         }
         return isChannelIdentity ? "megaphone" : "person.2"
+    }
+
+    private var profilePhotoActionTitle: String {
+        user?.profilePhoto == nil ? "Add Photo" : "Change Photo"
+    }
+
+    private var profileBioActionTitle: String {
+        (hasLoadedProfileBio ?? participant.hasBio) ? "Edit Bio" : "Add Bio"
     }
 
     private var statusSystemImage: String {
@@ -222,7 +253,7 @@ struct ConferenceParticipantRow: View {
         .padding(.trailing, 6)
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-        .task(id: profileIdentity) {
+        .task(id: "\(profileIdentity)-\(profileReloadSequence)") {
             await loadProfile()
         }
     }
@@ -230,6 +261,7 @@ struct ConferenceParticipantRow: View {
     @MainActor private func loadProfile() async {
         user = nil
         chat = nil
+        hasLoadedProfileBio = nil
         isChannelIdentity = false
         guard participant.title == nil else { return }
         let service = TDLib.shared.service
@@ -238,6 +270,12 @@ struct ConferenceParticipantRow: View {
                 let loadedUser = try await service.getUser(userId: userId)
                 try Task.checkCancellation()
                 user = loadedUser
+                if participant.canEditProfile,
+                   let fullInfo = try? await service.getUserFullInfo(userId: userId)
+                {
+                    guard !Task.isCancelled else { return }
+                    hasLoadedProfileBio = !(fullInfo.bio?.text.isEmpty ?? true)
+                }
             } else if let chatId {
                 let loadedChat = try await service.getChat(chatId: chatId)
                 try Task.checkCancellation()
@@ -254,5 +292,9 @@ struct ConferenceParticipantRow: View {
         } catch {
             log("[GroupCall] couldn't load participant profile \(profileIdentity): \(error)")
         }
+    }
+
+    private func reloadProfile() {
+        profileReloadSequence += 1
     }
 }

@@ -10,14 +10,45 @@ import UIKit
 import AppKit
 #endif
 
+// MARK: - EditProfileMode
+
+enum EditProfileMode: String, Hashable, Identifiable {
+    case all
+    case photo
+    case name
+    case bio
+
+    // MARK: Internal
+
+    var id: Self { self }
+
+    var navigationTitle: String {
+        switch self {
+        case .all:
+            "Edit Profile"
+        case .photo:
+            "Profile Photo"
+        case .name:
+            "Change Name"
+        case .bio:
+            "Edit Bio"
+        }
+    }
+}
+
 // MARK: - EditProfileView
 
 struct EditProfileView: View {
     // MARK: Lifecycle
 
-    init(service: any TelegramService, showsCancelButton: Bool = false) {
+    init(
+        service: any TelegramService,
+        showsCancelButton: Bool = false,
+        mode: EditProfileMode = .all,
+    ) {
         self.service = service
         self.showsCancelButton = showsCancelButton
+        self.mode = mode
     }
 
     // MARK: Internal
@@ -25,7 +56,7 @@ struct EditProfileView: View {
     var body: some View {
         NavigationStack {
             form
-                .navigationTitle("Edit Profile")
+                .navigationTitle(mode.navigationTitle)
                 #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
                 #endif
@@ -75,6 +106,7 @@ struct EditProfileView: View {
 
     private let service: any TelegramService
     private let showsCancelButton: Bool
+    private let mode: EditProfileMode
 
     private var canSave: Bool {
         guard !isSaving, !firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
@@ -103,31 +135,50 @@ struct EditProfileView: View {
 
     private var form: some View {
         Form {
-            Section {
-                photoSection
-                TextField("First name", text: $firstName)
-                TextField("Last name", text: $lastName)
-            } footer: {
-                Text("Enter your name and add an optional profile photo.")
+            if mode == .all {
+                Section {
+                    photoSection
+                    TextField("First name", text: $firstName)
+                    TextField("Last name", text: $lastName)
+                } footer: {
+                    Text("Enter your name and add an optional profile photo.")
+                }
+            } else if mode == .photo {
+                Section {
+                    photoSection
+                } footer: {
+                    Text("Choose a photo that represents you in calls and conversations.")
+                }
+            } else if mode == .name {
+                Section {
+                    TextField("First name", text: $firstName)
+                    TextField("Last name", text: $lastName)
+                } footer: {
+                    Text("Enter your first name and an optional last name.")
+                }
             }
 
-            Section {
-                TextField("Bio", text: $bio, axis: .vertical)
-            } header: {
-                Text("Bio")
-            } footer: {
-                Text("Any details such as age, occupation or city.\nExample: 23 y.o. designer from San Francisco.")
+            if mode == .all || mode == .bio {
+                Section {
+                    TextField("Bio", text: $bio, axis: .vertical)
+                } header: {
+                    Text("Bio")
+                } footer: {
+                    Text("Any details such as age, occupation or city.\nExample: 23 y.o. designer from San Francisco.")
+                }
             }
 
-            Section {
-                TextField("Username", text: $username)
-            } header: {
-                Text("Username")
-            } footer: {
-                // Matches Telegram-iOS's Username.Help string verbatim (en.lproj/Localizable.strings).
-                Text(
-                    "You can choose a username on **Telegram**. If you do, other people will be able to find you by this username and contact you without knowing your phone number.\n\nYou can use **a-z**, **0-9** and underscores. Minimum length is **5** characters.",
-                )
+            if mode == .all {
+                Section {
+                    TextField("Username", text: $username)
+                } header: {
+                    Text("Username")
+                } footer: {
+                    // Matches Telegram-iOS's Username.Help string verbatim (en.lproj/Localizable.strings).
+                    Text(
+                        "You can choose a username on **Telegram**. If you do, other people will be able to find you by this username and contact you without knowing your phone number.\n\nYou can use **a-z**, **0-9** and underscores. Minimum length is **5** characters.",
+                    )
+                }
             }
 
             if isSaving {

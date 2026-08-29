@@ -19,6 +19,8 @@ struct ConferenceParticipantPresentation: Identifiable, Equatable {
     var volumeLevel = 10000
     var canAdjustVolume = false
     var canOpenConversation = false
+    var canEditProfile = false
+    var hasBio = false
     var canCancelSpeakRequest = false
     var canRemove = false
 }

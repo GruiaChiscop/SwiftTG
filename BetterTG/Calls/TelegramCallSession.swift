@@ -329,6 +329,8 @@ extension InputGroupCall: @retroactive @unchecked Sendable {}
                 volumeLevel: participant.volumeLevel,
                 canAdjustVolume: canAdjustVolume,
                 canOpenConversation: !participant.isCurrentUser,
+                canEditProfile: participant.isCurrentUser && userId != nil,
+                hasBio: !participant.bio.isEmpty,
                 canCancelSpeakRequest: participant.isCurrentUser
                     && participant.isHandRaised
                     && groupCallCoordinator?.groupCall?.isVideoChat == true,
