@@ -481,12 +481,22 @@ struct TelegramPrivacyView: View {
             }
             .alert("Delete Account?", isPresented: $showsDeleteAccountConfirmation) {
                 Button("Cancel", role: .cancel) {}
-                Button("Delete Account", role: .destructive) { deleteAccount() }
+                Button("Delete Account", role: .destructive) { beginDeleteAccount() }
             } message: {
                 Text(
                     "This permanently deletes your Telegram account, all your messages, and removes "
                         + "you from every group and channel. It cannot be undone.",
                 )
+            }
+            .alert("Enter Your Password", isPresented: $showsDeletePasswordPrompt) {
+                SecureField("Two-Step Verification Password", text: $deleteAccountPassword)
+                Button("Cancel", role: .cancel) { deleteAccountPassword = "" }
+                Button("Delete Account", role: .destructive) {
+                    performDeleteAccount(password: deleteAccountPassword)
+                    deleteAccountPassword = ""
+                }
+            } message: {
+                Text("Your account has two-step verification. Enter your password to delete it.")
             }
             .alert(
                 "Couldn't Delete Account",
@@ -556,6 +566,8 @@ struct TelegramPrivacyView: View {
     @State private var isSavingAutoArchive = false
     @State private var isDeletingAccount = false
     @State private var showsDeleteAccountConfirmation = false
+    @State private var showsDeletePasswordPrompt = false
+    @State private var deleteAccountPassword = ""
     @State private var deleteAccountFailure: String?
     @State private var passkeyCount = 0
     @State private var rules = [UserPrivacySetting: UserPrivacySettingRules]()
@@ -650,20 +662,34 @@ struct TelegramPrivacyView: View {
         )
     }
 
-    @MainActor private func deleteAccount() {
+    /// Deletion needs the two-step-verification password when one is set, so ask for it first;
+    /// otherwise delete straight away.
+    @MainActor private func beginDeleteAccount() {
+        guard !isDeletingAccount else { return }
+        isDeletingAccount = true
+        Task {
+            let hasPassword = await (try? service.getPasswordState())?.hasPassword ?? false
+            isDeletingAccount = false
+            if hasPassword {
+                deleteAccountPassword = ""
+                showsDeletePasswordPrompt = true
+            } else {
+                performDeleteAccount(password: nil)
+            }
+        }
+    }
+
+    @MainActor private func performDeleteAccount(password: String?) {
         guard !isDeletingAccount else { return }
         isDeletingAccount = true
         Task {
             defer { isDeletingAccount = false }
             do {
                 // On success TDLib logs out and the app returns to the login screen on its own.
-                _ = try await service.deleteAccount(reason: nil, password: nil)
+                _ = try await service.deleteAccount(reason: nil, password: password)
             } catch {
-                // `deleteAccount` needs the two-step-verification password when one is set, which
-                // this screen can't collect - point the user at the web deactivation flow instead.
                 deleteAccountFailure = telegramErrorDescription(error)
-                    + "\n\nIf you use two-step verification, finish deleting your account on "
-                    + "Telegram's website."
+                    + "\n\nIf you can't delete your account here, you can finish on Telegram's website."
             }
         }
     }
