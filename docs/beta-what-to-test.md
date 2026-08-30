@@ -64,6 +64,14 @@
 - It plays inline, loops, and shows the right preview in the chat and in the
   picker.
 
+## Live location
+
+- Not tested properly yet. Share your live location in a chat and confirm the
+  other side sees it update as you move, and that it stops at the chosen expiry
+  or when you stop it by hand.
+- Leave the app and keep moving: the shared location should keep updating, and a
+  bar in the app should show sharing is active.
+
 ## Chat folders
 
 - Create, rename, and delete folders.
@@ -82,6 +90,24 @@
 - "Forgot Password?" with no recovery email: the "Reset Account?" alert appears,
   and confirming deletes the account and all its messages.
 - Check the same flow on macOS.
+
+## Verification code screen
+
+- The screen says where the code was sent; the resend button counts down, then
+  works, and its label reflects the next delivery method.
+- "Change Number" returns to the phone step with the number kept.
+- Continue is disabled with an empty phone number or empty code; SMS autofill
+  offers the code above the keyboard.
+
+## Account and safety
+
+- Log Out (Settings → You): signs out and returns to the phone-number screen.
+- Delete My Account (Settings → Privacy and Security): the confirmation appears;
+  with two-step verification on it asks for the password; on success the app
+  returns to login.
+- Report a message (message menu → Report) and report a chat or user (Chat Info
+  → Report): the reason list loads from the server, sub-options and the details
+  step work, and it ends with a confirmation. Check on macOS too.
 
 ## Proxy
 
