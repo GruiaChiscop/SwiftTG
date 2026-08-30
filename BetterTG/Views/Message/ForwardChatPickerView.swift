@@ -102,6 +102,7 @@ struct ForwardChatPickerView: View {
             }
         }
         .disabled(isForwarding)
+        .accessibilityAddTraits(selectedChatIds.contains(chat.id) ? .isSelected : [])
     }
 
     private func toggle(_ chat: CustomChat) {

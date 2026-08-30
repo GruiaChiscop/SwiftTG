@@ -86,7 +86,7 @@ struct MacChatInfoView: View {
                 showMuteOptions = false
             }
         }
-        .confirmationDialog("Leave \(chat.title)?", isPresented: $confirmLeave) {
+        .alert("Leave \(chat.title)?", isPresented: $confirmLeave) {
             Button("Leave", role: .destructive) {
                 Task {
                     if await model.leaveChatFromInfo(currentChat) {
@@ -98,13 +98,13 @@ struct MacChatInfoView: View {
         } message: {
             Text("You will leave this chat and may lose access to its messages.")
         }
-        .confirmationDialog(blockDialogTitle, isPresented: $confirmBlock) {
+        .alert(blockDialogTitle, isPresented: $confirmBlock) {
             Button(blockConfirmationTitle, role: info?.isBlocked == true ? nil : .destructive) {
                 toggleBlock()
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog(deleteDialogTitle, isPresented: $showDeleteOptions) {
+        .alert(deleteDialogTitle, isPresented: $showDeleteOptions) {
             if chat.kind == .privateChat || chat.kind == .secretChat,
                currentChat.canBeDeletedOnlyForSelf
             {
@@ -132,7 +132,7 @@ struct MacChatInfoView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryOptions) {
+        .alert("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryOptions) {
             if currentChat.canBeDeletedOnlyForSelf {
                 Button("Clear only for me", role: .destructive) {
                     model.clearChatHistory(currentChat, forEveryone: false)
