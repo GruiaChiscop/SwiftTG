@@ -1,0 +1,42 @@
+What to test — SwiftTG beta
+
+Some areas are new or not fully tested on device: group video chats, conference calls, and live location. Please report crashes, wrong or unreachable VoiceOver labels, layout that looks broken, and anything that behaves oddly.
+
+Calls
+- One-to-one audio and video calls: place, receive, decline, miss; answer from the lock screen; switch audio route (speaker, earpiece, Bluetooth).
+- Video: the other person's video appears and keeps updating, your own camera preview is right, front/back switch works, rotating the device reflows both views cleanly.
+- Encrypted group calls (conferences): create one from a 1:1 call, add people, everyone sees and hears each other; join from an invitation; leave, rejoin and end without the UI breaking.
+- Group voice chats and channel live streams: join, speak, mute and unmute, raise hand, leave; live stream playback starts and stays in sync.
+- Screen sharing: start and stop during a call and a conference; it stops the instant you end it.
+- Picture in Picture: send a video call to PiP, use other apps, return; the call screen restores with nothing blank or duplicated.
+- Call history: the Recent Calls list shows the right people, direction, missed or outgoing, video and conference markers, date and time; the info screen opens.
+
+Messaging
+- Stickers: create a set, add, edit, reorder, remove; send them.
+- GIFs: search and send, save to favourites, send a saved one; they loop and preview correctly.
+- Round video messages: record and send; plays inline, loops, correct thumbnail, audio in sync.
+- Chat folders: create, rename, delete, add and remove chats, reorder; the folder tabs match their contents.
+- Live location (not fully tested): share it and confirm the other side sees it update as you move and that it stops at expiry or when you stop it; keep moving with the app backgrounded and confirm it still updates.
+
+Sign-in and account
+- Verification code screen: it says where the code was sent; Resend counts down then works; "Change Number" goes back with the number kept; Continue is disabled with an empty phone or code; SMS autofill offers the code.
+- Two-step verification: set a password, add and verify a recovery email, change and remove it; sign in with 2FA on; "Forgot Password?" with and without a recovery email.
+- Log Out (Settings) signs out to the phone-number screen.
+- Delete My Account (Settings, Privacy and Security): the confirmation appears; with 2FA on it asks for the password; on success the app returns to login.
+- Report a message (message menu) and report a chat or user (Chat Info): the reason list loads from the server, sub-options and the details step work, ending with a confirmation.
+
+Proxy
+- Add an MTProto proxy and a SOCKS5 proxy, enable and disable each; chats, media and calls still work with a proxy on.
+
+Notifications
+- Push notifications arrive and open the right chat, including when another chat is already open.
+- Opening a chat clears its notifications from Notification Centre.
+- On launch with a backlog from several chats there is no burst of banners and sounds.
+- Check notification sounds, banners, and in-app banners while the app is open.
+
+Layout and accessibility
+- Screens lay out correctly across device sizes, orientations and large text: nothing clipped, overlapping or off screen; the message list looks right and scrolls smoothly.
+- Full VoiceOver pass: every control reachable and correctly labelled, sensible focus order, no traps; check with Reduce Motion on.
+
+Known issue
+- App size grows over time as media (mainly voice messages) is cached. Reduce it in Settings, Data and Storage, Clear Cache; the size figures take a moment to calculate.
