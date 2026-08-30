@@ -52,6 +52,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func requestAuthenticationPasswordRecovery() async throws -> Ok
     func recoverAuthenticationPassword(recoveryCode: String?, newPassword: String?, newHint: String?) async throws -> Ok
     func deleteAccount(reason: String?, password: String?) async throws -> Ok
+    func logOut() async throws -> Ok
     func closeChat(chatId: Int64?) async throws -> Ok
     func createBasicGroupChat(basicGroupId: Int64?, force: Bool?) async throws -> Chat
     func createPrivateChat(force: Bool?, userId: Int64?) async throws -> Chat
@@ -974,6 +975,10 @@ extension TelegramSession: TelegramService {
 
     func deleteAccount(reason: String?, password: String?) async throws -> Ok {
         try await client.deleteAccount(password: password, reason: reason)
+    }
+
+    func logOut() async throws -> Ok {
+        try await client.logOut()
     }
 
     func closeChat(chatId: Int64?) async throws -> Ok {
