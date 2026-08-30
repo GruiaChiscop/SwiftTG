@@ -71,6 +71,24 @@ extension RootVM {
         confirmChatClearHistory = ConfirmChatClearHistory(chat: chat.chat, show: true)
     }
 
+    /// Direct action for callers that host their own confirmation (e.g. `ChatInfoView`), so they
+    /// don't have to dismiss themselves first to reach `MainView`'s dialog.
+    func clearHistory(_ chat: CustomChat, forEveryone: Bool) {
+        let chatId = chat.id
+        let service = service
+        Task.background {
+            await TelegramChatActions.clearChatHistory(service: service, chatId: chatId, forEveryone: forEveryone)
+        }
+    }
+
+    func leave(_ chat: CustomChat) {
+        let chatId = chat.id
+        let service = service
+        Task.background {
+            await TelegramChatActions.leaveChat(service: service, chatId: chatId)
+        }
+    }
+
     func clearSelectedChatHistory(forAll: Bool) {
         guard let chatId = confirmChatClearHistory.chat?.id else { return }
         confirmChatClearHistory = ConfirmChatClearHistory(chat: nil, show: false)

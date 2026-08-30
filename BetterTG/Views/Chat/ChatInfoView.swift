@@ -158,6 +158,28 @@ struct ChatInfoView: View {
                 showDeleteConfirmation = false
             }
         }
+        .alert("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryConfirmation) {
+            if chat.chat.canBeDeletedOnlyForSelf {
+                Button("Clear only for me", role: .destructive) { clearHistory(forEveryone: false) }
+            }
+            if chat.chat.canBeDeletedForAllUsers {
+                Button("Clear for everyone", role: .destructive) { clearHistory(forEveryone: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All messages will be removed, but the chat will remain in your chat list.")
+        }
+        .alert(
+            "\(chat.actionPolicy.leaveActionTitle ?? "Leave") \(chat.displayTitle)?",
+            isPresented: $showLeaveConfirmation,
+        ) {
+            Button(chat.kind == .channel ? "Leave Channel" : "Leave Group", role: .destructive) {
+                leaveChat()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You will leave this chat and it will be removed from your chat list.")
+        }
         .alert(
             "Chat Info Error",
             isPresented: Binding(
@@ -200,6 +222,8 @@ struct ChatInfoView: View {
     @State private var muteOverride: Bool?
     @State private var managedVideoChat: GroupCall?
     @State private var showDeleteConfirmation = false
+    @State private var showClearHistoryConfirmation = false
+    @State private var showLeaveConfirmation = false
     @State private var showMuteOptions = false
     @State private var showsCameraPermissionAlert = false
     @State private var showsCommonGroups = false
@@ -573,13 +597,13 @@ struct ChatInfoView: View {
 
                 if let leaveTitle = policy.leaveActionTitle {
                     Button(leaveTitle, role: .destructive) {
-                        dismissThenRequest { RootVM.shared.requestLeave(chat) }
+                        showLeaveConfirmation = true
                     }
                 }
 
                 if policy.canClearHistory {
                     Button("Clear History", role: .destructive) {
-                        dismissThenRequest { RootVM.shared.requestClearHistory(chat) }
+                        showClearHistoryConfirmation = true
                     }
                 }
 
@@ -641,6 +665,16 @@ struct ChatInfoView: View {
         dismiss()
     }
 
+    private func clearHistory(forEveryone: Bool) {
+        RootVM.shared.clearHistory(chat, forEveryone: forEveryone)
+        dismiss()
+    }
+
+    private func leaveChat() {
+        RootVM.shared.leave(chat)
+        dismiss()
+    }
+
     private func openSharedMediaMessage(_ messageId: Int64) {
         showsSharedMedia = false
         Task { @MainActor in
@@ -694,14 +728,6 @@ struct ChatInfoView: View {
         let label = isPublicChat ? "Link" : "Username"
         guard usernames.count > 1 else { return label }
         return "\(label). Also: \(usernames.dropFirst().map { "@\($0)" }.joined(separator: ", "))"
-    }
-
-    private func dismissThenRequest(_ request: @escaping @MainActor () -> Void) {
-        dismiss()
-        Task { @MainActor in
-            await Task.yield()
-            request()
-        }
     }
 
     private func loadInfo() async {

@@ -134,7 +134,7 @@ private struct MainNavigationRootView: View {
                 rootVM.confirmChatDelete = ConfirmChatDelete(chat: nil, show: false)
             }
         }
-        .confirmationDialog(
+        .alert(
             "Clear history in \(rootVM.confirmChatClearHistory.chat?.title ?? "chat")?",
             isPresented: $rootVM.confirmChatClearHistory.show,
         ) {
@@ -154,7 +154,7 @@ private struct MainNavigationRootView: View {
         } message: {
             Text("All messages will be removed, but the chat will remain in your chat list.")
         }
-        .confirmationDialog(
+        .alert(
             "Leave \(rootVM.confirmChatLeave.chat?.title ?? "chat")?",
             isPresented: $rootVM.confirmChatLeave.show,
         ) {
