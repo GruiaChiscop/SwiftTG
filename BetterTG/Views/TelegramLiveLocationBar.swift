@@ -5,8 +5,8 @@ import SwiftUI
 /// Global "you're sharing your live location" indicator, following the same
 /// self-hiding-when-empty pattern as `TelegramAudioPlayerBar` - shown from any chat, not just the
 /// one a share was started in, since more than one can be active across different chats at once.
-/// The only way to stop a share: no context-menu entry, per explicit feedback that one would be
-/// too easy to miss for something actively running in the background.
+/// Each row is two distinct controls: the body opens the chat, a separate "Stop" button ends the
+/// share. (`MessageLocationView` carries its own Stop button on the live-location bubble too.)
 struct TelegramLiveLocationBar: View {
     // MARK: Internal
 
@@ -35,50 +35,51 @@ struct TelegramLiveLocationBar: View {
 
     private func row(for share: TelegramLiveShare) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "location.fill.viewfinder")
-                .foregroundStyle(Color.accentColor)
-                .accessibilityHidden(true)
+            Button {
+                open(share)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "location.fill.viewfinder")
+                        .foregroundStyle(Color.accentColor)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Sharing Live Location")
-                    .font(.subheadline.weight(.semibold))
-                Text(share.chatTitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sharing Live Location")
+                            .font(.subheadline.weight(.semibold))
+                        Text(share.chatTitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if share.isIndefinite {
+                        Text("Indefinitely")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(share.expiresAt, style: .timer)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(.rect)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                share.isIndefinite
+                    ? "Sharing live location indefinitely in \(share.chatTitle)"
+                    : "Sharing live location in \(share.chatTitle)",
+            )
 
-            if share.isIndefinite {
-                Text("Indefinitely")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(share.expiresAt, style: .timer)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            Button("Stop", systemImage: "xmark.circle.fill") {
+            Button("Stop") {
                 Task { await manager.stop(messageId: share.messageId) }
             }
-            .labelStyle(.iconOnly)
-            .foregroundStyle(.secondary)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.red)
+            .accessibilityLabel("Stop sharing live location in \(share.chatTitle)")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            share.isIndefinite
-                ? "Sharing live location indefinitely in \(share.chatTitle)"
-                : "Sharing live location in \(share.chatTitle)",
-        )
-        .accessibilityAction(named: "Open Chat") { open(share) }
-        .accessibilityAction(named: "Stop Sharing") {
-            Task { await manager.stop(messageId: share.messageId) }
-        }
-        .onTapGesture { open(share) }
     }
 
     private func open(_ share: TelegramLiveShare) {
