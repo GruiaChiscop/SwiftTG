@@ -100,7 +100,19 @@ extension RootVM {
         if case .customChat(let current, _, _) = path.last, current.id == customChat.id {
             return
         }
-        path = [.customChat(customChat)]
+        guard !path.isEmpty else {
+            path.append(.customChat(customChat))
+            return
+        }
+        // Swapping the whole stack in one assignment (`[chatA]` -> `[chatB]`) doesn't reliably
+        // navigate in `NavigationStack` when both entries are the same `Route` case - it keeps the
+        // mounted destination. Pop to root, then push on the next runloop turn so SwiftUI processes
+        // each step.
+        path.removeAll()
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.path.append(.customChat(customChat))
+        }
     }
 
     private func customChat(forBasicGroupId basicGroupId: Int64) async -> CustomChat? {
