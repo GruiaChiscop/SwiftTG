@@ -1,6 +1,6 @@
 # What to Test
 
-## Video calls
+Video calls
 
 - One-to-one video call: the other person's video appears, tracks their audio,
   and keeps updating rather than freezing on the first frame.

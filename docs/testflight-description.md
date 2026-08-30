@@ -1,9 +1,6 @@
-# TestFlight description
-
 SwiftTG is an unofficial Telegram client for iPhone, built from scratch in SwiftUI
 on top of TDLib. It aims to be a fast, native, fully accessible way to use
-Telegram, with VoiceOver support treated as a first-class requirement rather than
-an afterthought.
+Telegram, with VoiceOver support.
 
 This build covers day-to-day messaging plus voice and video calls, encrypted
 group calls, group voice chats and channel live streams, stickers and GIFs, chat

@@ -1,5 +1,3 @@
-What to test — SwiftTG beta
-
 Some areas are new or not fully tested on device: group video chats, conference calls, and live location. Please report crashes, wrong or unreachable VoiceOver labels, layout that looks broken, and anything that behaves oddly.
 
 Calls
