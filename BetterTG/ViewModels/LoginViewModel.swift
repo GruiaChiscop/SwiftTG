@@ -114,6 +114,19 @@ import TDLibKit
         String(format: "%d:%02d", codeResendCountdown / 60, codeResendCountdown % 60)
     }
 
+    /// Whether the bottom Continue button should be enabled. The phone and code steps gate on their
+    /// field being filled; other steps stay enabled and rely on their own `continueLogin` guards.
+    var canSubmitCurrentStep: Bool {
+        switch loginState {
+        case .phoneNumber:
+            TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) != nil
+        case .code:
+            !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        default:
+            true
+        }
+    }
+
     func start() async {
         guard !started else { return }
         started = true

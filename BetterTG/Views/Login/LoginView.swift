@@ -284,7 +284,7 @@ struct LoginView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(model.isSubmittingCode)
+            .disabled(model.isSubmittingCode || !model.canSubmitCurrentStep)
             .padding()
         }
         .alert(

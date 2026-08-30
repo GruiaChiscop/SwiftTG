@@ -175,6 +175,10 @@ private struct MacAuthorizationView: View {
                         confirmsPhoneNumber = !phoneNumber.wrappedValue.isEmpty
                     }
                     .keyboardShortcut(.defaultAction)
+                    .disabled(TelegramPhoneNumber.normalized(
+                        callingCode: callingCode.wrappedValue,
+                        number: phoneNumber.wrappedValue,
+                    ) == nil)
                     if !isPreview {
                         Button("Quick log in using QR code") {
                             model.requestQrCodeLogin()
@@ -197,6 +201,7 @@ private struct MacAuthorizationView: View {
                         }
                     Button("Log In") { submitCode() }
                         .keyboardShortcut(.defaultAction)
+                        .disabled(loginCode.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if !isPreview {
                         Button {
                             model.resendLoginCode()
