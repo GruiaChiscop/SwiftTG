@@ -34,6 +34,7 @@ struct MessageView: View {
     @State var showsCameraPermissionAlert = false
     @State var showsMicrophonePermissionAlert = false
     @State var showsConferenceJoinError = false
+    @State var reportRequest: TelegramReportRequest?
 
     var accessibilityDescription: String {
         var prefix = ""
@@ -631,6 +632,9 @@ struct MessageView: View {
                         )
                     },
                 )
+            }
+            .sheet(item: $reportRequest) { request in
+                TelegramReportView(service: chatVM.service, request: request)
             }
             .sheet(item: $stickerToEdit) { sticker in
                 TelegramStickerEditor(

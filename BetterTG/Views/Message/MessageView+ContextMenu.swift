@@ -51,6 +51,9 @@ extension MessageView {
         {
             Button("Delete") { showDeleteOptions = true }
         }
+        if !customMessage.message.isOutgoing {
+            Button("Report") { beginReportMessage() }
+        }
         if customMessage.properties.canBePinned {
             Button(customMessage.message.isPinned ? "Unpin" : "Pin", action: togglePinnedMessage)
         }
@@ -190,6 +193,13 @@ extension MessageView {
                 )
             }
         }
+        if !customMessage.message.isOutgoing {
+            Button(role: .destructive) {
+                beginReportMessage()
+            } label: {
+                Label("Report", systemImage: "flag")
+            }
+        }
         if customMessage.properties.canBeDeletedOnlyForSelf
             || customMessage.properties.canBeDeletedForAllUsers
         {
@@ -200,6 +210,14 @@ extension MessageView {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+
+    func beginReportMessage() {
+        reportRequest = TelegramReportRequest(
+            chatId: customMessage.message.chatId,
+            messageIds: [customMessage.id],
+            title: "Report Message",
+        )
     }
 
     var messageReactions: [MessageReaction] {

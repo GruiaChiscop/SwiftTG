@@ -404,6 +404,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     /// code being scanned in the first place.
     func confirmQrCodeAuthentication(link: String?) async throws -> Session
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok
+    func reportChat(chatId: Int64?, messageIds: [Int64]?, optionId: Data?, text: String?) async throws
+        -> ReportChatResult
     func getUserPrivacySettingRules(setting: UserPrivacySetting?) async throws -> UserPrivacySettingRules
     func setUserPrivacySettingRules(rules: UserPrivacySettingRules?, setting: UserPrivacySetting?) async throws -> Ok
     func getConnectedWebsites() async throws -> ConnectedWebsites
@@ -1770,6 +1772,15 @@ extension TelegramSession: TelegramService {
 
     func setMessageSenderBlockList(blockList: BlockList?, senderId: MessageSender?) async throws -> Ok {
         try await client.setMessageSenderBlockList(blockList: blockList, senderId: senderId)
+    }
+
+    func reportChat(
+        chatId: Int64?,
+        messageIds: [Int64]?,
+        optionId: Data?,
+        text: String?,
+    ) async throws -> ReportChatResult {
+        try await client.reportChat(chatId: chatId, messageIds: messageIds, optionId: optionId, text: text)
     }
 
     func getUserPrivacySettingRules(setting: UserPrivacySetting?) async throws -> UserPrivacySettingRules {

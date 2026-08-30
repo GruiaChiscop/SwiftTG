@@ -73,6 +73,10 @@ struct MacChatInfoView: View {
                 }
             }
         }
+        .sheet(item: $reportRequest) { request in
+            TelegramReportView(service: model.service, request: request)
+                .frame(minWidth: 380, minHeight: 320)
+        }
         .sheet(isPresented: $showsScheduledMessages) {
             MacScheduledMessagesView(model: model)
         }
@@ -153,6 +157,7 @@ struct MacChatInfoView: View {
     @State private var confirmLeave = false
     @State private var info: TelegramChatInfoData?
     @State private var isLoading = true
+    @State private var reportRequest: TelegramReportRequest?
     @State private var memberListFilter: TelegramChatInfoMemberFilter?
     @State private var showClearHistoryOptions = false
     @State private var showDeleteOptions = false
@@ -211,6 +216,13 @@ struct MacChatInfoView: View {
 
     private var deleteDialogTitle: String {
         "\(currentChat.actionPolicy.deleteActionTitle) \(chat.displayTitle)?"
+    }
+
+    /// TDLib's `Chat.canBeReported` isn't carried on `ChatListItemState`, so approximate it: every
+    /// chat can be reported except your own Saved Messages and E2E secret chats. `reportChat` still
+    /// rejects anything the server won't accept, which the report sheet surfaces as a failure.
+    private var canReportChat: Bool {
+        !currentChat.isSavedMessages && chat.kind != .secretChat
     }
 
     private func notificationsSection() -> some View {
@@ -477,6 +489,12 @@ struct MacChatInfoView: View {
                         confirmBlock = true
                     }
                 }
+                if canReportChat {
+                    let title = chat.kind == .privateChat ? "Report User" : "Report"
+                    Button(title, role: .destructive) {
+                        reportRequest = TelegramReportRequest(chatId: chat.chatId, messageIds: [], title: title)
+                    }
+                }
                 if info.usesPrivacyCommand {
                     Button("Bot Privacy Policy") {
                         model.requestBotPrivacyPolicy(chatId: chat.chatId)
@@ -523,6 +541,7 @@ struct MacChatInfoView: View {
 
     private func hasActions(_ info: TelegramChatInfoData) -> Bool {
         info.blockableUserId != nil
+            || canReportChat
             || info.usesPrivacyCommand
             || info.privacyPolicyURL != nil
             || info.canLeave

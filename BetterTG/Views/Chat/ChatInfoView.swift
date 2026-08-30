@@ -69,6 +69,9 @@ struct ChatInfoView: View {
         .sheet(isPresented: $showsScheduledMessages) {
             ScheduledMessagesView()
         }
+        .sheet(item: $reportRequest) { request in
+            TelegramReportView(service: chatVM.service, request: request)
+        }
         .sheet(item: $videoChatJoinCandidates) { candidates in
             VideoChatJoinAsPicker(
                 chatId: chat.id,
@@ -192,6 +195,7 @@ struct ChatInfoView: View {
 
     @State private var errorMessage: String?
     @State private var info: TelegramChatInfoData?
+    @State private var reportRequest: TelegramReportRequest?
     @State private var isLoading = true
     @State private var muteOverride: Bool?
     @State private var managedVideoChat: GroupCall?
@@ -545,6 +549,7 @@ struct ChatInfoView: View {
     @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         let policy = chat.actionPolicy
         if info.blockableUserId != nil
+            || chat.chat.canBeReported
             || policy.canLeave
             || policy.canClearHistory
             || policy.canDeleteChat
@@ -556,6 +561,13 @@ struct ChatInfoView: View {
                         role: info.isBlocked ? nil : .destructive,
                     ) {
                         toggleBlocked()
+                    }
+                }
+
+                if chat.chat.canBeReported {
+                    let title = chat.kind == .privateChat ? "Report User" : "Report"
+                    Button(title, role: .destructive) {
+                        reportRequest = TelegramReportRequest(chatId: chat.id, messageIds: [], title: title)
                     }
                 }
 
