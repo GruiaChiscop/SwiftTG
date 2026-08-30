@@ -9,6 +9,7 @@ extension MacSessionModel {
             callingCode: callingCode,
             number: phoneNumber,
         ) else { return }
+        wantsToChangePhoneNumber = false
         runLoginRequest {
             try await self.service.setAuthenticationPhoneNumber(phoneNumber: normalized, settings: nil)
         }
@@ -19,6 +20,43 @@ extension MacSessionModel {
         runLoginRequest {
             try await self.service.checkAuthenticationCode(code: self.loginCode)
         }
+    }
+
+    /// Ask Telegram to send the code again (via `codeInfo.nextType`). Disabled until the countdown
+    /// from `codeInfo.timeout` reaches zero; the fresh `authorizationStateWaitCode` restarts it.
+    func resendLoginCode() {
+        guard codeResendCountdown == 0 else { return }
+        runLoginRequest {
+            try await self.service.resendAuthenticationCode()
+        }
+    }
+
+    /// Go back to the phone-number step to fix a mistyped number. `step` reflects this via
+    /// `wantsToChangePhoneNumber`; submitting again re-runs `setAuthenticationPhoneNumber`.
+    func changePhoneNumberForLogin() {
+        cancelCodeResendCountdown()
+        loginCode = ""
+        loginError = nil
+        lastLoginCodeInfo = nil
+        wantsToChangePhoneNumber = true
+    }
+
+    func startCodeResendCountdown(seconds: Int) {
+        cancelCodeResendCountdown()
+        codeResendCountdown = max(0, seconds)
+        guard codeResendCountdown > 0 else { return }
+        codeResendCountdownTask = Task { [weak self] in
+            while let self, !Task.isCancelled, codeResendCountdown > 0 {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                codeResendCountdown -= 1
+            }
+        }
+    }
+
+    func cancelCodeResendCountdown() {
+        codeResendCountdownTask?.cancel()
+        codeResendCountdownTask = nil
     }
 
     func submitPassword() {

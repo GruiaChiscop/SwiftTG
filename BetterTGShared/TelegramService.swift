@@ -48,6 +48,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func checkAuthenticationCode(code: String?) async throws -> Ok
     func checkAuthenticationEmailCode(code: EmailAddressAuthentication?) async throws -> Ok
     func checkAuthenticationPassword(password: String?) async throws -> Ok
+    func resendAuthenticationCode() async throws -> Ok
     func requestAuthenticationPasswordRecovery() async throws -> Ok
     func recoverAuthenticationPassword(recoveryCode: String?, newPassword: String?, newHint: String?) async throws -> Ok
     func deleteAccount(reason: String?, password: String?) async throws -> Ok
@@ -949,6 +950,10 @@ extension TelegramSession: TelegramService {
 
     func checkAuthenticationPassword(password: String?) async throws -> Ok {
         try await client.checkAuthenticationPassword(password: password)
+    }
+
+    func resendAuthenticationCode() async throws -> Ok {
+        try await client.resendAuthenticationCode(reason: nil)
     }
 
     func requestAuthenticationPasswordRecovery() async throws -> Ok {

@@ -84,20 +84,48 @@ struct LoginView: View {
                     }
                 case .code:
                     loginStateView {
-                        TextField("Code", text: $model.code)
-                            .onChange(of: model.code) { _, code in
-                                if let expectedCodeLength = model.expectedCodeLength,
-                                   code.count == expectedCodeLength
-                                {
+                        VStack(spacing: 12) {
+                            TextField("Code", text: $model.code)
+                                .focused($focused, equals: .code)
+                                .keyboardType(model.codeIsNumeric ? .numberPad : .default)
+                                .textContentType(.oneTimeCode)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .submitLabel(.go)
+                                .onSubmit { model.continueLogin() }
+                                .onChange(of: model.code) { _, code in
+                                    guard model.codeIsNumeric,
+                                          let expected = model.expectedCodeLength,
+                                          code.count == expected
+                                    else { return }
                                     model.continueLogin()
                                 }
+                                .padding()
+                                .background(Color.gray6)
+                                .clipShape(.rect(cornerRadius: 10))
+
+                            Text(model.codeDeliveryDescription)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Button {
+                                model.resendCode()
+                            } label: {
+                                Text(model.codeResendCountdown > 0
+                                    ? "\(model.codeResendActionTitle) in \(model.codeResendClock)"
+                                    : model.codeResendActionTitle)
                             }
-                            .focused($focused, equals: .code)
-                            .keyboardType(.numberPad)
-                            .padding()
-                            .background(Color.gray6)
-                            .clipShape(.rect(cornerRadius: 10))
+                            .font(.footnote)
+                            .disabled(model.codeResendCountdown > 0 || model.isSubmittingCode)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Button("Change Number") { model.changePhoneNumber() }
+                                .font(.footnote)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
+                    .onAppear { focused = .code }
                 case .twoFactor:
                     loginStateView {
                         VStack(spacing: 12) {
@@ -245,11 +273,18 @@ struct LoginView: View {
                 }
                 model.continueLogin()
             } label: {
-                Text("Continue")
-                    .padding(.vertical, 5)
-                    .frame(maxWidth: .infinity)
+                Group {
+                    if model.isSubmittingCode {
+                        ProgressView()
+                    } else {
+                        Text("Continue")
+                    }
+                }
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .disabled(model.isSubmittingCode)
             .padding()
         }
         .alert(

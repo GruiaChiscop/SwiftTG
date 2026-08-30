@@ -115,6 +115,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var newPasswordHint = ""
     var isRecoveringPassword = false
     var showsAccountResetConfirmation = false
+    var codeResendCountdown = 0
+    var wantsToChangePhoneNumber = false
     var loginError: String?
     var emailAddress = ""
     var emailCode = ""
@@ -184,6 +186,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     // at least internal access - `private` is scoped to the declaring file, not the type, and
     // extensions in other files can't add stored properties of their own to reach for instead.
     @ObservationIgnored var countryLoadTask: Task<Void, Never>?
+    @ObservationIgnored var codeResendCountdownTask: Task<Void, Never>?
+    @ObservationIgnored var lastLoginCodeInfo: AuthenticationCodeInfo?
     @ObservationIgnored var messageSubscription: AnyCancellable?
     @ObservationIgnored var loadingCapabilityMessageIds = Set<Int64>()
     @ObservationIgnored var loadingReactionMessageIds = Set<Int64>()
@@ -218,6 +222,56 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var expectedLoginCodeLength: Int? {
         guard case .authorizationStateWaitCode(let details) = authorizationState else { return nil }
         return details.codeInfo.type.expectedLength
+    }
+
+    var loginCodeIsNumeric: Bool {
+        guard case .authorizationStateWaitCode(let details) = authorizationState else { return true }
+        switch details.codeInfo.type {
+        case .authenticationCodeTypeSmsPhrase, .authenticationCodeTypeSmsWord: return false
+        default: return true
+        }
+    }
+
+    var loginCodeDeliveryDescription: String {
+        guard case .authorizationStateWaitCode(let details) = authorizationState else {
+            return "Enter the code you received."
+        }
+        let target = details.codeInfo.phoneNumber.isEmpty ? "your phone" : details.codeInfo.phoneNumber
+        switch details.codeInfo.type {
+        case .authenticationCodeTypeTelegramMessage:
+            return "We sent the code to your other Telegram apps."
+        case .authenticationCodeTypeFirebaseAndroid, .authenticationCodeTypeFirebaseIos, .authenticationCodeTypeSms,
+             .authenticationCodeTypeSmsPhrase, .authenticationCodeTypeSmsWord:
+            return "We sent an SMS with the code to \(target)."
+        case .authenticationCodeTypeCall:
+            return "Telegram is calling \(target) to dictate the code."
+        case .authenticationCodeTypeMissedCall(let missed):
+            return "Telegram is calling \(target). Enter the last \(missed.length) digits of the number that calls."
+        case .authenticationCodeTypeFlashCall:
+            return "Telegram is calling \(target); the call ends by itself."
+        case .authenticationCodeTypeFragment:
+            return "Your code is available on Fragment for \(target)."
+        }
+    }
+
+    var loginCodeResendActionTitle: String {
+        guard case .authorizationStateWaitCode(let details) = authorizationState else { return "Resend code" }
+        switch details.codeInfo.nextType {
+        case .authenticationCodeTypeCall, .authenticationCodeTypeFlashCall, .authenticationCodeTypeMissedCall:
+            return "Call me with the code"
+        case .authenticationCodeTypeTelegramMessage:
+            return "Send the code via Telegram"
+        case .authenticationCodeTypeSms, .authenticationCodeTypeSmsPhrase, .authenticationCodeTypeSmsWord:
+            return "Send the code by SMS"
+        case .authenticationCodeTypeFragment:
+            return "Get the code on Fragment"
+        default:
+            return "Resend code"
+        }
+    }
+
+    var loginCodeResendClock: String {
+        String(format: "%d:%02d", codeResendCountdown / 60, codeResendCountdown % 60)
     }
 
     var expectedEmailCodeLength: Int? {
@@ -427,6 +481,14 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     private func applyAuthorizationState(_ state: AuthorizationState) {
         authorizationState = state
         authorizationStatus = Self.title(for: state)
+        if case .authorizationStateWaitCode(let details) = state {
+            if details.codeInfo != lastLoginCodeInfo {
+                lastLoginCodeInfo = details.codeInfo
+                startCodeResendCountdown(seconds: details.codeInfo.timeout)
+            }
+        } else {
+            cancelCodeResendCountdown()
+        }
         switch state {
         case .authorizationStateWaitPhoneNumber:
             loadCountriesIfNeeded()
@@ -554,6 +616,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         newPassword = ""
         newPasswordHint = ""
         isRecoveringPassword = false
+        wantsToChangePhoneNumber = false
+        cancelCodeResendCountdown()
+        codeResendCountdown = 0
+        lastLoginCodeInfo = nil
         loginError = nil
         isLoadingChats = false
         isLoadingMessages = false

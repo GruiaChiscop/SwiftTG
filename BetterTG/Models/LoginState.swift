@@ -8,7 +8,7 @@ enum LoginState {
     var title: String {
         switch self {
         case .phoneNumber: "Phone number"
-        case .code: "Code"
+        case .code: "Enter Code"
         case .twoFactor: "Password"
         case .passwordRecovery: "Reset Password"
         case .emailAddress: "Add Email"

@@ -183,19 +183,35 @@ private struct MacAuthorizationView: View {
                         .foregroundStyle(.tint)
                     }
                 case .code:
-                    Text("Enter the code sent by Telegram.")
+                    Text(isPreview ? "Enter the code sent by Telegram." : model.loginCodeDeliveryDescription)
                     TextField("Login code", text: loginCode)
-                        .textContentType(.telephoneNumber)
+                        .textContentType(.oneTimeCode)
+                        .focused($loginCodeFocused)
                         .onSubmit { submitCode() }
                         .onChange(of: loginCode.wrappedValue) { _, code in
-                            if let expectedLoginCodeLength,
-                               code.count == expectedLoginCodeLength
-                            {
-                                submitCode()
-                            }
+                            guard isPreview || model.loginCodeIsNumeric,
+                                  let expectedLoginCodeLength,
+                                  code.count == expectedLoginCodeLength
+                            else { return }
+                            submitCode()
                         }
                     Button("Log In") { submitCode() }
                         .keyboardShortcut(.defaultAction)
+                    if !isPreview {
+                        Button {
+                            model.resendLoginCode()
+                        } label: {
+                            Text(model.codeResendCountdown > 0
+                                ? "\(model.loginCodeResendActionTitle) in \(model.loginCodeResendClock)"
+                                : model.loginCodeResendActionTitle)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tint)
+                        .disabled(model.codeResendCountdown > 0)
+                        Button("Change number") { model.changePhoneNumberForLogin() }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tint)
+                    }
                 case .password:
                     Text(passwordHint.isEmpty
                         ? "Enter your two-step verification password."
@@ -279,6 +295,9 @@ private struct MacAuthorizationView: View {
         }
         .frame(width: 360)
         .padding(40)
+        .onChange(of: step) { _, newStep in
+            loginCodeFocused = newStep == .code
+        }
         .sheet(isPresented: $showsCountryPicker) {
             MacCountryPicker(
                 selectedCountry: selectedCountry,
@@ -352,7 +371,7 @@ private struct MacAuthorizationView: View {
         case phoneNumber
     }
 
-    private enum Step {
+    private enum Step: Hashable {
         case phoneNumber
         case code
         case password
@@ -365,6 +384,7 @@ private struct MacAuthorizationView: View {
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedPhoneField: PhoneField?
+    @FocusState private var loginCodeFocused: Bool
     @State private var confirmsPhoneNumber = false
     @State private var previewCallingCode = AuthenticationPreviewData.countries[0].phoneNumberPrefix
     @State private var previewLoginCode = ""
@@ -471,7 +491,7 @@ private struct MacAuthorizationView: View {
         case .authorizationStateWaitPhoneNumber:
             return .phoneNumber
         case .authorizationStateWaitCode:
-            return .code
+            return model.wantsToChangePhoneNumber ? .phoneNumber : .code
         case .authorizationStateWaitPassword:
             return model.isRecoveringPassword ? .passwordRecovery : .password
         case .authorizationStateWaitEmailAddress:
