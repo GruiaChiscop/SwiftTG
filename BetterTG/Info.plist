@@ -25,8 +25,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSContactsUsageDescription</key>
-	<string>SwiftTG uses your contacts to help you find people you know on Telegram.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SwiftTG uses your location in the background to keep a live location share updated while you move.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
