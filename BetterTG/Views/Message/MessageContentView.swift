@@ -65,6 +65,7 @@ struct MessageContentView: View {
                             presentation: presentation,
                             messageId: customMessage.id,
                             onTap: onLocationTap,
+                            accessibilityActions: { EmptyView() },
                         )
                     }
                 default:

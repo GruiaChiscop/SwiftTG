@@ -179,6 +179,14 @@ struct MessageView: View {
         customMessage.messageChecklist != nil
     }
 
+    /// This device's own live-location message while it's still being updated. It renders its own
+    /// "Stop Sharing" button, so - like a poll's option buttons - it must stay out of the flattened
+    /// message accessibility element or VoiceOver can't reach that button.
+    private var isActiveOutgoingLiveLocation: Bool {
+        guard case .messageLiveLocation = customMessage.message.content else { return false }
+        return TelegramLiveLocationManager.shared.activeShares[customMessage.id] != nil
+    }
+
     private var hasInlineVisualMetadata: Bool {
         if customMessage.messageCall != nil || customMessage.messageGroupCall != nil {
             return true
@@ -503,6 +511,17 @@ struct MessageView: View {
                 },
             )
         }
+        if isActiveOutgoingLiveLocation, let presentation = customMessage.locationPresentation {
+            return AnyView(
+                MessageLocationView(
+                    presentation: presentation,
+                    messageId: customMessage.id,
+                    accessibilityContext: accessibilityDescription,
+                    onTap: activateLocation,
+                    accessibilityActions: { messageAccessibilityActions },
+                ),
+            )
+        }
         if customMessage.messageDocument != nil
             || customMessage.messagePhoto != nil
             || customMessage.messageVideo != nil
@@ -582,7 +601,7 @@ struct MessageView: View {
                 .buttonStyle(.plain),
             ))
         }
-        if isPollMessage || isChecklistMessage {
+        if isPollMessage || isChecklistMessage || isActiveOutgoingLiveLocation {
             return AnyView(column)
         }
         return AnyView(messageAccessibilityElement(column))

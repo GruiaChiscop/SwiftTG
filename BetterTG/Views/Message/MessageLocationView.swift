@@ -3,12 +3,14 @@
 import SwiftUI
 import TDLibKit
 
-struct MessageLocationView: View {
+struct MessageLocationView<Actions: View>: View {
     // MARK: Internal
 
     let presentation: TelegramLocationPresentation
     let messageId: Int64
+    var accessibilityContext: String?
     let onTap: () -> Void
+    @ViewBuilder var accessibilityActions: () -> Actions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -36,7 +38,8 @@ struct MessageLocationView: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(presentation.contentDescription)
+            .accessibilityLabel(accessibilityContext ?? presentation.contentDescription)
+            .accessibilityActions { accessibilityActions() }
 
             if let activeShare {
                 HStack {
