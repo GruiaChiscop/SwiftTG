@@ -19,5 +19,6 @@ background, no paper plane, not Telegram blue. It exists so the app stops
 impersonating Telegram; it is not a finished brand. Replace it with a real,
 designed 1024×1024 icon (RGB, no alpha) before a public release.
 
-The launch screen no longer shows an image — it's just the black
-`launchScreenBackground` colour.
+The launch screen shows a 240px copy of the same Morse mark
+(`launchScreen.imageset/launchIcon.png`) on the black `launchScreenBackground`
+colour. Replace it alongside the real icon.
