@@ -503,9 +503,9 @@ struct ChatBottomArea: View {
     var rightSide: some View {
         Group {
             if chatVM.showSendButton || chatVM.recordingLocked {
-                Image("send")
+                Image(systemName: "arrow.up.circle.fill")
                     .resizable()
-                    .clipShape(.circle)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 32, height: 32)
                     .padding(.bottom, 3)
             } else {

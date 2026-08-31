@@ -90,9 +90,9 @@ struct CallView: View {
                                 Label {
                                     Text("Add Participant")
                                 } icon: {
-                                    Image("CallNavigationAddPerson")
+                                    Image(systemName: "person.crop.circle.badge.plus")
                                         .resizable()
-                                        .renderingMode(.template)
+                                        .scaledToFit()
                                         .frame(width: 40, height: 40)
                                 }
                                 .labelStyle(.iconOnly)

@@ -161,9 +161,9 @@ struct AttachmentPreviewView: View {
             .clipShape(.rect(cornerRadius: 15))
 
             Button(action: send) {
-                Image("send")
+                Image(systemName: "arrow.up.circle.fill")
                     .resizable()
-                    .clipShape(.circle)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 32, height: 32)
             }
             .contextMenu {
