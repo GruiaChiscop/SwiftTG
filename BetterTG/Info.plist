@@ -45,12 +45,6 @@
 	<dict>
 		<key>UIColorName</key>
 		<string>launchScreenBackground</string>
-		<key>UIImageName</key>
-		<string>launchScreen</string>
-		<key>UIImageRespectsSafeAreaInsets</key>
-		<true/>
-		<key>UILaunchScreen</key>
-		<dict/>
 	</dict>
 </dict>
 </plist>
