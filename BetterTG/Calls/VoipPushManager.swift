@@ -37,9 +37,13 @@ import TDLibKit
                     } else {
                         false
                     }
-                self?.isTelegramReady = isReady
+                guard let self else { return }
+                if !isReady, isTelegramReady {
+                    resetRegistrationForSignedOutState()
+                }
+                isTelegramReady = isReady
                 if isReady {
-                    self?.registerTokenIfPossible()
+                    registerTokenIfPossible()
                 }
             }
         Task { [weak self] in
@@ -64,6 +68,7 @@ import TDLibKit
     private var isTelegramReady = false
     private var voipToken: String?
     private var registeredToken: String?
+    private var registrationGeneration: UInt64 = 0
     private var registrationTask: Task<Void, Never>?
     private var registrationRetryTask: Task<Void, Never>?
 
@@ -220,14 +225,17 @@ import TDLibKit
     private func registerTokenIfPossible() {
         guard isTelegramReady, let voipToken, registeredToken != voipToken, registrationTask == nil else { return }
         let tokenToRegister = voipToken
+        let generation = registrationGeneration
         registrationRetryTask?.cancel()
         registrationRetryTask = nil
         registrationTask = Task { [weak self] in
             guard let self else { return }
             defer {
-                registrationTask = nil
-                if self.voipToken != tokenToRegister {
-                    registerTokenIfPossible()
+                if registrationGeneration == generation {
+                    registrationTask = nil
+                    if self.voipToken != tokenToRegister {
+                        registerTokenIfPossible()
+                    }
                 }
             }
             do {
@@ -248,14 +256,27 @@ import TDLibKit
                     )),
                     otherUserIds: [],
                 )
-                if self.voipToken == tokenToRegister {
+                if registrationGeneration == generation,
+                   isTelegramReady,
+                   self.voipToken == tokenToRegister
+                {
                     registeredToken = tokenToRegister
                 }
             } catch {
+                guard registrationGeneration == generation, !Task.isCancelled else { return }
                 log("VoIP device registration failed: \(error.localizedDescription)")
                 scheduleRegistrationRetry(for: tokenToRegister)
             }
         }
+    }
+
+    private func resetRegistrationForSignedOutState() {
+        registrationGeneration &+= 1
+        registeredToken = nil
+        registrationTask?.cancel()
+        registrationTask = nil
+        registrationRetryTask?.cancel()
+        registrationRetryTask = nil
     }
 
     private func scheduleRegistrationRetry(for token: String) {

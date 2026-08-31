@@ -156,7 +156,7 @@ struct TelegramContactComposerView: View {
     let service: any TelegramService
     /// Whether the device's system Contacts permission is denied - when true, this app's synced
     /// "My Contacts" list may be missing people from the phone's address book who are on
-    /// Telegram, since `PermissionsManager.requestPostLoginPermissions()` (iOS-only) couldn't
+    /// Telegram, since `PermissionsManager.requestAndSyncContacts()` (iOS-only) couldn't
     /// read them to sync. Passed in rather than checked here, since this view is shared with
     /// macOS, which has no such sync step.
     let deviceContactsAccessIsDenied: Bool

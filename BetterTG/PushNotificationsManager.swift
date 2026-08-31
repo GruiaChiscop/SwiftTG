@@ -21,12 +21,17 @@ import UserNotifications
         registration.start()
     }
 
-    func requestAuthorization() async {
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await notificationCenter.notificationSettings().authorizationStatus
+    }
+
+    @discardableResult func requestAuthorization() async -> Bool {
         let granted = await (try? notificationCenter.requestAuthorization(
             options: [.alert, .badge, .sound],
         )) == true
-        guard granted else { return }
+        guard granted else { return false }
         UIApplication.shared.registerForRemoteNotifications()
+        return true
     }
 
     func didRegister(deviceToken: Data) {

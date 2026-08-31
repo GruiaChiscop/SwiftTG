@@ -26,19 +26,15 @@ extension RootVM {
                         guard let self else { return }
                         await TelegramNotificationSoundCacheRefresh.refreshAll(service: service)
                     }
-                case .authorizationStateClosed,
-                     .authorizationStateClosing,
-                     .authorizationStateLoggingOut,
-                     .authorizationStateWaitCode,
+                case .authorizationStateWaitCode,
+                     .authorizationStateWaitEmailAddress,
+                     .authorizationStateWaitEmailCode,
+                     .authorizationStateWaitOtherDeviceConfirmation,
                      .authorizationStateWaitPassword,
-                     .authorizationStateWaitPhoneNumber:
-                    withAnimation {
-                        self.loggedIn = false
-                        self.path.removeAll()
-                    }
-                    Task { @MainActor [weak self] in
-                        self?.discardPendingNotificationOpen()
-                    }
+                     .authorizationStateWaitPhoneNumber,
+                     .authorizationStateWaitPremiumPurchase,
+                     .authorizationStateWaitRegistration:
+                    resetForSignedOutState()
                 default:
                     break
                 }
@@ -70,6 +66,57 @@ extension RootVM {
                 self?.unconfirmedSession = value.session
             }
             .store(in: &cancellables)
+    }
+
+    /// A logged-out TDLib client passes through logging-out/closing/closed before a replacement
+    /// client reaches a usable authorization step. Keep the current UI mounted during those
+    /// terminal states, then clear all account-specific presentation state exactly when the new
+    /// client is ready to accept login input.
+    private func resetForSignedOutState() {
+        chatListBootstrapTask?.cancel()
+        chatListBootstrapTask = nil
+        didBootstrapChatLists = false
+        searchTask?.cancel()
+        searchTask = nil
+        searchGeneration &+= 1
+        shareChatCacheWriteTask?.cancel()
+        shareChatCacheWriteTask = nil
+        shareRequestProcessingTask?.cancel()
+        shareRequestProcessingTask = nil
+        inAppNotificationDismissTask?.cancel()
+        inAppNotificationDismissTask = nil
+
+        withAnimation {
+            loggedIn = false
+            path.removeAll()
+            folders.removeAll()
+            archive = nil
+            currentFolder = nil
+        }
+        query = ""
+        searchChatResults = []
+        searchGlobalChatResults = []
+        searchMessageResults = []
+        searchMessageChatTitles = [:]
+        searchResultChatsById = [:]
+        isSearching = false
+        appliedChatListVersion = nil
+        latestChatListSnapshot = .empty
+        loadingChatKeys.removeAll()
+        loadingFolderIds.removeAll()
+        senderLoadVersions.removeAll()
+        pendingDeepLinkJoin = nil
+        pendingGroupCallJoin = nil
+        pendingVideoChatJoin = nil
+        deepLinkErrorMessage = nil
+        inAppNotificationBanner = nil
+        pendingInAppNotificationBanners.removeAll()
+        unconfirmedSession = nil
+        unconfirmedSessionActionError = nil
+        isProcessingUnconfirmedSession = false
+        discardPendingNotificationOpen()
+        TelegramCurrentUserCache.shared.reset()
+        ShareChatCache.save([])
     }
 
     // MARK: - Snapshot application

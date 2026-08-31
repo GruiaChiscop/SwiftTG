@@ -213,7 +213,7 @@ final class PermissionsManager: Sendable {
         contactsAccess: any ContactsAccess = SystemContactsAccess(),
         // `TDLib` (the global TDLib client singleton) only exists on iOS - macOS has no equivalent
         // singleton (each window owns its own `MacSessionModel.service` instead), and never
-        // exercises `requestPostLoginPermissions()`/device-contacts sync in the first place, so
+        // exercises `requestAndSyncContacts()`/device-contacts sync in the first place, so
         // `nil` there is both correct and never actually reached.
         contactsSync: (any TelegramContactsSyncing)? = {
             #if os(iOS)
@@ -262,19 +262,20 @@ final class PermissionsManager: Sendable {
 
     /// Used by the contact-sharing composer's "My Contacts" tab to also offer people from the
     /// phone's address book who aren't on Telegram. Returns nothing when access isn't currently
-    /// authorized - this never itself prompts, unlike `requestPostLoginPermissions()`.
+    /// authorized - this never itself prompts, unlike `requestAndSyncContacts()`.
     func fetchDeviceContactsIfAuthorized() async -> [DeviceContactRecord] {
         guard contactsAuthorizationStatus == .authorized else { return [] }
         return await Self.fetchContactsConcurrently(access: contactsAccess) ?? []
     }
 
-    func requestPostLoginPermissions() async {
-        guard let contactsSync, TelegramContactsSyncPreference.isEnabled else { return }
-        guard await contactsAreAllowed() else { return }
-        guard let records = await Self.fetchContactsConcurrently(access: contactsAccess) else { return }
+    @discardableResult func requestAndSyncContacts() async -> Bool {
+        guard let contactsSync else { return false }
+        guard await contactsAreAllowed() else { return false }
+        guard let records = await Self.fetchContactsConcurrently(access: contactsAccess) else { return false }
 
         let contacts = Self.importedContacts(from: records)
-        _ = try? await contactsSync.changeImportedContacts(contacts: contacts)
+        guard await (try? contactsSync.changeImportedContacts(contacts: contacts)) != nil else { return false }
+        return true
     }
 
     /// Requests location access if not yet determined, then fetches a single current fix. Used by

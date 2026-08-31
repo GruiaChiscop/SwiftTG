@@ -36,6 +36,7 @@ import TDLibKit
     var hasAcceptedTerms = false
     var hint = ""
     var loginState = LoginState.phoneNumber
+    var isSubmittingPhoneNumber = false
     var phoneNumber = ""
     var hasRecoveryEmail = false
     var recoveryEmailPattern = ""
@@ -158,7 +159,9 @@ import TDLibKit
 
         switch loginState {
         case .phoneNumber:
-            guard TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) != nil else { return }
+            guard !isSubmittingPhoneNumber,
+                  TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) != nil
+            else { return }
             showPhoneConfirmation = true
         case .code:
             let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -342,9 +345,14 @@ import TDLibKit
             return
         }
 
-        guard let number = TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber) else { return }
+        guard !isSubmittingPhoneNumber,
+              let number = TelegramPhoneNumber.normalized(callingCode: callingCode, number: phoneNumber)
+        else { return }
+        showPhoneConfirmation = false
         errorMessage = nil
+        isSubmittingPhoneNumber = true
         Task {
+            defer { isSubmittingPhoneNumber = false }
             do {
                 _ = try await service.setAuthenticationPhoneNumber(phoneNumber: number, settings: nil)
             } catch {
@@ -443,8 +451,7 @@ import TDLibKit
             termsOfService = details.termsOfService
             hasAcceptedTerms = false
         case .authorizationStateClosed, .authorizationStateClosing, .authorizationStateLoggingOut:
-            loginState = .phoneNumber
-            errorMessage = "The Telegram authorization session ended. Please try again."
+            break
         case .authorizationStateWaitPremiumPurchase:
             waitPremiumErrorShown = true
         default:
@@ -454,8 +461,10 @@ import TDLibKit
 
     private func apply(countries: [CountryInfo], currentCountryCode: String?) {
         countryNums = TelegramPhoneNumber.countries(from: countries)
+        let automaticCountryCode = currentCountryCode.flatMap { $0.isEmpty ? nil : $0 }
+            ?? Locale.current.region?.identifier
         if callingCode.isEmpty,
-           let info = TelegramPhoneNumber.country(for: currentCountryCode, in: countryNums)
+           let info = TelegramPhoneNumber.country(for: automaticCountryCode, in: countryNums)
         {
             selectCountry(info)
         } else if callingCode.isEmpty {

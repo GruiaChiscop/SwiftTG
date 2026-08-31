@@ -99,6 +99,24 @@ final class TelegramUpdateStore: @unchecked Sendable {
         fileStore.mergeInitial(file)
     }
 
+    /// Remove every account-derived value before a fresh TDLib client starts a new login.
+    func reset() {
+        queue.async { [
+            chatFoldersSubject, unreadChatCountSubject, availableMessageEffectsSubject,
+            reactionNotificationSettingsSubject, callSubject,
+        ] in
+            dispatchPrecondition(condition: .onQueue(self.queue))
+            self.chatListStore.reset()
+            self.fileStore.reset()
+            self.messageStore.reset()
+            chatFoldersSubject.send(nil)
+            unreadChatCountSubject.send(nil)
+            availableMessageEffectsSubject.send(nil)
+            reactionNotificationSettingsSubject.send(nil)
+            callSubject.send(nil)
+        }
+    }
+
     func publish(_ update: Update) {
         queue.async {
             [

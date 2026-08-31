@@ -22,12 +22,16 @@ final class TelegramSession: @unchecked Sendable {
     // MARK: Lifecycle
 
     init() {
-        _ = internalClient
+        self.internalClient = makeClient()
     }
 
     // MARK: Internal
 
-    var client: TDLibClient { internalClient }
+    var client: TDLibClient {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return internalClient
+    }
 
     var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> {
         updateStore.authorizationStatePublisher
@@ -106,28 +110,24 @@ final class TelegramSession: @unchecked Sendable {
         self.configuration = configuration
         stateLock.unlock()
 
-        try? client.setLogStream(logStream: .logStreamEmpty) { _ in }
         configureIfReady()
     }
 
     func close() {
+        stateLock.lock()
+        isClosingSession = true
+        stateLock.unlock()
         manager.closeClients()
     }
 
     // MARK: Private
 
-    private lazy var internalClient: TDLibClient = manager.createClient { [weak self] data, client in
-        guard let self else { return }
-        do {
-            let update = try decodeUpdate(from: data, using: client.decoder)
-            process(update)
-        } catch {
-            print("TDLib update decoding failed: \(error)")
-        }
-    }
-
+    private var internalClient: TDLibClient!
     private var configuration: TelegramSessionConfiguration?
+    private var configuringClientId: Int32?
     private var isConfiguringParameters = false
+    private var isClosingSession = false
+    private var isReplacingClient = false
     private var isWaitingForParameters = false
     private let manager = TDLibClientManager()
     private let stateLock = NSLock()
@@ -149,13 +149,32 @@ final class TelegramSession: @unchecked Sendable {
         }
     }
 
-    private func process(_ update: Update) {
+    private func makeClient() -> TDLibClient {
+        let client = manager.createClient { [weak self] data, client in
+            guard let self else { return }
+            do {
+                let update = try decodeUpdate(from: data, using: client.decoder)
+                process(update, from: client)
+            } catch {
+                print("TDLib update decoding failed: \(error)")
+            }
+        }
+        try? client.setLogStream(logStream: .logStreamEmpty) { _ in }
+        return client
+    }
+
+    private func process(_ update: Update, from client: TDLibClient) {
         if case .updateAuthorizationState(let value) = update {
-            if case .authorizationStateWaitTdlibParameters = value.authorizationState {
+            switch value.authorizationState {
+            case .authorizationStateWaitTdlibParameters:
                 stateLock.lock()
                 isWaitingForParameters = true
                 stateLock.unlock()
                 configureIfReady()
+            case .authorizationStateClosed:
+                replaceClosedClientIfNeeded(client)
+            default:
+                break
             }
         }
         updateStore.publish(update)
@@ -165,17 +184,22 @@ final class TelegramSession: @unchecked Sendable {
         stateLock.lock()
         guard isWaitingForParameters,
               !isConfiguringParameters,
+              !isReplacingClient,
               let configuration
         else {
             stateLock.unlock()
             return
         }
+        // Read the current client under the lock, after the guard, so a `replaceClosedClientIfNeeded`
+        // swap can't leave this configuring the stale (closed) instance.
+        let activeClient = internalClient!
         isConfiguringParameters = true
+        configuringClientId = activeClient.id
         stateLock.unlock()
 
-        Task { [weak self, client] in
+        Task { [weak self, activeClient] in
             do {
-                try await client.setTdlibParameters(
+                try await activeClient.setTdlibParameters(
                     apiHash: configuration.apiHash,
                     apiId: configuration.apiId,
                     applicationVersion: configuration.applicationVersion,
@@ -195,21 +219,61 @@ final class TelegramSession: @unchecked Sendable {
                 // (`NotificationManager::DEFAULT_GROUP_COUNT_MAX`), which disables it outright -
                 // it never emits `updateNotificationGroup` at all until told otherwise. 25 matches
                 // Unigram's own TDLib client setup (another TDLib-based client, checked directly).
-                _ = try? await client.setOption(
+                _ = try? await activeClient.setOption(
                     name: "notification_group_count_max",
                     value: .optionValueInteger(.init(value: 25)),
                 )
+                self?.finishConfiguration(clientId: activeClient.id, succeeded: true)
             } catch {
-                self?.resetConfigurationAttempt()
+                self?.finishConfiguration(clientId: activeClient.id, succeeded: false)
                 print("TDLib configuration failed: \(error)")
             }
         }
     }
 
-    private func resetConfigurationAttempt() {
+    private func finishConfiguration(clientId: Int32, succeeded: Bool) {
         stateLock.lock()
+        guard configuringClientId == clientId else {
+            stateLock.unlock()
+            return
+        }
         isConfiguringParameters = false
+        configuringClientId = nil
+        if succeeded {
+            isWaitingForParameters = false
+        }
         stateLock.unlock()
+    }
+
+    /// `authorizationStateClosed` is terminal for a TDLib client. Logging out closes that client,
+    /// so continuing with the same instance leaves every subsequent login request unanswered.
+    /// Create a fresh client unless the app itself is terminating and deliberately closing TDLib.
+    private func replaceClosedClientIfNeeded(_ closedClient: TDLibClient) {
+        stateLock.lock()
+        guard !isClosingSession,
+              !isReplacingClient,
+              internalClient === closedClient
+        else {
+            stateLock.unlock()
+            return
+        }
+        isReplacingClient = true
+        isConfiguringParameters = false
+        configuringClientId = nil
+        stateLock.unlock()
+
+        updateStore.reset()
+        let replacement = makeClient()
+
+        stateLock.lock()
+        internalClient = replacement
+        isReplacingClient = false
+        stateLock.unlock()
+
+        // The replacement's own `authorizationStateWaitTdlibParameters` may already have been
+        // processed (and skipped, because `isReplacingClient` was set) before `internalClient`
+        // pointed at it. Re-drive configuration now that it does; it's a no-op otherwise.
+        configureIfReady()
     }
 }
 

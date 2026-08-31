@@ -207,6 +207,21 @@ final class TelegramMessageStore: @unchecked Sendable {
         merge(chatId: chatId, messages: messages, marksHistoryLoaded: false)
     }
 
+    func reset() {
+        queue.async {
+            self.deletedMessageIds.removeAll()
+            let existingSubjects = self.stateLock.withLock {
+                self.snapshots.removeAll()
+                let existingSubjects = self.subjects
+                self.subjects.removeAll()
+                return existingSubjects
+            }
+            for (chatId, subject) in existingSubjects {
+                subject.send(.empty(chatId: chatId))
+            }
+        }
+    }
+
     func reduce(_ update: Update) {
         if case .updateMessageSendFailed(let value) = update {
             TelegramOutgoingFileStaging.shared.messageSendFailed(

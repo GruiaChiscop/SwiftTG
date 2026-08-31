@@ -32,6 +32,17 @@ final class TelegramFileStore: @unchecked Sendable {
         }
     }
 
+    func reset() {
+        queue.async {
+            self.files.removeAll()
+            let existingSubjects = self.subjects.values
+            self.subjects.removeAll()
+            for subject in existingSubjects {
+                subject.send(nil)
+            }
+        }
+    }
+
     func reduce(_ update: Update) {
         guard case .updateFile(let value) = update else { return }
         queue.async {

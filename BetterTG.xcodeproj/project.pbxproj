@@ -850,7 +850,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SwiftTG uses the camera for video calls, to send photos, record video messages, and scan QR codes to link a device.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "SwiftTG needs to access your contacts to help you connect with people you know on Telegram.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "When you choose Sync Contacts, SwiftTG sends names and phone numbers from your address book to Telegram to find people you know.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "SwiftTG can use Face ID to quickly unlock the app instead of typing your passcode.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SwiftTG uses your location to share it in a chat when you choose to.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftTG uses the microphone for voice and video calls and to record voice and video messages.";
@@ -906,7 +906,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SwiftTG uses the camera for video calls, to send photos, record video messages, and scan QR codes to link a device.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "SwiftTG needs to access your contacts to help you connect with people you know on Telegram.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "When you choose Sync Contacts, SwiftTG sends names and phone numbers from your address book to Telegram to find people you know.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "SwiftTG can use Face ID to quickly unlock the app instead of typing your passcode.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SwiftTG uses your location to share it in a chat when you choose to.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftTG uses the microphone for voice and video calls and to record voice and video messages.";

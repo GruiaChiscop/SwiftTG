@@ -272,6 +272,15 @@ final class TelegramChatListStore: @unchecked Sendable {
         }
     }
 
+    func reset() {
+        queue.async {
+            self.memberships.removeAll()
+            self.postingPermissions.removeAll()
+            self.forumStatus.removeAll()
+            self.subject.send(.empty)
+        }
+    }
+
     /// Blocks until all previously-enqueued mutations have applied. For deterministic tests only.
     func waitForPendingWork() {
         queue.sync {}

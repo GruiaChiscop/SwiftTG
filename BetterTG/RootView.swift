@@ -36,6 +36,14 @@ struct RootView: View {
                     }
                     .animation(.default, value: rootVM.inAppNotificationBanner)
                     .animation(.default, value: rootVM.unconfirmedSession)
+
+                if !hasCompletedPostLoginPermissions {
+                    PostLoginPermissionsView {
+                        PostLoginPermissionsPreference.hasCompleted = true
+                        withAnimation { hasCompletedPostLoginPermissions = true }
+                    }
+                    .transition(.opacity)
+                }
             } else {
                 LoginView()
             }
@@ -54,8 +62,6 @@ struct RootView: View {
         .task(id: rootVM.loggedIn) {
             guard rootVM.loggedIn else { return }
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: TDLib.shared.service)
-            await PushNotificationsManager.shared.requestAuthorization()
-            await PermissionsManager.shared.requestPostLoginPermissions()
         }
         // Applies everywhere in the subtree - link taps in message text, chat bios, link
         // previews, etc. - so `t.me`/`telegram.me`/`tg:` links resolve in-app instead of always
@@ -187,6 +193,7 @@ struct RootView: View {
 
     @State private var rootVM = RootVM.shared
     @State private var callSession = TelegramCallSession.shared
+    @State private var hasCompletedPostLoginPermissions = PostLoginPermissionsPreference.hasCompleted
 
     private func presentCallRatingSuccessIfNeeded() async {
         guard let token = callSession.callRatingSuccessToken else { return }

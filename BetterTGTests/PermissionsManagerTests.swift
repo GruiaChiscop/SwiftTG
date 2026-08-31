@@ -13,8 +13,9 @@ struct PermissionsManagerTests {
         let sync = ContactsSyncMock()
         let manager = PermissionsManager(contactsAccess: access, contactsSync: sync)
 
-        await manager.requestPostLoginPermissions()
+        let didSync = await manager.requestAndSyncContacts()
 
+        #expect(!didSync)
         #expect(access.fetchCount == 0)
         #expect(await sync.receivedContacts() == nil)
     }
@@ -34,8 +35,9 @@ struct PermissionsManagerTests {
         let sync = ContactsSyncMock()
         let manager = PermissionsManager(contactsAccess: access, contactsSync: sync)
 
-        await manager.requestPostLoginPermissions()
+        let didSync = await manager.requestAndSyncContacts()
 
+        #expect(didSync)
         #expect(access.requestCount == 1)
         #expect(access.fetchCount == 1)
         let received = try #require(await sync.receivedContacts())

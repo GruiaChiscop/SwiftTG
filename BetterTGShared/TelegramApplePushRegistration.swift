@@ -82,9 +82,17 @@ import TDLibKit
         authorizationSubscription = service.authorizationStatePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
-                guard case .authorizationStateReady = state else { return }
-                self?.isTelegramReady = true
-                self?.registerTokenIfPossible()
+                guard let self else { return }
+                if case .authorizationStateReady = state {
+                    isTelegramReady = true
+                    registerTokenIfPossible()
+                } else if isTelegramReady {
+                    isTelegramReady = false
+                    serviceGeneration &+= 1
+                    registeredToken = nil
+                    registrationTask?.cancel()
+                    registrationTask = nil
+                }
             }
     }
 

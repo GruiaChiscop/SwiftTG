@@ -33,6 +33,13 @@
         return resolved
     }
 
+    /// Drop identity derived from the previous account before another account can log in.
+    func reset() {
+        pendingTask?.cancel()
+        pendingTask = nil
+        userId = nil
+    }
+
     // MARK: Private
 
     private var pendingTask: Task<Int64?, Never>?
