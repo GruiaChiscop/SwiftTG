@@ -21,6 +21,15 @@ import UserNotifications
         registration.start()
     }
 
+    /// Must run on every launch while signed in: iOS only delivers the APNs device token to
+    /// `AppDelegate.didRegisterForRemoteNotificationsWithDeviceToken` in response to this call, and
+    /// that callback is the only place `TelegramApplePushRegistration` learns the token it hands to
+    /// TDLib's `registerDevice`. It never prompts - that's `requestAuthorization()` - so calling it
+    /// regardless of authorization status is both safe and required.
+    func registerForRemoteNotifications() {
+        UIApplication.shared.registerForRemoteNotifications()
+    }
+
     func authorizationStatus() async -> UNAuthorizationStatus {
         await notificationCenter.notificationSettings().authorizationStatus
     }

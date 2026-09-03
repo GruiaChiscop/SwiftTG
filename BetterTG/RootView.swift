@@ -61,6 +61,7 @@ struct RootView: View {
         }
         .task(id: rootVM.loggedIn) {
             guard rootVM.loggedIn else { return }
+            PushNotificationsManager.shared.registerForRemoteNotifications()
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: TDLib.shared.service)
         }
         // Applies everywhere in the subtree - link taps in message text, chat bios, link
