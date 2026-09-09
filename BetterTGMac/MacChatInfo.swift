@@ -348,7 +348,9 @@ struct MacChatInfoView: View {
     }
 
     @ViewBuilder private func detailsSections(_ info: TelegramChatInfoData) -> some View {
-        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil {
+        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
+            || info.privacyPolicyURL != nil || info.usesPrivacyCommand
+        {
             Section {
                 if let phoneNumber = info.phoneNumber {
                     LabeledContent("Phone", value: phoneNumber)
@@ -377,6 +379,18 @@ struct MacChatInfoView: View {
                         Text(macAttributedString(about))
                     }
                     .textSelection(.enabled)
+                }
+
+                if let policy = info.privacyPolicyURL, let url = URL(string: policy) {
+                    Link(destination: url) {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
+                } else if info.usesPrivacyCommand {
+                    Button {
+                        sendPrivacyCommand()
+                    } label: {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
                 }
             }
         }
@@ -564,6 +578,22 @@ struct MacChatInfoView: View {
             return "Bot Info"
         }
         return chat.kind == .group || chat.kind == .channel ? "Description" : "Bio"
+    }
+
+    /// For a bot that exposes a `/privacy` command instead of a policy URL: mirrors Telegram's
+    /// own behaviour of sending that command to the bot.
+    private func sendPrivacyCommand() {
+        let service = model.service
+        let chatId = chat.chatId
+        dismiss()
+        Task {
+            _ = try? await TelegramMessageSending.send(
+                service: service,
+                chatId: chatId,
+                contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
+                replyTo: nil,
+            )
+        }
     }
 
     private func openConversationSearch() {

@@ -338,10 +338,10 @@ struct ChatInfoView: View {
         if info.isScam || info.isFake || info.isVerified || info.isPremium {
             HStack(spacing: 6) {
                 if info.isScam {
-                    badgeCapsule("SCAM", accessibilityLabel: "Scam")
+                    badgeCapsule("SCAM")
                 }
                 if info.isFake {
-                    badgeCapsule("FAKE", accessibilityLabel: "Fake")
+                    badgeCapsule("FAKE")
                 }
                 if info.isVerified {
                     Image(systemName: "checkmark.seal.fill")
@@ -351,7 +351,7 @@ struct ChatInfoView: View {
                 if info.isPremium {
                     Image(systemName: "star.circle.fill")
                         .foregroundStyle(.orange)
-                        .accessibilityLabel("Telegram Premium")
+                        .accessibilityLabel("Premium account")
                 }
             }
             .font(.subheadline)
@@ -365,7 +365,6 @@ struct ChatInfoView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(.red, in: Capsule())
-            .accessibilityLabel(accessibilityLabel)
     }
 
     private func identitySection(_ info: TelegramChatInfoData?) -> some View {
@@ -463,7 +462,9 @@ struct ChatInfoView: View {
     }
 
     @ViewBuilder private func profileInformationSection(_ info: TelegramChatInfoData) -> some View {
-        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil {
+        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
+            || info.privacyPolicyURL != nil || info.usesPrivacyCommand
+        {
             Section {
                 if let phoneNumber = info.phoneNumber {
                     LabeledContent("Phone", value: phoneNumber)
@@ -500,7 +501,35 @@ struct ChatInfoView: View {
                     }
                     .textSelection(.enabled)
                 }
+
+                if let policy = info.privacyPolicyURL, let url = URL(string: policy) {
+                    Link(destination: url) {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
+                } else if info.usesPrivacyCommand {
+                    Button {
+                        sendPrivacyCommand()
+                    } label: {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
+                }
             }
+        }
+    }
+
+    /// For a bot that exposes a `/privacy` command instead of a policy URL: mirrors Telegram's
+    /// own behaviour of sending that command to the bot.
+    private func sendPrivacyCommand() {
+        let service = chatVM.service
+        let chatId = chat.id
+        dismiss()
+        Task {
+            _ = try? await TelegramMessageSending.send(
+                service: service,
+                chatId: chatId,
+                contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
+                replyTo: nil,
+            )
         }
     }
 
