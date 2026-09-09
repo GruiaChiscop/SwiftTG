@@ -177,7 +177,7 @@ struct TelegramStickerPackPreview<Preview: View>: View {
             return
         } catch {
             guard !Task.isCancelled else { return }
-            loadErrorMessage = telegramErrorDescription(error)
+            loadErrorMessage = telegramStickerErrorDescription(error)
             await Task.yield()
             loadErrorIsFocused = true
         }
@@ -198,7 +198,7 @@ struct TelegramStickerPackPreview<Preview: View>: View {
             return
         } catch {
             guard !Task.isCancelled else { return }
-            installationErrorMessage = "Sticker pack couldn't be updated: \(telegramErrorDescription(error))"
+            installationErrorMessage = "Sticker pack couldn't be updated: \(telegramStickerErrorDescription(error))"
             await Task.yield()
             installationErrorIsFocused = true
         }

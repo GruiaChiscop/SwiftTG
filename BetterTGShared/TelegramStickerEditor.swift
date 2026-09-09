@@ -248,7 +248,7 @@ struct TelegramStickerEditor: View {
     }
 
     @MainActor private func show(_ error: any Swift.Error) async {
-        errorMessage = telegramErrorDescription(error)
+        errorMessage = telegramStickerErrorDescription(error)
         await Task.yield()
         errorIsFocused = true
     }
@@ -282,7 +282,7 @@ struct TelegramStickerEditor: View {
         guard let sourceImage = source.image(at: 0) else {
             throw TelegramStickerEditorError.imageDecodingFailed
         }
-        return try .image(TelegramStickerEditorRendering.pngData(
+        return try await .image(TelegramStickerEditorRendering.pngData(
             sourceImage: sourceImage,
             snapshot: snapshot,
         ))

@@ -19,12 +19,14 @@ struct TelegramEditorToolbar: View {
                     editorState.tool = .select
                 }
                 .tint(editorState.tool == .select ? .accentColor : .secondary)
+                .accessibilityAddTraits(editorState.tool == .select ? .isSelected : [])
 
                 Button("Draw", systemImage: editorState.tool == .draw ? "pencil.tip.crop.circle.fill" : "pencil.tip") {
                     editorState.tool = .draw
                     editorState.select(nil)
                 }
                 .tint(editorState.tool == .draw ? .accentColor : .secondary)
+                .accessibilityAddTraits(editorState.tool == .draw ? .isSelected : [])
 
                 Button("Text", systemImage: "textformat", action: addText)
                 Button("Emoji", systemImage: "face.smiling", action: addEmoji)
@@ -36,6 +38,7 @@ struct TelegramEditorToolbar: View {
                     action: showEffects,
                 )
                 .tint(editorState.tool == .effects ? .accentColor : .secondary)
+                .accessibilityAddTraits(editorState.tool == .effects ? .isSelected : [])
 
                 Button(
                     "Crop",
@@ -43,6 +46,7 @@ struct TelegramEditorToolbar: View {
                     action: showCrop,
                 )
                 .tint(editorState.tool == .crop ? .accentColor : .secondary)
+                .accessibilityAddTraits(editorState.tool == .crop ? .isSelected : [])
 
                 Divider()
                     .frame(height: 24)

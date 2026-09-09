@@ -62,6 +62,47 @@ enum TelegramStickerCreationError: Swift.Error, Equatable, LocalizedError {
     }
 }
 
+// MARK: - telegramStickerErrorDescription
+
+/// Maps the raw Telegram/TDLib error strings the sticker pipeline can throw
+/// (`uploadStickerFile`, `createNewStickerSet`, `addStickerToSet`, `replaceStickerInSet`,
+/// `changeStickerSet`, and sending a sticker message) to readable text. Anything unrecognised -
+/// and every non-`TDLibKit.Error`, including the `LocalizedError`s above - falls through to
+/// `telegramErrorDescription`.
+func telegramStickerErrorDescription(_ error: Swift.Error) -> String {
+    guard let tdError = error as? TDLibKit.Error else {
+        return telegramErrorDescription(error)
+    }
+    let message = tdError.message.trimmingCharacters(in: .whitespacesAndNewlines)
+    if tdError.code == 429 || message.hasPrefix("FLOOD_WAIT") || message.hasPrefix("Too Many Requests") {
+        return "You're doing that too often. Please wait a moment and try again."
+    }
+    switch message {
+    case "STICKERS_TOO_MUCH", "STICKERS_TOO_MANY":
+        return "This sticker pack is full. Telegram allows up to 120 stickers per pack."
+    case "STICKERSET_INVALID", "STICKERSET_NOT_MODIFIED":
+        return "That sticker pack is no longer available."
+    case "STICKERSET_OWNER_ONLY", "STICKERSET_NOT_OWNER":
+        return "Only the pack's creator can edit its stickers."
+    case "STICKER_EMOJI_INVALID", "EMOJI_INVALID":
+        return "Choose a different emoji for this sticker."
+    case "STICKER_PNG_DIMENSIONS", "STICKER_DIMENSIONS_INVALID", "IMAGE_PROCESS_FAILED":
+        return "The image doesn't meet Telegram's sticker size requirements - one side must be exactly 512 pixels."
+    case "STICKER_PNG_NOPNG", "STICKER_FILE_INVALID", "FILE_PARTS_INVALID", "IMAGE_INVALID":
+        return "That file couldn't be used as a sticker. Try a different image."
+    case "STICKER_VIDEO_BIG", "STICKER_VIDEO_NOWEBM", "VIDEO_FILE_INVALID":
+        return "That animation couldn't be used as a video sticker."
+    case "PACK_TITLE_INVALID":
+        return "Telegram couldn't create a sticker pack with that name."
+    case "PACK_SHORT_NAME_INVALID", "PACK_SHORT_NAME_OCCUPIED", "SHORT_NAME_INVALID", "SHORT_NAME_OCCUPIED":
+        return "Couldn't find an available link for this sticker pack. Please try again."
+    case "PEER_ID_INVALID", "CHAT_SEND_STICKERS_FORBIDDEN":
+        return "Stickers can't be sent in this chat."
+    default:
+        return telegramErrorDescription(error)
+    }
+}
+
 // MARK: - TelegramStickerCreation
 
 enum TelegramStickerCreation {

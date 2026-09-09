@@ -187,7 +187,12 @@ struct EditProfileView: View {
 
             if mode == .all {
                 Section {
+                    Text("@")
                     TextField("Username", text: $username)
+                        .autocorrectionDisabled(true)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
                 } header: {
                     Text("Username")
                 } footer: {

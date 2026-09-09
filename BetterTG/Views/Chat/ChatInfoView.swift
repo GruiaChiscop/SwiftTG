@@ -2,7 +2,6 @@
 
 import SwiftUI
 import TDLibKit
-import UIKit
 
 // MARK: - ChatInfoView
 
@@ -116,7 +115,7 @@ struct ChatInfoView: View {
             Button("Schedule") {
                 showsVideoChatScheduler = true
             }
-            Button("Stream with…") {
+            Button("Stream with...") {
                 showsRtmpSetup = true
             }
             Button("Cancel", role: .cancel) {}
@@ -271,7 +270,9 @@ struct ChatInfoView: View {
     }
 
     @ViewBuilder private var videoChatSection: some View {
-        if chat.kind == .group || chat.kind == .channel {
+        if chat.kind == .group || chat.kind == .channel,
+           hasActiveVideoChat || canManageVideoChats
+           || (videoChatDetails?.scheduledStartDate ?? 0) > 0 {
             Section(chat.kind == .channel ? "Live Stream" : "Voice Chat") {
                 if let videoChatDetails, videoChatDetails.scheduledStartDate > 0 {
                     LabeledContent(
@@ -346,7 +347,7 @@ struct ChatInfoView: View {
                         isSavedMessages: chat.isSavedMessages,
                     )
                     .frame(width: 96, height: 96)
-
+                    .accessibilityHidden(true)
                     Text(chat.displayTitle)
                         .font(.title2.bold())
                         .multilineTextAlignment(.center)
@@ -436,6 +437,9 @@ struct ChatInfoView: View {
                             if let phoneURL = URL(string: "tel:\(phoneNumber.filter { $0.isNumber || $0 == "+" })") {
                                 Link("Call with Phone", destination: phoneURL)
                             }
+                        }
+                        .accessibilityAction(named: "Copy Phone Number") {
+                            UIPasteboard.general.string = phoneNumber
                         }
                 }
 
@@ -552,9 +556,15 @@ struct ChatInfoView: View {
         .buttonStyle(.plain)
         .contextMenu {
             if copyValue != url.absoluteString {
-                Button("Copy") { UIPasteboard.general.string = copyValue }
+                Button("Copy username", systemImage: "doc.on.doc") { UIPasteboard.general.string = copyValue }
             }
-            Button("Copy Link") { UIPasteboard.general.string = url.absoluteString }
+            Button("Copy Link", systemImage: "link") { UIPasteboard.general.string = url.absoluteString }
+        }
+        .accessibilityActions {
+            Button("Copy Link", systemImage: "link") { UIPasteboard.general.string = url.absoluteString }
+            if copyValue != url.absoluteString {
+                Button("Copy username", systemImage: "doc.on.doc") { UIPasteboard.general.string = copyValue }
+            }
         }
     }
 

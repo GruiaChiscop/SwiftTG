@@ -70,6 +70,7 @@ struct TelegramEditorStickerLibrary: View {
     @State private var selectedStickerSet: StickerSet?
     @State private var searchResults = [Sticker]()
     @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var isSearching = false
     @State private var selectingFileId: Int?
     @State private var errorMessage: String?
@@ -172,7 +173,7 @@ struct TelegramEditorStickerLibrary: View {
     }
 
     @MainActor private func loadLibraryIfNeeded() async {
-        guard !isLoading, favoriteStickers.isEmpty, recentStickers.isEmpty, stickerSets.isEmpty else { return }
+        guard !hasLoaded, !isLoading else { return }
         isLoading = true
         errorMessage = nil
         var errors = [String]()
@@ -183,7 +184,7 @@ struct TelegramEditorStickerLibrary: View {
             isLoading = false
             return
         } catch {
-            errors.append("Favorite stickers couldn't be loaded: \(telegramErrorDescription(error))")
+            errors.append("Favorite stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         do {
@@ -195,7 +196,7 @@ struct TelegramEditorStickerLibrary: View {
             isLoading = false
             return
         } catch {
-            errors.append("Recent stickers couldn't be loaded: \(telegramErrorDescription(error))")
+            errors.append("Recent stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         do {
@@ -206,7 +207,7 @@ struct TelegramEditorStickerLibrary: View {
             isLoading = false
             return
         } catch {
-            errors.append("Sticker packs couldn't be loaded: \(telegramErrorDescription(error))")
+            errors.append("Sticker packs couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         if let categories = try? await service.getEmojiCategories(type: .emojiCategoryTypeRegularStickers) {
@@ -216,6 +217,7 @@ struct TelegramEditorStickerLibrary: View {
             isLoading = false
             return
         }
+        hasLoaded = true
         isLoading = false
         if !errors.isEmpty {
             showError(errors.joined(separator: " "))
@@ -241,9 +243,10 @@ struct TelegramEditorStickerLibrary: View {
             do {
                 searchResults = try await telegramUniqueStickers(service.getPremiumStickers(limit: 100).stickers)
             } catch is CancellationError {
+                isSearching = false
                 return
             } catch {
-                showError("Premium stickers couldn't be loaded: \(telegramErrorDescription(error))")
+                showError("Premium stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
             }
             isSearching = false
             return
@@ -308,7 +311,7 @@ struct TelegramEditorStickerLibrary: View {
         } catch is CancellationError {
             return
         } catch {
-            showError("\(selectedStickerSetInfo.title) couldn't be loaded: \(telegramErrorDescription(error))")
+            showError("\(selectedStickerSetInfo.title) couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
     }
 
@@ -337,13 +340,17 @@ struct TelegramEditorStickerLibrary: View {
                 selectingFileId = nil
             } catch {
                 selectingFileId = nil
-                showError("Sticker couldn't be added: \(telegramErrorDescription(error))")
+                showError("Sticker couldn't be added: \(telegramStickerErrorDescription(error))")
             }
         }
     }
 
-    private func showError(_ message: String) {
+    @MainActor private func showError(_ message: String) {
         errorMessage = message
-        errorIsFocused = true
+        // Let the error `Text` mount before moving VoiceOver focus to it.
+        Task { @MainActor in
+            await Task.yield()
+            errorIsFocused = true
+        }
     }
 }

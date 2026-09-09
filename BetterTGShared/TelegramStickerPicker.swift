@@ -176,6 +176,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
     @State private var isLoadingLibrary = false
     @State private var isSearching = false
     @State private var liveRefreshTask: Task<Void, Never>?
+    @State private var needsLiveRefresh = false
     @State private var hasLoadedLibrary = false
     @State private var sendingStickerFileId: Int?
     @State private var feedbackMessage: String?
@@ -248,13 +249,13 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                     Button("Clear", role: .destructive) {
                         showsClearRecentConfirmation = true
                     }
-                    .confirmationDialog(
-                        "Clear Recent Stickers?",
-                        isPresented: $showsClearRecentConfirmation,
-                    ) {
-                        Button("Clear Recent Stickers", role: .destructive) {
+                    .alert("Clear Recent Stickers?", isPresented: $showsClearRecentConfirmation) {
+                        Button("Clear", role: .destructive) {
                             Task { await clearRecentStickers() }
                         }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This empties your Recent stickers list.")
                     }
                 }
                 stickerGrid(recentStickers, allowsRemovingFromRecent: true)
@@ -418,18 +419,14 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
     private func scheduleLiveRefresh() {
         liveRefreshTask?.cancel()
         liveRefreshTask = Task { @MainActor in
-            do {
-                try await Task.sleep(for: .milliseconds(100))
-                while isLoadingLibrary {
-                    try await Task.sleep(for: .milliseconds(100))
-                }
+            // Debounce a burst of updates into one refresh.
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            if isLoadingLibrary {
+                // A load is already running; `loadLibrary` re-runs itself once when it finishes.
+                needsLiveRefresh = true
+            } else {
                 await loadLibrary(force: true)
-                guard !Task.isCancelled else { return }
-                liveRefreshTask = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                return
             }
         }
     }
@@ -469,7 +466,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 service.getFavoriteStickers().stickers,
             )
         } catch {
-            errors.append("Favorite stickers couldn't be loaded: \(telegramErrorDescription(error))")
+            errors.append("Favorite stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         guard !Task.isCancelled else {
@@ -483,7 +480,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 excluding: favoriteStickers,
             )
         } catch {
-            errors.append("Recent stickers couldn't be loaded: \(telegramErrorDescription(error))")
+            errors.append("Recent stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         guard !Task.isCancelled else {
@@ -496,7 +493,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 .sets
                 .filter(\.isInstalled)
         } catch {
-            errors.append("Sticker packs couldn't be loaded: \(telegramErrorDescription(error))")
+            errors.append("Sticker packs couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         guard !Task.isCancelled else {
@@ -526,6 +523,10 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
         if !errors.isEmpty {
             showFeedback(errors.joined(separator: " "))
         }
+        if needsLiveRefresh {
+            needsLiveRefresh = false
+            await loadLibrary(force: true)
+        }
     }
 
     /// Merges two sources: `getStickers` (installed/recent/trending only) and `searchStickers`
@@ -550,7 +551,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 isSearching = false
             } catch {
                 isSearching = false
-                showFeedback("Premium stickers couldn't be loaded: \(telegramErrorDescription(error))")
+                showFeedback("Premium stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
             }
             return
         }
@@ -628,7 +629,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 )
                 await onSent()
             } catch {
-                showFeedback("Sticker couldn't be sent: \(telegramErrorDescription(error))")
+                showFeedback("Sticker couldn't be sent: \(telegramStickerErrorDescription(error))")
             }
             sendingStickerFileId = nil
         }
@@ -649,7 +650,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                     recentStickers.removeAll { $0.sticker.id == fileId }
                 }
             } catch {
-                showFeedback("Favorites couldn't be updated: \(telegramErrorDescription(error))")
+                showFeedback("Favorites couldn't be updated: \(telegramStickerErrorDescription(error))")
             }
             mutatingStickerFileId = nil
         }
@@ -667,7 +668,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 )
                 recentStickers.removeAll { $0.sticker.id == fileId }
             } catch {
-                showFeedback("The sticker couldn't be removed from Recent: \(telegramErrorDescription(error))")
+                showFeedback("The sticker couldn't be removed from Recent: \(telegramStickerErrorDescription(error))")
             }
             mutatingStickerFileId = nil
         }
@@ -678,7 +679,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
             _ = try await service.clearRecentStickers(isAttached: false)
             recentStickers.removeAll()
         } catch {
-            showFeedback("Recent stickers couldn't be cleared: \(telegramErrorDescription(error))")
+            showFeedback("Recent stickers couldn't be cleared: \(telegramStickerErrorDescription(error))")
         }
     }
 
@@ -694,7 +695,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 )
                 await loadLibrary(force: true)
             } catch {
-                showFeedback("\(stickerSet.title) couldn't be installed: \(telegramErrorDescription(error))")
+                showFeedback("\(stickerSet.title) couldn't be installed: \(telegramStickerErrorDescription(error))")
             }
             installingStickerSetId = nil
         }
@@ -832,7 +833,7 @@ private struct TelegramStickerSetPickerView<Preview: View, ContextPreview: View>
             stickerSet = loadedStickerSet
         } catch {
             guard !Task.isCancelled else { return }
-            errorMessage = telegramErrorDescription(error)
+            errorMessage = telegramStickerErrorDescription(error)
             await Task.yield()
             errorIsFocused = true
         }

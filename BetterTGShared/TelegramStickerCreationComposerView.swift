@@ -166,7 +166,7 @@ struct TelegramStickerCreationComposerView: View {
             await onCreated(stickerSet)
             dismiss()
         } catch {
-            errorMessage = telegramErrorDescription(error)
+            errorMessage = telegramStickerErrorDescription(error)
         }
     }
 }
