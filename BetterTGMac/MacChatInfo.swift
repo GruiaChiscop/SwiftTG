@@ -273,6 +273,7 @@ struct MacChatInfoView: View {
                 Text(info.title)
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)
+                identityBadges(info)
                 Text(model.conversationHeaderStatus ?? info.kind)
                     .foregroundStyle(.secondary)
             }
@@ -286,6 +287,40 @@ struct MacChatInfoView: View {
             .buttonStyle(.bordered)
             .controlSize(.large)
         }
+    }
+
+    @ViewBuilder private func identityBadges(_ info: TelegramChatInfoData) -> some View {
+        if info.isScam || info.isFake || info.isVerified || info.isPremium {
+            HStack(spacing: 6) {
+                if info.isScam {
+                    badgeCapsule("SCAM", accessibilityLabel: "Scam")
+                }
+                if info.isFake {
+                    badgeCapsule("FAKE", accessibilityLabel: "Fake")
+                }
+                if info.isVerified {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.blue)
+                        .accessibilityLabel("Verified")
+                }
+                if info.isPremium {
+                    Image(systemName: "star.circle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel("Telegram Premium")
+                }
+            }
+            .font(.subheadline)
+        }
+    }
+
+    private func badgeCapsule(_ text: String, accessibilityLabel: String) -> some View {
+        Text(text)
+            .font(.caption2.bold())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.red, in: Capsule())
+            .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder private func avatar(_ info: TelegramChatInfoData) -> some View {

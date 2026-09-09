@@ -38,6 +38,12 @@ struct TelegramChatInfoData: Equatable {
     var commonGroupCount: Int?
     var commonGroupsUserId: Int64?
     var isBlocked = false
+    /// Trust/identity badges shown in the header. `isScam`/`isFake` come from the peer's
+    /// `verificationStatus`; `isPremium` is user-only.
+    var isVerified = false
+    var isScam = false
+    var isFake = false
+    var isPremium = false
     var defaultMuteFor = 0
     var usesUnofficialApp = false
     var privacyPolicyURL: String?
@@ -304,6 +310,10 @@ struct TelegramChatInfoLoader {
         guard let user = try? await service.getUser(userId: userId) else { return }
         info.usernames = user.usernames?.activeUsernames ?? []
         info.phoneNumber = user.phoneNumber.isEmpty ? nil : "+\(user.phoneNumber)"
+        info.isVerified = user.verificationStatus?.isVerified ?? false
+        info.isScam = user.verificationStatus?.isScam ?? false
+        info.isFake = user.verificationStatus?.isFake ?? false
+        info.isPremium = user.isPremium
         let currentUserId = await (try? service.getMe())?.id
         let isRegularUser =
             if case .userTypeRegular = user.type {
@@ -391,6 +401,9 @@ struct TelegramChatInfoLoader {
     private func populateSupergroupInfo(_ info: inout TelegramChatInfoData, groupId: Int64) async {
         guard let group = try? await service.getSupergroup(supergroupId: groupId) else { return }
         info.usernames = group.usernames?.activeUsernames ?? []
+        info.isVerified = group.verificationStatus?.isVerified ?? false
+        info.isScam = group.verificationStatus?.isScam ?? false
+        info.isFake = group.verificationStatus?.isFake ?? false
         info.memberCount = group.memberCount > 0 ? group.memberCount : nil
         info.canLeave = telegramCanLeaveChat(group.status)
         info.canDeleteCommunity = telegramIsChatCreator(group.status)

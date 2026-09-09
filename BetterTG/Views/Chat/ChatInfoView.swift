@@ -334,6 +334,40 @@ struct ChatInfoView: View {
         }
     }
 
+    @ViewBuilder private func identityBadges(_ info: TelegramChatInfoData) -> some View {
+        if info.isScam || info.isFake || info.isVerified || info.isPremium {
+            HStack(spacing: 6) {
+                if info.isScam {
+                    badgeCapsule("SCAM", accessibilityLabel: "Scam")
+                }
+                if info.isFake {
+                    badgeCapsule("FAKE", accessibilityLabel: "Fake")
+                }
+                if info.isVerified {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.blue)
+                        .accessibilityLabel("Verified")
+                }
+                if info.isPremium {
+                    Image(systemName: "star.circle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel("Telegram Premium")
+                }
+            }
+            .font(.subheadline)
+        }
+    }
+
+    private func badgeCapsule(_ text: String, accessibilityLabel: String) -> some View {
+        Text(text)
+            .font(.caption2.bold())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.red, in: Capsule())
+            .accessibilityLabel(accessibilityLabel)
+    }
+
     private func identitySection(_ info: TelegramChatInfoData?) -> some View {
         Section {
             VStack(spacing: 12) {
@@ -351,6 +385,10 @@ struct ChatInfoView: View {
                     Text(chat.displayTitle)
                         .font(.title2.bold())
                         .multilineTextAlignment(.center)
+
+                    if let info {
+                        identityBadges(info)
+                    }
 
                     let identityStatus = status.isEmpty ? chat.kind.title : status
                     Text(identityStatus)
