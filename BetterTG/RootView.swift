@@ -36,14 +36,6 @@ struct RootView: View {
                     }
                     .animation(.default, value: rootVM.inAppNotificationBanner)
                     .animation(.default, value: rootVM.unconfirmedSession)
-
-                if !hasCompletedPostLoginPermissions {
-                    PostLoginPermissionsView {
-                        PostLoginPermissionsPreference.hasCompleted = true
-                        withAnimation { hasCompletedPostLoginPermissions = true }
-                    }
-                    .transition(.opacity)
-                }
             } else {
                 LoginView()
             }
@@ -63,6 +55,13 @@ struct RootView: View {
             guard rootVM.loggedIn else { return }
             PushNotificationsManager.shared.registerForRemoteNotifications()
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: TDLib.shared.service)
+            // Prompt for notifications, then contacts, directly after login - matches
+            // Telegram-iOS's own post-login `DeviceAccess.authorizeAccess` sequence. Contacts
+            // sync stays gated on the user's Data & Privacy toggle so an explicit opt-out sticks.
+            await PushNotificationsManager.shared.requestAuthorization()
+            if TelegramContactsSyncPreference.isEnabled {
+                await PermissionsManager.shared.requestAndSyncContacts()
+            }
         }
         // Applies everywhere in the subtree - link taps in message text, chat bios, link
         // previews, etc. - so `t.me`/`telegram.me`/`tg:` links resolve in-app instead of always
@@ -194,7 +193,6 @@ struct RootView: View {
 
     @State private var rootVM = RootVM.shared
     @State private var callSession = TelegramCallSession.shared
-    @State private var hasCompletedPostLoginPermissions = PostLoginPermissionsPreference.hasCompleted
 
     private func presentCallRatingSuccessIfNeeded() async {
         guard let token = callSession.callRatingSuccessToken else { return }

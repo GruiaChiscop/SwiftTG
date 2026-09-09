@@ -5,12 +5,13 @@ import SwiftUI
 
 // MARK: - TelegramContactsSyncPreference
 
-/// Whether the user explicitly chose to sync device contacts to Telegram.
+/// Whether the app syncs device contacts to Telegram after login (iOS-only). Defaults to on,
+/// matching Telegram-iOS's own default - the user turns it off in Data & Privacy to stop syncing.
 enum TelegramContactsSyncPreference {
     // MARK: Internal
 
     static var isEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: key) as? Bool ?? false }
+        get { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 
