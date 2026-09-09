@@ -99,6 +99,17 @@ struct MacChatInfoView: View {
         } message: {
             Text("You will leave this chat and may lose access to its messages.")
         }
+        .alert("Start Secret Chat", isPresented: $confirmStartSecretChat) {
+            Button("Start") {
+                if let userId = info?.privateChatUserId {
+                    dismiss()
+                    model.startSecretChat(userId: userId)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Start a secret chat with \(chat.displayTitle)?")
+        }
         .alert(blockDialogTitle, isPresented: $confirmBlock) {
             Button(blockConfirmationTitle, role: info?.isBlocked == true ? nil : .destructive) {
                 toggleBlock()
@@ -156,6 +167,7 @@ struct MacChatInfoView: View {
     @State private var avatarPath: String?
     @State private var confirmBlock = false
     @State private var confirmLeave = false
+    @State private var confirmStartSecretChat = false
     @State private var info: TelegramChatInfoData?
     @State private var isLoading = true
     @State private var reportRequest: TelegramReportRequest?
@@ -593,9 +605,18 @@ struct MacChatInfoView: View {
         }
     }
 
+    private func canStartSecretChat(_ info: TelegramChatInfoData) -> Bool {
+        chat.kind == .privateChat && !currentChat.isSavedMessages && info.privateChatUserId != nil
+    }
+
     @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         if hasActions(info) {
             Section {
+                if canStartSecretChat(info) {
+                    Button("Start Secret Chat", systemImage: "lock.fill") {
+                        confirmStartSecretChat = true
+                    }
+                }
                 if info.blockableUserId != nil {
                     let blockTitle = info.isBot
                         ? (info.isBlocked ? "Restart Bot" : "Stop Bot")
@@ -675,7 +696,8 @@ struct MacChatInfoView: View {
     }
 
     private func hasActions(_ info: TelegramChatInfoData) -> Bool {
-        info.blockableUserId != nil
+        canStartSecretChat(info)
+            || info.blockableUserId != nil
             || canReportChat
             || info.usesPrivacyCommand
             || info.privacyPolicyURL != nil

@@ -213,6 +213,20 @@ extension MacSessionModel {
         }
     }
 
+    func startSecretChat(userId: Int64) {
+        messageActionError = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let chat = try await service.createNewSecretChat(userId: userId)
+                await activateResolvedChat(chat, messageId: nil)
+            } catch {
+                guard !Task.isCancelled else { return }
+                messageActionError = "The secret chat couldn't be started: \(telegramErrorDescription(error))"
+            }
+        }
+    }
+
     func addContact(_ presentation: TelegramContactPresentation) {
         guard !isAddingContact else { return }
         isAddingContact = true

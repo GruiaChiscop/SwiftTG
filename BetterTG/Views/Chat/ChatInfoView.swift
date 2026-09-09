@@ -180,6 +180,12 @@ struct ChatInfoView: View {
         } message: {
             Text("You will leave this chat and it will be removed from your chat list.")
         }
+        .alert("Start Secret Chat", isPresented: $showsStartSecretChatConfirmation) {
+            Button("Start") { startSecretChat() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Start a secret chat with \(chat.displayTitle)?")
+        }
         .alert(
             "Chat Info Error",
             isPresented: Binding(
@@ -225,6 +231,8 @@ struct ChatInfoView: View {
     @State private var showDeleteConfirmation = false
     @State private var showClearHistoryConfirmation = false
     @State private var showLeaveConfirmation = false
+    @State private var showsStartSecretChatConfirmation = false
+    @State private var isStartingSecretChat = false
     @State private var showMuteOptions = false
     @State private var showsCameraPermissionAlert = false
     @State private var showsCommonGroups = false
@@ -719,15 +727,27 @@ struct ChatInfoView: View {
         }
     }
 
+    private var canStartSecretChat: Bool {
+        chat.kind == .privateChat && !chat.isSavedMessages && info?.privateChatUserId != nil
+    }
+
     @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         let policy = chat.actionPolicy
-        if info.blockableUserId != nil
+        if canStartSecretChat
+            || info.blockableUserId != nil
             || chat.chat.canBeReported
             || policy.canLeave
             || policy.canClearHistory
             || policy.canDeleteChat
         {
             Section {
+                if canStartSecretChat {
+                    Button("Start Secret Chat", systemImage: "lock.fill") {
+                        showsStartSecretChatConfirmation = true
+                    }
+                    .disabled(isStartingSecretChat)
+                }
+
                 if info.blockableUserId != nil {
                     Button(
                         blockActionTitle(info),
@@ -860,6 +880,27 @@ struct ChatInfoView: View {
     private func leaveChat() {
         RootVM.shared.leave(chat)
         dismiss()
+    }
+
+    private func startSecretChat() {
+        guard let userId = info?.privateChatUserId, !isStartingSecretChat else { return }
+        isStartingSecretChat = true
+        let service = chatVM.service
+        Task {
+            defer { isStartingSecretChat = false }
+            do {
+                let chat = try await service.createNewSecretChat(userId: userId)
+                guard let customChat = await RootVM.shared.getCustomChat(from: chat.id) else {
+                    errorMessage = "The secret chat was created but couldn't be opened."
+                    return
+                }
+                dismiss()
+                await Task.yield()
+                RootVM.shared.navigate(to: .customChat(customChat))
+            } catch {
+                errorMessage = telegramErrorDescription(error)
+            }
+        }
     }
 
     private func openSharedMediaMessage(_ messageId: Int64) {

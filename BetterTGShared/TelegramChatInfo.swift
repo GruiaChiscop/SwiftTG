@@ -63,6 +63,9 @@ struct TelegramChatInfoData: Equatable {
     var isBot = false
     var blockableUserId: Int64?
     var callUserId: Int64?
+    /// The other person's user id for a 1:1 chat with a regular (non-bot, non-deleted) user that
+    /// isn't yourself - drives "Start Secret Chat" and "Add to Contacts".
+    var privateChatUserId: Int64?
     var canStartAudioCall = false
     var canStartVideoCall = false
 }
@@ -329,6 +332,7 @@ struct TelegramChatInfoLoader {
             }
         let isCallEligible = isRegularUser && !user.isSupport && userId != currentUserId
         info.callUserId = isCallEligible ? userId : nil
+        info.privateChatUserId = (isRegularUser && userId != currentUserId) ? userId : nil
         switch user.type {
         case .userTypeBot:
             info.isBot = true
