@@ -4,12 +4,6 @@ import PhotosUI
 import SwiftUI
 import TDLibKit
 
-#if os(iOS)
-import UIKit
-#else
-import AppKit
-#endif
-
 // MARK: - EditProfileMode
 
 enum EditProfileMode: String, Hashable, Identifiable {
@@ -85,15 +79,38 @@ struct EditProfileView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .alert(
+            "Username Already Taken",
+            isPresented: Binding(
+                get: { fragmentUsernameOffer != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        fragmentUsernameOffer = nil
+                    }
+                },
+            ),
+            presenting: fragmentUsernameOffer,
+        ) { offeredUsername in
+            Button("View on Fragment") {
+                if let url = URL(string: "https://fragment.com/username/\(offeredUsername)") {
+                    openURL(url)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This username is already taken, but it's currently available for purchase on Fragment.")
+        }
     }
 
     // MARK: Private
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     @State private var bio = ""
     @State private var errorMessage: String?
     @State private var firstName = ""
+    @State private var fragmentUsernameOffer: String?
     @State private var hasLoaded = false
     @State private var isLoading = false
     @State private var isSaving = false
@@ -164,7 +181,7 @@ struct EditProfileView: View {
                 } header: {
                     Text("Bio")
                 } footer: {
-                    Text("Any details such as age, occupation or city.\nExample: 23 y.o. designer from San Francisco.")
+                    Text("Any details such as age, occupation or city.\nExample: 23 y.o. designer from London.")
                 }
             }
 
@@ -266,6 +283,16 @@ struct EditProfileView: View {
 
     @MainActor private func save() async {
         guard let loaded, canSave else { return }
+
+        // Catch obviously malformed usernames before the round-trip, mirroring Telegram-iOS's
+        // local `_internal_checkAddressNameFormat`. TDLib has no personal-username availability
+        // check (`checkChatUsername` is chats-only), so everything else is mapped from the error
+        // `setUsername` throws.
+        if username != loaded.username, let issue = Self.usernameFormatIssue(username) {
+            errorMessage = issue.message
+            return
+        }
+
         isSaving = true
         defer { isSaving = false }
         do {
@@ -287,7 +314,27 @@ struct EditProfileView: View {
                 _ = try await service.setBio(bio: bio)
             }
             if username != loaded.username {
-                _ = try await service.setUsername(username: username)
+                do {
+                    _ = try await service.setUsername(username: username)
+                } catch let error as TDLibKit.Error
+                    where error.message.trimmingCharacters(in: .whitespacesAndNewlines) == "USERNAME_PURCHASE_AVAILABLE"
+                {
+                    // The username is already taken but listed for auction on Fragment. Any
+                    // name/bio/photo edits above already went through, so reflect those and keep
+                    // the sheet open with the Fragment offer rather than a cryptic raw error.
+                    if let pendingPhotoData {
+                        photoData = pendingPhotoData
+                    }
+                    pendingPhotoData = nil
+                    self.loaded = LoadedProfile(
+                        firstName: firstName,
+                        lastName: lastName,
+                        bio: bio,
+                        username: loaded.username,
+                    )
+                    fragmentUsernameOffer = username
+                    return
+                }
             }
             if let pendingPhotoData {
                 photoData = pendingPhotoData
@@ -296,7 +343,87 @@ struct EditProfileView: View {
             self.loaded = LoadedProfile(firstName: firstName, lastName: lastName, bio: bio, username: username)
             dismiss()
         } catch {
-            errorMessage = telegramErrorDescription(error)
+            errorMessage = Self.editProfileErrorMessage(error)
+        }
+    }
+
+    /// Mirrors Telegram-iOS's local `_internal_checkAddressNameFormat`. An empty string is
+    /// allowed - it clears the username.
+    private static func usernameFormatIssue(_ value: String) -> UsernameFormatIssue? {
+        guard !value.isEmpty else { return nil }
+        guard value.count >= 5 else { return .tooShort }
+        guard let first = value.first else { return nil }
+        if first == "_" { return .startsWithUnderscore }
+        if first >= "0", first <= "9" { return .startsWithNumber }
+        if value.hasSuffix("_") { return .endsWithUnderscore }
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_",
+        )
+        if value.unicodeScalars.contains(where: { !allowed.contains($0) }) { return .invalidCharacters }
+        return nil
+    }
+
+    /// Maps the raw Telegram/TDLib error strings that `setProfilePhoto`/`setName`/`setBio`/
+    /// `setUsername` can throw to readable text. `USERNAME_PURCHASE_AVAILABLE` is handled at the
+    /// call site instead, with its own Fragment alert.
+    private static func editProfileErrorMessage(_ error: Swift.Error) -> String {
+        guard let error = error as? TDLibKit.Error else {
+            return telegramErrorDescription(error)
+        }
+        let message = error.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if error.code == 429 || message.hasPrefix("FLOOD_WAIT") || message.hasPrefix("Too Many Requests") {
+            return "You're doing that too often. Please wait a moment and try again."
+        }
+        switch message {
+        case "USERNAME_INVALID":
+            return "This username isn't valid. Use 5–32 letters, numbers or underscores, and don't start with a number."
+        case "USERNAME_OCCUPIED":
+            return "This username is already taken. Please choose another."
+        case "USERNAMES_ACTIVE_TOO_MUCH":
+            return "You already have the maximum number of active usernames. Remove one before adding another."
+        case "USERNAME_NOT_MODIFIED", "ABOUT_NOT_MODIFIED", "NAME_NOT_MODIFIED":
+            return "That's already your current profile - nothing to update."
+        case "FIRSTNAME_INVALID":
+            return "That first name isn't valid. Please try a different one."
+        case "LASTNAME_INVALID":
+            return "That last name isn't valid. Please try a different one."
+        case "ABOUT_TOO_LONG":
+            return "Your bio is too long. Please shorten it and try again."
+        case "PHOTO_EXT_INVALID", "PHOTO_CONTENT_TYPE_INVALID", "PHOTO_FILE_MISSING":
+            return "That file isn't a supported image. Please pick a different photo."
+        case "PHOTO_INVALID_DIMENSIONS", "PHOTO_CROP_SIZE_SMALL":
+            return "That image is too small to use as a profile photo. Please pick a larger one."
+        case "IMAGE_PROCESS_FAILED":
+            return "Telegram couldn't process that image. Please try a different photo."
+        default:
+            return telegramErrorDescription(error)
+        }
+    }
+}
+
+// MARK: - UsernameFormatIssue
+
+private enum UsernameFormatIssue {
+    case tooShort
+    case startsWithNumber
+    case startsWithUnderscore
+    case endsWithUnderscore
+    case invalidCharacters
+
+    // MARK: Internal
+
+    var message: String {
+        switch self {
+        case .tooShort:
+            "Usernames need to be at least 5 characters long."
+        case .startsWithNumber:
+            "Usernames can't start with a number."
+        case .startsWithUnderscore:
+            "Usernames can't start with an underscore."
+        case .endsWithUnderscore:
+            "Usernames can't end with an underscore."
+        case .invalidCharacters:
+            "Usernames can only use letters, numbers and underscores."
         }
     }
 }
