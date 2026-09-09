@@ -15,6 +15,7 @@ struct ChatInfoView: View {
             if let info {
                 profileInformationSection(info)
                 notificationsSection(info)
+                autoDeleteSection(info)
                 videoChatSection
                 memberDetailsSection(info)
                 sharedContentSection(info)
@@ -219,6 +220,7 @@ struct ChatInfoView: View {
     @State private var reportRequest: TelegramReportRequest?
     @State private var isLoading = true
     @State private var muteOverride: Bool?
+    @State private var autoDeleteOverride: Int?
     @State private var managedVideoChat: GroupCall?
     @State private var showDeleteConfirmation = false
     @State private var showClearHistoryConfirmation = false
@@ -243,6 +245,33 @@ struct ChatInfoView: View {
 
     private var status: String {
         !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
+    }
+
+    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
+    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
+        ("Off", 0),
+        ("1 Day", 86_400),
+        ("1 Week", 604_800),
+        ("1 Month", 2_678_400),
+    ]
+
+    private var autoDeleteSeconds: Int {
+        autoDeleteOverride ?? info?.messageAutoDeleteTime ?? 0
+    }
+
+    private var autoDeleteDescription: String {
+        Self.autoDeleteLabel(autoDeleteSeconds)
+    }
+
+    private static func autoDeleteLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 0: "Off"
+        case 86_400: "1 day"
+        case 604_800: "1 week"
+        case 2_678_400: "1 month"
+        case let value where value % 86_400 == 0: "\(value / 86_400) days"
+        default: "\(max(1, seconds / 3_600)) hours"
+        }
     }
 
     private var videoChatTitle: String {
@@ -358,7 +387,7 @@ struct ChatInfoView: View {
         }
     }
 
-    private func badgeCapsule(_ text: String, accessibilityLabel: String) -> some View {
+    private func badgeCapsule(_ text: String) -> some View {
         Text(text)
             .font(.caption2.bold())
             .foregroundStyle(.white)
@@ -429,6 +458,45 @@ struct ChatInfoView: View {
 
             TelegramChatSoundRow(service: chatVM.service, chatId: chat.id, settings: chat.notificationSettings)
         }
+    }
+
+    @ViewBuilder private func autoDeleteSection(_ info: TelegramChatInfoData) -> some View {
+        let canEdit = canEditAutoDelete(info)
+        if canEdit || autoDeleteSeconds > 0 {
+            Section {
+                if canEdit {
+                    Menu {
+                        ForEach(Self.autoDeletePresets, id: \.seconds) { preset in
+                            Button {
+                                setAutoDelete(preset.seconds)
+                            } label: {
+                                if autoDeleteSeconds == preset.seconds {
+                                    Label(preset.title, systemImage: "checkmark")
+                                } else {
+                                    Text(preset.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        autoDeleteRowLabel
+                    }
+                } else {
+                    autoDeleteRowLabel
+                }
+            } footer: {
+                Text("Automatically delete messages sent in this chat after a certain period of time.")
+            }
+        }
+    }
+
+    private var autoDeleteRowLabel: some View {
+        LabeledContent {
+            Text(autoDeleteDescription)
+        } label: {
+            Label("Auto-Delete Messages", systemImage: "timer")
+        }
+        .foregroundStyle(.primary)
+        .contentShape(Rectangle())
     }
 
     private func sharedContentSection(_ info: TelegramChatInfoData) -> some View {
@@ -524,12 +592,16 @@ struct ChatInfoView: View {
         let chatId = chat.id
         dismiss()
         Task {
-            _ = try? await TelegramMessageSending.send(
-                service: service,
-                chatId: chatId,
-                contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
-                replyTo: nil,
-            )
+            do {
+                _ = try await TelegramMessageSending.send(
+                    service: service,
+                    chatId: chatId,
+                    contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
+                    replyTo: nil,
+                )
+            } catch {
+                print("Sending /privacy to the bot failed: \(telegramErrorDescription(error))")
+            }
         }
     }
 
@@ -704,6 +776,44 @@ struct ChatInfoView: View {
     private func setMuteDuration(_ duration: Int) {
         muteOverride = duration > 0
         RootVM.shared.setMuteDuration(duration, for: chat)
+    }
+
+    private func canEditAutoDelete(_ info: TelegramChatInfoData) -> Bool {
+        guard !chat.isSavedMessages else { return false }
+        switch chat.kind {
+        case .privateChat, .bot:
+            return true
+        case .group, .channel:
+            return info.canChangeInfo
+        }
+    }
+
+    private func setAutoDelete(_ seconds: Int) {
+        let previous = autoDeleteSeconds
+        guard seconds != previous else { return }
+        autoDeleteOverride = seconds
+        let service = chatVM.service
+        let chatId = chat.id
+        Task {
+            do {
+                _ = try await service.setChatMessageAutoDeleteTime(
+                    chatId: chatId,
+                    messageAutoDeleteTime: seconds,
+                )
+                info?.messageAutoDeleteTime = seconds
+                // Telegram-iOS confirms the change with an undo toast; a VoiceOver announcement
+                // is the equivalent here.
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: seconds == 0
+                        ? "Auto-Delete is now off."
+                        : "Auto-Delete timer set to \(Self.autoDeleteLabel(seconds)).",
+                )
+            } catch {
+                autoDeleteOverride = previous
+                errorMessage = telegramErrorDescription(error)
+            }
+        }
     }
 
     private func startAudioCall() {

@@ -468,6 +468,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func setAutosaveSettings(scope: AutosaveSettingsScope?, settings: ScopeAutosaveSettings?) async throws -> Ok
     func getDefaultMessageAutoDeleteTime() async throws -> MessageAutoDeleteTime
     func setDefaultMessageAutoDeleteTime(messageAutoDeleteTime: MessageAutoDeleteTime?) async throws -> Ok
+    func setChatMessageAutoDeleteTime(chatId: Int64?, messageAutoDeleteTime: Int?) async throws -> Ok
     func setPollAnswer(chatId: Int64?, messageId: Int64?, optionIds: [Int]?) async throws -> Ok
     func markChecklistTasksAsDone(
         chatId: Int64?,
@@ -660,6 +661,10 @@ extension TelegramSession: TelegramService {
 
     func setDefaultMessageAutoDeleteTime(messageAutoDeleteTime: MessageAutoDeleteTime?) async throws -> Ok {
         try await client.setDefaultMessageAutoDeleteTime(messageAutoDeleteTime: messageAutoDeleteTime)
+    }
+
+    func setChatMessageAutoDeleteTime(chatId: Int64?, messageAutoDeleteTime: Int?) async throws -> Ok {
+        try await client.setChatMessageAutoDeleteTime(chatId: chatId, messageAutoDeleteTime: messageAutoDeleteTime)
     }
 
     func optimizeStorage(

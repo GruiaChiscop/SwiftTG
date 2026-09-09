@@ -20,6 +20,7 @@ struct MacChatInfoView: View {
                     List {
                         identitySection(info)
                         notificationsSection()
+                        autoDeleteSection(info)
                         detailsSections(info)
                         sharedMediaSection(info)
                         unofficialAppWarningSection(info)
@@ -162,12 +163,40 @@ struct MacChatInfoView: View {
     @State private var showClearHistoryOptions = false
     @State private var showDeleteOptions = false
     @State private var showMuteOptions = false
+    @State private var autoDeleteOverride: Int?
     @State private var showsCommonGroups = false
     @State private var showsScheduledMessages = false
     @State private var showsSharedMedia = false
 
     private var currentChat: ChatListItemState {
         model.chatList.items[chat.chatId] ?? chat
+    }
+
+    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
+    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
+        ("Off", 0),
+        ("1 Day", 86_400),
+        ("1 Week", 604_800),
+        ("1 Month", 2_678_400),
+    ]
+
+    private var autoDeleteSeconds: Int {
+        autoDeleteOverride ?? info?.messageAutoDeleteTime ?? 0
+    }
+
+    private var autoDeleteDescription: String {
+        Self.autoDeleteLabel(autoDeleteSeconds)
+    }
+
+    private static func autoDeleteLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 0: "Off"
+        case 86_400: "1 day"
+        case 604_800: "1 week"
+        case 2_678_400: "1 month"
+        case let value where value % 86_400 == 0: "\(value / 86_400) days"
+        default: "\(max(1, seconds / 3_600)) hours"
+        }
     }
 
     private var isMuted: Bool {
@@ -244,6 +273,44 @@ struct MacChatInfoView: View {
         }
     }
 
+    @ViewBuilder private func autoDeleteSection(_ info: TelegramChatInfoData) -> some View {
+        let canEdit = canEditAutoDelete(info)
+        if canEdit || autoDeleteSeconds > 0 {
+            Section {
+                if canEdit {
+                    Menu {
+                        ForEach(Self.autoDeletePresets, id: \.seconds) { preset in
+                            Button {
+                                setAutoDelete(preset.seconds)
+                            } label: {
+                                if autoDeleteSeconds == preset.seconds {
+                                    Label(preset.title, systemImage: "checkmark")
+                                } else {
+                                    Text(preset.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        autoDeleteRowLabel
+                    }
+                } else {
+                    autoDeleteRowLabel
+                }
+            } footer: {
+                Text("Automatically delete messages sent in this chat after a certain period of time.")
+            }
+        }
+    }
+
+    private var autoDeleteRowLabel: some View {
+        LabeledContent {
+            Text(autoDeleteDescription)
+        } label: {
+            Label("Auto-Delete Messages", systemImage: "timer")
+        }
+        .contentShape(Rectangle())
+    }
+
     private func sharedMediaSection(_ info: TelegramChatInfoData) -> some View {
         Section {
             Button("Shared Media", systemImage: "photo.on.rectangle") {
@@ -293,10 +360,10 @@ struct MacChatInfoView: View {
         if info.isScam || info.isFake || info.isVerified || info.isPremium {
             HStack(spacing: 6) {
                 if info.isScam {
-                    badgeCapsule("SCAM", accessibilityLabel: "Scam")
+                    badgeCapsule("SCAM")
                 }
                 if info.isFake {
-                    badgeCapsule("FAKE", accessibilityLabel: "Fake")
+                    badgeCapsule("FAKE")
                 }
                 if info.isVerified {
                     Image(systemName: "checkmark.seal.fill")
@@ -313,14 +380,13 @@ struct MacChatInfoView: View {
         }
     }
 
-    private func badgeCapsule(_ text: String, accessibilityLabel: String) -> some View {
+    private func badgeCapsule(_ text: String) -> some View {
         Text(text)
             .font(.caption2.bold())
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(.red, in: Capsule())
-            .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder private func avatar(_ info: TelegramChatInfoData) -> some View {
@@ -587,12 +653,16 @@ struct MacChatInfoView: View {
         let chatId = chat.chatId
         dismiss()
         Task {
-            _ = try? await TelegramMessageSending.send(
-                service: service,
-                chatId: chatId,
-                contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
-                replyTo: nil,
-            )
+            do {
+                _ = try await TelegramMessageSending.send(
+                    service: service,
+                    chatId: chatId,
+                    contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
+                    replyTo: nil,
+                )
+            } catch {
+                print("Sending /privacy to the bot failed: \(telegramErrorDescription(error))")
+            }
         }
     }
 
@@ -655,6 +725,52 @@ struct MacChatInfoView: View {
             let blocked = !current.isBlocked
             guard await model.setChatInfoBlocked(blocked, userId: userId), !Task.isCancelled else { return }
             info?.isBlocked = blocked
+        }
+    }
+
+    private func canEditAutoDelete(_ info: TelegramChatInfoData) -> Bool {
+        guard !currentChat.isSavedMessages else { return false }
+        switch chat.kind {
+        case .privateChat, .secretChat:
+            return true
+        case .group, .channel:
+            return info.canChangeInfo
+        }
+    }
+
+    /// Telegram-iOS confirms the change with an undo toast; a VoiceOver announcement is the
+    /// equivalent here.
+    private func announceAutoDelete(_ seconds: Int) {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        NSAccessibility.post(
+            element: window,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: seconds == 0
+                    ? "Auto-Delete is now off."
+                    : "Auto-Delete timer set to \(Self.autoDeleteLabel(seconds)).",
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ],
+        )
+    }
+
+    private func setAutoDelete(_ seconds: Int) {
+        let previous = autoDeleteSeconds
+        guard seconds != previous else { return }
+        autoDeleteOverride = seconds
+        let service = model.service
+        let chatId = chat.chatId
+        Task {
+            do {
+                _ = try await service.setChatMessageAutoDeleteTime(
+                    chatId: chatId,
+                    messageAutoDeleteTime: seconds,
+                )
+                info?.messageAutoDeleteTime = seconds
+                announceAutoDelete(seconds)
+            } catch {
+                autoDeleteOverride = previous
+            }
         }
     }
 }

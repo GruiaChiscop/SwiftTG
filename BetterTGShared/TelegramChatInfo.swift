@@ -38,6 +38,8 @@ struct TelegramChatInfoData: Equatable {
     var commonGroupCount: Int?
     var commonGroupsUserId: Int64?
     var isBlocked = false
+    /// Current message auto-delete / self-destruct time for this chat, in seconds. 0 = off.
+    var messageAutoDeleteTime = 0
     /// Trust/identity badges shown in the header. `isScam`/`isFake` come from the peer's
     /// `verificationStatus`; `isPremium` is user-only.
     var isVerified = false
@@ -53,6 +55,9 @@ struct TelegramChatInfoData: Equatable {
     var canBrowseMembers = false
     var canManageMembers = false
     var canRestrictMembers = false
+    /// `change_info` admin right (or creator) - TDLib requires it to change the chat's
+    /// message-auto-delete time in a group/channel.
+    var canChangeInfo = false
     var canLeave = false
     var canDeleteCommunity = false
     var isBot = false
@@ -148,6 +153,7 @@ struct TelegramChatInfoLoader {
             photoFileId: isSavedMessages ? nil : chat.photo?.small.id,
             isSavedMessages: isSavedMessages,
         )
+        info.messageAutoDeleteTime = chat.messageAutoDeleteTime
         let scope = telegramNotificationScope(for: chat.type)
         info.defaultMuteFor = await (try? service.getScopeNotificationSettings(scope: scope))?.muteFor ?? 0
 
@@ -364,6 +370,7 @@ struct TelegramChatInfoLoader {
         info.canDeleteCommunity = telegramIsChatCreator(group.status)
         info.canManageMembers = telegramCanManageMembers(group.status)
         info.canRestrictMembers = telegramCanRestrictMembers(group.status)
+        info.canChangeInfo = telegramCanChangeInfo(group.status)
         info.canBrowseMembers = true
 
         guard let full = try? await service.getBasicGroupFullInfo(basicGroupId: groupId) else { return }
@@ -409,6 +416,7 @@ struct TelegramChatInfoLoader {
         info.canDeleteCommunity = telegramIsChatCreator(group.status)
         info.canManageMembers = telegramCanManageMembers(group.status)
         info.canRestrictMembers = telegramCanRestrictMembers(group.status)
+        info.canChangeInfo = telegramCanChangeInfo(group.status)
 
         guard let full = try? await service.getSupergroupFullInfo(supergroupId: groupId) else { return }
         info.about = full.description.telegramNilIfEmpty.map { FormattedText(entities: [], text: $0) }
@@ -476,6 +484,17 @@ func telegramCanRestrictMembers(_ status: ChatMemberStatus) -> Bool {
         true
     case .chatMemberStatusAdministrator(let value):
         value.rights.canRestrictMembers
+    case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember, .chatMemberStatusRestricted:
+        false
+    }
+}
+
+func telegramCanChangeInfo(_ status: ChatMemberStatus) -> Bool {
+    switch status {
+    case .chatMemberStatusCreator:
+        true
+    case .chatMemberStatusAdministrator(let value):
+        value.rights.canChangeInfo
     case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember, .chatMemberStatusRestricted:
         false
     }
