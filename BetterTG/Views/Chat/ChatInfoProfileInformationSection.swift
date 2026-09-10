@@ -10,6 +10,7 @@ struct ChatInfoProfileInformationSection: View {
     // MARK: Internal
 
     let info: TelegramChatInfoData
+    let onError: (String) -> Void
 
     var body: some View {
         if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
@@ -77,6 +78,7 @@ struct ChatInfoProfileInformationSection: View {
                     } label: {
                         Label("Privacy Policy", systemImage: "hand.raised")
                     }
+                    .disabled(isSendingPrivacyCommand)
                 }
             }
         }
@@ -86,6 +88,7 @@ struct ChatInfoProfileInformationSection: View {
 
     @Environment(ChatVM.self) private var chatVM
     @Environment(\.dismiss) private var dismiss
+    @State private var isSendingPrivacyCommand = false
 
     private var kind: CustomChat.ChatKind { chatVM.customChat.kind }
 
@@ -150,10 +153,12 @@ struct ChatInfoProfileInformationSection: View {
     /// For a bot that exposes a `/privacy` command instead of a policy URL: mirrors Telegram's
     /// own behaviour of sending that command to the bot.
     private func sendPrivacyCommand() {
+        guard !isSendingPrivacyCommand else { return }
         let service = chatVM.service
         let chatId = chatVM.customChat.id
-        dismiss()
+        isSendingPrivacyCommand = true
         Task {
+            defer { isSendingPrivacyCommand = false }
             do {
                 _ = try await TelegramMessageSending.send(
                     service: service,
@@ -161,8 +166,9 @@ struct ChatInfoProfileInformationSection: View {
                     contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
                     replyTo: nil,
                 )
+                dismiss()
             } catch {
-                print("Sending /privacy to the bot failed: \(telegramErrorDescription(error))")
+                onError(telegramErrorDescription(error))
             }
         }
     }

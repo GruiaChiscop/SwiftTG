@@ -18,9 +18,11 @@ struct ChatInfoView: View {
             )
 
             if let info {
-                ChatInfoProfileInformationSection(info: info)
+                ChatInfoProfileInformationSection(info: info) { errorMessage = $0 }
                 ChatInfoNotificationsSection(
                     isMuted: isMuted(info),
+                    defaultShowPreview: info.defaultShowPreview,
+                    defaultMuteStories: info.defaultMuteStories,
                     onMuteButtonTapped: {
                         if isMuted(info) {
                             setMuteDuration(0)
@@ -28,6 +30,7 @@ struct ChatInfoView: View {
                             showMuteOptions = true
                         }
                     },
+                    onError: { errorMessage = $0 },
                 )
                 ChatInfoAutoDeleteSection(info: info) { errorMessage = $0 }
                 videoChatSection

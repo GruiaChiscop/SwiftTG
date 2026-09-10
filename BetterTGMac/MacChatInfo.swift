@@ -172,6 +172,21 @@ struct MacChatInfoView: View {
         } message: {
             Text("All messages will be removed, but the chat will remain in your chat list.")
         }
+        .alert(
+            "Chat Info Error",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                },
+            ),
+        ) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     // MARK: Private
@@ -190,6 +205,8 @@ struct MacChatInfoView: View {
     @State private var showDeleteOptions = false
     @State private var showMuteOptions = false
     @State private var autoDeleteOverride: Int?
+    @State private var isSavingAutoDelete = false
+    @State private var errorMessage: String?
     @State private var showsCommonGroups = false
     @State private var showsScheduledMessages = false
     @State private var showsSharedMedia = false
@@ -301,6 +318,9 @@ struct MacChatInfoView: View {
                 service: model.service,
                 chatId: chat.chatId,
                 settings: chatNotificationSettings,
+                defaultShowPreview: info?.defaultShowPreview ?? true,
+                defaultMuteStories: info?.defaultMuteStories ?? false,
+                onError: { errorMessage = $0 },
             )
         }
     }
@@ -325,6 +345,7 @@ struct MacChatInfoView: View {
                     } label: {
                         autoDeleteRowLabel
                     }
+                    .disabled(isSavingAutoDelete)
                 } else {
                     autoDeleteRowLabel
                 }
@@ -832,11 +853,13 @@ struct MacChatInfoView: View {
 
     private func setAutoDelete(_ seconds: Int) {
         let previous = autoDeleteSeconds
-        guard seconds != previous else { return }
+        guard seconds != previous, !isSavingAutoDelete else { return }
         autoDeleteOverride = seconds
+        isSavingAutoDelete = true
         let service = model.service
         let chatId = chat.chatId
         Task {
+            defer { isSavingAutoDelete = false }
             do {
                 _ = try await service.setChatMessageAutoDeleteTime(
                     chatId: chatId,
@@ -845,6 +868,7 @@ struct MacChatInfoView: View {
                 info?.messageAutoDeleteTime = seconds
             } catch {
                 autoDeleteOverride = previous
+                errorMessage = telegramErrorDescription(error)
             }
         }
     }

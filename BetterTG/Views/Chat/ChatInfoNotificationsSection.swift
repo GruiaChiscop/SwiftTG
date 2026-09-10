@@ -5,8 +5,13 @@ import SwiftUI
 /// Mute toggle, notification sound, and preview/story toggles. The mute-duration popover is
 /// owned by `ChatInfoView` (popovers don't fire reliably from inside a `List` row).
 struct ChatInfoNotificationsSection: View {
+    // MARK: Internal
+
     let isMuted: Bool
+    let defaultShowPreview: Bool
+    let defaultMuteStories: Bool
     let onMuteButtonTapped: () -> Void
+    let onError: (String) -> Void
 
     var body: some View {
         Section("Notifications") {
@@ -26,6 +31,9 @@ struct ChatInfoNotificationsSection: View {
                 service: chatVM.service,
                 chatId: chat.id,
                 settings: chat.notificationSettings,
+                defaultShowPreview: defaultShowPreview,
+                defaultMuteStories: defaultMuteStories,
+                onError: onError,
             )
         }
     }

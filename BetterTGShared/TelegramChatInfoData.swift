@@ -32,6 +32,8 @@ struct TelegramChatInfoData: Equatable {
     var isFake = false
     var isPremium = false
     var defaultMuteFor = 0
+    var defaultShowPreview = true
+    var defaultMuteStories = false
     var usesUnofficialApp = false
     var privacyPolicyURL: String?
     var usesPrivacyCommand = false

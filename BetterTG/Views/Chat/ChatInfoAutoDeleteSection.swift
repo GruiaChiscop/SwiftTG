@@ -30,6 +30,7 @@ struct ChatInfoAutoDeleteSection: View {
                     } label: {
                         rowLabel
                     }
+                    .disabled(isSaving)
                 } else {
                     rowLabel
                 }
@@ -51,6 +52,7 @@ struct ChatInfoAutoDeleteSection: View {
 
     @Environment(ChatVM.self) private var chatVM
     @State private var autoDeleteOverride: Int?
+    @State private var isSaving = false
 
     private var chat: CustomChat { chatVM.customChat }
 
@@ -91,11 +93,13 @@ struct ChatInfoAutoDeleteSection: View {
 
     private func setAutoDelete(_ seconds: Int) {
         let previous = autoDeleteSeconds
-        guard seconds != previous else { return }
+        guard seconds != previous, !isSaving else { return }
         autoDeleteOverride = seconds
+        isSaving = true
         let service = chatVM.service
         let chatId = chat.id
         Task {
+            defer { isSaving = false }
             do {
                 _ = try await service.setChatMessageAutoDeleteTime(
                     chatId: chatId,

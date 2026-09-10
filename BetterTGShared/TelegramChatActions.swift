@@ -132,9 +132,9 @@ enum TelegramChatActions {
         chatId: Int64,
         showPreview: Bool,
         current: ChatNotificationSettings,
-    ) async -> ChatNotificationSettings {
+    ) async throws -> ChatNotificationSettings {
         let updated = overriding(current, showPreview: showPreview)
-        _ = try? await service.setChatNotificationSettings(chatId: chatId, notificationSettings: updated)
+        _ = try await service.setChatNotificationSettings(chatId: chatId, notificationSettings: updated)
         return updated
     }
 
@@ -143,9 +143,9 @@ enum TelegramChatActions {
         chatId: Int64,
         muteStories: Bool,
         current: ChatNotificationSettings,
-    ) async -> ChatNotificationSettings {
+    ) async throws -> ChatNotificationSettings {
         let updated = overriding(current, muteStories: muteStories)
-        _ = try? await service.setChatNotificationSettings(chatId: chatId, notificationSettings: updated)
+        _ = try await service.setChatNotificationSettings(chatId: chatId, notificationSettings: updated)
         return updated
     }
 

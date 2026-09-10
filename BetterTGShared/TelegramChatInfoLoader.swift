@@ -28,7 +28,11 @@ struct TelegramChatInfoLoader {
         info.hasProtectedContent = chat.hasProtectedContent
         info.reactionsSummary = telegramReactionsSummary(chat.availableReactions)
         let scope = telegramNotificationScope(for: chat.type)
-        info.defaultMuteFor = await (try? service.getScopeNotificationSettings(scope: scope))?.muteFor ?? 0
+        if let scopeSettings = try? await service.getScopeNotificationSettings(scope: scope) {
+            info.defaultMuteFor = scopeSettings.muteFor
+            info.defaultShowPreview = scopeSettings.showPreview
+            info.defaultMuteStories = scopeSettings.muteStories
+        }
 
         switch chat.type {
         case .chatTypePrivate(let value):
