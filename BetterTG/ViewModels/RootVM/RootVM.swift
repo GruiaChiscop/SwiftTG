@@ -167,7 +167,16 @@ struct ChatListLoadKey: Hashable, Sendable {
     func navigate(to route: Route) {
         path.append(route)
     }
-    
+
+    /// Drives TDLib's `"online"` option from the app's foreground state. Without this the server
+    /// never spontaneously pushes peers' `updateUserStatus`, so an open chat shows a stale
+    /// "last seen" until some other traffic (like sending a message) drags a fresh status along.
+    /// Wired to `scenePhase` in `BetterTGApp` and re-asserted after login in `RootView`.
+    func updateOnlinePresence(active: Bool) {
+        guard loggedIn else { return }
+        Task { await telegramSetOnlinePresence(active, service: service) }
+    }
+
     func getCustomChat(from id: Int64, for chatList: ChatList) async -> CustomChat? {
         guard let chat = try? await service.getChat(chatId: id),
               let position = chat.positions.first(chatList) else { return nil }

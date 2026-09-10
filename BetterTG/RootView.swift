@@ -54,6 +54,9 @@ struct RootView: View {
         .task(id: rootVM.loggedIn) {
             guard rootVM.loggedIn else { return }
             PushNotificationsManager.shared.registerForRemoteNotifications()
+            // A fresh TDLib client starts in the power-saving (offline) mode; assert online here so
+            // peer presence updates start streaming without waiting for a scenePhase transition.
+            rootVM.updateOnlinePresence(active: true)
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: TDLib.shared.service)
             // Prompt for notifications, then contacts, directly after login - matches
             // Telegram-iOS's own post-login `DeviceAccess.authorizeAccess` sequence. Contacts

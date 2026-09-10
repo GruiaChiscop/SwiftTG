@@ -9,8 +9,20 @@ extension MacSessionModel {
         editingMessage == nil ? linkPreviewComposer : editLinkPreviewComposer
     }
 
+    /// Drives the outgoing "typing…" indicator from `messageText` changes, mirroring Unigram's
+    /// `ChatTextBox` → `OutputChatActionManager`. Editing an existing message isn't "typing".
+    func noteComposerTypingChange(from oldValue: NSAttributedString) {
+        guard editingMessage == nil else { return }
+        if messageText.string.isEmpty {
+            typingActionManager?.cancel()
+        } else if messageText.string != oldValue.string {
+            typingActionManager?.noteTyping()
+        }
+    }
+
     func submitComposer(schedulingState: MessageSchedulingState? = nil) {
         guard !isSubmittingMessage else { return }
+        typingActionManager?.cancel()
         if !selectedDocumentURLs.isEmpty, editingMessage == nil {
             sendSelectedDocuments(schedulingState: schedulingState)
         } else if !selectedPhotoURLs.isEmpty, editingMessage == nil {

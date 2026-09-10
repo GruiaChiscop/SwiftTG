@@ -473,7 +473,10 @@ struct ChatBottomArea: View {
         .font(.system(size: 22))
         .foregroundStyle(.white)
         .disabled(chatVM.isSubmittingMessage)
-        .onChange(of: chatVM.text) { withAnimation { chatVM.showDetail = false } }
+        .onChange(of: chatVM.text) {
+            withAnimation { chatVM.showDetail = false }
+            chatVM.handleComposerTextChange()
+        }
         .onChange(of: chatVM.editMessageText) { withAnimation { chatVM.showDetail = false } }
         .onChange(of: chatVM.replyMessage) {
             if chatVM.replyMessage == nil {

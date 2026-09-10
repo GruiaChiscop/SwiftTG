@@ -36,6 +36,12 @@ import TDLibKit
         self.videoRecorder = TelegramVideoNoteRecorder()
         self.conversationSearch = TelegramConversationSearchStore(service: service)
         self.favoriteStickers = TelegramFavoriteStickersStore(service: service)
+        self.typingActionManager = TelegramTypingActionManager(
+            service: service,
+            chatId: customChat.chat.id,
+            topicId: messageTopic,
+            isEnabled: !customChat.isSavedMessages && customChat.supergroup?.isChannel != true,
+        )
         self.onlineStatus =
             if let user = customChat.user {
                 getOnlineStatus(from: user.status)
@@ -46,6 +52,7 @@ import TDLibKit
 
     deinit {
         conversationStatusTask?.cancel()
+        presenceExpiryTask?.cancel()
         pinnedMessagesTask?.cancel()
         guard hasStarted else { return }
         let chatId = chatId
@@ -78,6 +85,7 @@ import TDLibKit
     let videoRecorder: TelegramVideoNoteRecorder
     let conversationSearch: TelegramConversationSearchStore
     let favoriteStickers: TelegramFavoriteStickersStore
+    let typingActionManager: TelegramTypingActionManager
 
     var actionStatus = ""
     var isJoiningChat = false
@@ -88,9 +96,17 @@ import TDLibKit
 
     /// `onlineStatus` plus a ", N online" suffix for groups. Used for the conversation header and
     /// chat-info subtitle.
+    ///
+    /// Every input is read into a local *before* branching: this is a computed property on an
+    /// `@Observable`, and SwiftUI only tracks the properties actually read during a body pass -
+    /// a short-circuiting `guard` would drop `onlineMemberCount` (or `customChat.type`) as a
+    /// dependency and the status would stop updating live.
     var conversationStatus: String {
-        guard !onlineStatus.isEmpty, onlineMemberCount > 0, isGroupChat else { return onlineStatus }
-        return "\(onlineStatus), \(onlineMemberCount.formatted()) online"
+        let base = onlineStatus
+        let online = onlineMemberCount
+        let isGroup = isGroupChat
+        guard isGroup, online > 0, !base.isEmpty else { return base }
+        return "\(base), \(online.formatted()) online"
     }
 
     var isGroupChat: Bool {
@@ -148,6 +164,9 @@ import TDLibKit
     @ObservationIgnored var pendingViewedMessageIds = Set<Int64>()
     @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
     @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
+    /// One-shot timer that downgrades a stale "Online" once `UserStatusOnline.expires` passes
+    /// without a fresh `updateUserStatus` from the server. See `applyUserPresence(_:)`.
+    @ObservationIgnored var presenceExpiryTask: Task<Void, Never>?
     @ObservationIgnored var pinnedMessagesTask: Task<Void, Never>?
     @ObservationIgnored var pinnedMessagesGeneration = 0
     @ObservationIgnored var scheduledMessagesTask: Task<Void, Never>?
@@ -212,6 +231,17 @@ import TDLibKit
         conversationStatusTask = Task { [weak self] in
             guard let self else { return }
 
+            // 1:1 presence isn't fetched anywhere else - `init` only captured whatever
+            // `customChat.user.status` was when the chat list last built this value, which can be
+            // minutes stale by the time the chat is opened. Pull it fresh, then let live
+            // `updateUserStatus` snapshots take over.
+            if case .user(let user) = type {
+                if let fresh = try? await service.getUser(userId: user.id), !Task.isCancelled {
+                    applyUserPresence(fresh.status)
+                }
+                return
+            }
+
             let status: String? =
                 switch type {
                 case .group(let currentGroup):
@@ -241,7 +271,7 @@ import TDLibKit
                     } else {
                         nil
                     }
-                case .bot, .user:
+                case .user, .bot:
                     nil
                 }
 
@@ -252,6 +282,29 @@ import TDLibKit
 
     func getOnlineStatus(from userStatus: UserStatus) -> String {
         telegramUserPresenceDescription(userStatus)
+    }
+
+    /// Renders `status` for a 1:1 chat and, while the peer is inside their online window, arms a
+    /// single one-shot timer that recomputes the label the instant that window lapses.
+    ///
+    /// TDLib normally sends `.userStatusOffline` when the peer leaves, but that update is routinely
+    /// missed (app backgrounded, socket drop), which otherwise leaves a permanently stuck "Online".
+    /// `telegramUserPresenceDescription` is already wall-clock aware - past `expires` it renders
+    /// `.userStatusOnline` as a "last seen" line - so recomputing from the *same* status once the
+    /// deadline passes is enough; no fabricated status, no polling. Mirrors Unigram's
+    /// `DialogViewModel.UpdateLastSeen` + `LastSeenConverter.OnlinePhraseChangeInSeconds`.
+    func applyUserPresence(_ status: UserStatus) {
+        presenceExpiryTask?.cancel()
+        presenceExpiryTask = nil
+
+        withAnimation { onlineStatus = getOnlineStatus(from: status) }
+
+        guard let delay = telegramPresencePhraseChangeDelay(for: status) else { return }
+        presenceExpiryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            applyUserPresence(status)
+        }
     }
 
     /// True when `messageTopic` is unset (ordinary full-chat mode) or `message` belongs to it -

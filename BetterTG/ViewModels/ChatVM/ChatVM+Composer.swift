@@ -133,8 +133,21 @@ extension ChatVM {
 
     // MARK: Sending/recording
 
+    /// Drives the outgoing "typing…" indicator from composer text changes, the way Unigram's
+    /// `ChatTextBox` feeds `OutputChatActionManager`. Editing an existing message doesn't count as
+    /// typing.
+    func handleComposerTextChange() {
+        guard composer.editCustomMessage == nil else { return }
+        if composer.text.characters.isEmpty {
+            typingActionManager.cancel()
+        } else {
+            typingActionManager.noteTyping()
+        }
+    }
+
     func sendMessage(schedulingState: MessageSchedulingState? = nil) async {
         guard !composer.isSubmittingMessage else { return }
+        typingActionManager.cancel()
         let isEditing = composer.editCustomMessage != nil
         composer.isSubmittingMessage = true
         messageActionError = nil

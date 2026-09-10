@@ -78,6 +78,8 @@ extension MacSessionModel {
     func prepareConversationHeader(for chatId: Int64, fallbackKind: ChatListItemKind?) {
         conversationHeaderTask?.cancel()
         conversationHeaderTask = nil
+        conversationHeaderPresenceExpiryTask?.cancel()
+        conversationHeaderPresenceExpiryTask = nil
         openedChatType = nil
         conversationHeaderActivities = [:]
         conversationHeaderOnlineMemberCount = 0
@@ -97,13 +99,13 @@ extension MacSessionModel {
                       !Task.isCancelled,
                       openedChatId == chatId
                 else { return }
-                conversationHeaderBaseStatus = macConversationUserStatus(user)
+                applyConversationHeaderUserStatus(user)
             case .chatTypeSecret(let secretChat):
                 guard let user = try? await service.getUser(userId: secretChat.userId),
                       !Task.isCancelled,
                       openedChatId == chatId
                 else { return }
-                conversationHeaderBaseStatus = macConversationUserStatus(user)
+                applyConversationHeaderUserStatus(user)
             case .chatTypeBasicGroup(let basicGroupChat):
                 guard let group = try? await service.getBasicGroup(basicGroupId: basicGroupChat.basicGroupId),
                       !Task.isCancelled,
@@ -137,10 +139,10 @@ extension MacSessionModel {
         switch update {
         case .updateUserStatus(let value):
             guard macConversationUserId(openedChatType) == value.userId else { return }
-            conversationHeaderBaseStatus = telegramUserPresenceDescription(value.status)
+            applyConversationHeaderPresence(value.status)
         case .updateUser(let value):
             guard macConversationUserId(openedChatType) == value.user.id else { return }
-            conversationHeaderBaseStatus = macConversationUserStatus(value.user)
+            applyConversationHeaderUserStatus(value.user)
         case .updateBasicGroup(let value):
             guard case .chatTypeBasicGroup(let chatType) = openedChatType,
                   chatType.basicGroupId == value.basicGroup.id
@@ -183,6 +185,44 @@ extension MacSessionModel {
             break
         }
     }
+
+    /// Header status for a 1:1 peer. Bots and deleted accounts have no expiring presence, so they
+    /// take the plain-string path; everyone else goes through `applyConversationHeaderPresence`,
+    /// which arms the stale-"Online" timer.
+    func applyConversationHeaderUserStatus(_ user: User) {
+        switch user.type {
+        case .userTypeBot:
+            conversationHeaderPresenceExpiryTask?.cancel()
+            conversationHeaderPresenceExpiryTask = nil
+            conversationHeaderBaseStatus = "Bot"
+        case .userTypeDeleted:
+            conversationHeaderPresenceExpiryTask?.cancel()
+            conversationHeaderPresenceExpiryTask = nil
+            conversationHeaderBaseStatus = "Deleted account"
+        case .userTypeRegular, .userTypeUnknown:
+            applyConversationHeaderPresence(user.status)
+        }
+    }
+
+    /// Renders `status` and, while the peer is inside their online window, arms a single one-shot
+    /// timer that recomputes it the instant that window lapses. `telegramUserPresenceDescription`
+    /// is wall-clock aware, so recomputing from the same `status` after the deadline yields the
+    /// right "last seen" line without a fabricated status or polling. Mirrors
+    /// `ChatVM.applyUserPresence` on iOS.
+    func applyConversationHeaderPresence(_ status: UserStatus) {
+        conversationHeaderPresenceExpiryTask?.cancel()
+        conversationHeaderPresenceExpiryTask = nil
+
+        conversationHeaderBaseStatus = telegramUserPresenceDescription(status)
+
+        guard let delay = telegramPresencePhraseChangeDelay(for: status) else { return }
+        let expectedChatId = openedChatId
+        conversationHeaderPresenceExpiryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled, openedChatId == expectedChatId else { return }
+            applyConversationHeaderPresence(status)
+        }
+    }
 }
 
 // MARK: - Formatting
@@ -201,14 +241,6 @@ private func macConversationUserId(_ chatType: ChatType) -> Int64? {
     case .chatTypePrivate(let value): value.userId
     case .chatTypeSecret(let value): value.userId
     case .chatTypeBasicGroup, .chatTypeSupergroup: nil
-    }
-}
-
-func macConversationUserStatus(_ user: User) -> String {
-    switch user.type {
-    case .userTypeBot: "Bot"
-    case .userTypeDeleted: "Deleted account"
-    case .userTypeRegular, .userTypeUnknown: telegramUserPresenceDescription(user.status)
     }
 }
 

@@ -155,7 +155,7 @@ extension ChatVM {
             }
             reconcileMessages(with: snapshot)
         case .userStatus(let value):
-            withAnimation { onlineStatus = getOnlineStatus(from: value.status) }
+            applyUserPresence(value.status)
         case .chatAction(let value):
             guard messageTopic == nil || value.topicId == messageTopic else { return }
             updateChatAction(value)

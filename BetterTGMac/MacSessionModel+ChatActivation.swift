@@ -73,7 +73,16 @@ extension MacSessionModel {
         pinnedMessagesError = nil
         refreshPinnedMessages(for: chatId)
         loadThreadRootMessageIfNeeded(chatId: chatId, topic: topic)
+        // Nil while `restoreDraft` runs so a restored draft doesn't broadcast a phantom "typing…".
+        typingActionManager?.cancel()
+        typingActionManager = nil
         restoreDraft(openingChat?.draftMessage, chatId: chatId)
+        typingActionManager = TelegramTypingActionManager(
+            service: service,
+            chatId: chatId,
+            topicId: topic,
+            isEnabled: openingChat.map { $0.kind != .channel && !$0.isSavedMessages } ?? true,
+        )
         prepareConversationHeader(for: chatId, fallbackKind: openingChat?.kind)
         messages = .empty(chatId: chatId)
         editingMessage = nil

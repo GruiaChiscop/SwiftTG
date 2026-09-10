@@ -1,5 +1,6 @@
 // MacSessionModel.swift
 
+import AppKit
 import AVFoundation
 import Combine
 import SwiftUI
@@ -183,6 +184,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored var draftReplyLoadTask: Task<Void, Never>?
 
     @ObservationIgnored var conversationHeaderTask: Task<Void, Never>?
+    /// One-shot timer that recomputes the header status the instant a peer's online window lapses -
+    /// TDLib's follow-up `.userStatusOffline` is routinely missed, so a stale "Online" would
+    /// otherwise stick. Mirrors `ChatVM.applyUserPresence` on iOS.
+    @ObservationIgnored var conversationHeaderPresenceExpiryTask: Task<Void, Never>?
     @ObservationIgnored var openedChatType: ChatType?
 
     // The following were `private` while every method that used them lived in this same file.
@@ -211,8 +216,15 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored var voiceRecordingURL: URL?
     @ObservationIgnored var voiceRecordingWave = [Float]()
 
+    /// Rebuilt for each opened chat in `MacSessionModel+ChatActivation`; broadcasts the outgoing
+    /// "typing…" indicator from `messageText` changes.
+    @ObservationIgnored var typingActionManager: TelegramTypingActionManager?
+
     var messageText = NSAttributedString(string: "") {
-        didSet { linkPreviewComposer.update(text: macComposerFormattedText(messageText)) }
+        didSet {
+            linkPreviewComposer.update(text: macComposerFormattedText(messageText))
+            noteComposerTypingChange(from: oldValue)
+        }
     }
 
     var editMessageText = NSAttributedString(string: "") {
@@ -316,6 +328,16 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         ))
     }
 
+    /// Drives TDLib's `"online"` option from `NSApplication`'s active state. Without it the server
+    /// never spontaneously pushes peers' `updateUserStatus`, so the conversation header shows a
+    /// stale "last seen" until other traffic (like sending a message) drags a fresh status along.
+    /// Wired to `applicationDidBecomeActive`/`applicationDidResignActive` and re-asserted on
+    /// `.authorizationStateReady`.
+    func updateOnlinePresence(active: Bool) {
+        guard !sessionEnded else { return }
+        Task { await telegramSetOnlinePresence(active, service: service) }
+    }
+
     func stop() {
         isStopping = true
         pushNotifications.stop()
@@ -323,6 +345,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         videoRecorder.cancel()
         historyRequestGeneration &+= 1
         conversationHeaderTask?.cancel()
+        conversationHeaderPresenceExpiryTask?.cancel()
         selectedPhotoURLs = []
         selectedDocumentURLs = []
         countryLoadTask?.cancel()
@@ -516,6 +539,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
             sessionEnded = false
             canReauthenticate = false
             bootstrapChats()
+            // A fresh TDLib client starts in the power-saving (offline) mode; assert online so peer
+            // presence updates stream without waiting for an app-activation transition.
+            updateOnlinePresence(active: NSApplication.shared.isActive)
             // Resolved eagerly so `TelegramCurrentUserCache`'s synchronous `userId` is already
             // populated by the time chat rows render, avoiding a visible name-then-"Saved
             // Messages" flash.
@@ -565,6 +591,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         countryLoadTask = nil
         conversationHeaderTask?.cancel()
         conversationHeaderTask = nil
+        conversationHeaderPresenceExpiryTask?.cancel()
+        conversationHeaderPresenceExpiryTask = nil
         pinnedMessagesTask?.cancel()
         pinnedMessagesTask = nil
         scheduledMessagesTask?.cancel()
@@ -596,6 +624,8 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         messages = .empty(chatId: 0)
         loadedMessageIds = []
         loadedChatFolderIds = []
+        typingActionManager?.cancel()
+        typingActionManager = nil
         messageText = NSAttributedString(string: "")
         editMessageText = NSAttributedString(string: "")
         editingMessage = nil

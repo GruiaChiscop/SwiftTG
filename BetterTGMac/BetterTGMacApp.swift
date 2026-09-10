@@ -66,10 +66,12 @@ UNUserNotificationCenterDelegate {
 
     func applicationDidResignActive(_: Notification) {
         model?.saveCurrentDraft()
+        model?.updateOnlinePresence(active: false)
         TelegramAppLockController.shared.noteDidEnterBackground()
     }
 
     func applicationDidBecomeActive(_: Notification) {
+        model?.updateOnlinePresence(active: true)
         TelegramAppLockController.shared.noteWillEnterForeground()
     }
 

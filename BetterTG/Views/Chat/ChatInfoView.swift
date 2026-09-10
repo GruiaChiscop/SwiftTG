@@ -381,7 +381,11 @@ struct ChatInfoView: View {
     }
 
     private var canStartSecretChat: Bool {
-        chat.kind == .privateChat && !chat.isSavedMessages && info?.privateChatUserId != nil
+        // iOS can't open secret chats yet - `RootVM.makeCustomChat` drops `.chatTypeSecret`, so
+        // `createNewSecretChat` would just dead-end at "couldn't be opened". Keep the action and
+        // its confirmation wired up for when secret-chat support lands, but don't surface it.
+        // (macOS handles secret chats via the shared `TelegramChatListStore` and keeps its button.)
+        false
     }
 
     private var canAddContact: Bool {

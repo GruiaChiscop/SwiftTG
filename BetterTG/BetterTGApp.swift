@@ -70,9 +70,11 @@ import UserNotifications
                 TelegramAppLockController.shared.noteWillEnterForeground()
                 TelegramCallSession.shared.restoreCallViewFromPictureInPictureIfNeeded()
                 RootVM.shared.noteAppBecameActive()
+                RootVM.shared.updateOnlinePresence(active: true)
                 Task { await RootVM.shared.processPendingShareRequests() }
             case .background:
                 TelegramAppLockController.shared.noteDidEnterBackground()
+                RootVM.shared.updateOnlinePresence(active: false)
             case .inactive:
                 break
             @unknown default:
