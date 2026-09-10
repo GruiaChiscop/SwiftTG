@@ -705,7 +705,7 @@ struct ChatInfoView: View {
                 if showsHiddenMembers {
                     LabeledContent("Members", value: "Hidden")
                 }
-                if info.hasProtectedContent {
+                if showsProtectedContent {
                     LabeledContent("Saving Content", value: "Restricted")
                 }
             }
@@ -947,12 +947,11 @@ struct ChatInfoView: View {
     }
 
     private func openLinkedChat(_ chatId: Int64) {
+        // Dismiss synchronously so the row can't be tapped again while the chat resolves - a
+        // second tap would otherwise push the chat onto the nav path twice.
+        dismiss()
         Task {
-            guard let customChat = await RootVM.shared.getCustomChat(from: chatId) else {
-                errorMessage = "That chat couldn't be opened."
-                return
-            }
-            dismiss()
+            guard let customChat = await RootVM.shared.getCustomChat(from: chatId) else { return }
             await Task.yield()
             RootVM.shared.navigate(to: .customChat(customChat))
         }

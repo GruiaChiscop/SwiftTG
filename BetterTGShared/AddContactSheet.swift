@@ -102,6 +102,7 @@ struct AddContactSheet: View {
     }
 
     @MainActor private func add() async {
+        guard !isSaving else { return }
         isSaving = true
         defer { isSaving = false }
         do {
