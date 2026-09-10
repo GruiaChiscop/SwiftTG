@@ -56,6 +56,10 @@ private final class MessageUITextView: UITextView {
         voiceOverFocusController.requestFocus(on: self)
     }
 
+    func cancelVoiceOverFocusRequest() {
+        voiceOverFocusController.cancel()
+    }
+
     // MARK: Private
 
     private let voiceOverFocusController = VoiceOverFocusController()
@@ -126,9 +130,10 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onPasteImages = onPasteImages
 
-        if voiceOverFocusRequest != 0,
-           voiceOverFocusRequest != context.coordinator.lastVoiceOverFocusRequest
-        {
+        if voiceOverFocusRequest == 0 {
+            context.coordinator.lastVoiceOverFocusRequest = 0
+            textView.cancelVoiceOverFocusRequest()
+        } else if voiceOverFocusRequest != context.coordinator.lastVoiceOverFocusRequest {
             context.coordinator.lastVoiceOverFocusRequest = voiceOverFocusRequest
             textView.requestVoiceOverFocus()
         }

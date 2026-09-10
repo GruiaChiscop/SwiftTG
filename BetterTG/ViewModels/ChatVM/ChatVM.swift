@@ -94,28 +94,6 @@ import TDLibKit
     /// groups (and only up to a size cap), 0 otherwise.
     var onlineMemberCount = 0
 
-    /// `onlineStatus` plus a ", N online" suffix for groups. Used for the conversation header and
-    /// chat-info subtitle.
-    ///
-    /// Every input is read into a local *before* branching: this is a computed property on an
-    /// `@Observable`, and SwiftUI only tracks the properties actually read during a body pass -
-    /// a short-circuiting `guard` would drop `onlineMemberCount` (or `customChat.type`) as a
-    /// dependency and the status would stop updating live.
-    var conversationStatus: String {
-        let base = onlineStatus
-        let online = onlineMemberCount
-        let isGroup = isGroupChat
-        guard isGroup, online > 0, !base.isEmpty else { return base }
-        return "\(base), \(online.formatted()) online"
-    }
-
-    var isGroupChat: Bool {
-        switch customChat.type {
-        case .group: true
-        case .supergroup(let supergroup): !supergroup.isChannel
-        case .bot, .user: false
-        }
-    }
     var highlightedMessageId: Int64?
     var scrollRequestMessageId: Int64?
     var accessibilityFocusRequestMessageId: Int64?
@@ -182,8 +160,31 @@ import TDLibKit
     // Scroll
     @ObservationIgnored var isAtBottom = true
     var showScrollToBottomButton = false
-    @ObservationIgnored var scrollViewProxy: ScrollViewProxy?
+    @ObservationIgnored weak var historyNavigator: ChatHistoryNavigator?
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
+
+    /// `onlineStatus` plus a ", N online" suffix for groups. Used for the conversation header and
+    /// chat-info subtitle.
+    ///
+    /// Every input is read into a local *before* branching: this is a computed property on an
+    /// `@Observable`, and SwiftUI only tracks the properties actually read during a body pass -
+    /// a short-circuiting `guard` would drop `onlineMemberCount` (or `customChat.type`) as a
+    /// dependency and the status would stop updating live.
+    var conversationStatus: String {
+        let base = onlineStatus
+        let online = onlineMemberCount
+        let isGroup = isGroupChat
+        guard isGroup, online > 0, !base.isEmpty else { return base }
+        return "\(base), \(online.formatted()) online"
+    }
+
+    var isGroupChat: Bool {
+        switch customChat.type {
+        case .group: true
+        case .supergroup(let supergroup): !supergroup.isChannel
+        case .bot, .user: false
+        }
+    }
 
     /// Telegram has no separate "Join Group" step for channel comments - sending your first
     /// comment on a post silently adds you to the channel's linked discussion group server-side,
@@ -271,7 +272,7 @@ import TDLibKit
                     } else {
                         nil
                     }
-                case .user, .bot:
+                case .bot, .user:
                     nil
                 }
 

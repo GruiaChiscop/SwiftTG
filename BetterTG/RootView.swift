@@ -195,9 +195,9 @@ struct RootView: View {
 
     // MARK: Private
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var rootVM = RootVM.shared
     @State private var callSession = TelegramCallSession.shared
-    @Environment(\.scenePhase) private var scenePhase
 
     private func presentCallRatingSuccessIfNeeded() async {
         guard let token = callSession.callRatingSuccessToken else { return }

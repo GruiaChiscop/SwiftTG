@@ -191,6 +191,14 @@ struct MacChatInfoView: View {
 
     // MARK: Private
 
+    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
+    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
+        ("Off", 0),
+        ("1 Day", 86400),
+        ("1 Week", 604_800),
+        ("1 Month", 2_678_400),
+    ]
+
     @Environment(\.dismiss) private var dismiss
     @State private var avatarPath: String?
     @State private var confirmBlock = false
@@ -215,31 +223,12 @@ struct MacChatInfoView: View {
         model.chatList.items[chat.chatId] ?? chat
     }
 
-    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
-    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
-        ("Off", 0),
-        ("1 Day", 86_400),
-        ("1 Week", 604_800),
-        ("1 Month", 2_678_400),
-    ]
-
     private var autoDeleteSeconds: Int {
         autoDeleteOverride ?? info?.messageAutoDeleteTime ?? 0
     }
 
     private var autoDeleteDescription: String {
         Self.autoDeleteLabel(autoDeleteSeconds)
-    }
-
-    private static func autoDeleteLabel(_ seconds: Int) -> String {
-        switch seconds {
-        case 0: "Off"
-        case 86_400: "1 day"
-        case 604_800: "1 week"
-        case 2_678_400: "1 month"
-        case let value where value % 86_400 == 0: "\(value / 86_400) days"
-        default: "\(max(1, seconds / 3_600)) hours"
-        }
     }
 
     private var isMuted: Bool {
@@ -295,6 +284,15 @@ struct MacChatInfoView: View {
     /// rejects anything the server won't accept, which the report sheet surfaces as a failure.
     private var canReportChat: Bool {
         !currentChat.isSavedMessages && chat.kind != .secretChat
+    }
+
+    private var autoDeleteRowLabel: some View {
+        LabeledContent {
+            Text(autoDeleteDescription)
+        } label: {
+            Label("Auto-Delete Messages", systemImage: "timer")
+        }
+        .contentShape(Rectangle())
     }
 
     private func notificationsSection() -> some View {
@@ -355,15 +353,6 @@ struct MacChatInfoView: View {
         }
     }
 
-    private var autoDeleteRowLabel: some View {
-        LabeledContent {
-            Text(autoDeleteDescription)
-        } label: {
-            Label("Auto-Delete Messages", systemImage: "timer")
-        }
-        .contentShape(Rectangle())
-    }
-
     private func sharedMediaSection(_ info: TelegramChatInfoData) -> some View {
         Section {
             Button("Shared Media", systemImage: "photo.on.rectangle") {
@@ -384,17 +373,6 @@ struct MacChatInfoView: View {
                 .buttonStyle(.plain)
             }
         }
-    }
-
-    private func identitySubtitle(_ info: TelegramChatInfoData) -> String {
-        if let status = model.conversationHeaderStatus, !status.isEmpty {
-            return status
-        }
-        if chat.kind == .group || chat.kind == .channel, let memberCount = info.memberCount {
-            let unit = chat.kind == .channel ? "subscriber" : "member"
-            return "\(memberCount.formatted()) \(unit)\(memberCount == 1 ? "" : "s")"
-        }
-        return info.kind
     }
 
     private func identitySection(_ info: TelegramChatInfoData) -> some View {
@@ -706,14 +684,6 @@ struct MacChatInfoView: View {
         }
     }
 
-    private func canStartSecretChat(_ info: TelegramChatInfoData) -> Bool {
-        chat.kind == .privateChat && !currentChat.isSavedMessages && info.privateChatUserId != nil
-    }
-
-    private func canAddContact(_ info: TelegramChatInfoData) -> Bool {
-        info.privateChatUserId != nil && !info.isContact
-    }
-
     @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         if hasActions(info) {
             Section {
@@ -768,6 +738,36 @@ struct MacChatInfoView: View {
                 }
             }
         }
+    }
+
+    private static func autoDeleteLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 0: "Off"
+        case 86400: "1 day"
+        case 604_800: "1 week"
+        case 2_678_400: "1 month"
+        case let value where value % 86400 == 0: "\(value / 86400) days"
+        default: "\(max(1, seconds / 3600)) hours"
+        }
+    }
+
+    private func identitySubtitle(_ info: TelegramChatInfoData) -> String {
+        if let status = model.conversationHeaderStatus, !status.isEmpty {
+            return status
+        }
+        if chat.kind == .group || chat.kind == .channel, let memberCount = info.memberCount {
+            let unit = chat.kind == .channel ? "subscriber" : "member"
+            return "\(memberCount.formatted()) \(unit)\(memberCount == 1 ? "" : "s")"
+        }
+        return info.kind
+    }
+
+    private func canStartSecretChat(_ info: TelegramChatInfoData) -> Bool {
+        chat.kind == .privateChat && !currentChat.isSavedMessages && info.privateChatUserId != nil
+    }
+
+    private func canAddContact(_ info: TelegramChatInfoData) -> Bool {
+        info.privateChatUserId != nil && !info.isContact
     }
 
     private func profileInformationLabel(_ info: TelegramChatInfoData) -> String {
@@ -846,7 +846,7 @@ struct MacChatInfoView: View {
         switch chat.kind {
         case .privateChat, .secretChat:
             return true
-        case .group, .channel:
+        case .channel, .group:
             return info.canChangeInfo
         }
     }

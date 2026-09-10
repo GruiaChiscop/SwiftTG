@@ -3,6 +3,8 @@
 import Foundation
 @preconcurrency import TDLibKit
 
+// MARK: - TelegramChatInfoLoader
+
 struct TelegramChatInfoLoader {
     // MARK: Internal
 

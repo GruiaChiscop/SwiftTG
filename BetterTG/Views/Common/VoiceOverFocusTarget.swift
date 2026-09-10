@@ -31,6 +31,11 @@ struct VoiceOverFocusTarget: UIViewRepresentable {
     func updateUIView(_ view: VoiceOverFocusUIView, context: Context) {
         view.accessibilityLabel = label
         view.accessibilityTraits = traits
+        if request == 0 {
+            context.coordinator.lastRequest = 0
+            view.cancelVoiceOverFocusRequest()
+            return
+        }
         guard request != 0, request != context.coordinator.lastRequest else { return }
         context.coordinator.lastRequest = request
         view.requestVoiceOverFocus()
@@ -51,6 +56,10 @@ final class VoiceOverFocusUIView: UIView {
         voiceOverFocusController.requestFocus(on: self)
     }
 
+    func cancelVoiceOverFocusRequest() {
+        voiceOverFocusController.cancel()
+    }
+
     // MARK: Private
 
     private let voiceOverFocusController = VoiceOverFocusController()
@@ -60,6 +69,12 @@ final class VoiceOverFocusUIView: UIView {
 
 @MainActor final class VoiceOverFocusController {
     // MARK: Internal
+
+    func cancel() {
+        pendingView = nil
+        requestTask?.cancel()
+        requestTask = nil
+    }
 
     func requestFocus(on view: UIView) {
         guard UIAccessibility.isVoiceOverRunning else { return }

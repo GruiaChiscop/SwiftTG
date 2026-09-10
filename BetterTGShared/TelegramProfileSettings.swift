@@ -246,6 +246,67 @@ struct EditProfileView: View {
         .padding(.vertical, 8)
     }
 
+    /// Mirrors Telegram-iOS's local `_internal_checkAddressNameFormat`. An empty string is
+    /// allowed - it clears the username.
+    private static func usernameFormatIssue(_ value: String) -> UsernameFormatIssue? {
+        guard !value.isEmpty else { return nil }
+        guard value.count >= 5 else { return .tooShort }
+        guard let first = value.first else { return nil }
+        if first == "_" {
+            return .startsWithUnderscore
+        }
+        if first >= "0", first <= "9" {
+            return .startsWithNumber
+        }
+        if value.hasSuffix("_") {
+            return .endsWithUnderscore
+        }
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_",
+        )
+        if value.unicodeScalars.contains(where: { !allowed.contains($0) }) {
+            return .invalidCharacters
+        }
+        return nil
+    }
+
+    /// Maps the raw Telegram/TDLib error strings that `setProfilePhoto`/`setName`/`setBio`/
+    /// `setUsername` can throw to readable text. `USERNAME_PURCHASE_AVAILABLE` is handled at the
+    /// call site instead, with its own Fragment alert.
+    private static func editProfileErrorMessage(_ error: Swift.Error) -> String {
+        guard let error = error as? TDLibKit.Error else {
+            return telegramErrorDescription(error)
+        }
+        let message = error.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if error.code == 429 || message.hasPrefix("FLOOD_WAIT") || message.hasPrefix("Too Many Requests") {
+            return "You're doing that too often. Please wait a moment and try again."
+        }
+        switch message {
+        case "USERNAME_INVALID":
+            return "This username isn't valid. Use 5–32 letters, numbers or underscores, and don't start with a number."
+        case "USERNAME_OCCUPIED":
+            return "This username is already taken. Please choose another."
+        case "USERNAMES_ACTIVE_TOO_MUCH":
+            return "You already have the maximum number of active usernames. Remove one before adding another."
+        case "ABOUT_NOT_MODIFIED", "NAME_NOT_MODIFIED", "USERNAME_NOT_MODIFIED":
+            return "That's already your current profile - nothing to update."
+        case "FIRSTNAME_INVALID":
+            return "That first name isn't valid. Please try a different one."
+        case "LASTNAME_INVALID":
+            return "That last name isn't valid. Please try a different one."
+        case "ABOUT_TOO_LONG":
+            return "Your bio is too long. Please shorten it and try again."
+        case "PHOTO_CONTENT_TYPE_INVALID", "PHOTO_EXT_INVALID", "PHOTO_FILE_MISSING":
+            return "That file isn't a supported image. Please pick a different photo."
+        case "PHOTO_CROP_SIZE_SMALL", "PHOTO_INVALID_DIMENSIONS":
+            return "That image is too small to use as a profile photo. Please pick a larger one."
+        case "IMAGE_PROCESS_FAILED":
+            return "Telegram couldn't process that image. Please try a different photo."
+        default:
+            return telegramErrorDescription(error)
+        }
+    }
+
     @MainActor private func loadProfile() async {
         isLoading = true
         defer { isLoading = false }
@@ -349,59 +410,6 @@ struct EditProfileView: View {
             dismiss()
         } catch {
             errorMessage = Self.editProfileErrorMessage(error)
-        }
-    }
-
-    /// Mirrors Telegram-iOS's local `_internal_checkAddressNameFormat`. An empty string is
-    /// allowed - it clears the username.
-    private static func usernameFormatIssue(_ value: String) -> UsernameFormatIssue? {
-        guard !value.isEmpty else { return nil }
-        guard value.count >= 5 else { return .tooShort }
-        guard let first = value.first else { return nil }
-        if first == "_" { return .startsWithUnderscore }
-        if first >= "0", first <= "9" { return .startsWithNumber }
-        if value.hasSuffix("_") { return .endsWithUnderscore }
-        let allowed = CharacterSet(
-            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_",
-        )
-        if value.unicodeScalars.contains(where: { !allowed.contains($0) }) { return .invalidCharacters }
-        return nil
-    }
-
-    /// Maps the raw Telegram/TDLib error strings that `setProfilePhoto`/`setName`/`setBio`/
-    /// `setUsername` can throw to readable text. `USERNAME_PURCHASE_AVAILABLE` is handled at the
-    /// call site instead, with its own Fragment alert.
-    private static func editProfileErrorMessage(_ error: Swift.Error) -> String {
-        guard let error = error as? TDLibKit.Error else {
-            return telegramErrorDescription(error)
-        }
-        let message = error.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        if error.code == 429 || message.hasPrefix("FLOOD_WAIT") || message.hasPrefix("Too Many Requests") {
-            return "You're doing that too often. Please wait a moment and try again."
-        }
-        switch message {
-        case "USERNAME_INVALID":
-            return "This username isn't valid. Use 5–32 letters, numbers or underscores, and don't start with a number."
-        case "USERNAME_OCCUPIED":
-            return "This username is already taken. Please choose another."
-        case "USERNAMES_ACTIVE_TOO_MUCH":
-            return "You already have the maximum number of active usernames. Remove one before adding another."
-        case "USERNAME_NOT_MODIFIED", "ABOUT_NOT_MODIFIED", "NAME_NOT_MODIFIED":
-            return "That's already your current profile - nothing to update."
-        case "FIRSTNAME_INVALID":
-            return "That first name isn't valid. Please try a different one."
-        case "LASTNAME_INVALID":
-            return "That last name isn't valid. Please try a different one."
-        case "ABOUT_TOO_LONG":
-            return "Your bio is too long. Please shorten it and try again."
-        case "PHOTO_EXT_INVALID", "PHOTO_CONTENT_TYPE_INVALID", "PHOTO_FILE_MISSING":
-            return "That file isn't a supported image. Please pick a different photo."
-        case "PHOTO_INVALID_DIMENSIONS", "PHOTO_CROP_SIZE_SMALL":
-            return "That image is too small to use as a profile photo. Please pick a larger one."
-        case "IMAGE_PROCESS_FAILED":
-            return "Telegram couldn't process that image. Please try a different photo."
-        default:
-            return telegramErrorDescription(error)
         }
     }
 }

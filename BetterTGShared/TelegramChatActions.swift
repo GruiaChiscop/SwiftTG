@@ -5,6 +5,8 @@ import TDLibKit
 /// Chat-list actions shared between the iOS (RootVM) and macOS (MacSessionModel)
 /// view models, which wrap chats in different types but call the same TDLib flow.
 enum TelegramChatActions {
+    // MARK: Internal
+
     static func toggleRead(
         service: any TelegramService,
         chatId: Int64,
@@ -149,33 +151,6 @@ enum TelegramChatActions {
         return updated
     }
 
-    /// TDLib's `ChatNotificationSettings` is immutable; rebuild it carrying every field through,
-    /// overriding only the one being changed and clearing its matching `useDefault*` flag.
-    private static func overriding(
-        _ c: ChatNotificationSettings,
-        showPreview: Bool? = nil,
-        muteStories: Bool? = nil,
-    ) -> ChatNotificationSettings {
-        ChatNotificationSettings(
-            disableMentionNotifications: c.disableMentionNotifications,
-            disablePinnedMessageNotifications: c.disablePinnedMessageNotifications,
-            muteFor: c.muteFor,
-            muteStories: muteStories ?? c.muteStories,
-            showPreview: showPreview ?? c.showPreview,
-            showStoryPoster: c.showStoryPoster,
-            soundId: c.soundId,
-            storySoundId: c.storySoundId,
-            useDefaultDisableMentionNotifications: c.useDefaultDisableMentionNotifications,
-            useDefaultDisablePinnedMessageNotifications: c.useDefaultDisablePinnedMessageNotifications,
-            useDefaultMuteFor: c.useDefaultMuteFor,
-            useDefaultMuteStories: muteStories == nil ? c.useDefaultMuteStories : false,
-            useDefaultShowPreview: showPreview == nil ? c.useDefaultShowPreview : false,
-            useDefaultShowStoryPoster: c.useDefaultShowStoryPoster,
-            useDefaultSound: c.useDefaultSound,
-            useDefaultStorySound: c.useDefaultStorySound,
-        )
-    }
-
     /// `useDefault: true` means "use this chat's scope default sound", matching
     /// `ChatNotificationSettings.useDefaultSound`'s own meaning - `soundId` is ignored by TDLib in
     /// that case, so it's fine to just carry `current.soundId` through unchanged.
@@ -213,6 +188,35 @@ enum TelegramChatActions {
             useDefault: useDefault,
             soundId: soundId,
             service: service,
+        )
+    }
+
+    // MARK: Private
+
+    /// TDLib's `ChatNotificationSettings` is immutable; rebuild it carrying every field through,
+    /// overriding only the one being changed and clearing its matching `useDefault*` flag.
+    private static func overriding(
+        _ c: ChatNotificationSettings,
+        showPreview: Bool? = nil,
+        muteStories: Bool? = nil,
+    ) -> ChatNotificationSettings {
+        ChatNotificationSettings(
+            disableMentionNotifications: c.disableMentionNotifications,
+            disablePinnedMessageNotifications: c.disablePinnedMessageNotifications,
+            muteFor: c.muteFor,
+            muteStories: muteStories ?? c.muteStories,
+            showPreview: showPreview ?? c.showPreview,
+            showStoryPoster: c.showStoryPoster,
+            soundId: c.soundId,
+            storySoundId: c.storySoundId,
+            useDefaultDisableMentionNotifications: c.useDefaultDisableMentionNotifications,
+            useDefaultDisablePinnedMessageNotifications: c.useDefaultDisablePinnedMessageNotifications,
+            useDefaultMuteFor: c.useDefaultMuteFor,
+            useDefaultMuteStories: muteStories == nil ? c.useDefaultMuteStories : false,
+            useDefaultShowPreview: showPreview == nil ? c.useDefaultShowPreview : false,
+            useDefaultShowStoryPoster: c.useDefaultShowStoryPoster,
+            useDefaultSound: c.useDefaultSound,
+            useDefaultStorySound: c.useDefaultStorySound,
         )
     }
 }

@@ -12,17 +12,13 @@ private struct PresentedChatActionError: Identifiable {
     let message: String
 }
 
-// MARK: - ChatInitialScrollTarget
+// MARK: - InitialAccessibilityTarget
 
-private enum ChatInitialScrollTarget: Hashable {
-    case unreadMessagesHeader
-}
-
-// MARK: - InitialScrollDestination
-
-private enum InitialScrollDestination {
-    case message(Int64, anchor: UnitPoint)
-    case unreadMessagesHeader
+private enum InitialAccessibilityTarget: Equatable {
+    case composer
+    case message(Int64)
+    case none
+    case unreadHeader
 }
 
 // MARK: - ChatView
@@ -91,56 +87,45 @@ struct ChatView: View {
                 }
             }
 
-            ScrollViewReader { scrollViewProxy in
-                bodyView
-                    .task {
-                        chatVM.start()
-                        await chatVM.favoriteStickers.load()
-                    }
-                    .onAppear {
-                        chatVM.scrollViewProxy = scrollViewProxy
-                    }
-                    .task(id: chatVM.initialMessagesLoaded) {
-                        guard chatVM.initialMessagesLoaded else { return }
-                        await positionInitialMessagesIfNeeded(using: scrollViewProxy)
-                    }
-                    .onChange(of: chatVM.scrollRequestMessageId) { _, messageId in
-                        guard let messageId else { return }
-                        scrollToMessage(messageId, using: scrollViewProxy)
-                    }
-                    .onChange(of: chatVM.accessibilityFocusRequestMessageId) { _, messageId in
-                        guard let messageId else { return }
-                        focusMessage(messageId, using: scrollViewProxy)
-                    }
-            }
-            .overlay {
-                if chatVM.customChat.lastMessage == nil {
-                    Text("No messages")
-                        .frame(maxHeight: .infinity)
-                        .background(.black)
+            bodyView
+                .task {
+                    chatVM.start()
+                    await chatVM.favoriteStickers.load()
                 }
-            }
-            // Anchored to the message list itself (not the outer screen) so it stays part of the
-            // messages region visually, not floating over the composer below.
-            .overlay(alignment: .bottomTrailing) {
-                if chatVM.showScrollToBottomButton {
-                    scrollToBottomButton
-                        .padding(8)
+                .onAppear {
+                    chatVM.historyNavigator = historyNavigator
                 }
-            }
-            .overlay {
-                if chatVM.videoRecorder.usesScreenFlash {
-                    Color.white
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                .onDisappear {
+                    if chatVM.historyNavigator === historyNavigator {
+                        chatVM.historyNavigator = nil
+                    }
                 }
-            }
-            // `.overlay` alone doesn't create a new accessibility grouping level - without this,
-            // VoiceOver still treats the button as a sibling of the composer below (since overlaid
-            // content is flattened to the same level as its base view), regardless of which SwiftUI
-            // view it's visually anchored to. `.contain` makes the messages + button one distinct
-            // region, so the button is guaranteed to read as part of it, before the composer.
-            .accessibilityElement(children: .contain)
+                .task(id: chatVM.initialMessagesLoaded) {
+                    guard chatVM.initialMessagesLoaded else { return }
+                    await positionInitialMessagesIfNeeded()
+                }
+                .onChange(of: chatVM.scrollRequestMessageId) { _, messageId in
+                    guard let messageId else { return }
+                    scrollToMessage(messageId)
+                }
+                .onChange(of: chatVM.accessibilityFocusRequestMessageId) { _, messageId in
+                    guard let messageId else { return }
+                    focusMessage(messageId)
+                }
+                .overlay {
+                    if chatVM.customChat.lastMessage == nil {
+                        Text("No messages")
+                            .frame(maxHeight: .infinity)
+                            .background(.black)
+                    }
+                }
+                .overlay {
+                    if chatVM.videoRecorder.usesScreenFlash {
+                        Color.white
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
 
             if chatVM.isConversationSearchActive {
                 conversationSearchNavigationBar
@@ -282,56 +267,21 @@ struct ChatView: View {
     }
     
     var bodyView: some View {
-        let unreadMessageId = initialUnreadMessageId
-        return List {
-            ForEach(Array(chatVM.messages.enumerated()), id: \.element.id) { index, customMessage in
-                ChatMessageListRows(
-                    customMessage: customMessage,
-                    previousMessage: chatVM.messages[safe: index - 1],
-                    nextMessage: chatVM.messages[safe: index + 1],
-                    shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
-                    isPreview: isPreview,
-                    messageAccessibilityFocused: $accessibilityFocusedMessageId,
-                    startsUnreadMessages: customMessage.id == unreadMessageId,
-                    unreadHeaderVoiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
-                )
-            }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .environment(\.defaultMinListRowHeight, 1)
-        .listRowSpacing(5)
-        .contentMargins(.bottom, 0, for: .scrollContent)
-        .defaultScrollAnchor(.bottom)
-        .scrollPosition($initialScrollPosition)
+        ChatHistoryCollectionView(
+            chatVM: chatVM,
+            messages: chatVM.messages,
+            unreadMessageId: initialUnreadMessageId,
+            shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
+            isPreview: isPreview,
+            canLoadOlderMessages: positionedInitialMessages,
+            unreadHeaderVoiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
+            navigator: historyNavigator,
+            messageAccessibilityFocused: $accessibilityFocusedMessageId,
+            onBackgroundTap: { focused = false },
+            onScrollButtonFocused: cancelInitialAccessibilityFocus,
+        )
         .telegramChatWallpaper()
         .telegramMessageTextSize()
-        .scrollDismissesKeyboard(.interactively)
-        .scrollBounceBehavior(.always)
-        .scrollIndicators(.hidden)
-        .scrollEdgeEffectHidden(true, for: .all)
-        .onTapGesture { focused = false }
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            // Hysteresis, not a single fixed threshold: self-sizing bubbles (images/link previews
-            // resolving) make `contentSize.height` jitter by a few points on its own, which with
-            // one threshold flipped this bool - and the button's visibility with it - back and
-            // forth right as it settled at the bottom, so the button looked stuck mid-dismissal.
-            // Once already at the bottom, tolerate more slack before counting that as "scrolled
-            // away" again; only require the tight margin when actually approaching from above.
-            let distanceFromBottom = geometry.contentSize.height - geometry.visibleRect.maxY
-            let threshold: CGFloat = chatVM.isAtBottom ? 80 : 20
-            return distanceFromBottom <= threshold
-        } action: { _, isAtBottom in
-            guard !isPreview else { return }
-            chatVM.updateBottomVisibility(isLastMessageVisible: isAtBottom)
-        }
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentSize.height > geometry.containerSize.height
-                && geometry.visibleRect.minY <= 250
-        } action: { wasNearTop, isNearTop in
-            guard !isPreview, positionedInitialMessages, !wasNearTop, isNearTop else { return }
-            chatVM.loadMessages()
-        }
         .overlay(alignment: .top) {
             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: topGradientHeight)
@@ -361,50 +311,13 @@ struct ChatView: View {
         .background(.bar)
     }
 
-    var scrollToBottomButton: some View {
-        Button(action: chatVM.scrollToLast) {
-            Image(systemName: "chevron.down")
-                .offset(y: 1)
-                .font(.title3)
-                .frame(width: 48, height: 48)
-                .background(.black)
-                .clipShape(.circle)
-                .overlay {
-                    Circle()
-                        .stroke(.blue, lineWidth: 1)
-                }
-                .overlay(alignment: .top) {
-                    if chatVM.customChat.unreadCount != 0 {
-                        Circle()
-                            .fill(.blue)
-                            .frame(width: 16, height: 16)
-                            .overlay {
-                                Text("\(chatVM.customChat.unreadCount)")
-                                    .font(.caption)
-                                    .foregroundStyle(.white)
-                                    .minimumScaleFactor(0.5)
-                            }
-                            .offset(y: -5)
-                            .accessibilityHidden(true)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .transition(.move(edge: .bottom).combined(with: .scale).combined(with: .opacity))
-        .accessibilityLabel("Scroll to bottom")
-        .accessibilityValue(
-            Text("\(chatVM.customChat.unreadCount) unread messages"),
-            isEnabled: chatVM.customChat.unreadCount != 0,
-        )
-        .accessibilitySortPriority(-1)
-    }
-    
     // MARK: Private
 
     @Environment(\.openURL) private var openURL
     @FocusState private var conversationSearchFocused
-    @State private var initialScrollPosition = ScrollPosition(idType: Int64.self, edge: .bottom)
+    @State private var initialAccessibilityFocusWasCancelled = false
     @State private var composerVoiceOverFocusRequest = 0
+    @State private var historyNavigator = ChatHistoryNavigator()
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
@@ -633,22 +546,21 @@ struct ChatView: View {
         openURL(url)
     }
 
-    private func positionInitialMessagesIfNeeded(using scrollViewProxy: ScrollViewProxy) async {
+    private func positionInitialMessagesIfNeeded() async {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
         positionedInitialMessages = true
 
-        let scrollDestination: InitialScrollDestination?
         let accessibilityTarget: InitialAccessibilityTarget
         if let initialMessageId = chatVM.initialMessageId {
-            scrollDestination = .message(initialMessageId, anchor: .center)
+            historyNavigator.scrollToMessage(initialMessageId, anchor: .center, animated: false)
             accessibilityTarget = chatVM.movesAccessibilityFocusToInitialMessage
                 ? .message(initialMessageId)
                 : .none
-        } else if initialUnreadMessageId != nil {
-            scrollDestination = .unreadMessagesHeader
+        } else if let initialUnreadMessageId {
+            historyNavigator.scrollToUnreadHeader(startingAt: initialUnreadMessageId)
             accessibilityTarget = .unreadHeader
         } else {
-            scrollDestination = chatVM.messages.last.map { .message($0.id, anchor: .bottom) }
+            historyNavigator.scrollToBottom(animated: false)
             accessibilityTarget =
                 if !isPreview, chatVM.customChat.canPostMessages || chatVM.isCommentThread {
                     .composer
@@ -659,26 +571,16 @@ struct ChatView: View {
                 }
         }
 
-        // `initialMessagesLoaded` flips true the same tick `messages` is populated. Give List time
-        // to create its rows before scrolling, then another layout pass before assigning VoiceOver
-        // focus. This task is attached to the view, so leaving the chat cancels the sequence.
+        // The navigator queues a target until its collection-view row exists. Give the hosted row
+        // another layout pass before assigning VoiceOver focus.
         await Task.yield()
         await Task.yield()
         guard !Task.isCancelled else { return }
-        if let scrollDestination {
-            var transaction = Transaction()
-            transaction.animation = nil
-            withTransaction(transaction) {
-                switch scrollDestination {
-                case .message(let messageId, let anchor):
-                    scrollViewProxy.scrollTo(messageId, anchor: anchor)
-                case .unreadMessagesHeader:
-                    scrollViewProxy.scrollTo(ChatInitialScrollTarget.unreadMessagesHeader, anchor: .top)
-                }
-            }
-        }
 
-        guard UIAccessibility.isVoiceOverRunning, accessibilityTarget != .none else { return }
+        guard UIAccessibility.isVoiceOverRunning,
+              accessibilityTarget != .none,
+              !initialAccessibilityFocusWasCancelled
+        else { return }
         await Task.yield()
         await Task.yield()
         guard !Task.isCancelled else { return }
@@ -697,15 +599,18 @@ struct ChatView: View {
         }
     }
 
-    private func scrollToMessage(_ messageId: Int64, using scrollViewProxy: ScrollViewProxy) {
+    private func cancelInitialAccessibilityFocus() {
+        initialAccessibilityFocusWasCancelled = true
+        accessibilityFocusedMessageId = nil
+        composerVoiceOverFocusRequest = 0
+        unreadHeaderVoiceOverFocusRequest = 0
+    }
+
+    private func scrollToMessage(_ messageId: Int64) {
         Task { @MainActor in
             await Task.yield()
-            var transaction = Transaction()
-            transaction.animation = .default
-            withTransaction(transaction) {
-                scrollViewProxy.scrollTo(messageId, anchor: .center)
-                chatVM.highlightedMessageId = messageId
-            }
+            historyNavigator.scrollToMessage(messageId, anchor: .center, animated: true)
+            withAnimation { chatVM.highlightedMessageId = messageId }
             chatVM.scrollRequestMessageId = nil
             Task.main(delay: 0.8) {
                 withAnimation { chatVM.highlightedMessageId = nil }
@@ -713,17 +618,17 @@ struct ChatView: View {
         }
     }
 
-    private func focusMessage(_ messageId: Int64, using scrollViewProxy: ScrollViewProxy) {
+    private func focusMessage(_ messageId: Int64) {
         Task { @MainActor in
-            // Let List create the requested row before assigning accessibility focus.
+            // Let the collection view create the requested hosted row before assigning focus.
             await Task.yield()
             await Task.yield()
-            var transaction = Transaction()
-            transaction.animation = UIAccessibility.isVoiceOverRunning ? nil : .default
-            withTransaction(transaction) {
-                scrollViewProxy.scrollTo(messageId, anchor: .center)
-                chatVM.highlightedMessageId = messageId
-            }
+            historyNavigator.scrollToMessage(
+                messageId,
+                anchor: .center,
+                animated: !UIAccessibility.isVoiceOverRunning,
+            )
+            withAnimation { chatVM.highlightedMessageId = messageId }
             await Task.yield()
             accessibilityFocusedMessageId = nil
             await Task.yield()
@@ -733,176 +638,5 @@ struct ChatView: View {
                 withAnimation { chatVM.highlightedMessageId = nil }
             }
         }
-    }
-}
-
-// MARK: - ChatMessageListRows
-
-/// Keeps per-message observation local so a metadata update does not invalidate
-/// and rebuild the entire chat list.
-private struct ChatMessageListRows: View {
-    // MARK: Internal
-
-    let customMessage: CustomMessage
-    let previousMessage: CustomMessage?
-    let nextMessage: CustomMessage?
-    let shouldShowProfileImage: Bool
-    let isPreview: Bool
-    let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
-    let startsUnreadMessages: Bool
-    let unreadHeaderVoiceOverFocusRequest: Int
-
-    var body: some View {
-        if startsNewDay {
-            MessageDayHeader(title: telegramMessageDayHeading(customMessage.message.date))
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-        }
-
-        if startsUnreadMessages {
-            UnreadMessagesHeader(
-                count: chatVM.initialUnreadCount,
-                voiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
-            )
-            .id(ChatInitialScrollTarget.unreadMessagesHeader)
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-        }
-
-        HStack(alignment: .bottom, spacing: 0) {
-            if customMessage.serviceMessageText != nil || customMessage.message.isOutgoing {
-                Spacer(minLength: 0)
-            } else if let user = customMessage.senderUser, shouldShowProfileImage {
-                if nextMessage?.senderUser?.id != user.id {
-                    ProfileImageView(
-                        photo: user.profilePhoto?.big,
-                        minithumbnail: user.profilePhoto?.minithumbnail,
-                        title: user.firstName,
-                        userId: user.id,
-                    )
-                    .frame(width: 32, height: 32)
-                    .accessibilityHidden(true)
-                } else {
-                    Spacer().frame(width: 32, height: 32)
-                }
-                Spacer().frame(width: 5)
-            }
-
-            MessageView(customMessage: customMessage)
-                .frame(
-                    maxWidth: Utils.maxMessageContentWidth,
-                    alignment: customMessage.serviceMessageText != nil
-                        ? .center
-                        : (customMessage.message.isOutgoing ? .trailing : .leading),
-                )
-                .onScrollVisibilityChange { visible in
-                    guard !isPreview, visible else { return }
-                    chatVM.viewMessage(id: customMessage.message.id)
-                }
-
-            if customMessage.serviceMessageText != nil || !customMessage.message.isOutgoing {
-                Spacer(minLength: 0)
-            }
-        }
-        .padding(
-            customMessage.serviceMessageText != nil
-                ? .horizontal
-                : (customMessage.message.isOutgoing ? .trailing : .leading),
-            16,
-        )
-        .transition(
-            .asymmetric(
-                insertion: .move(edge: .bottom),
-                removal: .move(edge: customMessage.message.isOutgoing ? .trailing : .leading),
-            )
-            .combined(with: .opacity),
-        )
-        .listRowInsets(EdgeInsets())
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .id(customMessage.id)
-        .accessibilityFocused(messageAccessibilityFocused, equals: customMessage.id)
-    }
-
-    // MARK: Private
-
-    @Environment(ChatVM.self) private var chatVM
-
-    private var startsNewDay: Bool {
-        guard let previousMessage else { return true }
-        let date = Date(timeIntervalSince1970: TimeInterval(customMessage.message.date))
-        let previousDate = Date(timeIntervalSince1970: TimeInterval(previousMessage.message.date))
-        return !Calendar.autoupdatingCurrent.isDate(date, inSameDayAs: previousDate)
-    }
-}
-
-// MARK: - InitialAccessibilityTarget
-
-private enum InitialAccessibilityTarget: Equatable {
-    case composer
-    case message(Int64)
-    case none
-    case unreadHeader
-}
-
-// MARK: - MessageDayHeader
-
-private struct MessageDayHeader: View {
-    let title: String
-
-    var body: some View {
-        HStack {
-            Spacer()
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(.ultraThinMaterial, in: Capsule())
-            Spacer()
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
-    }
-}
-
-// MARK: - UnreadMessagesHeader
-
-private struct UnreadMessagesHeader: View {
-    // MARK: Internal
-
-    let count: Int
-    let voiceOverFocusRequest: Int
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Rectangle()
-                .fill(.blue.opacity(0.6))
-                .frame(height: 1)
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.blue)
-                .fixedSize()
-            Rectangle()
-                .fill(.blue.opacity(0.6))
-                .frame(height: 1)
-        }
-        .padding(.vertical, 6)
-        .accessibilityHidden(true)
-        .overlay {
-            VoiceOverFocusTarget(
-                label: title,
-                traits: .header,
-                request: voiceOverFocusRequest,
-            )
-        }
-    }
-
-    // MARK: Private
-
-    private var title: String {
-        "\(count) unread \(count == 1 ? "message" : "messages")"
     }
 }

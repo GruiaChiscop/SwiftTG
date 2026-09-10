@@ -318,10 +318,24 @@ struct ChatInfoView: View {
         }
     }
 
+    private var canStartSecretChat: Bool {
+        // iOS can't open secret chats yet - `RootVM.makeCustomChat` drops `.chatTypeSecret`, so
+        // `createNewSecretChat` would just dead-end at "couldn't be opened". Keep the action and
+        // its confirmation wired up for when secret-chat support lands, but don't surface it.
+        // (macOS handles secret chats via the shared `TelegramChatListStore` and keeps its button.)
+        false
+    }
+
+    private var canAddContact: Bool {
+        guard let info else { return false }
+        return info.privateChatUserId != nil && !info.isContact
+    }
+
     @ViewBuilder private var videoChatSection: some View {
         if chat.kind == .group || chat.kind == .channel,
            hasActiveVideoChat || canManageVideoChats
-           || (videoChatDetails?.scheduledStartDate ?? 0) > 0 {
+           || (videoChatDetails?.scheduledStartDate ?? 0) > 0
+        {
             Section(chat.kind == .channel ? "Live Stream" : "Voice Chat") {
                 if let videoChatDetails, videoChatDetails.scheduledStartDate > 0 {
                     LabeledContent(
@@ -381,19 +395,6 @@ struct ChatInfoView: View {
                 }
             }
         }
-    }
-
-    private var canStartSecretChat: Bool {
-        // iOS can't open secret chats yet - `RootVM.makeCustomChat` drops `.chatTypeSecret`, so
-        // `createNewSecretChat` would just dead-end at "couldn't be opened". Keep the action and
-        // its confirmation wired up for when secret-chat support lands, but don't surface it.
-        // (macOS handles secret chats via the shared `TelegramChatListStore` and keeps its button.)
-        false
-    }
-
-    private var canAddContact: Bool {
-        guard let info else { return false }
-        return info.privateChatUserId != nil && !info.isContact
     }
 
     @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {

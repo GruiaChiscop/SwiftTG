@@ -70,7 +70,9 @@ struct ChatInfoIdentitySection: View {
     /// A typing/online status when there is one, otherwise a member count for groups/channels
     /// (Telegram shows "12,345 members" rather than "Group").
     private var subtitle: String {
-        if !status.isEmpty { return status }
+        if !status.isEmpty {
+            return status
+        }
         if chat.kind == .group || chat.kind == .channel, let memberCount = info?.memberCount {
             let unit = chat.kind == .channel ? "subscriber" : "member"
             return "\(memberCount.formatted()) \(unit)\(memberCount == 1 ? "" : "s")"

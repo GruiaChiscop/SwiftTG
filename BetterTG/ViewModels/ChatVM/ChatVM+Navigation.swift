@@ -4,25 +4,21 @@ import SwiftUI
 @preconcurrency import TDLibKit
 
 extension ChatVM {
-    func updateBottomVisibility(isLastMessageVisible: Bool) {
+    func updateBottomVisibility(isLastMessageVisible: Bool, shouldShowButton: Bool) {
         isAtBottom = isLastMessageVisible
-        let shouldShowButton = !isLastMessageVisible
         guard showScrollToBottomButton != shouldShowButton else { return }
         withAnimation { showScrollToBottomButton = shouldShowButton }
     }
 
     func scrollToLast() {
-        guard let lastId = messages.last?.id, let scrollViewProxy else { return }
-        withAnimation { scrollViewProxy.scrollTo(lastId, anchor: .bottom) }
+        historyNavigator?.scrollToBottom(animated: true)
     }
 
     func scrollTo(id: Int64?, anchor: UnitPoint = .center) {
-        guard let scrollViewProxy, let id else { return }
+        guard let id else { return }
 
-        withAnimation {
-            scrollViewProxy.scrollTo(id, anchor: anchor)
-            highlightedMessageId = id
-        }
+        historyNavigator?.scrollToMessage(id, anchor: .init(anchor), animated: true)
+        withAnimation { highlightedMessageId = id }
 
         Task.main(delay: 0.5) {
             withAnimation {

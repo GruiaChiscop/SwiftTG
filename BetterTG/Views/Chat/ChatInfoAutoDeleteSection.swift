@@ -45,7 +45,7 @@ struct ChatInfoAutoDeleteSection: View {
     /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
     private static let presets: [(title: String, seconds: Int)] = [
         ("Off", 0),
-        ("1 Day", 86_400),
+        ("1 Day", 86400),
         ("1 Week", 604_800),
         ("1 Month", 2_678_400),
     ]
@@ -63,9 +63,9 @@ struct ChatInfoAutoDeleteSection: View {
     private var canEdit: Bool {
         guard !chat.isSavedMessages else { return false }
         switch chat.kind {
-        case .privateChat, .bot:
+        case .bot, .privateChat:
             return true
-        case .group, .channel:
+        case .channel, .group:
             return info.canChangeInfo
         }
     }
@@ -83,11 +83,11 @@ struct ChatInfoAutoDeleteSection: View {
     private static func label(_ seconds: Int) -> String {
         switch seconds {
         case 0: "Off"
-        case 86_400: "1 day"
+        case 86400: "1 day"
         case 604_800: "1 week"
         case 2_678_400: "1 month"
-        case let value where value % 86_400 == 0: "\(value / 86_400) days"
-        default: "\(max(1, seconds / 3_600)) hours"
+        case let value where value % 86400 == 0: "\(value / 86400) days"
+        default: "\(max(1, seconds / 3600)) hours"
         }
     }
 

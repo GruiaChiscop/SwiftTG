@@ -3,12 +3,13 @@
 import CoreImage
 
 enum TelegramStickerEditorRendering {
+    // MARK: Internal
+
     /// `renderOverlay` (behind `strokes`/`overlays`) uses SwiftUI's `ImageRenderer`, which is
     /// MainActor-only, so the overlay bitmap is produced here; the CoreImage compositing and PNG
     /// encode - the CPU-heavy part - is then offloaded, mirroring the video path's
     /// `@concurrent exportConcurrently`.
-    @MainActor
-    static func pngData(
+    @MainActor static func pngData(
         sourceImage: CGImage,
         snapshot: TelegramMediaEditorSnapshot,
     ) async throws -> Data {
@@ -30,8 +31,9 @@ enum TelegramStickerEditorRendering {
         )
     }
 
-    @concurrent
-    private static func encode(
+    // MARK: Private
+
+    @concurrent private static func encode(
         sourceImage: CGImage,
         overlayImage: CGImage?,
         snapshot: TelegramMediaEditorSnapshot,

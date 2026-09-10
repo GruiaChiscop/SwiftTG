@@ -35,7 +35,9 @@ import TDLibKit
     func noteTyping() {
         guard isEnabled else { return }
         let now = Foundation.Date()
-        if let lastSentAt, now.timeIntervalSince(lastSentAt) < interval { return }
+        if let lastSentAt, now.timeIntervalSince(lastSentAt) < interval {
+            return
+        }
         lastSentAt = now
         send(.chatActionTyping)
     }

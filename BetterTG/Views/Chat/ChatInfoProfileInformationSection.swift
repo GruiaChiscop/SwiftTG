@@ -93,7 +93,9 @@ struct ChatInfoProfileInformationSection: View {
     private var kind: CustomChat.ChatKind { chatVM.customChat.kind }
 
     private var aboutLabel: String {
-        if info.isBot { return "Bot Info" }
+        if info.isBot {
+            return "Bot Info"
+        }
         return kind == .group || kind == .channel ? "Description" : "Bio"
     }
 
