@@ -14,6 +14,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     case .updateBasicGroup,
          .updateBasicGroupFullInfo,
          .updateChatAction,
+         .updateChatOnlineMemberCount,
          .updateFavoriteStickers,
          .updateNotificationGroup,
          .updateSupergroup,
@@ -151,6 +152,9 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var openedUnreadCount = 0
     var openedLastReadInboxMessageId: Int64 = 0
     var conversationHeaderBaseStatus: String?
+    /// From `updateChatOnlineMemberCount` for the opened chat; folded into
+    /// `conversationHeaderStatus` for groups.
+    var conversationHeaderOnlineMemberCount = 0
     var conversationHeaderActivities = [MessageSender: ChatAction]()
     var deepLinkErrorMessage: String?
     var pendingDeepLinkJoin: TelegramPendingDeepLinkJoin?
@@ -582,6 +586,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         commentThreadReturnChatId = nil
         openedChatType = nil
         conversationHeaderBaseStatus = nil
+        conversationHeaderOnlineMemberCount = 0
         conversationHeaderActivities = [:]
         pinnedMessages = []
         pinnedMessagesError = nil

@@ -18,6 +18,7 @@ struct ChatInfoView: View {
                 autoDeleteSection(info)
                 videoChatSection
                 memberDetailsSection(info)
+                membersPreviewSection(info)
                 groupSettingsSection(info)
                 sharedContentSection(info)
                 unofficialAppWarningSection(info)
@@ -267,7 +268,7 @@ struct ChatInfoView: View {
     private var hasActiveVideoChat: Bool { chatVM.hasActiveVideoChat }
 
     private var status: String {
-        !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.onlineStatus
+        !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.conversationStatus
     }
 
     /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
@@ -419,6 +420,17 @@ struct ChatInfoView: View {
             .background(.red, in: Capsule())
     }
 
+    /// The line under the title: a typing/online status when there is one, otherwise a member
+    /// count for groups/channels (Telegram shows "12,345 members" rather than "Group").
+    private var identitySubtitle: String {
+        if !status.isEmpty { return status }
+        if chat.kind == .group || chat.kind == .channel, let memberCount = info?.memberCount {
+            let unit = chat.kind == .channel ? "subscriber" : "member"
+            return "\(memberCount.formatted()) \(unit)\(memberCount == 1 ? "" : "s")"
+        }
+        return chat.kind.title
+    }
+
     private func identitySection(_ info: TelegramChatInfoData?) -> some View {
         Section {
             VStack(spacing: 12) {
@@ -441,10 +453,11 @@ struct ChatInfoView: View {
                         identityBadges(info)
                     }
 
-                    let identityStatus = status.isEmpty ? chat.kind.title : status
+                    let identityStatus = identitySubtitle
                     Text(identityStatus)
                         .font(.subheadline)
-                        .foregroundStyle(identityStatus == "online" ? .blue : .secondary)
+                        // Matches `telegramUserPresenceDescription`'s exact "Online" output.
+                        .foregroundStyle(identityStatus == "Online" ? .blue : .secondary)
                 }
                 .accessibilityElement(children: .combine)
 
@@ -480,6 +493,12 @@ struct ChatInfoView: View {
             .buttonStyle(.plain)
 
             TelegramChatSoundRow(service: chatVM.service, chatId: chat.id, settings: chat.notificationSettings)
+
+            TelegramChatNotificationTogglesRow(
+                service: chatVM.service,
+                chatId: chat.id,
+                settings: chat.notificationSettings,
+            )
         }
     }
 
@@ -554,7 +573,7 @@ struct ChatInfoView: View {
 
     @ViewBuilder private func profileInformationSection(_ info: TelegramChatInfoData) -> some View {
         if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
-            || info.privacyPolicyURL != nil || info.usesPrivacyCommand
+            || info.privacyPolicyURL != nil || info.usesPrivacyCommand || info.personalChatId != 0
         {
             Section {
                 if let phoneNumber = info.phoneNumber {
@@ -581,6 +600,21 @@ struct ChatInfoView: View {
 
                 if let birthdate = info.birthdate {
                     LabeledContent("Birthdate", value: birthdate)
+                }
+
+                if info.personalChatId != 0 {
+                    Button {
+                        openChat(info.personalChatId)
+                    } label: {
+                        LabeledContent {
+                            Text(info.personalChatTitle ?? "Open")
+                        } label: {
+                            Label("Channel", systemImage: "megaphone")
+                        }
+                        .foregroundStyle(.primary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 if let about = info.about, !about.text.isEmpty {
@@ -667,6 +701,44 @@ struct ChatInfoView: View {
         }
     }
 
+    @ViewBuilder private func membersPreviewSection(_ info: TelegramChatInfoData) -> some View {
+        if info.memberTotalCount > 0, info.memberTotalCount <= 5, !info.members.isEmpty {
+            Section(chat.kind == .channel ? "Subscribers" : "Members") {
+                ForEach(info.members) { member in
+                    Button {
+                        openMember(member.id)
+                    } label: {
+                        HStack(spacing: 12) {
+                            ProfileImageView(
+                                photo: member.photo,
+                                minithumbnail: member.minithumbnail,
+                                title: member.name,
+                                userId: member.placeholderId,
+                                fontSize: 16,
+                            )
+                            .frame(width: 36, height: 36)
+                            .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(member.name)
+                                    .foregroundStyle(.primary)
+                                let details = [member.role, member.presence].compactMap(\.self)
+                                if !details.isEmpty {
+                                    Text(details.joined(separator: ", "))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func groupSettingsSection(_ info: TelegramChatInfoData) -> some View {
         let isCommunity = chat.kind == .group || chat.kind == .channel
         let isChannel = chat.kind == .channel
@@ -682,7 +754,7 @@ struct ChatInfoView: View {
             Section {
                 if showsLinkedChat {
                     Button {
-                        openLinkedChat(info.linkedChatId)
+                        openChat(info.linkedChatId)
                     } label: {
                         LabeledContent(
                             isChannel ? "Discussion Group" : "Linked Channel",
@@ -946,12 +1018,28 @@ struct ChatInfoView: View {
         dismiss()
     }
 
-    private func openLinkedChat(_ chatId: Int64) {
+    private func openChat(_ chatId: Int64) {
         // Dismiss synchronously so the row can't be tapped again while the chat resolves - a
         // second tap would otherwise push the chat onto the nav path twice.
         dismiss()
         Task {
             guard let customChat = await RootVM.shared.getCustomChat(from: chatId) else { return }
+            await Task.yield()
+            RootVM.shared.navigate(to: .customChat(customChat))
+        }
+    }
+
+    private func openMember(_ sender: MessageSender) {
+        dismiss()
+        Task {
+            let customChat: CustomChat? =
+                switch sender {
+                case .messageSenderUser(let value):
+                    await RootVM.shared.getPrivateCustomChat(userId: value.userId)
+                case .messageSenderChat(let value):
+                    await RootVM.shared.getCustomChat(from: value.chatId)
+                }
+            guard let customChat else { return }
             await Task.yield()
             RootVM.shared.navigate(to: .customChat(customChat))
         }

@@ -34,6 +34,17 @@ extension ChatVM {
                 Task { @MainActor in self?.favoriteStickers.apply(update) }
             }
             .store(in: &cancellables)
+        let chatId = customChat.chat.id
+        service.updatePublisher
+            .compactMap { update -> Int? in
+                guard case .updateChatOnlineMemberCount(let value) = update, value.chatId == chatId else { return nil }
+                return value.onlineMemberCount
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] count in
+                Task { @MainActor in self?.onlineMemberCount = count }
+            }
+            .store(in: &cancellables)
     }
 
     @MainActor private func updateConversationStatus(_ update: Update) {

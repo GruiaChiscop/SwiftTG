@@ -78,6 +78,10 @@ struct TelegramChatInfoData: Equatable {
     var isContact = false
     var contactFirstName = ""
     var contactLastName = ""
+    /// The user's public "personal channel" shown on their profile (`personalChatId` is 0 when
+    /// none).
+    var personalChatId: Int64 = 0
+    var personalChatTitle: String?
     var canStartAudioCall = false
     var canStartVideoCall = false
 }
@@ -367,6 +371,10 @@ struct TelegramChatInfoLoader {
             info.about = bio
         }
         info.birthdate = full.birthdate.map(telegramBirthdateDescription)
+        info.personalChatId = full.personalChatId
+        if full.personalChatId != 0 {
+            info.personalChatTitle = try? await service.getChat(chatId: full.personalChatId).title
+        }
         info.commonGroupCount = full.groupInCommonCount
         info.commonGroupsUserId = full.groupInCommonCount > 0 ? userId : nil
         info.isBlocked = full.blockList == .blockListMain

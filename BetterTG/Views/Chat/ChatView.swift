@@ -441,7 +441,7 @@ struct ChatView: View {
 
     private var principalAccessibilityLabel: String {
         let title = titleOverride ?? chatVM.customChat.displayTitle
-        let status = chatVM.actionStatus.isEmpty ? chatVM.onlineStatus : chatVM.actionStatus
+        let status = chatVM.actionStatus.isEmpty ? chatVM.conversationStatus : chatVM.actionStatus
         return status.isEmpty ? title : "\(title), \(status)"
     }
 
@@ -514,8 +514,8 @@ struct ChatView: View {
                 Group {
                     if !chatVM.actionStatus.isEmpty {
                         Text(chatVM.actionStatus)
-                    } else if !chatVM.onlineStatus.isEmpty {
-                        Text(chatVM.onlineStatus)
+                    } else if !chatVM.conversationStatus.isEmpty {
+                        Text(chatVM.conversationStatus)
                     }
                 }
                 .transition(
@@ -526,7 +526,8 @@ struct ChatView: View {
                     .combined(with: .opacity),
                 )
                 .font(.caption)
-                .foregroundStyle(!chatVM.actionStatus.isEmpty || chatVM.onlineStatus == "online" ? .blue : .gray)
+                // `telegramUserPresenceDescription` emits "Online" (capitalised).
+                .foregroundStyle(!chatVM.actionStatus.isEmpty || chatVM.onlineStatus == "Online" ? .blue : .gray)
             }
             .frame(minWidth: Utils.screen.bounds.width * 0.5)
             .padding(.horizontal, 12)

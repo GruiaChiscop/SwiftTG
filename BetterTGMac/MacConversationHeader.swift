@@ -60,7 +60,19 @@ extension MacSessionModel {
         if let action = conversationHeaderActivities.values.first {
             return macConversationActionDescription(action)
         }
-        return conversationHeaderBaseStatus
+        guard let base = conversationHeaderBaseStatus else { return nil }
+        if conversationHeaderOnlineMemberCount > 0, isOpenedChatGroup {
+            return "\(base), \(conversationHeaderOnlineMemberCount.formatted()) online"
+        }
+        return base
+    }
+
+    private var isOpenedChatGroup: Bool {
+        switch openedChatType {
+        case .chatTypeBasicGroup: true
+        case .chatTypeSupergroup(let value): !value.isChannel
+        default: false
+        }
     }
 
     func prepareConversationHeader(for chatId: Int64, fallbackKind: ChatListItemKind?) {
@@ -68,6 +80,7 @@ extension MacSessionModel {
         conversationHeaderTask = nil
         openedChatType = nil
         conversationHeaderActivities = [:]
+        conversationHeaderOnlineMemberCount = 0
         conversationHeaderBaseStatus = fallbackKind.flatMap(macConversationFallbackStatus)
 
         conversationHeaderTask = Task { [weak self] in
@@ -163,6 +176,9 @@ extension MacSessionModel {
             } else {
                 conversationHeaderActivities[value.senderId] = value.action
             }
+        case .updateChatOnlineMemberCount(let value):
+            guard value.chatId == openedChatId else { return }
+            conversationHeaderOnlineMemberCount = value.onlineMemberCount
         default:
             break
         }

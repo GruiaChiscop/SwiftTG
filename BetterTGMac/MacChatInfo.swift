@@ -296,6 +296,12 @@ struct MacChatInfoView: View {
             .buttonStyle(.plain)
 
             TelegramChatSoundRow(service: model.service, chatId: chat.chatId, settings: chatNotificationSettings)
+
+            TelegramChatNotificationTogglesRow(
+                service: model.service,
+                chatId: chat.chatId,
+                settings: chatNotificationSettings,
+            )
         }
     }
 
@@ -359,6 +365,17 @@ struct MacChatInfoView: View {
         }
     }
 
+    private func identitySubtitle(_ info: TelegramChatInfoData) -> String {
+        if let status = model.conversationHeaderStatus, !status.isEmpty {
+            return status
+        }
+        if chat.kind == .group || chat.kind == .channel, let memberCount = info.memberCount {
+            let unit = chat.kind == .channel ? "subscriber" : "member"
+            return "\(memberCount.formatted()) \(unit)\(memberCount == 1 ? "" : "s")"
+        }
+        return info.kind
+    }
+
     private func identitySection(_ info: TelegramChatInfoData) -> some View {
         Section {
             VStack(spacing: 10) {
@@ -367,7 +384,7 @@ struct MacChatInfoView: View {
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)
                 identityBadges(info)
-                Text(model.conversationHeaderStatus ?? info.kind)
+                Text(identitySubtitle(info))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -440,7 +457,9 @@ struct MacChatInfoView: View {
     }
 
     @ViewBuilder private func detailsSections(_ info: TelegramChatInfoData) -> some View {
-        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil {
+        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
+            || info.personalChatId != 0
+        {
             Section {
                 if let phoneNumber = info.phoneNumber {
                     LabeledContent("Phone", value: phoneNumber)
@@ -460,6 +479,20 @@ struct MacChatInfoView: View {
                 }
                 if let birthdate = info.birthdate {
                     LabeledContent("Birthdate", value: birthdate)
+                }
+                if info.personalChatId != 0 {
+                    Button {
+                        dismiss()
+                        model.openLinkedChat(chatId: info.personalChatId)
+                    } label: {
+                        LabeledContent {
+                            Text(info.personalChatTitle ?? "Open")
+                        } label: {
+                            Label("Channel", systemImage: "megaphone")
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 if let about = info.about, !about.text.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {

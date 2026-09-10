@@ -82,6 +82,24 @@ import TDLibKit
     var actionStatus = ""
     var isJoiningChat = false
     var onlineStatus = ""
+    /// From `updateChatOnlineMemberCount` while the chat is open - TDLib only reports it for
+    /// groups (and only up to a size cap), 0 otherwise.
+    var onlineMemberCount = 0
+
+    /// `onlineStatus` plus a ", N online" suffix for groups. Used for the conversation header and
+    /// chat-info subtitle.
+    var conversationStatus: String {
+        guard !onlineStatus.isEmpty, onlineMemberCount > 0, isGroupChat else { return onlineStatus }
+        return "\(onlineStatus), \(onlineMemberCount.formatted()) online"
+    }
+
+    var isGroupChat: Bool {
+        switch customChat.type {
+        case .group: true
+        case .supergroup(let supergroup): !supergroup.isChannel
+        case .bot, .user: false
+        }
+    }
     var highlightedMessageId: Int64?
     var scrollRequestMessageId: Int64?
     var accessibilityFocusRequestMessageId: Int64?
