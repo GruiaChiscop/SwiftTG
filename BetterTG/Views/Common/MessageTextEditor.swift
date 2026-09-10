@@ -20,6 +20,11 @@ private final class MessageUITextView: UITextView {
     var onSubmit: (() -> Void)?
     var onPasteImages: (([SelectedImage]) -> Void)?
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        voiceOverFocusController.viewDidMoveToWindow(self)
+    }
+
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         guard action == #selector(paste(_:)), UIPasteboard.general.hasImages else {
             return super.canPerformAction(action, withSender: sender)
@@ -47,7 +52,13 @@ private final class MessageUITextView: UITextView {
         )
     }
 
+    func requestVoiceOverFocus() {
+        voiceOverFocusController.requestFocus(on: self)
+    }
+
     // MARK: Private
+
+    private let voiceOverFocusController = VoiceOverFocusController()
 
     @objc private func submit(_: UIKeyCommand) {
         onSubmit?()
@@ -69,6 +80,7 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
 
         var parent: MessageUITextViewRepresentable
         var contextID: AnyHashable
+        var lastVoiceOverFocusRequest = 0
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = telegramAttributedString(from: textView.attributedText)
@@ -78,6 +90,7 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
     @Binding var text: AttributedString
 
     let contextID: AnyHashable
+    let voiceOverFocusRequest: Int
     let onSubmit: (() -> Void)?
     let onPasteImages: (([SelectedImage]) -> Void)?
 
@@ -113,6 +126,13 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onPasteImages = onPasteImages
 
+        if voiceOverFocusRequest != 0,
+           voiceOverFocusRequest != context.coordinator.lastVoiceOverFocusRequest
+        {
+            context.coordinator.lastVoiceOverFocusRequest = voiceOverFocusRequest
+            textView.requestVoiceOverFocus()
+        }
+
         let newValue = telegramNSAttributedString(from: text)
         guard textView.attributedText != newValue else {
             if contextChanged {
@@ -146,12 +166,14 @@ struct MessageTextEditor: View {
         _ placeholder: String = "",
         text: Binding<AttributedString>,
         contextID: AnyHashable = "composer",
+        voiceOverFocusRequest: Int = 0,
         onSubmit: (() -> Void)? = nil,
         onPasteImages: (([SelectedImage]) -> Void)? = nil,
     ) {
         self.placeholder = placeholder
         self._text = text
         self.contextID = contextID
+        self.voiceOverFocusRequest = voiceOverFocusRequest
         self.onSubmit = onSubmit
         self.onPasteImages = onPasteImages
     }
@@ -173,6 +195,7 @@ struct MessageTextEditor: View {
                 MessageUITextViewRepresentable(
                     text: $text,
                     contextID: contextID,
+                    voiceOverFocusRequest: voiceOverFocusRequest,
                     onSubmit: onSubmit,
                     onPasteImages: onPasteImages,
                 )
@@ -191,6 +214,7 @@ struct MessageTextEditor: View {
     private let placeholder: String
     private let onSubmit: (() -> Void)?
     private let onPasteImages: (([SelectedImage]) -> Void)?
+    private let voiceOverFocusRequest: Int
 
     private var sizingText: some View {
         Text(text.characters.isEmpty ? AttributedString(" ") : text)

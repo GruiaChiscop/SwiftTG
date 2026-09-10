@@ -12,6 +12,19 @@ private struct PresentedChatActionError: Identifiable {
     let message: String
 }
 
+// MARK: - ChatInitialScrollTarget
+
+private enum ChatInitialScrollTarget: Hashable {
+    case unreadMessagesHeader
+}
+
+// MARK: - InitialScrollDestination
+
+private enum InitialScrollDestination {
+    case message(Int64, anchor: UnitPoint)
+    case unreadMessagesHeader
+}
+
 // MARK: - ChatView
 
 struct ChatView: View {
@@ -86,11 +99,10 @@ struct ChatView: View {
                     }
                     .onAppear {
                         chatVM.scrollViewProxy = scrollViewProxy
-                        positionInitialMessagesIfNeeded()
                     }
-                    .onChange(of: chatVM.initialMessagesLoaded) { _, loaded in
-                        guard loaded else { return }
-                        positionInitialMessagesIfNeeded()
+                    .task(id: chatVM.initialMessagesLoaded) {
+                        guard chatVM.initialMessagesLoaded else { return }
+                        await positionInitialMessagesIfNeeded(using: scrollViewProxy)
                     }
                     .onChange(of: chatVM.scrollRequestMessageId) { _, messageId in
                         guard let messageId else { return }
@@ -134,7 +146,10 @@ struct ChatView: View {
                 conversationSearchNavigationBar
             } else if !isPreview {
                 if chatVM.customChat.canPostMessages || chatVM.isCommentThread {
-                    ChatBottomArea(focused: $focused) {
+                    ChatBottomArea(
+                        focused: $focused,
+                        voiceOverFocusRequest: composerVoiceOverFocusRequest,
+                    ) {
                         guard let message = chatVM.messageActionError else { return }
                         presentedActionError = PresentedChatActionError(message: message)
                     }
@@ -267,7 +282,8 @@ struct ChatView: View {
     }
     
     var bodyView: some View {
-        List {
+        let unreadMessageId = initialUnreadMessageId
+        return List {
             ForEach(Array(chatVM.messages.enumerated()), id: \.element.id) { index, customMessage in
                 ChatMessageListRows(
                     customMessage: customMessage,
@@ -275,8 +291,10 @@ struct ChatView: View {
                     nextMessage: chatVM.messages[safe: index + 1],
                     shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
                     isPreview: isPreview,
+                    messageAccessibilityFocused: $accessibilityFocusedMessageId,
+                    startsUnreadMessages: customMessage.id == unreadMessageId,
+                    unreadHeaderVoiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
                 )
-                .accessibilityFocused($accessibilityFocusedMessageId, equals: customMessage.id)
             }
         }
         .listStyle(.plain)
@@ -386,6 +404,7 @@ struct ChatView: View {
     @Environment(\.openURL) private var openURL
     @FocusState private var conversationSearchFocused
     @State private var initialScrollPosition = ScrollPosition(idType: Int64.self, edge: .bottom)
+    @State private var composerVoiceOverFocusRequest = 0
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
@@ -394,6 +413,7 @@ struct ChatView: View {
     @State private var showsCameraPermissionAlert = false
     @State private var showsMicrophonePermissionAlert = false
     @State private var presentedActionError: PresentedChatActionError?
+    @State private var unreadHeaderVoiceOverFocusRequest = 0
 
     private var unreadChatCount: Int {
         rootVM.allChats.lazy.filter(\.hasUnreadMessages).count
@@ -613,39 +633,67 @@ struct ChatView: View {
         openURL(url)
     }
 
-    private func positionInitialMessagesIfNeeded() {
+    private func positionInitialMessagesIfNeeded(using scrollViewProxy: ScrollViewProxy) async {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
         positionedInitialMessages = true
 
-        let focusMessageId: Int64?
-        let anchor: UnitPoint
+        let scrollDestination: InitialScrollDestination?
+        let accessibilityTarget: InitialAccessibilityTarget
         if let initialMessageId = chatVM.initialMessageId {
-            focusMessageId = initialMessageId
-            anchor = .center
-        } else if let initialUnreadMessageId {
-            focusMessageId = initialUnreadMessageId
-            anchor = .top
+            scrollDestination = .message(initialMessageId, anchor: .center)
+            accessibilityTarget = chatVM.movesAccessibilityFocusToInitialMessage
+                ? .message(initialMessageId)
+                : .none
+        } else if initialUnreadMessageId != nil {
+            scrollDestination = .unreadMessagesHeader
+            accessibilityTarget = .unreadHeader
         } else {
-            focusMessageId = chatVM.messages.last?.id
-            anchor = .bottom
+            scrollDestination = chatVM.messages.last.map { .message($0.id, anchor: .bottom) }
+            accessibilityTarget =
+                if !isPreview, chatVM.customChat.canPostMessages || chatVM.isCommentThread {
+                    .composer
+                } else if let lastMessageId = chatVM.messages.last?.id {
+                    .message(lastMessageId)
+                } else {
+                    .none
+                }
         }
 
-        Task { @MainActor in
-            // `initialMessagesLoaded` flips true the same tick `messages` is populated - List
-            // (UITableView-backed) hasn't necessarily created/laid out those rows yet, so a
-            // `scrollTo` issued synchronously here can silently land nowhere.
-            await Task.yield()
-            await Task.yield()
-            guard let focusMessageId else { return }
-            // Scrolls to the exact id, via the same `ScrollViewReader` proxy `focusMessage`/
-            // `scrollToMessage` already rely on - `initialScrollPosition`'s edge-based
-            // `.scrollTo(edge: .bottom)` doesn't guarantee *which* row ends up laid out, only
-            // that the scroll offset ends up near the bottom.
+        // `initialMessagesLoaded` flips true the same tick `messages` is populated. Give List time
+        // to create its rows before scrolling, then another layout pass before assigning VoiceOver
+        // focus. This task is attached to the view, so leaving the chat cancels the sequence.
+        await Task.yield()
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        if let scrollDestination {
             var transaction = Transaction()
             transaction.animation = nil
             withTransaction(transaction) {
-                chatVM.scrollViewProxy?.scrollTo(focusMessageId, anchor: anchor)
+                switch scrollDestination {
+                case .message(let messageId, let anchor):
+                    scrollViewProxy.scrollTo(messageId, anchor: anchor)
+                case .unreadMessagesHeader:
+                    scrollViewProxy.scrollTo(ChatInitialScrollTarget.unreadMessagesHeader, anchor: .top)
+                }
             }
+        }
+
+        guard UIAccessibility.isVoiceOverRunning, accessibilityTarget != .none else { return }
+        await Task.yield()
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        switch accessibilityTarget {
+        case .composer:
+            composerVoiceOverFocusRequest += 1
+        case .message(let messageId):
+            accessibilityFocusedMessageId = nil
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            accessibilityFocusedMessageId = messageId
+        case .none:
+            break
+        case .unreadHeader:
+            unreadHeaderVoiceOverFocusRequest += 1
         }
     }
 
@@ -700,6 +748,9 @@ private struct ChatMessageListRows: View {
     let nextMessage: CustomMessage?
     let shouldShowProfileImage: Bool
     let isPreview: Bool
+    let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
+    let startsUnreadMessages: Bool
+    let unreadHeaderVoiceOverFocusRequest: Int
 
     var body: some View {
         if startsNewDay {
@@ -710,10 +761,14 @@ private struct ChatMessageListRows: View {
         }
 
         if startsUnreadMessages {
-            UnreadMessagesHeader(count: chatVM.initialUnreadCount)
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+            UnreadMessagesHeader(
+                count: chatVM.initialUnreadCount,
+                voiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
+            )
+            .id(ChatInitialScrollTarget.unreadMessagesHeader)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
 
         HStack(alignment: .bottom, spacing: 0) {
@@ -768,6 +823,7 @@ private struct ChatMessageListRows: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .id(customMessage.id)
+        .accessibilityFocused(messageAccessibilityFocused, equals: customMessage.id)
     }
 
     // MARK: Private
@@ -780,16 +836,15 @@ private struct ChatMessageListRows: View {
         let previousDate = Date(timeIntervalSince1970: TimeInterval(previousMessage.message.date))
         return !Calendar.autoupdatingCurrent.isDate(date, inSameDayAs: previousDate)
     }
+}
 
-    private var startsUnreadMessages: Bool {
-        guard chatVM.initialUnreadCount > 0,
-              !customMessage.message.isOutgoing,
-              customMessage.id > chatVM.initialLastReadInboxMessageId
-        else { return false }
-        guard let previousMessage else { return true }
-        return previousMessage.message.isOutgoing
-            || previousMessage.id <= chatVM.initialLastReadInboxMessageId
-    }
+// MARK: - InitialAccessibilityTarget
+
+private enum InitialAccessibilityTarget: Equatable {
+    case composer
+    case message(Int64)
+    case none
+    case unreadHeader
 }
 
 // MARK: - MessageDayHeader
@@ -819,6 +874,7 @@ private struct UnreadMessagesHeader: View {
     // MARK: Internal
 
     let count: Int
+    let voiceOverFocusRequest: Int
 
     var body: some View {
         HStack(spacing: 10) {
@@ -834,8 +890,14 @@ private struct UnreadMessagesHeader: View {
                 .frame(height: 1)
         }
         .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+        .accessibilityHidden(true)
+        .overlay {
+            VoiceOverFocusTarget(
+                label: title,
+                traits: .header,
+                request: voiceOverFocusRequest,
+            )
+        }
     }
 
     // MARK: Private

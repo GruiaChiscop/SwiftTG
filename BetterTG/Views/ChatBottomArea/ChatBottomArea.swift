@@ -12,6 +12,7 @@ struct ChatBottomArea: View {
     // MARK: Internal
 
     var focused: FocusState<Bool>.Binding
+    var voiceOverFocusRequest: Int
     var onAttachmentPreviewDismissed: () -> Void
 
     @Namespace var namespace
@@ -656,6 +657,7 @@ struct ChatBottomArea: View {
             isEditing ? "Edit a message" : "Type a message",
             text: isEditing ? $chatVM.editMessageText : $chatVM.text,
             contextID: chatVM.editCustomMessage.map { AnyHashable($0.id) } ?? AnyHashable("composer"),
+            voiceOverFocusRequest: voiceOverFocusRequest,
             onSubmit: submitMessage,
             onPasteImages: isEditing
                 ? nil
