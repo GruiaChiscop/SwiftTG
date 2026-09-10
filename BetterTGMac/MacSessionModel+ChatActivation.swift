@@ -213,6 +213,17 @@ extension MacSessionModel {
         }
     }
 
+    func openLinkedChat(chatId: Int64) {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let chat = try? await service.getChat(chatId: chatId) else {
+                messageActionError = "That chat couldn't be opened."
+                return
+            }
+            await activateResolvedChat(chat, messageId: nil)
+        }
+    }
+
     func startSecretChat(userId: Int64) {
         messageActionError = nil
         Task { [weak self] in

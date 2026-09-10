@@ -60,12 +60,24 @@ struct TelegramChatInfoData: Equatable {
     var canChangeInfo = false
     var canLeave = false
     var canDeleteCommunity = false
+    /// Read-only group/channel details surfaced in `ChatInfoView`. `linkedChatId` is 0 when none;
+    /// `slowModeDelay` is in seconds (0 = off).
+    var slowModeDelay = 0
+    var linkedChatId: Int64 = 0
+    var linkedChatTitle: String?
+    var hasHiddenMembers = false
+    var signMessages = false
+    var hasProtectedContent = false
+    var reactionsSummary: String?
     var isBot = false
     var blockableUserId: Int64?
     var callUserId: Int64?
     /// The other person's user id for a 1:1 chat with a regular (non-bot, non-deleted) user that
     /// isn't yourself - drives "Start Secret Chat" and "Add to Contacts".
     var privateChatUserId: Int64?
+    var isContact = false
+    var contactFirstName = ""
+    var contactLastName = ""
     var canStartAudioCall = false
     var canStartVideoCall = false
 }
@@ -157,6 +169,8 @@ struct TelegramChatInfoLoader {
             isSavedMessages: isSavedMessages,
         )
         info.messageAutoDeleteTime = chat.messageAutoDeleteTime
+        info.hasProtectedContent = chat.hasProtectedContent
+        info.reactionsSummary = telegramReactionsSummary(chat.availableReactions)
         let scope = telegramNotificationScope(for: chat.type)
         info.defaultMuteFor = await (try? service.getScopeNotificationSettings(scope: scope))?.muteFor ?? 0
 
@@ -333,6 +347,9 @@ struct TelegramChatInfoLoader {
         let isCallEligible = isRegularUser && !user.isSupport && userId != currentUserId
         info.callUserId = isCallEligible ? userId : nil
         info.privateChatUserId = (isRegularUser && userId != currentUserId) ? userId : nil
+        info.isContact = user.isContact
+        info.contactFirstName = user.firstName
+        info.contactLastName = user.lastName
         switch user.type {
         case .userTypeBot:
             info.isBot = true
@@ -421,12 +438,19 @@ struct TelegramChatInfoLoader {
         info.canManageMembers = telegramCanManageMembers(group.status)
         info.canRestrictMembers = telegramCanRestrictMembers(group.status)
         info.canChangeInfo = telegramCanChangeInfo(group.status)
+        info.signMessages = group.signMessages
 
         guard let full = try? await service.getSupergroupFullInfo(supergroupId: groupId) else { return }
         info.about = full.description.telegramNilIfEmpty.map { FormattedText(entities: [], text: $0) }
         info.memberCount = max(group.memberCount, full.memberCount)
         info.memberTotalCount = full.memberCount
         info.canBrowseMembers = full.canGetMembers
+        info.slowModeDelay = full.slowModeDelay
+        info.hasHiddenMembers = full.hasHiddenMembers
+        info.linkedChatId = full.linkedChatId
+        if full.linkedChatId != 0 {
+            info.linkedChatTitle = try? await service.getChat(chatId: full.linkedChatId).title
+        }
         if info.canManageMembers {
             info.administratorCount = full.administratorCount
         }
@@ -490,6 +514,27 @@ func telegramCanRestrictMembers(_ status: ChatMemberStatus) -> Bool {
         value.rights.canRestrictMembers
     case .chatMemberStatusBanned, .chatMemberStatusLeft, .chatMemberStatusMember, .chatMemberStatusRestricted:
         false
+    }
+}
+
+/// `nil` for the default "all reactions" - only surfaced when a group/channel has narrowed or
+/// disabled reactions, matching where Telegram itself shows it.
+func telegramReactionsSummary(_ reactions: ChatAvailableReactions) -> String? {
+    switch reactions {
+    case .chatAvailableReactionsAll:
+        nil
+    case .chatAvailableReactionsSome(let some):
+        some.reactions.isEmpty ? "Off" : "\(some.reactions.count) enabled"
+    }
+}
+
+func telegramSlowModeDescription(_ seconds: Int) -> String {
+    switch seconds {
+    case ..<60: "\(seconds)s"
+    case ..<3600:
+        seconds % 60 == 0 ? "\(seconds / 60) min" : "\(seconds / 60) min \(seconds % 60)s"
+    default:
+        seconds % 3600 == 0 ? "\(seconds / 3600) h" : "\(seconds / 3600) h \((seconds % 3600) / 60) min"
     }
 }
 

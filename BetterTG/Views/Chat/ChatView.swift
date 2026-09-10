@@ -4,7 +4,6 @@ import Combine
 import PhotosUI
 import SwiftUI
 import TDLibKit
-import UIKit
 
 // MARK: - PresentedChatActionError
 

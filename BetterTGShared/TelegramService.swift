@@ -142,6 +142,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getChats(chatList: ChatList?, limit: Int?) async throws -> Chats
     func loadChats(chatList: ChatList?, limit: Int?) async throws -> Ok
     func getContacts() async throws -> Users
+    func addContact(contact: ImportedContact?, sharePhoneNumber: Bool?, userId: Int64?) async throws -> Ok
     func removeContacts(userIds: [Int64]?) async throws -> Ok
     func getTopChats(category: TopChatCategory?, limit: Int?) async throws -> Chats
     func removeTopChat(category: TopChatCategory?, chatId: Int64?) async throws -> Ok
@@ -721,6 +722,10 @@ extension TelegramSession: TelegramService {
 
     func getContacts() async throws -> Users {
         try await client.getContacts()
+    }
+
+    func addContact(contact: ImportedContact?, sharePhoneNumber: Bool?, userId: Int64?) async throws -> Ok {
+        try await client.addContact(contact: contact, sharePhoneNumber: sharePhoneNumber, userId: userId)
     }
 
     func removeContacts(userIds: [Int64]?) async throws -> Ok {

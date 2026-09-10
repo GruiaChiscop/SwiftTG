@@ -78,6 +78,19 @@ struct MacChatInfoView: View {
             TelegramReportView(service: model.service, request: request)
                 .frame(minWidth: 380, minHeight: 320)
         }
+        .sheet(isPresented: $showsAddContact) {
+            if let info, let userId = info.privateChatUserId {
+                AddContactSheet(
+                    userId: userId,
+                    firstName: info.contactFirstName,
+                    lastName: info.contactLastName,
+                    phoneNumber: info.phoneNumber,
+                    service: model.service,
+                ) {
+                    self.info?.isContact = true
+                }
+            }
+        }
         .sheet(isPresented: $showsScheduledMessages) {
             MacScheduledMessagesView(model: model)
         }
@@ -168,6 +181,7 @@ struct MacChatInfoView: View {
     @State private var confirmBlock = false
     @State private var confirmLeave = false
     @State private var confirmStartSecretChat = false
+    @State private var showsAddContact = false
     @State private var info: TelegramChatInfoData?
     @State private var isLoading = true
     @State private var reportRequest: TelegramReportRequest?
@@ -426,9 +440,7 @@ struct MacChatInfoView: View {
     }
 
     @ViewBuilder private func detailsSections(_ info: TelegramChatInfoData) -> some View {
-        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
-            || info.privacyPolicyURL != nil || info.usesPrivacyCommand
-        {
+        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil {
             Section {
                 if let phoneNumber = info.phoneNumber {
                     LabeledContent("Phone", value: phoneNumber)
@@ -457,18 +469,6 @@ struct MacChatInfoView: View {
                         Text(macAttributedString(about))
                     }
                     .textSelection(.enabled)
-                }
-
-                if let policy = info.privacyPolicyURL, let url = URL(string: policy) {
-                    Link(destination: url) {
-                        Label("Privacy Policy", systemImage: "hand.raised")
-                    }
-                } else if info.usesPrivacyCommand {
-                    Button {
-                        sendPrivacyCommand()
-                    } label: {
-                        Label("Privacy Policy", systemImage: "hand.raised")
-                    }
                 }
             }
         }
@@ -499,6 +499,53 @@ struct MacChatInfoView: View {
                 }
                 if info.canRestrictMembers, let bannedCount = info.bannedCount, bannedCount > 0 {
                     chatMemberCountRow(title: "Banned", count: bannedCount, filter: .banned, enabled: true)
+                }
+            }
+        }
+
+        groupSettingsSection(info)
+    }
+
+    @ViewBuilder private func groupSettingsSection(_ info: TelegramChatInfoData) -> some View {
+        let isCommunity = chat.kind == .group || chat.kind == .channel
+        let isChannel = chat.kind == .channel
+        let showsLinkedChat = isCommunity && info.linkedChatId != 0
+        let showsSlowMode = chat.kind == .group && info.slowModeDelay > 0
+        let showsSignMessages = isChannel && info.canChangeInfo
+        let showsHiddenMembers = isCommunity && info.canChangeInfo && info.hasHiddenMembers
+        let showsReactions = isCommunity && info.reactionsSummary != nil
+        let showsProtectedContent = isCommunity && info.hasProtectedContent
+        if showsLinkedChat || showsSlowMode || showsSignMessages || showsProtectedContent
+            || showsHiddenMembers || showsReactions
+        {
+            Section {
+                if showsLinkedChat {
+                    Button {
+                        dismiss()
+                        model.openLinkedChat(chatId: info.linkedChatId)
+                    } label: {
+                        LabeledContent(
+                            isChannel ? "Discussion Group" : "Linked Channel",
+                            value: info.linkedChatTitle ?? "Open",
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if showsSlowMode {
+                    LabeledContent("Slow Mode", value: telegramSlowModeDescription(info.slowModeDelay))
+                }
+                if showsSignMessages {
+                    LabeledContent("Sign Messages", value: info.signMessages ? "On" : "Off")
+                }
+                if showsReactions, let reactionsSummary = info.reactionsSummary {
+                    LabeledContent("Reactions", value: reactionsSummary)
+                }
+                if showsHiddenMembers {
+                    LabeledContent("Members", value: "Hidden")
+                }
+                if showsProtectedContent {
+                    LabeledContent("Saving Content", value: "Restricted")
                 }
             }
         }
@@ -609,9 +656,18 @@ struct MacChatInfoView: View {
         chat.kind == .privateChat && !currentChat.isSavedMessages && info.privateChatUserId != nil
     }
 
+    private func canAddContact(_ info: TelegramChatInfoData) -> Bool {
+        info.privateChatUserId != nil && !info.isContact
+    }
+
     @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         if hasActions(info) {
             Section {
+                if canAddContact(info) {
+                    Button("Add to Contacts", systemImage: "person.crop.circle.badge.plus") {
+                        showsAddContact = true
+                    }
+                }
                 if canStartSecretChat(info) {
                     Button("Start Secret Chat", systemImage: "lock.fill") {
                         confirmStartSecretChat = true
@@ -667,26 +723,6 @@ struct MacChatInfoView: View {
         return chat.kind == .group || chat.kind == .channel ? "Description" : "Bio"
     }
 
-    /// For a bot that exposes a `/privacy` command instead of a policy URL: mirrors Telegram's
-    /// own behaviour of sending that command to the bot.
-    private func sendPrivacyCommand() {
-        let service = model.service
-        let chatId = chat.chatId
-        dismiss()
-        Task {
-            do {
-                _ = try await TelegramMessageSending.send(
-                    service: service,
-                    chatId: chatId,
-                    contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
-                    replyTo: nil,
-                )
-            } catch {
-                print("Sending /privacy to the bot failed: \(telegramErrorDescription(error))")
-            }
-        }
-    }
-
     private func openConversationSearch() {
         dismiss()
         Task { @MainActor in
@@ -697,6 +733,7 @@ struct MacChatInfoView: View {
 
     private func hasActions(_ info: TelegramChatInfoData) -> Bool {
         canStartSecretChat(info)
+            || canAddContact(info)
             || info.blockableUserId != nil
             || canReportChat
             || info.usesPrivacyCommand
@@ -760,22 +797,6 @@ struct MacChatInfoView: View {
         }
     }
 
-    /// Telegram-iOS confirms the change with an undo toast; a VoiceOver announcement is the
-    /// equivalent here.
-    private func announceAutoDelete(_ seconds: Int) {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-        NSAccessibility.post(
-            element: window,
-            notification: .announcementRequested,
-            userInfo: [
-                .announcement: seconds == 0
-                    ? "Auto-Delete is now off."
-                    : "Auto-Delete timer set to \(Self.autoDeleteLabel(seconds)).",
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ],
-        )
-    }
-
     private func setAutoDelete(_ seconds: Int) {
         let previous = autoDeleteSeconds
         guard seconds != previous else { return }
@@ -789,7 +810,6 @@ struct MacChatInfoView: View {
                     messageAutoDeleteTime: seconds,
                 )
                 info?.messageAutoDeleteTime = seconds
-                announceAutoDelete(seconds)
             } catch {
                 autoDeleteOverride = previous
             }

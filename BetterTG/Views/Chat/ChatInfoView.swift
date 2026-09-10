@@ -18,6 +18,7 @@ struct ChatInfoView: View {
                 autoDeleteSection(info)
                 videoChatSection
                 memberDetailsSection(info)
+                groupSettingsSection(info)
                 sharedContentSection(info)
                 unofficialAppWarningSection(info)
                 actionsSection(info)
@@ -71,6 +72,19 @@ struct ChatInfoView: View {
         }
         .sheet(item: $reportRequest) { request in
             TelegramReportView(service: chatVM.service, request: request)
+        }
+        .sheet(isPresented: $showsAddContact) {
+            if let info, let userId = info.privateChatUserId {
+                AddContactSheet(
+                    userId: userId,
+                    firstName: info.contactFirstName,
+                    lastName: info.contactLastName,
+                    phoneNumber: info.phoneNumber,
+                    service: chatVM.service,
+                ) {
+                    self.info?.isContact = true
+                }
+            }
         }
         .sheet(item: $videoChatJoinCandidates) { candidates in
             VideoChatJoinAsPicker(
@@ -233,6 +247,7 @@ struct ChatInfoView: View {
     @State private var showLeaveConfirmation = false
     @State private var showsStartSecretChatConfirmation = false
     @State private var isStartingSecretChat = false
+    @State private var showsAddContact = false
     @State private var showMuteOptions = false
     @State private var showsCameraPermissionAlert = false
     @State private var showsCommonGroups = false
@@ -652,6 +667,51 @@ struct ChatInfoView: View {
         }
     }
 
+    @ViewBuilder private func groupSettingsSection(_ info: TelegramChatInfoData) -> some View {
+        let isCommunity = chat.kind == .group || chat.kind == .channel
+        let isChannel = chat.kind == .channel
+        let showsLinkedChat = isCommunity && info.linkedChatId != 0
+        let showsSlowMode = chat.kind == .group && info.slowModeDelay > 0
+        let showsSignMessages = isChannel && info.canChangeInfo
+        let showsHiddenMembers = isCommunity && info.canChangeInfo && info.hasHiddenMembers
+        let showsReactions = isCommunity && info.reactionsSummary != nil
+        let showsProtectedContent = isCommunity && info.hasProtectedContent
+        if showsLinkedChat || showsSlowMode || showsSignMessages || showsProtectedContent
+            || showsHiddenMembers || showsReactions
+        {
+            Section {
+                if showsLinkedChat {
+                    Button {
+                        openLinkedChat(info.linkedChatId)
+                    } label: {
+                        LabeledContent(
+                            isChannel ? "Discussion Group" : "Linked Channel",
+                            value: info.linkedChatTitle ?? "Open",
+                        )
+                        .foregroundStyle(.primary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if showsSlowMode {
+                    LabeledContent("Slow Mode", value: telegramSlowModeDescription(info.slowModeDelay))
+                }
+                if showsSignMessages {
+                    LabeledContent("Sign Messages", value: info.signMessages ? "On" : "Off")
+                }
+                if showsReactions, let reactionsSummary = info.reactionsSummary {
+                    LabeledContent("Reactions", value: reactionsSummary)
+                }
+                if showsHiddenMembers {
+                    LabeledContent("Members", value: "Hidden")
+                }
+                if info.hasProtectedContent {
+                    LabeledContent("Saving Content", value: "Restricted")
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func unofficialAppWarningSection(_ info: TelegramChatInfoData) -> some View {
         if info.usesUnofficialApp {
             Section {
@@ -731,9 +791,15 @@ struct ChatInfoView: View {
         chat.kind == .privateChat && !chat.isSavedMessages && info?.privateChatUserId != nil
     }
 
+    private var canAddContact: Bool {
+        guard let info else { return false }
+        return info.privateChatUserId != nil && !info.isContact
+    }
+
     @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
         let policy = chat.actionPolicy
         if canStartSecretChat
+            || canAddContact
             || info.blockableUserId != nil
             || chat.chat.canBeReported
             || policy.canLeave
@@ -741,6 +807,12 @@ struct ChatInfoView: View {
             || policy.canDeleteChat
         {
             Section {
+                if canAddContact {
+                    Button("Add to Contacts", systemImage: "person.crop.circle.badge.plus") {
+                        showsAddContact = true
+                    }
+                }
+
                 if canStartSecretChat {
                     Button("Start Secret Chat", systemImage: "lock.fill") {
                         showsStartSecretChatConfirmation = true
@@ -821,14 +893,6 @@ struct ChatInfoView: View {
                     messageAutoDeleteTime: seconds,
                 )
                 info?.messageAutoDeleteTime = seconds
-                // Telegram-iOS confirms the change with an undo toast; a VoiceOver announcement
-                // is the equivalent here.
-                UIAccessibility.post(
-                    notification: .announcement,
-                    argument: seconds == 0
-                        ? "Auto-Delete is now off."
-                        : "Auto-Delete timer set to \(Self.autoDeleteLabel(seconds)).",
-                )
             } catch {
                 autoDeleteOverride = previous
                 errorMessage = telegramErrorDescription(error)
@@ -880,6 +944,18 @@ struct ChatInfoView: View {
     private func leaveChat() {
         RootVM.shared.leave(chat)
         dismiss()
+    }
+
+    private func openLinkedChat(_ chatId: Int64) {
+        Task {
+            guard let customChat = await RootVM.shared.getCustomChat(from: chatId) else {
+                errorMessage = "That chat couldn't be opened."
+                return
+            }
+            dismiss()
+            await Task.yield()
+            RootVM.shared.navigate(to: .customChat(customChat))
+        }
     }
 
     private func startSecretChat() {
