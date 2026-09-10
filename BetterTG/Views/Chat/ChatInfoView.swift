@@ -2,6 +2,7 @@
 
 import SwiftUI
 import TDLibKit
+import UIKit
 
 // MARK: - ChatInfoView
 
@@ -10,18 +11,36 @@ struct ChatInfoView: View {
 
     var body: some View {
         List {
-            identitySection(info)
+            ChatInfoIdentitySection(
+                info: info,
+                onMicrophonePermissionDenied: { showsMicrophonePermissionAlert = true },
+                onCameraPermissionDenied: { showsCameraPermissionAlert = true },
+            )
 
             if let info {
-                profileInformationSection(info)
-                notificationsSection(info)
-                autoDeleteSection(info)
+                ChatInfoProfileInformationSection(info: info)
+                ChatInfoNotificationsSection(
+                    isMuted: isMuted(info),
+                    onMuteButtonTapped: {
+                        if isMuted(info) {
+                            setMuteDuration(0)
+                        } else {
+                            showMuteOptions = true
+                        }
+                    },
+                )
+                ChatInfoAutoDeleteSection(info: info) { errorMessage = $0 }
                 videoChatSection
-                memberDetailsSection(info)
-                membersPreviewSection(info)
-                groupSettingsSection(info)
-                sharedContentSection(info)
-                unofficialAppWarningSection(info)
+                ChatInfoMemberDetailsSection(info: info) { membersFilter = $0 }
+                ChatInfoMembersPreviewSection(info: info)
+                ChatInfoGroupSettingsSection(info: info)
+                ChatInfoSharedContentSection(
+                    info: info,
+                    onOpenSharedMedia: { showsSharedMedia = true },
+                    onOpenScheduledMessages: { showsScheduledMessages = true },
+                    onOpenCommonGroups: { showsCommonGroups = true },
+                )
+                ChatInfoUnofficialAppWarningSection(info: info)
                 actionsSection(info)
             } else if isLoading {
                 Section {
@@ -43,14 +62,19 @@ struct ChatInfoView: View {
         }
         .navigationTitle("Chat Info")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: ChatInfoDestination.self) { destination in
-            destinationView(destination)
+        .navigationDestination(item: $membersFilter) { filter in
+            ChatInfoMembersView(
+                chatId: chat.id,
+                isChannel: chat.kind == .channel,
+                filter: filter,
+                service: chatVM.service,
+            )
         }
         .navigationDestination(isPresented: $showsCommonGroups) {
-            if let userId = info?.commonGroupsUserId {
+            if let info, let userId = info.commonGroupsUserId {
                 ChatInfoCommonGroupsView(
                     userId: userId,
-                    expectedCount: info?.commonGroupCount ?? 0,
+                    expectedCount: info.commonGroupCount ?? 0,
                     service: chatVM.service,
                 )
             }
@@ -58,6 +82,9 @@ struct ChatInfoView: View {
         .task(id: chat.id) {
             chatVM.refreshVideoChat()
             await loadInfo()
+        }
+        .sheet(item: $reportRequest) { request in
+            TelegramReportView(service: chatVM.service, request: request)
         }
         .sheet(isPresented: $showsSharedMedia) {
             SharedMediaView(
@@ -71,8 +98,24 @@ struct ChatInfoView: View {
         .sheet(isPresented: $showsScheduledMessages) {
             ScheduledMessagesView()
         }
-        .sheet(item: $reportRequest) { request in
-            TelegramReportView(service: chatVM.service, request: request)
+        .popover(isPresented: $showMuteOptions) {
+            TelegramMutePresetPopoverContent { duration in
+                setMuteDuration(duration)
+                showMuteOptions = false
+            }
+            .presentationCompactAdaptation(.popover)
+        }
+        .alert("Camera Access Required", isPresented: $showsCameraPermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow camera access in Settings to start video calls.")
+        }
+        .alert("Microphone Access Required", isPresented: $showsMicrophonePermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow microphone access in Settings to make calls.")
         }
         .sheet(isPresented: $showsAddContact) {
             if let info, let userId = info.privateChatUserId {
@@ -116,13 +159,6 @@ struct ChatInfoView: View {
                     applyCreatedVideoChat(call)
                 }
             }
-        }
-        .popover(isPresented: $showMuteOptions) {
-            TelegramMutePresetPopoverContent { duration in
-                setMuteDuration(duration)
-                showMuteOptions = false
-            }
-            .presentationCompactAdaptation(.popover)
         }
         .alert("Start \(videoChatTitle)", isPresented: $showsVideoChatStartOptions) {
             Button("Start Now") {
@@ -216,18 +252,6 @@ struct ChatInfoView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("Camera Access Required", isPresented: $showsCameraPermissionAlert) {
-            Button("Open Settings", action: openSettings)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Allow camera access in Settings to start video calls.")
-        }
-        .alert("Microphone Access Required", isPresented: $showsMicrophonePermissionAlert) {
-            Button("Open Settings", action: openSettings)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Allow microphone access in Settings to make calls.")
-        }
     }
 
     // MARK: Private
@@ -240,8 +264,6 @@ struct ChatInfoView: View {
     @State private var info: TelegramChatInfoData?
     @State private var reportRequest: TelegramReportRequest?
     @State private var isLoading = true
-    @State private var muteOverride: Bool?
-    @State private var autoDeleteOverride: Int?
     @State private var managedVideoChat: GroupCall?
     @State private var showDeleteConfirmation = false
     @State private var showClearHistoryConfirmation = false
@@ -249,12 +271,14 @@ struct ChatInfoView: View {
     @State private var showsStartSecretChatConfirmation = false
     @State private var isStartingSecretChat = false
     @State private var showsAddContact = false
-    @State private var showMuteOptions = false
-    @State private var showsCameraPermissionAlert = false
-    @State private var showsCommonGroups = false
-    @State private var showsMicrophonePermissionAlert = false
-    @State private var showsScheduledMessages = false
     @State private var showsSharedMedia = false
+    @State private var showsScheduledMessages = false
+    @State private var showsCommonGroups = false
+    @State private var membersFilter: TelegramChatInfoMemberFilter?
+    @State private var showMuteOptions = false
+    @State private var muteOverride: Bool?
+    @State private var showsCameraPermissionAlert = false
+    @State private var showsMicrophonePermissionAlert = false
     @State private var showsRtmpSetup = false
     @State private var showsVideoChatScheduler = false
     @State private var showsVideoChatStartOptions = false
@@ -266,37 +290,6 @@ struct ChatInfoView: View {
     private var videoChat: VideoChat { chatVM.videoChat }
     private var videoChatDetails: GroupCall? { chatVM.videoChatCall }
     private var hasActiveVideoChat: Bool { chatVM.hasActiveVideoChat }
-
-    private var status: String {
-        !chatVM.actionStatus.isEmpty ? chatVM.actionStatus : chatVM.conversationStatus
-    }
-
-    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
-    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
-        ("Off", 0),
-        ("1 Day", 86_400),
-        ("1 Week", 604_800),
-        ("1 Month", 2_678_400),
-    ]
-
-    private var autoDeleteSeconds: Int {
-        autoDeleteOverride ?? info?.messageAutoDeleteTime ?? 0
-    }
-
-    private var autoDeleteDescription: String {
-        Self.autoDeleteLabel(autoDeleteSeconds)
-    }
-
-    private static func autoDeleteLabel(_ seconds: Int) -> String {
-        switch seconds {
-        case 0: "Off"
-        case 86_400: "1 day"
-        case 604_800: "1 week"
-        case 2_678_400: "1 month"
-        case let value where value % 86_400 == 0: "\(value / 86_400) days"
-        default: "\(max(1, seconds / 3_600)) hours"
-        }
-    }
 
     private var videoChatTitle: String {
         chat.kind == .channel ? "Live Stream" : "Voice Chat"
@@ -387,478 +380,6 @@ struct ChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func identityBadges(_ info: TelegramChatInfoData) -> some View {
-        if info.isScam || info.isFake || info.isVerified || info.isPremium {
-            HStack(spacing: 6) {
-                if info.isScam {
-                    badgeCapsule("SCAM")
-                }
-                if info.isFake {
-                    badgeCapsule("FAKE")
-                }
-                if info.isVerified {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(.blue)
-                        .accessibilityLabel("Verified")
-                }
-                if info.isPremium {
-                    Image(systemName: "star.circle.fill")
-                        .foregroundStyle(.orange)
-                        .accessibilityLabel("Premium account")
-                }
-            }
-            .font(.subheadline)
-        }
-    }
-
-    private func badgeCapsule(_ text: String) -> some View {
-        Text(text)
-            .font(.caption2.bold())
-            .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.red, in: Capsule())
-    }
-
-    /// The line under the title: a typing/online status when there is one, otherwise a member
-    /// count for groups/channels (Telegram shows "12,345 members" rather than "Group").
-    private var identitySubtitle: String {
-        if !status.isEmpty { return status }
-        if chat.kind == .group || chat.kind == .channel, let memberCount = info?.memberCount {
-            let unit = chat.kind == .channel ? "subscriber" : "member"
-            return "\(memberCount.formatted()) \(unit)\(memberCount == 1 ? "" : "s")"
-        }
-        return chat.kind.title
-    }
-
-    private func identitySection(_ info: TelegramChatInfoData?) -> some View {
-        Section {
-            VStack(spacing: 12) {
-                VStack(spacing: 12) {
-                    ProfileImageView(
-                        photo: chat.chat.photo?.big,
-                        minithumbnail: chat.chat.photo?.minithumbnail,
-                        title: chat.displayTitle,
-                        userId: chat.chat.id,
-                        fontSize: 36,
-                        isSavedMessages: chat.isSavedMessages,
-                    )
-                    .frame(width: 96, height: 96)
-                    .accessibilityHidden(true)
-                    Text(chat.displayTitle)
-                        .font(.title2.bold())
-                        .multilineTextAlignment(.center)
-
-                    if let info {
-                        identityBadges(info)
-                    }
-
-                    let identityStatus = identitySubtitle
-                    Text(identityStatus)
-                        .font(.subheadline)
-                        // Matches `telegramUserPresenceDescription`'s exact "Online" output.
-                        .foregroundStyle(identityStatus == "Online" ? .blue : .secondary)
-                }
-                .accessibilityElement(children: .combine)
-
-                ChatInfoHeaderActionsView(
-                    canStartAudioCall: info?.canStartAudioCall == true,
-                    canStartVideoCall: info?.canStartVideoCall == true,
-                    startAudioCall: startAudioCall,
-                    startVideoCall: startVideoCall,
-                    search: openConversationSearch,
-                )
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-        }
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-    }
-
-    private func notificationsSection(_ info: TelegramChatInfoData) -> some View {
-        Section("Notifications") {
-            Button {
-                if isMuted(info) {
-                    setMuteDuration(0)
-                } else {
-                    showMuteOptions = true
-                }
-            } label: {
-                Text(isMuted(info) ? "Unmute" : "Mute")
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            TelegramChatSoundRow(service: chatVM.service, chatId: chat.id, settings: chat.notificationSettings)
-
-            TelegramChatNotificationTogglesRow(
-                service: chatVM.service,
-                chatId: chat.id,
-                settings: chat.notificationSettings,
-            )
-        }
-    }
-
-    @ViewBuilder private func autoDeleteSection(_ info: TelegramChatInfoData) -> some View {
-        let canEdit = canEditAutoDelete(info)
-        if canEdit || autoDeleteSeconds > 0 {
-            Section {
-                if canEdit {
-                    Menu {
-                        ForEach(Self.autoDeletePresets, id: \.seconds) { preset in
-                            Button {
-                                setAutoDelete(preset.seconds)
-                            } label: {
-                                if autoDeleteSeconds == preset.seconds {
-                                    Label(preset.title, systemImage: "checkmark")
-                                } else {
-                                    Text(preset.title)
-                                }
-                            }
-                        }
-                    } label: {
-                        autoDeleteRowLabel
-                    }
-                } else {
-                    autoDeleteRowLabel
-                }
-            } footer: {
-                Text("Automatically delete messages sent in this chat after a certain period of time.")
-            }
-        }
-    }
-
-    private var autoDeleteRowLabel: some View {
-        LabeledContent {
-            Text(autoDeleteDescription)
-        } label: {
-            Label("Auto-Delete Messages", systemImage: "timer")
-        }
-        .foregroundStyle(.primary)
-        .contentShape(Rectangle())
-    }
-
-    private func sharedContentSection(_ info: TelegramChatInfoData) -> some View {
-        Section {
-            Button {
-                showsSharedMedia = true
-            } label: {
-                Label("Shared Media", systemImage: "photo.on.rectangle")
-            }
-
-            Button {
-                showsScheduledMessages = true
-            } label: {
-                Label("Scheduled Messages", systemImage: "clock")
-            }
-
-            if let commonGroupCount = info.commonGroupCount,
-               commonGroupCount > 0,
-               info.commonGroupsUserId != nil
-            {
-                Button {
-                    showsCommonGroups = true
-                } label: {
-                    LabeledContent("Groups in common", value: commonGroupCount.formatted())
-                        .foregroundStyle(.primary)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    @ViewBuilder private func profileInformationSection(_ info: TelegramChatInfoData) -> some View {
-        if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
-            || info.privacyPolicyURL != nil || info.usesPrivacyCommand || info.personalChatId != 0
-        {
-            Section {
-                if let phoneNumber = info.phoneNumber {
-                    LabeledContent("Phone", value: phoneNumber)
-                        .textSelection(.enabled)
-                        .contextMenu {
-                            Button("Copy Phone Number", systemImage: "doc.on.doc") {
-                                UIPasteboard.general.string = phoneNumber
-                            }
-                            if let phoneURL = URL(string: "tel:\(phoneNumber.filter { $0.isNumber || $0 == "+" })") {
-                                Link("Call with Phone", destination: phoneURL)
-                            }
-                        }
-                        .accessibilityAction(named: "Copy Phone Number") {
-                            UIPasteboard.general.string = phoneNumber
-                        }
-                }
-
-                if let username = info.usernames.first,
-                   let url = URL(string: "https://t.me/\(username)")
-                {
-                    profileLinkRow(username: username, usernames: info.usernames, url: url)
-                }
-
-                if let birthdate = info.birthdate {
-                    LabeledContent("Birthdate", value: birthdate)
-                }
-
-                if info.personalChatId != 0 {
-                    Button {
-                        openChat(info.personalChatId)
-                    } label: {
-                        LabeledContent {
-                            Text(info.personalChatTitle ?? "Open")
-                        } label: {
-                            Label("Channel", systemImage: "megaphone")
-                        }
-                        .foregroundStyle(.primary)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if let about = info.about, !about.text.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(profileInformationLabel(info))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(getAttributedString(from: about, .primary))
-                    }
-                    .textSelection(.enabled)
-                }
-
-                if let policy = info.privacyPolicyURL, let url = URL(string: policy) {
-                    Link(destination: url) {
-                        Label("Privacy Policy", systemImage: "hand.raised")
-                    }
-                } else if info.usesPrivacyCommand {
-                    Button {
-                        sendPrivacyCommand()
-                    } label: {
-                        Label("Privacy Policy", systemImage: "hand.raised")
-                    }
-                }
-            }
-        }
-    }
-
-    /// For a bot that exposes a `/privacy` command instead of a policy URL: mirrors Telegram's
-    /// own behaviour of sending that command to the bot.
-    private func sendPrivacyCommand() {
-        let service = chatVM.service
-        let chatId = chat.id
-        dismiss()
-        Task {
-            do {
-                _ = try await TelegramMessageSending.send(
-                    service: service,
-                    chatId: chatId,
-                    contents: [TelegramMessageSending.textContent(FormattedText(entities: [], text: "/privacy"))],
-                    replyTo: nil,
-                )
-            } catch {
-                print("Sending /privacy to the bot failed: \(telegramErrorDescription(error))")
-            }
-        }
-    }
-
-    @ViewBuilder private func memberDetailsSection(_ info: TelegramChatInfoData) -> some View {
-        if info.memberCount != nil
-            || info.administratorCount != nil
-            || info.restrictedCount != nil
-            || info.bannedCount != nil
-        {
-            Section {
-                if let memberCount = info.memberCount {
-                    let title = chat.kind == .channel ? "Subscribers" : "Members"
-                    if info.canBrowseMembers {
-                        NavigationLink(value: ChatInfoDestination.members(.members)) {
-                            LabeledContent(title, value: memberCount.formatted())
-                        }
-                    } else {
-                        LabeledContent(title, value: memberCount.formatted())
-                    }
-                }
-
-                if let administratorCount = info.administratorCount, administratorCount > 0 {
-                    NavigationLink(value: ChatInfoDestination.members(.administrators)) {
-                        LabeledContent("Administrators", value: administratorCount.formatted())
-                    }
-                }
-
-                if let restrictedCount = info.restrictedCount, restrictedCount > 0 {
-                    NavigationLink(value: ChatInfoDestination.members(.restricted)) {
-                        LabeledContent("Restricted", value: restrictedCount.formatted())
-                    }
-                }
-
-                if let bannedCount = info.bannedCount, bannedCount > 0 {
-                    NavigationLink(value: ChatInfoDestination.members(.banned)) {
-                        LabeledContent("Banned", value: bannedCount.formatted())
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func membersPreviewSection(_ info: TelegramChatInfoData) -> some View {
-        if info.memberTotalCount > 0, info.memberTotalCount <= 5, !info.members.isEmpty {
-            Section(chat.kind == .channel ? "Subscribers" : "Members") {
-                ForEach(info.members) { member in
-                    Button {
-                        openMember(member.id)
-                    } label: {
-                        HStack(spacing: 12) {
-                            ProfileImageView(
-                                photo: member.photo,
-                                minithumbnail: member.minithumbnail,
-                                title: member.name,
-                                userId: member.placeholderId,
-                                fontSize: 16,
-                            )
-                            .frame(width: 36, height: 36)
-                            .accessibilityHidden(true)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(member.name)
-                                    .foregroundStyle(.primary)
-                                let details = [member.role, member.presence].compactMap(\.self)
-                                if !details.isEmpty {
-                                    Text(details.joined(separator: ", "))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func groupSettingsSection(_ info: TelegramChatInfoData) -> some View {
-        let isCommunity = chat.kind == .group || chat.kind == .channel
-        let isChannel = chat.kind == .channel
-        let showsLinkedChat = isCommunity && info.linkedChatId != 0
-        let showsSlowMode = chat.kind == .group && info.slowModeDelay > 0
-        let showsSignMessages = isChannel && info.canChangeInfo
-        let showsHiddenMembers = isCommunity && info.canChangeInfo && info.hasHiddenMembers
-        let showsReactions = isCommunity && info.reactionsSummary != nil
-        let showsProtectedContent = isCommunity && info.hasProtectedContent
-        if showsLinkedChat || showsSlowMode || showsSignMessages || showsProtectedContent
-            || showsHiddenMembers || showsReactions
-        {
-            Section {
-                if showsLinkedChat {
-                    Button {
-                        openChat(info.linkedChatId)
-                    } label: {
-                        LabeledContent(
-                            isChannel ? "Discussion Group" : "Linked Channel",
-                            value: info.linkedChatTitle ?? "Open",
-                        )
-                        .foregroundStyle(.primary)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                if showsSlowMode {
-                    LabeledContent("Slow Mode", value: telegramSlowModeDescription(info.slowModeDelay))
-                }
-                if showsSignMessages {
-                    LabeledContent("Sign Messages", value: info.signMessages ? "On" : "Off")
-                }
-                if showsReactions, let reactionsSummary = info.reactionsSummary {
-                    LabeledContent("Reactions", value: reactionsSummary)
-                }
-                if showsHiddenMembers {
-                    LabeledContent("Members", value: "Hidden")
-                }
-                if showsProtectedContent {
-                    LabeledContent("Saving Content", value: "Restricted")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func unofficialAppWarningSection(_ info: TelegramChatInfoData) -> some View {
-        if info.usesUnofficialApp {
-            Section {
-                Label(
-                    "Telegram reports that this user uses an unofficial app that may pose a security risk.",
-                    systemImage: "exclamationmark.triangle",
-                )
-                .foregroundStyle(.orange)
-            }
-        }
-    }
-
-    private func profileLinkRow(
-        username: String,
-        usernames: [String],
-        url: URL,
-    ) -> some View {
-        let isPublicChat = chat.kind == .group || chat.kind == .channel
-        let title = isPublicChat ? url.absoluteString : "@\(username)"
-        let subtitle = profileLinkSubtitle(usernames, isPublicChat: isPublicChat)
-        let copyValue = isPublicChat ? url.absoluteString : "@\(username)"
-
-        return Link(destination: url) {
-            HStack(spacing: 12) {
-                Image(systemName: isPublicChat ? "link" : "at")
-                    .frame(width: 20)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.forward")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            if copyValue != url.absoluteString {
-                Button("Copy username", systemImage: "doc.on.doc") { UIPasteboard.general.string = copyValue }
-            }
-            Button("Copy Link", systemImage: "link") { UIPasteboard.general.string = url.absoluteString }
-        }
-        .accessibilityActions {
-            Button("Copy Link", systemImage: "link") { UIPasteboard.general.string = url.absoluteString }
-            if copyValue != url.absoluteString {
-                Button("Copy username", systemImage: "doc.on.doc") { UIPasteboard.general.string = copyValue }
-            }
-        }
-    }
-
-    @ViewBuilder private func destinationView(_ destination: ChatInfoDestination) -> some View {
-        switch destination {
-        case .members(let filter):
-            ChatInfoMembersView(
-                chatId: chat.id,
-                isChannel: chat.kind == .channel,
-                filter: filter,
-                service: chatVM.service,
-            )
-        }
-    }
-
     private var canStartSecretChat: Bool {
         chat.kind == .privateChat && !chat.isSavedMessages && info?.privateChatUserId != nil
     }
@@ -929,80 +450,6 @@ struct ChatInfoView: View {
         }
     }
 
-    private func isMuted(_ info: TelegramChatInfoData) -> Bool {
-        if let muteOverride {
-            return muteOverride
-        }
-        let settings = chat.notificationSettings
-        return settings.useDefaultMuteFor ? info.defaultMuteFor > 0 : settings.muteFor > 0
-    }
-
-    private func setMuteDuration(_ duration: Int) {
-        muteOverride = duration > 0
-        RootVM.shared.setMuteDuration(duration, for: chat)
-    }
-
-    private func canEditAutoDelete(_ info: TelegramChatInfoData) -> Bool {
-        guard !chat.isSavedMessages else { return false }
-        switch chat.kind {
-        case .privateChat, .bot:
-            return true
-        case .group, .channel:
-            return info.canChangeInfo
-        }
-    }
-
-    private func setAutoDelete(_ seconds: Int) {
-        let previous = autoDeleteSeconds
-        guard seconds != previous else { return }
-        autoDeleteOverride = seconds
-        let service = chatVM.service
-        let chatId = chat.id
-        Task {
-            do {
-                _ = try await service.setChatMessageAutoDeleteTime(
-                    chatId: chatId,
-                    messageAutoDeleteTime: seconds,
-                )
-                info?.messageAutoDeleteTime = seconds
-            } catch {
-                autoDeleteOverride = previous
-                errorMessage = telegramErrorDescription(error)
-            }
-        }
-    }
-
-    private func startAudioCall() {
-        guard let userId = info?.callUserId, info?.canStartAudioCall == true else { return }
-        CallKitManager.shared.startOutgoingCall(
-            userId: userId,
-            displayName: chat.displayTitle,
-            onMicrophonePermissionDenied: {
-                showsMicrophonePermissionAlert = true
-            },
-        )
-    }
-
-    private func startVideoCall() {
-        guard let userId = info?.callUserId, info?.canStartVideoCall == true else { return }
-        CallKitManager.shared.startOutgoingCall(
-            userId: userId,
-            displayName: chat.displayTitle,
-            isVideo: true,
-            onMicrophonePermissionDenied: {
-                showsMicrophonePermissionAlert = true
-            },
-            onCameraPermissionDenied: {
-                showsCameraPermissionAlert = true
-            },
-        )
-    }
-
-    private func openSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        openURL(url)
-    }
-
     private func deleteChat(forAll: Bool) {
         RootVM.shared.deleteChat(chat, forAll: forAll)
         dismiss()
@@ -1016,33 +463,6 @@ struct ChatInfoView: View {
     private func leaveChat() {
         RootVM.shared.leave(chat)
         dismiss()
-    }
-
-    private func openChat(_ chatId: Int64) {
-        // Dismiss synchronously so the row can't be tapped again while the chat resolves - a
-        // second tap would otherwise push the chat onto the nav path twice.
-        dismiss()
-        Task {
-            guard let customChat = await RootVM.shared.getCustomChat(from: chatId) else { return }
-            await Task.yield()
-            RootVM.shared.navigate(to: .customChat(customChat))
-        }
-    }
-
-    private func openMember(_ sender: MessageSender) {
-        dismiss()
-        Task {
-            let customChat: CustomChat? =
-                switch sender {
-                case .messageSenderUser(let value):
-                    await RootVM.shared.getPrivateCustomChat(userId: value.userId)
-                case .messageSenderChat(let value):
-                    await RootVM.shared.getCustomChat(from: value.chatId)
-                }
-            guard let customChat else { return }
-            await Task.yield()
-            RootVM.shared.navigate(to: .customChat(customChat))
-        }
     }
 
     private func startSecretChat() {
@@ -1076,12 +496,22 @@ struct ChatInfoView: View {
         }
     }
 
-    private func openConversationSearch() {
-        dismiss()
-        Task { @MainActor in
-            await Task.yield()
-            chatVM.beginConversationSearch()
+    private func isMuted(_ info: TelegramChatInfoData) -> Bool {
+        if let muteOverride {
+            return muteOverride
         }
+        let settings = chat.notificationSettings
+        return settings.useDefaultMuteFor ? info.defaultMuteFor > 0 : settings.muteFor > 0
+    }
+
+    private func setMuteDuration(_ duration: Int) {
+        muteOverride = duration > 0
+        RootVM.shared.setMuteDuration(duration, for: chat)
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     private func blockActionTitle(_ info: TelegramChatInfoData) -> String {
@@ -1089,13 +519,6 @@ struct ChatInfoView: View {
             return info.isBlocked ? "Restart Bot" : "Stop Bot"
         }
         return info.isBlocked ? "Unblock User" : "Block User"
-    }
-
-    private func profileInformationLabel(_ info: TelegramChatInfoData) -> String {
-        if info.isBot {
-            return "Bot Info"
-        }
-        return chat.kind == .group || chat.kind == .channel ? "Description" : "Bio"
     }
 
     private func toggleBlocked() {
@@ -1113,12 +536,6 @@ struct ChatInfoView: View {
                 errorMessage = error.localizedDescription
             }
         }
-    }
-
-    private func profileLinkSubtitle(_ usernames: [String], isPublicChat: Bool) -> String {
-        let label = isPublicChat ? "Link" : "Username"
-        guard usernames.count > 1 else { return label }
-        return "\(label). Also: \(usernames.dropFirst().map { "@\($0)" }.joined(separator: ", "))"
     }
 
     private func loadInfo() async {
