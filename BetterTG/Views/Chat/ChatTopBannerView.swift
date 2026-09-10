@@ -18,14 +18,20 @@ struct ChatTopBannerView: View {
     /// it's appended below instead of being inserted above and pushing an already-visible (and
     /// possibly VoiceOver-focused) banner down.
     var body: some View {
-        if chatVM.currentPinnedMessage != nil {
-            pinnedMessageBanner
-            Divider()
+        VStack(spacing: 0) {
+            if chatVM.currentPinnedMessage != nil {
+                pinnedMessageBanner
+                Divider()
+            }
+            if chatVM.showsChatTranslationBanner || chatVM.isChatTranslationEnabled {
+                translationBanner
+                Divider()
+            }
         }
-        if chatVM.showsChatTranslationBanner || chatVM.isChatTranslationEnabled {
-            translationBanner
-            Divider()
-        }
+        // Without a real accessibility container, SwiftUI flattens these controls into the same
+        // hierarchy as the self-sizing message List below. Repeated List relayouts can then evict
+        // VoiceOver focus from a stationary banner control and leave it on the system status bar.
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: Private
@@ -71,33 +77,14 @@ struct ChatTopBannerView: View {
     }
 
     private var pinnedMessageBanner: some View {
-        HStack(spacing: 8) {
-            Button {
+        StablePinnedMessageBanner(
+            summary: pinnedMessageSummary,
+            openMessage: {
                 guard let message = chatVM.currentPinnedMessage else { return }
                 chatVM.navigateToMessage(id: message.id)
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Pinned Message")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tint)
-                    Text(pinnedMessageSummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-
-            StableIconButton(
-                systemImageName: "chevron.right",
-                accessibilityLabel: "Show All Pinned Messages",
-                action: onShowAllPinnedMessages,
-            )
-            .frame(width: 44, height: 44)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+            },
+            showAllMessages: onShowAllPinnedMessages,
+        )
         .background(.bar)
     }
 }
