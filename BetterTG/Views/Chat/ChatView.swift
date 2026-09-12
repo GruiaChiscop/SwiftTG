@@ -290,12 +290,6 @@ struct ChatView: View {
         )
         .telegramChatWallpaper()
         .telegramMessageTextSize()
-        .onChange(of: accessibilityFocusedMessageId) { oldFocus, newFocus in
-            voicePlaybackTrace(
-                "focus binding \(oldFocus.map(String.init) ?? "nil")"
-                    + " -> \(newFocus.map(String.init) ?? "nil")",
-            )
-        }
         .overlay(alignment: .top) {
             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: topGradientHeight)
