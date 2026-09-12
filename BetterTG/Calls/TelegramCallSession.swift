@@ -169,6 +169,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
     private(set) var showsCameraPreview = false
     private(set) var isScreenSharing = false
     var showsCameraPermissionAlert = false
+    var showsMicrophonePermissionAlert = false
     var showsConferenceInvitationError = false
     private(set) var conferenceInvitationErrorMessage = "SwiftTG couldn't invite this participant."
     private(set) var conferenceInvitationFallbackURL: URL?
@@ -2300,6 +2301,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
         remoteVideoGeneration = UUID()
         showsCameraPreview = false
         showsCameraPermissionAlert = false
+        showsMicrophonePermissionAlert = false
         updateVideoAudioRouting()
     }
 
@@ -2365,6 +2367,17 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
                 if activeCall?.id == call.id {
                     isAnswering = false
                 }
+            }
+            let microphoneGranted = await AVAudioApplication.requestRecordPermission()
+            guard activeCall?.id == call.id else {
+                log("[Call] answer superseded while waiting for microphone permission")
+                return
+            }
+            guard microphoneGranted else {
+                log("[Call] microphone permission denied; incoming call rejected")
+                showsMicrophonePermissionAlert = true
+                endActiveCall(isDisconnected: false)
+                return
             }
             if call.isVideo {
                 let cameraGranted = await Self.requestCameraAccess()
@@ -3251,6 +3264,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
         isUsingFrontCamera = true
         showsCameraPreview = false
         showsCameraPermissionAlert = false
+        showsMicrophonePermissionAlert = false
         if isSpeakerOn {
             do {
                 try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)

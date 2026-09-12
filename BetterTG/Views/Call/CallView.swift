@@ -302,6 +302,12 @@ struct CallView: View {
         } message: {
             Text("Allow camera access in Settings to use video during calls.")
         }
+        .alert("Microphone Access Required", isPresented: $session.showsMicrophonePermissionAlert) {
+            Button("Open Settings", action: openSettings)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Allow microphone access in Settings to answer calls.")
+        }
         .alert("Couldn't Invite Participant", isPresented: $session.showsConferenceInvitationError) {
             if let fallbackURL = session.conferenceInvitationFallbackURL {
                 Button("Copy Invite Link") {
