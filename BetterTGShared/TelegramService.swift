@@ -17,6 +17,7 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     var chatListPublisher: AnyPublisher<ChatListSnapshot, Never> { get }
     var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> { get }
     var unreadChatCountPublisher: AnyPublisher<UpdateUnreadChatCount?, Never> { get }
+    var unreadMessageCountPublisher: AnyPublisher<UpdateUnreadMessageCount?, Never> { get }
     var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> { get }
     var reactionNotificationSettingsPublisher: AnyPublisher<ReactionNotificationSettings?, Never> { get }
     var updatePublisher: AnyPublisher<Update, Never> { get }

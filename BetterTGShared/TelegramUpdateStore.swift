@@ -44,6 +44,12 @@ final class TelegramUpdateStore: @unchecked Sendable {
         unreadChatCountSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
+    /// Replays TDLib's main-list unread-message counter for the iOS application badge. This is a
+    /// separate metric from `unreadChatCountPublisher`: one chat can contribute many messages.
+    var unreadMessageCountPublisher: AnyPublisher<UpdateUnreadMessageCount?, Never> {
+        unreadMessageCountSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> {
         availableMessageEffectsSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
@@ -102,7 +108,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
     /// Remove every account-derived value before a fresh TDLib client starts a new login.
     func reset() {
         queue.async { [
-            chatFoldersSubject, unreadChatCountSubject, availableMessageEffectsSubject,
+            chatFoldersSubject, unreadChatCountSubject, unreadMessageCountSubject, availableMessageEffectsSubject,
             reactionNotificationSettingsSubject, callSubject,
         ] in
             dispatchPrecondition(condition: .onQueue(self.queue))
@@ -111,6 +117,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
             self.messageStore.reset()
             chatFoldersSubject.send(nil)
             unreadChatCountSubject.send(nil)
+            unreadMessageCountSubject.send(nil)
             availableMessageEffectsSubject.send(nil)
             reactionNotificationSettingsSubject.send(nil)
             callSubject.send(nil)
@@ -120,7 +127,8 @@ final class TelegramUpdateStore: @unchecked Sendable {
     func publish(_ update: Update) {
         queue.async {
             [
-                updateSubject, chatFoldersSubject, unreadChatCountSubject, availableMessageEffectsSubject,
+                updateSubject, chatFoldersSubject, unreadChatCountSubject, unreadMessageCountSubject,
+                availableMessageEffectsSubject,
                 reactionNotificationSettingsSubject, callSubject, callSignalingDataSubject,
             ] in
             dispatchPrecondition(condition: .onQueue(self.queue))
@@ -132,6 +140,9 @@ final class TelegramUpdateStore: @unchecked Sendable {
             }
             if case .updateUnreadChatCount(let value) = update, value.chatList == .chatListMain {
                 unreadChatCountSubject.send(value)
+            }
+            if case .updateUnreadMessageCount(let value) = update, value.chatList == .chatListMain {
+                unreadMessageCountSubject.send(value)
             }
             if case .updateAvailableMessageEffects(let value) = update {
                 availableMessageEffectsSubject.send(value)
@@ -158,6 +169,7 @@ final class TelegramUpdateStore: @unchecked Sendable {
 
     private let chatFoldersSubject = CurrentValueSubject<UpdateChatFolders?, Never>(nil)
     private let unreadChatCountSubject = CurrentValueSubject<UpdateUnreadChatCount?, Never>(nil)
+    private let unreadMessageCountSubject = CurrentValueSubject<UpdateUnreadMessageCount?, Never>(nil)
     private let availableMessageEffectsSubject = CurrentValueSubject<UpdateAvailableMessageEffects?, Never>(nil)
     private let reactionNotificationSettingsSubject = CurrentValueSubject<ReactionNotificationSettings?, Never>(nil)
     private let callSubject = CurrentValueSubject<Call?, Never>(nil)

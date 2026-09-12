@@ -1,7 +1,6 @@
 // ChatHistoryCollectionViewController.swift
 
 import SwiftUI
-import UIKit
 
 // MARK: - ChatHistoryCollectionViewController
 
@@ -49,6 +48,10 @@ import UIKit
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.backgroundColor = .clear
         collectionView.alwaysBounceVertical = true
+        // Message rows have their own controls and context menus, but there is no collection-level
+        // selection mode. Leaving UIKit selection enabled makes a plain tap persist a selected
+        // cell state (rendered as a checkmark by the current system appearance).
+        collectionView.allowsSelection = false
         collectionView.showsVerticalScrollIndicator = false
         collectionView.keyboardDismissMode = .interactive
         collectionView.contentInsetAdjustmentBehavior = .never

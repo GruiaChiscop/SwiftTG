@@ -44,12 +44,10 @@ final class TDLib: @unchecked Sendable {
             self?.session.close()
         }
 
-        // The app-icon badge otherwise never updates on its own: nothing else calls
-        // `setBadgeCount`, and the only thing that could set it - the `badge` field on an incoming
-        // remote push - only lands when a push actually arrives, not when messages get read while
-        // the app is open. `unreadUnmutedCount` (not `unreadCount`) matches the official app's own
-        // badge, which excludes muted chats.
-        session.unreadChatCountPublisher
+        // Telegram-iOS defaults its app-icon badge to unread *messages*, excluding muted chats.
+        // UpdateUnreadMessageCount for the main list is TDLib's authoritative live counter; unlike
+        // an APNs `badge`, it also advances immediately when messages are read inside the app.
+        session.unreadMessageCountPublisher
             .compactMap { $0?.unreadUnmutedCount }
             .removeDuplicates()
             .sink { count in
