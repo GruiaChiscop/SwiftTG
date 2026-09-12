@@ -15,6 +15,96 @@ struct ChatInfoView: View {
 
     // MARK: Private
 
+    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
+    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
+        ("Off", 0),
+        ("1 Day", 86400),
+        ("1 Week", 604_800),
+        ("1 Month", 2_678_400),
+    ]
+
+    @Environment(ChatVM.self) private var chatVM
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    @State private var errorMessage: String?
+    @State private var info: TelegramChatInfoData?
+    @State private var reportRequest: TelegramReportRequest?
+    @State private var isLoading = true
+    @State private var managedVideoChat: GroupCall?
+    @State private var showDeleteConfirmation = false
+    @State private var showClearHistoryConfirmation = false
+    @State private var showLeaveConfirmation = false
+    @State private var showsStartSecretChatConfirmation = false
+    @State private var isStartingSecretChat = false
+    @State private var showsAddContact = false
+    @State private var showsSharedMedia = false
+    @State private var showsScheduledMessages = false
+    @State private var showsCommonGroups = false
+    @State private var membersFilter: TelegramChatInfoMemberFilter?
+    @State private var showMuteOptions = false
+    @State private var muteOverride: Bool?
+    @State private var autoDeleteOverride: Int?
+    @State private var isSavingAutoDelete = false
+    @State private var showsCameraPermissionAlert = false
+    @State private var showsMicrophonePermissionAlert = false
+    @State private var showsRtmpSetup = false
+    @State private var showsVideoChatScheduler = false
+    @State private var showsVideoChatStartOptions = false
+    @State private var videoChatJoinCandidates: VideoChatJoinCandidates?
+
+    private var chat: CustomChat { chatVM.customChat }
+
+    /// The chat's video chat state is owned by `ChatVM` (kept live from `updateChatVideoChat`).
+    private var videoChat: VideoChat { chatVM.videoChat }
+    private var videoChatDetails: GroupCall? { chatVM.videoChatCall }
+    private var hasActiveVideoChat: Bool { chatVM.hasActiveVideoChat }
+
+    private var videoChatTitle: String {
+        chat.kind == .channel ? "Live Stream" : "Voice Chat"
+    }
+
+    private var canManageVideoChats: Bool {
+        let status: ChatMemberStatus?
+        switch chat.type {
+        case .group(let group):
+            status = group.status
+        case .supergroup(let supergroup):
+            status = supergroup.status
+        case .bot, .user:
+            return false
+        }
+        switch status {
+        case .chatMemberStatusCreator:
+            return true
+        case .chatMemberStatusAdministrator(let administrator):
+            return administrator.rights.canManageVideoChats
+        default:
+            return false
+        }
+    }
+
+    private var canStartSecretChat: Bool {
+        // iOS can't open secret chats yet - `RootVM.makeCustomChat` drops `.chatTypeSecret`, so
+        // `createNewSecretChat` would just dead-end at "couldn't be opened". Keep the action and
+        // its confirmation wired up for when secret-chat support lands, but don't surface it.
+        // (macOS handles secret chats via the shared `TelegramChatListStore` and keeps its button.)
+        false
+    }
+
+    private var canAddContact: Bool {
+        guard let info else { return false }
+        return info.privateChatUserId != nil && !info.isContact
+    }
+
+    @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
+        if let info, hasMoreMenuItems(info) {
+            ToolbarItem(placement: .primaryAction) {
+                moreMenu(info)
+            }
+        }
+    }
+
     private var listContent: some View {
         List {
             ChatInfoIdentitySection(
@@ -97,311 +187,6 @@ struct ChatInfoView: View {
         }
     }
 
-    private func withSheets(_ content: some View) -> some View {
-        content
-        .sheet(item: $reportRequest) { request in
-            TelegramReportView(service: chatVM.service, request: request)
-        }
-        .sheet(isPresented: $showsSharedMedia) {
-            SharedMediaView(
-                chatId: chat.id,
-                chatTitle: chat.displayTitle,
-                service: chatVM.service,
-            ) { messageId in
-                openSharedMediaMessage(messageId)
-            }
-        }
-        .sheet(isPresented: $showsScheduledMessages) {
-            ScheduledMessagesView()
-        }
-        .popover(isPresented: $showMuteOptions) {
-            TelegramMutePresetPopoverContent { duration in
-                setMuteDuration(duration)
-                showMuteOptions = false
-            }
-            .presentationCompactAdaptation(.popover)
-        }
-        .alert("Camera Access Required", isPresented: $showsCameraPermissionAlert) {
-            Button("Open Settings", action: openSettings)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Allow camera access in Settings to start video calls.")
-        }
-        .alert("Microphone Access Required", isPresented: $showsMicrophonePermissionAlert) {
-            Button("Open Settings", action: openSettings)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Allow microphone access in Settings to make calls.")
-        }
-        .sheet(isPresented: $showsAddContact) {
-            if let info, let userId = info.privateChatUserId {
-                AddContactSheet(
-                    userId: userId,
-                    firstName: info.contactFirstName,
-                    lastName: info.contactLastName,
-                    phoneNumber: info.phoneNumber,
-                    service: chatVM.service,
-                ) {
-                    self.info?.isContact = true
-                }
-            }
-        }
-        .sheet(item: $videoChatJoinCandidates) { candidates in
-            VideoChatJoinAsPicker(
-                chatId: chat.id,
-                candidates: candidates,
-                service: chatVM.service,
-            ) { sender in
-                Task { await performVideoChatJoin(participantId: sender) }
-            }
-        }
-        .sheet(isPresented: $showsVideoChatScheduler) {
-            NavigationStack {
-                VideoChatScheduleView(
-                    chatId: chat.id,
-                    service: chatVM.service,
-                ) { call in
-                    applyCreatedVideoChat(call)
-                }
-            }
-        }
-        .sheet(isPresented: $showsRtmpSetup) {
-            NavigationStack {
-                VideoChatRtmpView(
-                    chatId: chat.id,
-                    service: chatVM.service,
-                    createsStream: true,
-                ) { call in
-                    applyCreatedVideoChat(call)
-                }
-            }
-        }
-    }
-
-    private func withAlerts(_ content: some View) -> some View {
-        content
-        .alert("Start \(videoChatTitle)", isPresented: $showsVideoChatStartOptions) {
-            Button("Start Now") {
-                startVideoChat()
-            }
-            Button("Schedule") {
-                showsVideoChatScheduler = true
-            }
-            Button("Stream with...") {
-                showsRtmpSetup = true
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .navigationDestination(item: $managedVideoChat) { call in
-            VideoChatManagementView(
-                chatId: chat.id,
-                service: chatVM.service,
-                initialCall: call,
-            ) { updated in
-                if let updated {
-                    chatVM.videoChatCall = updated
-                } else {
-                    chatVM.refreshVideoChat()
-                }
-            }
-        }
-        .alert(
-            "Delete \(chat.displayTitle)?",
-            isPresented: $showDeleteConfirmation,
-        ) {
-            if chat.actionPolicy.canDeleteCommunity {
-                Button("Delete for everyone", role: .destructive) {
-                    deleteChat(forAll: true)
-                }
-            } else {
-                if chat.chat.canBeDeletedOnlyForSelf {
-                    Button("Delete only for me", role: .destructive) {
-                        deleteChat(forAll: false)
-                    }
-                }
-                if chat.chat.canBeDeletedForAllUsers {
-                    Button("Delete for everyone", role: .destructive) {
-                        deleteChat(forAll: true)
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                showDeleteConfirmation = false
-            }
-        }
-        .alert("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryConfirmation) {
-            if chat.chat.canBeDeletedOnlyForSelf {
-                Button("Clear only for me", role: .destructive) { clearHistory(forEveryone: false) }
-            }
-            if chat.chat.canBeDeletedForAllUsers {
-                Button("Clear for everyone", role: .destructive) { clearHistory(forEveryone: true) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("All messages will be removed, but the chat will remain in your chat list.")
-        }
-        .alert(
-            "\(chat.actionPolicy.leaveActionTitle ?? "Leave") \(chat.displayTitle)?",
-            isPresented: $showLeaveConfirmation,
-        ) {
-            Button(chat.kind == .channel ? "Leave Channel" : "Leave Group", role: .destructive) {
-                leaveChat()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You will leave this chat and it will be removed from your chat list.")
-        }
-        .alert("Start Secret Chat", isPresented: $showsStartSecretChatConfirmation) {
-            Button("Start") { startSecretChat() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Start a secret chat with \(chat.displayTitle)?")
-        }
-        .alert(
-            "Chat Info Error",
-            isPresented: Binding(
-                get: { errorMessage != nil },
-                set: {
-                    if !$0 {
-                        errorMessage = nil
-                    }
-                },
-            ),
-        ) {
-            Button("OK") { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "")
-        }
-    }
-
-    @Environment(ChatVM.self) private var chatVM
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
-
-    @State private var errorMessage: String?
-    @State private var info: TelegramChatInfoData?
-    @State private var reportRequest: TelegramReportRequest?
-    @State private var isLoading = true
-    @State private var managedVideoChat: GroupCall?
-    @State private var showDeleteConfirmation = false
-    @State private var showClearHistoryConfirmation = false
-    @State private var showLeaveConfirmation = false
-    @State private var showsStartSecretChatConfirmation = false
-    @State private var isStartingSecretChat = false
-    @State private var showsAddContact = false
-    @State private var showsSharedMedia = false
-    @State private var showsScheduledMessages = false
-    @State private var showsCommonGroups = false
-    @State private var membersFilter: TelegramChatInfoMemberFilter?
-    @State private var showMuteOptions = false
-    @State private var muteOverride: Bool?
-    @State private var autoDeleteOverride: Int?
-    @State private var isSavingAutoDelete = false
-    @State private var showsCameraPermissionAlert = false
-    @State private var showsMicrophonePermissionAlert = false
-    @State private var showsRtmpSetup = false
-    @State private var showsVideoChatScheduler = false
-    @State private var showsVideoChatStartOptions = false
-    @State private var videoChatJoinCandidates: VideoChatJoinCandidates?
-
-    private var chat: CustomChat { chatVM.customChat }
-
-    /// The chat's video chat state is owned by `ChatVM` (kept live from `updateChatVideoChat`).
-    private var videoChat: VideoChat { chatVM.videoChat }
-    private var videoChatDetails: GroupCall? { chatVM.videoChatCall }
-    private var hasActiveVideoChat: Bool { chatVM.hasActiveVideoChat }
-
-    private var videoChatTitle: String {
-        chat.kind == .channel ? "Live Stream" : "Voice Chat"
-    }
-
-    private var canManageVideoChats: Bool {
-        let status: ChatMemberStatus?
-        switch chat.type {
-        case .group(let group):
-            status = group.status
-        case .supergroup(let supergroup):
-            status = supergroup.status
-        case .bot, .user:
-            return false
-        }
-        switch status {
-        case .chatMemberStatusCreator:
-            return true
-        case .chatMemberStatusAdministrator(let administrator):
-            return administrator.rights.canManageVideoChats
-        default:
-            return false
-        }
-    }
-
-    private var canStartSecretChat: Bool {
-        // iOS can't open secret chats yet - `RootVM.makeCustomChat` drops `.chatTypeSecret`, so
-        // `createNewSecretChat` would just dead-end at "couldn't be opened". Keep the action and
-        // its confirmation wired up for when secret-chat support lands, but don't surface it.
-        // (macOS handles secret chats via the shared `TelegramChatListStore` and keeps its button.)
-        false
-    }
-
-    private var canAddContact: Bool {
-        guard let info else { return false }
-        return info.privateChatUserId != nil && !info.isContact
-    }
-
-    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
-    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
-        ("Off", 0),
-        ("1 Day", 86400),
-        ("1 Week", 604_800),
-        ("1 Month", 2_678_400),
-    ]
-
-    private func autoDeleteSeconds(_ info: TelegramChatInfoData) -> Int {
-        autoDeleteOverride ?? info.messageAutoDeleteTime
-    }
-
-    private func canEditAutoDelete(_ info: TelegramChatInfoData) -> Bool {
-        guard !chat.isSavedMessages else { return false }
-        switch chat.kind {
-        case .bot, .privateChat:
-            return true
-        case .channel, .group:
-            return info.canChangeInfo
-        }
-    }
-
-    private static func autoDeleteLabel(_ seconds: Int) -> String {
-        switch seconds {
-        case 0: "Off"
-        case 86400: "1 day"
-        case 604_800: "1 week"
-        case 2_678_400: "1 month"
-        case let value where value % 86400 == 0: "\(value / 86400) days"
-        default: "\(max(1, seconds / 3600)) hours"
-        }
-    }
-
-    private func setAutoDelete(_ seconds: Int) {
-        guard let info, seconds != autoDeleteSeconds(info), !isSavingAutoDelete else { return }
-        let previous = autoDeleteSeconds(info)
-        autoDeleteOverride = seconds
-        isSavingAutoDelete = true
-        let service = chatVM.service
-        let chatId = chat.id
-        Task {
-            defer { isSavingAutoDelete = false }
-            do {
-                _ = try await service.setChatMessageAutoDeleteTime(
-                    chatId: chatId,
-                    messageAutoDeleteTime: seconds,
-                )
-            } catch {
-                autoDeleteOverride = previous
-                errorMessage = telegramErrorDescription(error)
-            }
-        }
-    }
-
     @ViewBuilder private var videoChatSection: some View {
         if chat.kind == .group || chat.kind == .channel,
            hasActiveVideoChat || canManageVideoChats
@@ -468,27 +253,181 @@ struct ChatInfoView: View {
         }
     }
 
-    @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
-        if let info, hasMoreMenuItems(info) {
-            ToolbarItem(placement: .primaryAction) {
-                moreMenu(info)
+    private func withSheets(_ content: some View) -> some View {
+        content
+            .sheet(item: $reportRequest) { request in
+                TelegramReportView(service: chatVM.service, request: request)
             }
-        }
+            .sheet(isPresented: $showsSharedMedia) {
+                SharedMediaView(
+                    chatId: chat.id,
+                    chatTitle: chat.displayTitle,
+                    service: chatVM.service,
+                ) { messageId in
+                    openSharedMediaMessage(messageId)
+                }
+            }
+            .sheet(isPresented: $showsScheduledMessages) {
+                ScheduledMessagesView()
+            }
+            .popover(isPresented: $showMuteOptions) {
+                TelegramMutePresetPopoverContent { duration in
+                    setMuteDuration(duration)
+                    showMuteOptions = false
+                }
+                .presentationCompactAdaptation(.popover)
+            }
+            .alert("Camera Access Required", isPresented: $showsCameraPermissionAlert) {
+                Button("Open Settings", action: openSettings)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Allow camera access in Settings to start video calls.")
+            }
+            .alert("Microphone Access Required", isPresented: $showsMicrophonePermissionAlert) {
+                Button("Open Settings", action: openSettings)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Allow microphone access in Settings to make calls.")
+            }
+            .sheet(isPresented: $showsAddContact) {
+                if let info, let userId = info.privateChatUserId {
+                    AddContactSheet(
+                        userId: userId,
+                        firstName: info.contactFirstName,
+                        lastName: info.contactLastName,
+                        phoneNumber: info.phoneNumber,
+                        service: chatVM.service,
+                    ) {
+                        self.info?.isContact = true
+                    }
+                }
+            }
+            .sheet(item: $videoChatJoinCandidates) { candidates in
+                VideoChatJoinAsPicker(
+                    chatId: chat.id,
+                    candidates: candidates,
+                    service: chatVM.service,
+                ) { sender in
+                    Task { await performVideoChatJoin(participantId: sender) }
+                }
+            }
+            .sheet(isPresented: $showsVideoChatScheduler) {
+                NavigationStack {
+                    VideoChatScheduleView(
+                        chatId: chat.id,
+                        service: chatVM.service,
+                    ) { call in
+                        applyCreatedVideoChat(call)
+                    }
+                }
+            }
+            .sheet(isPresented: $showsRtmpSetup) {
+                NavigationStack {
+                    VideoChatRtmpView(
+                        chatId: chat.id,
+                        service: chatVM.service,
+                        createsStream: true,
+                    ) { call in
+                        applyCreatedVideoChat(call)
+                    }
+                }
+            }
     }
 
-    /// Matches Telegram-iOS: these live in the nav bar's "..." menu, not as list rows - only
-    /// "Add to Contacts" (a `ChatInfoProfileInformationSection` row) and the destructive-adjacent
-    /// mute control (a header quick-action) are pulled out into the scrolling content itself.
-    private func hasMoreMenuItems(_ info: TelegramChatInfoData) -> Bool {
-        let policy = chat.actionPolicy
-        return canStartSecretChat
-            || canEditAutoDelete(info)
-            || autoDeleteSeconds(info) > 0
-            || info.blockableUserId != nil
-            || chat.chat.canBeReported
-            || policy.canLeave
-            || policy.canClearHistory
-            || policy.canDeleteChat
+    private func withAlerts(_ content: some View) -> some View {
+        content
+            .alert("Start \(videoChatTitle)", isPresented: $showsVideoChatStartOptions) {
+                Button("Start Now") {
+                    startVideoChat()
+                }
+                Button("Schedule") {
+                    showsVideoChatScheduler = true
+                }
+                Button("Stream with...") {
+                    showsRtmpSetup = true
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .navigationDestination(item: $managedVideoChat) { call in
+                VideoChatManagementView(
+                    chatId: chat.id,
+                    service: chatVM.service,
+                    initialCall: call,
+                ) { updated in
+                    if let updated {
+                        chatVM.videoChatCall = updated
+                    } else {
+                        chatVM.refreshVideoChat()
+                    }
+                }
+            }
+            .alert(
+                "Delete \(chat.displayTitle)?",
+                isPresented: $showDeleteConfirmation,
+            ) {
+                if chat.actionPolicy.canDeleteCommunity {
+                    Button("Delete for everyone", role: .destructive) {
+                        deleteChat(forAll: true)
+                    }
+                } else {
+                    if chat.chat.canBeDeletedOnlyForSelf {
+                        Button("Delete only for me", role: .destructive) {
+                            deleteChat(forAll: false)
+                        }
+                    }
+                    if chat.chat.canBeDeletedForAllUsers {
+                        Button("Delete for everyone", role: .destructive) {
+                            deleteChat(forAll: true)
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    showDeleteConfirmation = false
+                }
+            }
+            .alert("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryConfirmation) {
+                if chat.chat.canBeDeletedOnlyForSelf {
+                    Button("Clear only for me", role: .destructive) { clearHistory(forEveryone: false) }
+                }
+                if chat.chat.canBeDeletedForAllUsers {
+                    Button("Clear for everyone", role: .destructive) { clearHistory(forEveryone: true) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("All messages will be removed, but the chat will remain in your chat list.")
+            }
+            .alert(
+                "\(chat.actionPolicy.leaveActionTitle ?? "Leave") \(chat.displayTitle)?",
+                isPresented: $showLeaveConfirmation,
+            ) {
+                Button(chat.kind == .channel ? "Leave Channel" : "Leave Group", role: .destructive) {
+                    leaveChat()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You will leave this chat and it will be removed from your chat list.")
+            }
+            .alert("Start Secret Chat", isPresented: $showsStartSecretChatConfirmation) {
+                Button("Start") { startSecretChat() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Start a secret chat with \(chat.displayTitle)?")
+            }
+            .alert(
+                "Chat Info Error",
+                isPresented: Binding(
+                    get: { errorMessage != nil },
+                    set: {
+                        if !$0 {
+                            errorMessage = nil
+                        }
+                    },
+                ),
+            ) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
     }
 
     private func moreMenu(_ info: TelegramChatInfoData) -> some View {
@@ -555,7 +494,7 @@ struct ChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func autoDeletePresetButtons(_ info: TelegramChatInfoData) -> some View {
+    private func autoDeletePresetButtons(_ info: TelegramChatInfoData) -> some View {
         ForEach(Self.autoDeletePresets, id: \.seconds) { preset in
             Button {
                 setAutoDelete(preset.seconds)
@@ -567,6 +506,67 @@ struct ChatInfoView: View {
                 }
             }
         }
+    }
+
+    private static func autoDeleteLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 0: "Off"
+        case 86400: "1 day"
+        case 604_800: "1 week"
+        case 2_678_400: "1 month"
+        case let value where value % 86400 == 0: "\(value / 86400) days"
+        default: "\(max(1, seconds / 3600)) hours"
+        }
+    }
+
+    private func autoDeleteSeconds(_ info: TelegramChatInfoData) -> Int {
+        autoDeleteOverride ?? info.messageAutoDeleteTime
+    }
+
+    private func canEditAutoDelete(_ info: TelegramChatInfoData) -> Bool {
+        guard !chat.isSavedMessages else { return false }
+        switch chat.kind {
+        case .bot, .privateChat:
+            return true
+        case .channel, .group:
+            return info.canChangeInfo
+        }
+    }
+
+    private func setAutoDelete(_ seconds: Int) {
+        guard let info, seconds != autoDeleteSeconds(info), !isSavingAutoDelete else { return }
+        let previous = autoDeleteSeconds(info)
+        autoDeleteOverride = seconds
+        isSavingAutoDelete = true
+        let service = chatVM.service
+        let chatId = chat.id
+        Task {
+            defer { isSavingAutoDelete = false }
+            do {
+                _ = try await service.setChatMessageAutoDeleteTime(
+                    chatId: chatId,
+                    messageAutoDeleteTime: seconds,
+                )
+            } catch {
+                autoDeleteOverride = previous
+                errorMessage = telegramErrorDescription(error)
+            }
+        }
+    }
+
+    /// Matches Telegram-iOS: these live in the nav bar's "..." menu, not as list rows - only
+    /// "Add to Contacts" (a `ChatInfoProfileInformationSection` row) and the destructive-adjacent
+    /// mute control (a header quick-action) are pulled out into the scrolling content itself.
+    private func hasMoreMenuItems(_ info: TelegramChatInfoData) -> Bool {
+        let policy = chat.actionPolicy
+        return canStartSecretChat
+            || canEditAutoDelete(info)
+            || autoDeleteSeconds(info) > 0
+            || info.blockableUserId != nil
+            || chat.chat.canBeReported
+            || policy.canLeave
+            || policy.canClearHistory
+            || policy.canDeleteChat
     }
 
     private func deleteChat(forAll: Bool) {
