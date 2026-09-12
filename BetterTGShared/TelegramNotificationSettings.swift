@@ -214,6 +214,18 @@ struct TelegramNotificationsView: View {
             } footer: {
                 Text("Controls the banner shown for new messages while SwiftTG is open, not push notifications.")
             }
+
+            Section {
+                Picker("Badge Counter", selection: badgeCountStyleBinding) {
+                    ForEach(TelegramBadgeCountStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+            } footer: {
+                Text(
+                    "Show the Home Screen app icon badge as the number of unread chats or the number of unread messages, both excluding muted chats.",
+                )
+            }
             #endif
 
             Section {
@@ -297,6 +309,7 @@ struct TelegramNotificationsView: View {
     @State private var inAppSoundEnabled = TelegramInAppNotificationPreferences.soundEnabled
     @State private var inAppVibrateEnabled = TelegramInAppNotificationPreferences.vibrateEnabled
     @State private var inAppPreviewsEnabled = TelegramInAppNotificationPreferences.previewsEnabled
+    @State private var badgeCountStyle = TelegramBadgeCountPreference.style
     #endif
 
     private let service: any TelegramService
@@ -366,6 +379,16 @@ struct TelegramNotificationsView: View {
             set: { newValue in
                 inAppPreviewsEnabled = newValue
                 TelegramInAppNotificationPreferences.previewsEnabled = newValue
+            },
+        )
+    }
+
+    private var badgeCountStyleBinding: Binding<TelegramBadgeCountStyle> {
+        Binding(
+            get: { badgeCountStyle },
+            set: { newValue in
+                badgeCountStyle = newValue
+                TelegramBadgeCountPreference.style = newValue
             },
         )
     }

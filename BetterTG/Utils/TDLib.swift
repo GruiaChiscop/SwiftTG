@@ -24,7 +24,7 @@ final class TDLib: @unchecked Sendable {
 
     var service: any TelegramService { session }
 
-    func startTdLibUpdateHandler() {
+    @MainActor func startTdLibUpdateHandler() {
         let dir = try? FileManager.default
             .url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appending(path: "td")
@@ -37,23 +37,33 @@ final class TDLib: @unchecked Sendable {
             databaseDirectory: dir,
             deviceModel: Utils.modelName,
             systemLanguageCode: "en-US",
-            systemVersion: MainActor.assumeIsolated { UIDevice.current.systemVersion },
+            systemVersion: UIDevice.current.systemVersion,
         ))
 
         nc.publisher(&cancellables, for: UIApplication.willTerminateNotification) { [weak self] _ in
             self?.session.close()
         }
 
-        // Telegram-iOS defaults its app-icon badge to unread *messages*, excluding muted chats.
-        // UpdateUnreadMessageCount for the main list is TDLib's authoritative live counter; unlike
-        // an APNs `badge`, it also advances immediately when messages are read inside the app.
-        session.unreadMessageCountPublisher
-            .compactMap { $0?.unreadUnmutedCount }
-            .removeDuplicates()
-            .sink { count in
-                Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
-            }
-            .store(in: &cancellables)
+        // Matches Telegram-iOS's own Settings > Notifications > "Badge Counter" choice between
+        // unread chats and unread messages (see TelegramBadgeCountPreference), both excluding
+        // muted chats. Both of TDLib's counters for the main list are authoritative live counters;
+        // unlike an APNs `badge`, they also advance immediately when messages are read in-app.
+        // Combining both publishers (rather than switching subscriptions on preference change)
+        // means flipping the setting re-applies whichever counter TDLib already has current, live,
+        // with no stale-cache gap to worry about.
+        Publishers.CombineLatest3(
+            TelegramBadgeCountPreference.stylePublisher,
+            session.unreadChatCountPublisher.compactMap { $0?.unreadUnmutedCount },
+            session.unreadMessageCountPublisher.compactMap { $0?.unreadUnmutedCount },
+        )
+        .map { style, chatCount, messageCount in
+            style == .chats ? chatCount : messageCount
+        }
+        .removeDuplicates()
+        .sink { count in
+            Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+        }
+        .store(in: &cancellables)
     }
 
     // MARK: Private
