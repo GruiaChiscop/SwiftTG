@@ -547,6 +547,19 @@ struct ChatView: View {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
         positionedInitialMessages = true
 
+        // `canMarkMessagesRead` (below, in `bodyView`) only reaches the collection view
+        // controller on SwiftUI's next render of this body - it hasn't yet at the point
+        // `positionedInitialMessages` flips true above. Without this yield, the initial jump to
+        // the unread header/message happens immediately, under the *old* (false) value, so every
+        // row it makes visible has its `willDisplay` read-report dropped; nothing then explicitly
+        // re-scans what ended up visible except the one-time "became enabled" catch-up, which is
+        // one layout pass too late for cells the reuse pool hasn't finished settling on yet. Wait
+        // for that render before issuing the scroll so the normal `willDisplay` path already sees
+        // `canMarkMessagesRead == true`.
+        await Task.yield()
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+
         let accessibilityTarget: InitialAccessibilityTarget
         if let initialMessageId = chatVM.initialMessageId {
             historyNavigator.scrollToMessage(initialMessageId, anchor: .center, animated: false)

@@ -70,6 +70,7 @@ import TDLibKit
         conversationPreparationTask?.cancel()
         presenceExpiryTask?.cancel()
         pinnedMessagesTask?.cancel()
+        viewMessagesTask?.cancel()
         guard hasStarted else { return }
         let chatId = chatId
         let service = service

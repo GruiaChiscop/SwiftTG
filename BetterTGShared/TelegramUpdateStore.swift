@@ -44,6 +44,14 @@ final class TelegramUpdateStore: @unchecked Sendable {
         unreadChatCountSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }
 
+    /// Synchronous read of the same value `unreadChatCountPublisher` streams - lets a caller
+    /// re-apply the current count on demand (e.g. on foreground) without waiting for TDLib to
+    /// decide something changed. `CurrentValueSubject.value` is lock-protected, so reading it off
+    /// the queue that writes it is safe.
+    var currentUnreadChatCount: UpdateUnreadChatCount? {
+        unreadChatCountSubject.value
+    }
+
     var availableMessageEffectsPublisher: AnyPublisher<UpdateAvailableMessageEffects?, Never> {
         availableMessageEffectsSubject.receive(on: DispatchQueue.main).eraseToAnyPublisher()
     }

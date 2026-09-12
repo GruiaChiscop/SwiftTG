@@ -168,9 +168,10 @@ extension RootVM {
         if !group.addedNotifications.isEmpty,
            group.addedNotifications.allSatisfy({ notificationBelongsToVisibleConversation($0, chatId: group.chatId) })
         {
+            let topic = visibleConversation?.topic
             Task { @MainActor [weak self] in
                 guard let self, let chat = await getCustomChat(from: group.chatId)?.chat else { return }
-                TelegramDeliveredNotifications.clear(for: chat)
+                TelegramDeliveredNotifications.clear(for: chat, topic: topic)
             }
             return
         }

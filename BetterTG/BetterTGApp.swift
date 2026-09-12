@@ -71,6 +71,10 @@ import UserNotifications
                 TelegramCallSession.shared.restoreCallViewFromPictureInPictureIfNeeded()
                 RootVM.shared.noteAppBecameActive()
                 RootVM.shared.updateOnlinePresence(active: true)
+                // A push received while this process wasn't running can leave the Home Screen
+                // badge showing the server's own guess rather than what TDLib actually knows -
+                // reassert the real count now instead of waiting on TDLib to notice a change.
+                TDLib.shared.refreshBadgeCount()
                 Task { await RootVM.shared.processPendingShareRequests() }
             case .background:
                 TelegramAppLockController.shared.noteDidEnterBackground()

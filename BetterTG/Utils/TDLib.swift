@@ -58,6 +58,17 @@ final class TDLib: @unchecked Sendable {
             .store(in: &cancellables)
     }
 
+    /// Re-applies the last known unread-chat count to the app-icon badge, bypassing the dedup
+    /// above. A push delivered while this process wasn't running (backgrounded or killed) has its
+    /// own `aps.badge` guess from the server applied straight to the Home Screen icon by iOS - a
+    /// number that can drift from what TDLib actually knows locally, and which nothing here would
+    /// otherwise correct until TDLib's own count next *changes*. Called on every foreground
+    /// transition so the icon self-corrects promptly instead of only when a delta happens to fire.
+    func refreshBadgeCount() {
+        guard let count = session.currentUnreadChatCount?.unreadUnmutedCount else { return }
+        Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+    }
+
     // MARK: Private
 
     private var cancellables = Set<AnyCancellable>()

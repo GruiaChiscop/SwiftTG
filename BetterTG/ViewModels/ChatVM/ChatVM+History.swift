@@ -180,41 +180,42 @@ extension ChatVM {
         guard viewMessagesTask == nil else { return }
 
         viewMessagesTask = Task { @MainActor [weak self] in
+            // One yield coalesces every row `willDisplay` reports within the current layout pass.
+            await Task.yield()
             guard let self else { return }
-            defer { viewMessagesTask = nil }
+            viewMessagesTask = nil
 
-            // Collect every row made visible by a layout pass. If another pass occurs while TDLib
-            // is processing the batch, the loop drains those newly visible ids next.
-            while !Task.isCancelled {
-                await Task.yield()
-                let messageIds = Array(pendingViewedMessageIds)
-                pendingViewedMessageIds.removeAll(keepingCapacity: true)
-                guard !messageIds.isEmpty else { return }
+            let messageIds = Array(pendingViewedMessageIds)
+            pendingViewedMessageIds.removeAll(keepingCapacity: true)
+            guard !messageIds.isEmpty else { return }
 
-                _ = try? await service.viewMessages(
-                    chatId: customChat.chat.id,
+            // Captured as plain values and sent from a detached task with no reference back to
+            // `self`, so this read receipt still reaches TDLib even if the screen - and this
+            // `ChatVM` - goes away the instant after: leaving a chat must never silently drop a
+            // batch of messages that were already collected for "mark as read".
+            let chatId = customChat.chat.id
+            let service = service
+            Task.background {
+                try? await service.viewMessages(
+                    chatId: chatId,
                     // The chat is open while this screen exists; don't force messages read after
                     // TDLib considers it closed during a navigation transition.
                     forceRead: false,
                     messageIds: messageIds,
                     source: .messageSourceChatHistory,
                 )
+            }
 
-                if case .messageTopicForum(let forum) = messageTopic,
-                   let topic = try? await service.getForumTopic(
-                       chatId: customChat.chat.id,
-                       forumTopicId: forum.forumTopicId,
-                   ), !Task.isCancelled
-                {
-                    conversationUnreadCount = topic.unreadCount
-                } else if case .messageTopicThread(let thread) = messageTopic,
-                          let info = try? await service.getMessageThread(
-                              chatId: customChat.chat.id,
-                              messageId: thread.messageThreadId,
-                          ), !Task.isCancelled
-                {
-                    conversationUnreadCount = info.unreadMessageCount
-                }
+            // Best-effort unread-count refresh for the scroll-to-bottom badge - fine to skip if
+            // the screen is already gone, unlike the read receipt above.
+            if case .messageTopicForum(let forum) = messageTopic,
+               let topic = try? await service.getForumTopic(chatId: chatId, forumTopicId: forum.forumTopicId)
+            {
+                conversationUnreadCount = topic.unreadCount
+            } else if case .messageTopicThread(let thread) = messageTopic,
+                      let info = try? await service.getMessageThread(chatId: chatId, messageId: thread.messageThreadId)
+            {
+                conversationUnreadCount = info.unreadMessageCount
             }
         }
     }
