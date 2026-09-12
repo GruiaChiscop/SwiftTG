@@ -30,7 +30,6 @@ import SwiftUI
         let canLoadOlderMessages: Bool
         let canMarkMessagesRead: Bool
         let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
-        let focusedMessageId: Int64?
         let dynamicTypeSize: DynamicTypeSize
         let bubbleCornerRadius: CGFloat
         let colorScheme: ColorScheme
@@ -48,13 +47,15 @@ import SwiftUI
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.backgroundColor = .clear
         collectionView.alwaysBounceVertical = true
-        // Message rows have their own controls and context menus, but there is no collection-level
-        // selection mode. Leaving UIKit selection enabled makes a plain tap persist a selected
-        // cell state (rendered as a checkmark by the current system appearance).
-        collectionView.allowsSelection = false
         collectionView.showsVerticalScrollIndicator = false
         collectionView.keyboardDismissMode = .interactive
         collectionView.contentInsetAdjustmentBehavior = .never
+        // Nothing here reads selection state (no didSelectItemAt/shouldSelectItemAt, no
+        // multi-select-messages mode) - leaving it enabled just let UIKit's own tap-to-select
+        // mechanic fire on every tap (including a VoiceOver double-tap-to-activate), transiently
+        // flipping each cell's real `isSelected` before ChatHistoryHostingCell's workaround could
+        // neutralize it, which is what was making VoiceOver re-announce the cell as selected.
+        collectionView.allowsSelection = false
         collectionView.delegate = self
         collectionView.register(
             ChatHistoryHostingCell.self,
@@ -145,7 +146,6 @@ import SwiftUI
             || zip(items, newItems).contains { oldItem, newItem in
                 oldItem.id != newItem.id || oldItem.contentSignature != newItem.contentSignature
             }
-        let focusedMessageChanged = oldConfiguration?.focusedMessageId != configuration.focusedMessageId
         if environmentChanged {
             heightCache.removeAll(keepingCapacity: true)
         }
@@ -163,7 +163,7 @@ import SwiftUI
         // scroll-to-bottom button appears or receives VoiceOver focus). Reapplying an identical
         // diffable snapshot during those updates interrupts an active pan and can make UIKit move
         // accessibility focus to a newly configured cell.
-        guard contentChanged || environmentChanged || focusedMessageChanged else {
+        guard contentChanged || environmentChanged else {
             navigator.flushPendingRequest()
             if canMarkMessagesReadBecameEnabled {
                 reportVisibleMessages()
@@ -182,13 +182,6 @@ import SwiftUI
         })
         if environmentChanged {
             changedIds = newIds.intersection(existingIds)
-        } else if focusedMessageChanged {
-            if let oldFocused = oldConfiguration?.focusedMessageId {
-                changedIds.insert(.message(oldFocused))
-            }
-            if let newFocused = configuration.focusedMessageId {
-                changedIds.insert(.message(newFocused))
-            }
         }
         let validChangedIds = Array(changedIds.filter { newIds.contains($0) && existingIds.contains($0) })
         if !validChangedIds.isEmpty {
