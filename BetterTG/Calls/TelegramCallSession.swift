@@ -102,6 +102,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
             }
         }
         networkMonitor.start(queue: networkMonitorQueue)
+        Self.preloadTonesIfNeeded()
     }
 
     // MARK: Internal
@@ -1228,15 +1229,22 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
         let messageId: Int64
     }
 
-    private static let ringingTone = TelegramCallTone.load(resourceName: "voip_ringback", loopCount: 1_000_000)
-    private static let connectingTone = TelegramCallTone.load(resourceName: "voip_connecting", loopCount: 1_000_000)
-    private static let busyTone = TelegramCallTone.load(resourceName: "voip_busy", loopCount: 3)
-    private static let failedTone = TelegramCallTone.load(resourceName: "voip_fail", loopCount: 1)
-    private static let endedTone = TelegramCallTone.load(resourceName: "voip_end", loopCount: 1)
-    private static let remoteCameraTone = TelegramCallTone.load(
-        resourceName: "voip_group_recording_started",
-        loopCount: 1,
-    )
+    /// Preloaded once, eagerly, by `preloadTonesIfNeeded()` - called from `init` below. These used to be
+    /// `static let`s computed lazily on first access, which meant the (necessarily synchronous)
+    /// decode of whichever tone a call needed first ran exactly when that call was being set up -
+    /// blocking work at exactly the moment `CXProvider` expects a prompt answer/end response,
+    /// which read to the system as the call failing. Loading them ahead of time, off the main
+    /// thread, removes that race entirely; every call site below already treats a tone as optional
+    /// and degrades to silence rather than failing if a tone genuinely isn't ready yet.
+    private static var ringingTone: TelegramCallTone?
+    private static var connectingTone: TelegramCallTone?
+    private static var busyTone: TelegramCallTone?
+    private static var failedTone: TelegramCallTone?
+    private static var endedTone: TelegramCallTone?
+    private static var remoteCameraTone: TelegramCallTone?
+    private static var didStartPreloadingTones = false
+    private static var preloadTonesTask: Task<Void, Never>?
+
     private static let terminalToneLifetime: TimeInterval = 2
     private static let endedTonePlaybackDuration: TimeInterval = 1.25
     private static let callFeedbackUserId: Int64 = 4_244_000
@@ -1310,6 +1318,40 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
             || groupCallCoordinator?.participants.values.contains(where: {
                 $0.videoInfo != nil || $0.screenSharingVideoInfo != nil
             }) == true
+    }
+
+    /// Fires once, from `init`, long before any real call - `didStartPreloadingTones` guards
+    /// against a second `TelegramCallSession` instance (there shouldn't be one outside tests)
+    /// re-decoding everything.
+    private static func preloadTonesIfNeeded() {
+        guard !didStartPreloadingTones else { return }
+        didStartPreloadingTones = true
+        preloadTonesTask = Task {
+            async let ringing = TelegramCallTone.load(resourceName: "voip_ringback", loopCount: 1_000_000)
+            async let connecting = TelegramCallTone.load(resourceName: "voip_connecting", loopCount: 1_000_000)
+            async let busy = TelegramCallTone.load(resourceName: "voip_busy", loopCount: 3)
+            async let failed = TelegramCallTone.load(resourceName: "voip_fail", loopCount: 1)
+            async let ended = TelegramCallTone.load(resourceName: "voip_end", loopCount: 1)
+            async let remoteCamera = TelegramCallTone.load(
+                resourceName: "voip_group_recording_started",
+                loopCount: 1,
+            )
+            let (
+                ringingResult,
+                connectingResult,
+                busyResult,
+                failedResult,
+                endedResult,
+                remoteCameraResult,
+            ) = await (ringing, connecting, busy, failed, ended, remoteCamera)
+            ringingTone = ringingResult
+            connectingTone = connectingResult
+            busyTone = busyResult
+            failedTone = failedResult
+            endedTone = endedResult
+            remoteCameraTone = remoteCameraResult
+            preloadTonesTask = nil
+        }
     }
 
     private static func ourProtocol() -> CallProtocol {
