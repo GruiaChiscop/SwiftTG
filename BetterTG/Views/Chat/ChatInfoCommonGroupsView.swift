@@ -54,7 +54,7 @@ struct ChatInfoCommonGroupsView: View {
         // Declared here (not on the ancestor ChatInfoView) so it stacks directly on top of this
         // screen - see the matching comment in ChatInfoMembersView.
         .navigationDestination(item: $pushedChat) { customChat in
-            ChatView(customChat: customChat, backButtonTitleOverride: "Groups in Common")
+            ChatView(customChat: customChat)
         }
         .alert("Can't Open Chat", isPresented: errorIsPresented) {
             Button("OK") {}

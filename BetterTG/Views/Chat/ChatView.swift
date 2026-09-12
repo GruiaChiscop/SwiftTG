@@ -55,11 +55,9 @@ struct ChatView: View {
 
     @State var chatVM: ChatVM
 
-    /// Set when this chat was pushed from somewhere other than the root chat list/another chat
-    /// (e.g. Chat Info's Members or Groups in Common) - `previousChatTitle` only knows how to look
-    /// back through `rootVM.path`, which those screens deliberately don't push onto (see the
-    /// comments in ChatInfoDetailViews.swift), so without this the back button falls back to a
-    /// misleading "Chats" even though back doesn't actually go to the chat list.
+    /// Only used when a chat is the root of its own navigation stack and therefore has no native
+    /// Back item, such as channel comments presented in their own stack. Ordinary pushed chats use
+    /// the system Back item so UIKit owns both edge-swipe and VoiceOver escape navigation.
     let backButtonTitleOverride: String?
 
     /// Telegram-iOS shows "N Comments" as the nav title for a comment thread rather than the
@@ -93,12 +91,28 @@ struct ChatView: View {
                     await chatVM.favoriteStickers.load()
                 }
                 .onAppear {
+                    isConversationVisible = true
                     chatVM.historyNavigator = historyNavigator
+                    if !isPreview {
+                        // A context-menu preview isn't a real open and must not clear delivered
+                        // notifications. In a forum, clear only this topic's notifications.
+                        TelegramDeliveredNotifications.clear(
+                            for: chatVM.customChat.chat,
+                            topic: chatVM.messageTopic,
+                        )
+                        rootVM.presentConversation(TelegramVisibleConversation(
+                            presentationId: conversationPresentationId,
+                            chatId: chatVM.customChat.chat.id,
+                            topic: chatVM.messageTopic,
+                        ))
+                    }
                 }
                 .onDisappear {
+                    isConversationVisible = false
                     if chatVM.historyNavigator === historyNavigator {
                         chatVM.historyNavigator = nil
                     }
+                    rootVM.dismissConversation(presentationId: conversationPresentationId)
                 }
                 .task(id: chatVM.initialMessagesLoaded) {
                     guard chatVM.initialMessagesLoaded else { return }
@@ -155,7 +169,8 @@ struct ChatView: View {
         .navigationTitle(
             chatVM.isConversationSearchActive ? "" : (titleOverride ?? chatVM.customChat.displayTitle),
         )
-        .navigationBarBackButtonHidden(true)
+        .navigationBarBackButtonHidden(backButtonTitleOverride != nil)
+        .accessibilityAction(.escape, dismiss.callAsFunction)
         .dropDestination(for: SelectedImage.self) { items, _ in
             nc.post(name: .localOnSelectedImagesDrop, object: Array(items.prefix(10)))
             return true
@@ -178,23 +193,13 @@ struct ChatView: View {
         }
         .toolbar {
             if !chatVM.isConversationSearchActive {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(action: dismiss.callAsFunction) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.backward")
-                            Text(backButtonTitle)
-                            if backButtonTitleOverride == nil, previousChatTitle == nil, unreadChatCount > 0 {
-                                Text("\(unreadChatCount)")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 5)
-                                    .frame(minWidth: 18, minHeight: 18)
-                                    .background(Color.accentColor, in: Capsule())
-                                    .accessibilityHidden(true)
-                            }
+                if let backButtonTitleOverride {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: dismiss.callAsFunction) {
+                            Label(backButtonTitleOverride, systemImage: "chevron.backward")
                         }
+                        .accessibilityLabel("Back to \(backButtonTitleOverride)")
                     }
-                    .accessibilityLabel(backButtonAccessibilityLabel)
                 }
                 ToolbarItem(placement: .principal) { principal }
                 if callPeer != nil {
@@ -274,6 +279,9 @@ struct ChatView: View {
             shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
             isPreview: isPreview,
             canLoadOlderMessages: positionedInitialMessages,
+            canMarkMessagesRead: positionedInitialMessages
+                && isConversationVisible
+                && scenePhase == .active,
             unreadHeaderVoiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
             navigator: historyNavigator,
             messageAccessibilityFocused: $accessibilityFocusedMessageId,
@@ -314,9 +322,12 @@ struct ChatView: View {
     // MARK: Private
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var conversationSearchFocused
     @State private var initialAccessibilityFocusWasCancelled = false
     @State private var composerVoiceOverFocusRequest = 0
+    @State private var conversationPresentationId = UUID()
+    @State private var isConversationVisible = false
     @State private var historyNavigator = ChatHistoryNavigator()
     @State private var navigationBarHeight = CGFloat.zero
     @State private var positionedInitialMessages = false
@@ -328,37 +339,23 @@ struct ChatView: View {
     @State private var presentedActionError: PresentedChatActionError?
     @State private var unreadHeaderVoiceOverFocusRequest = 0
 
-    private var unreadChatCount: Int {
-        rootVM.allChats.lazy.filter(\.hasUnreadMessages).count
-    }
-
-    private var previousChatTitle: String? {
-        guard rootVM.path.count > 1,
-              case .customChat(let chat, _, _) = rootVM.path[rootVM.path.count - 2]
-        else { return nil }
-        return chat.displayTitle
-    }
-
-    private var backButtonTitle: String {
-        backButtonTitleOverride ?? previousChatTitle ?? "Chats"
-    }
-
-    private var backButtonAccessibilityLabel: String {
-        if let backButtonTitleOverride {
-            return "Back to \(backButtonTitleOverride)"
-        }
-        if let previousChatTitle {
-            return "Back to \(previousChatTitle)"
-        }
-        return "Back to chats, \(unreadChatCount) unread"
-    }
-
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
     }
 
     private var initialUnreadMessageId: Int64? {
         guard chatVM.initialUnreadCount > 0 else { return nil }
+        if case .messageTopicThread = chatVM.messageTopic {
+            // MessageThreadInfo has an unread count but no last-read inbox id. The history is in
+            // chronological order, so the first of its trailing incoming unread messages is the
+            // best boundary TDLib makes available for a comment thread.
+            return chatVM.messages
+                .lazy
+                .filter { !$0.message.isOutgoing }
+                .suffix(chatVM.initialUnreadCount)
+                .first?
+                .id
+        }
         return chatVM.messages
             .first {
                 !$0.message.isOutgoing && $0.id > chatVM.initialLastReadInboxMessageId

@@ -13,6 +13,7 @@ struct ChatHistoryCollectionView: UIViewControllerRepresentable {
     let shouldShowProfileImage: Bool
     let isPreview: Bool
     let canLoadOlderMessages: Bool
+    let canMarkMessagesRead: Bool
     let unreadHeaderVoiceOverFocusRequest: Int
     let navigator: ChatHistoryNavigator
     let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
@@ -36,10 +37,12 @@ struct ChatHistoryCollectionView: UIViewControllerRepresentable {
             messages: messages,
             unreadMessageId: unreadMessageId,
             unreadCount: chatVM.initialUnreadCount,
+            currentUnreadCount: chatVM.conversationUnreadCount,
             unreadHeaderVoiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
             shouldShowProfileImage: shouldShowProfileImage,
             isPreview: isPreview,
             canLoadOlderMessages: canLoadOlderMessages,
+            canMarkMessagesRead: canMarkMessagesRead,
             messageAccessibilityFocused: messageAccessibilityFocused,
             focusedMessageId: messageAccessibilityFocused.wrappedValue,
             dynamicTypeSize: dynamicTypeSize,

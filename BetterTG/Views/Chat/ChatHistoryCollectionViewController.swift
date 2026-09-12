@@ -24,10 +24,12 @@ import UIKit
         let messages: [CustomMessage]
         let unreadMessageId: Int64?
         let unreadCount: Int
+        let currentUnreadCount: Int
         let unreadHeaderVoiceOverFocusRequest: Int
         let shouldShowProfileImage: Bool
         let isPreview: Bool
         let canLoadOlderMessages: Bool
+        let canMarkMessagesRead: Bool
         let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
         let focusedMessageId: Int64?
         let dynamicTypeSize: DynamicTypeSize
@@ -124,6 +126,8 @@ import UIKit
         updateGeneration += 1
         let generation = updateGeneration
         let oldConfiguration = self.configuration
+        let canMarkMessagesReadBecameEnabled = oldConfiguration?.canMarkMessagesRead != true
+            && configuration.canMarkMessagesRead
         let oldItemsById = itemsById
         let anchor = captureVisibleAnchor()
         let shouldKeepBottom = !items.isEmpty && lastIsAtBottom
@@ -144,7 +148,7 @@ import UIKit
         }
 
         self.configuration = configuration
-        scrollToBottomButton.update(unreadCount: configuration.chatVM.customChat.unreadCount)
+        scrollToBottomButton.update(unreadCount: configuration.currentUnreadCount)
         scrollToBottomButton.setVisible(
             configuration.chatVM.showScrollToBottomButton,
             animated: oldConfiguration != nil && !configuration.reduceMotion,
@@ -158,6 +162,9 @@ import UIKit
         // accessibility focus to a newly configured cell.
         guard contentChanged || environmentChanged || focusedMessageChanged else {
             navigator.flushPendingRequest()
+            if canMarkMessagesReadBecameEnabled {
+                reportVisibleMessages()
+            }
             return
         }
 
@@ -190,6 +197,9 @@ import UIKit
             collectionView.layoutIfNeeded()
             navigator.flushPendingRequest()
             updateScrollState()
+            if canMarkMessagesReadBecameEnabled {
+                reportVisibleMessages()
+            }
         }
         invalidateLayoutPreservingPosition(
             anchor: anchor,
@@ -298,6 +308,19 @@ import UIKit
                 .dynamicTypeSize(configuration.dynamicTypeSize)
                 .tint(Color(uiColor: collectionView.tintColor)),
         )
+    }
+
+    private func reportVisibleMessages() {
+        collectionView.indexPathsForVisibleItems.forEach(reportMessage(at:))
+    }
+
+    private func reportMessage(at indexPath: IndexPath) {
+        guard configuration?.isPreview == false,
+              configuration?.canMarkMessagesRead == true,
+              items.indices.contains(indexPath.item),
+              let messageId = items[indexPath.item].messageId
+        else { return }
+        configuration?.chatVM.viewMessage(id: messageId)
     }
 
     @objc private func didTapCollectionView() {
@@ -538,10 +561,6 @@ extension ChatHistoryCollectionViewController: UICollectionViewDelegate {
         willDisplay _: UICollectionViewCell,
         forItemAt indexPath: IndexPath,
     ) {
-        guard configuration?.isPreview == false,
-              items.indices.contains(indexPath.item),
-              let messageId = items[indexPath.item].messageId
-        else { return }
-        configuration?.chatVM.viewMessage(id: messageId)
+        reportMessage(at: indexPath)
     }
 }

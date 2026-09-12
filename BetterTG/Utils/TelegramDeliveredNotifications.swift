@@ -8,21 +8,30 @@ import UserNotifications
 enum TelegramDeliveredNotifications {
     // MARK: Internal
 
-    static func clear(for chat: Chat) {
-        let center = UNUserNotificationCenter.current()
-        center.getDeliveredNotifications { notifications in
+    @MainActor static func clear(for chat: Chat, topic: MessageTopic? = nil) {
+        Task { @MainActor in
+            let notifications = await UNUserNotificationCenter.current().deliveredNotifications()
             let identifiers = notifications
-                .filter { belongs($0.request.content.userInfo, to: chat) }
+                .filter { belongs($0.request.content.userInfo, to: chat, topic: topic) }
                 .map(\.request.identifier)
             guard !identifiers.isEmpty else { return }
-            center.removeDeliveredNotifications(withIdentifiers: identifiers)
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
         }
     }
 
     // MARK: Private
 
-    private static func belongs(_ userInfo: [AnyHashable: Any], to chat: Chat) -> Bool {
+    private static func belongs(_ userInfo: [AnyHashable: Any], to chat: Chat, topic: MessageTopic?) -> Bool {
         guard let target = TelegramNotificationPayload.target(from: userInfo) else { return false }
+        if let topic {
+            let expectedThreadId: Int? =
+                switch topic {
+                case .messageTopicForum(let forum): forum.forumTopicId
+                case .messageTopicThread(let thread): Int(exactly: thread.messageThreadId)
+                case .messageTopicDirectMessages, .messageTopicSavedMessages: nil
+                }
+            guard let expectedThreadId, target.forumTopicId == expectedThreadId else { return false }
+        }
         if target.chatIds.contains(chat.id) {
             return true
         }

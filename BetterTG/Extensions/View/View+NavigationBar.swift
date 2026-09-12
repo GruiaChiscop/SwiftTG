@@ -10,6 +10,62 @@ extension View {
             }
         }
     }
+
+    /// Sets the title UIKit uses for the actual Back item on the next pushed screen. Because this
+    /// configures the source navigation item, the native pop action and edge-swipe remain intact.
+    func nativeNavigationBackButtonTitle(_ title: String) -> some View {
+        background {
+            NativeNavigationBackButtonTitleAccessor(title: title)
+        }
+    }
+}
+
+// MARK: - NativeNavigationBackButtonTitleAccessor
+
+private struct NativeNavigationBackButtonTitleAccessor: UIViewControllerRepresentable {
+    @MainActor final class ProxyViewController: UIViewController {
+        // MARK: Lifecycle
+
+        init(title: String) {
+            self.titleForBackButton = title
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable) required init?(coder _: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        // MARK: Internal
+
+        var titleForBackButton: String
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            applyTitle()
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            applyTitle()
+        }
+
+        func applyTitle() {
+            guard let owner = parent else { return }
+            owner.navigationItem.backButtonTitle = titleForBackButton
+            owner.navigationItem.backButtonDisplayMode = .default
+        }
+    }
+
+    let title: String
+
+    func makeUIViewController(context _: Context) -> ProxyViewController {
+        ProxyViewController(title: title)
+    }
+
+    func updateUIViewController(_ proxyViewController: ProxyViewController, context _: Context) {
+        proxyViewController.titleForBackButton = title
+        proxyViewController.applyTitle()
+    }
 }
 
 // MARK: - NavigationBarAccessor
@@ -33,10 +89,8 @@ struct NavigationBarAccessor: UIViewControllerRepresentable {
     private final class ProxyViewController: UIViewController {
         // MARK: Lifecycle
 
-        deinit {
-            MainActor.assumeIsolated {
-                stopObservingNavigationBar()
-            }
+        isolated deinit {
+            stopObservingNavigationBar()
         }
         
         // MARK: Internal

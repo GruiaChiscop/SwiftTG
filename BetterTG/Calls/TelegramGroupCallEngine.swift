@@ -166,10 +166,11 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                         return GroupCallBroadcastPartTask()
                     }
                     let task = GroupCallBroadcastPartTask()
+                    let completion = GroupCallSendableCompletion(completion)
                     task.run {
                         let time = await broadcast.currentTimeMilliseconds()
                         if !Task.isCancelled {
-                            completion(time)
+                            completion.call(time)
                         }
                     }
                     return task
@@ -180,10 +181,11 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                         return GroupCallBroadcastPartTask()
                     }
                     let task = GroupCallBroadcastPartTask()
+                    let completion = GroupCallSendableCompletion(completion)
                     task.run {
                         let part = await broadcast.audioPart(timestampMs, durationMs)
                         if !Task.isCancelled {
-                            completion(Self.broadcastPart(part, requestedTimestampMs: timestampMs))
+                            completion.call(Self.broadcastPart(part, requestedTimestampMs: timestampMs))
                         }
                     }
                     return task
@@ -195,10 +197,11 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
                     }
                     let mappedQuality = Self.requestedVideoQuality(from: quality)
                     let task = GroupCallBroadcastPartTask()
+                    let completion = GroupCallSendableCompletion(completion)
                     task.run {
                         let part = await broadcast.videoPart(timestampMs, durationMs, channelId, mappedQuality)
                         if !Task.isCancelled {
-                            completion(Self.broadcastPart(part, requestedTimestampMs: timestampMs))
+                            completion.call(Self.broadcastPart(part, requestedTimestampMs: timestampMs))
                         }
                     }
                     return task
@@ -468,6 +471,35 @@ final class TelegramGroupCallEngine: @unchecked Sendable {
             }
         }
     }
+}
+
+// MARK: - GroupCallSendableCompletion
+
+/// The Objective-C tgcalls protocol predates Swift concurrency and doesn't annotate its completion
+/// handlers as Sendable. This one-shot box synchronizes ownership while the callback crosses into
+/// the async broadcast task.
+private final class GroupCallSendableCompletion<Value>: @unchecked Sendable {
+    // MARK: Lifecycle
+
+    init(_ completion: @escaping (Value) -> Void) {
+        self.completion = completion
+    }
+
+    // MARK: Internal
+
+    func call(_ value: Value) {
+        let completion = lock.withLock {
+            let completion = self.completion
+            self.completion = nil
+            return completion
+        }
+        completion?(value)
+    }
+
+    // MARK: Private
+
+    private let lock = NSLock()
+    private var completion: ((Value) -> Void)?
 }
 
 // MARK: - GroupCallMediaChannelTask

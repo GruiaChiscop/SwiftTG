@@ -111,6 +111,7 @@ extension RootVM {
         deepLinkErrorMessage = nil
         inAppNotificationBanner = nil
         pendingInAppNotificationBanners.removeAll()
+        visibleConversation = nil
         unconfirmedSession = nil
         unconfirmedSessionActionError = nil
         isProcessingUnconfirmedSession = false

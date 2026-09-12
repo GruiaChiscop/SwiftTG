@@ -1,5 +1,6 @@
 // ForumTopicsListView.swift
 
+import Combine
 import SwiftUI
 import TDLibKit
 
@@ -99,6 +100,7 @@ struct ForumTopicsListView: View {
         .listStyle(.plain)
         .navigationTitle(customChat.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .nativeNavigationBackButtonTitle(customChat.displayTitle)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("New Topic", systemImage: "plus") { showsCreateComposer = true }
@@ -110,7 +112,6 @@ struct ForumTopicsListView: View {
             ChatView(
                 customChat: customChat,
                 messageTopic: .messageTopicForum(MessageTopicForum(forumTopicId: topic.info.forumTopicId)),
-                backButtonTitleOverride: customChat.displayTitle,
             )
         }
         .sheet(isPresented: $showsCreateComposer) {
@@ -184,6 +185,9 @@ struct ForumTopicsListView: View {
         }
         .task { await reload() }
         .refreshable { await reload(force: true) }
+        .onReceive(forumTopicUpdates) {
+            Task { await reload(force: true) }
+        }
     }
 
     // MARK: Private
@@ -259,6 +263,34 @@ struct ForumTopicsListView: View {
                 }
             },
         )
+    }
+
+    private var forumTopicUpdates: AnyPublisher<Void, Never> {
+        let chatId = customChat.chat.id
+        let metadataUpdates = service.updatePublisher
+            .compactMap { update in
+                switch update {
+                case .updateForumTopic(let value) where value.chatId == chatId:
+                    ()
+                case .updateForumTopicInfo(let value) where value.info.chatId == chatId:
+                    ()
+                default:
+                    nil
+                }
+            }
+
+        // `updateForumTopic` doesn't carry the topic's last message, total unread count, or order.
+        // Those change through the per-chat message stream, so metadata updates alone can't keep
+        // the list current.
+        let messageUpdates = service.messagePublisher(chatId: chatId)
+            .dropFirst()
+            .map { _ in () }
+
+        return Publishers.Merge(metadataUpdates, messageUpdates)
+            // One server-side change can produce several update variants. Refresh once after the
+            // burst so order, last message, unread count, and metadata stay coherent.
+                .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
+                .eraseToAnyPublisher()
     }
 
     private func topicRow(_ topic: ForumTopic) -> some View {

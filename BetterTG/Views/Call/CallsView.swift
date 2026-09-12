@@ -210,7 +210,7 @@ struct CallsView: View {
             )
         }
         .navigationDestination(item: $pushedChat) { customChat in
-            ChatView(customChat: customChat, backButtonTitleOverride: "Calls")
+            ChatView(customChat: customChat)
         }
         .alert("Calls Error", isPresented: errorIsPresented) {
             Button("OK") {}

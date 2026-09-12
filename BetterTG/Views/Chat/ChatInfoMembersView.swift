@@ -54,7 +54,7 @@ struct ChatInfoMembersView: View {
         // content at the ancestor's position, not on top of whatever's currently the deepest
         // active push, which sent the back button to the wrong screen.
         .navigationDestination(item: $pushedChat) { customChat in
-            ChatView(customChat: customChat, backButtonTitleOverride: displayTitle)
+            ChatView(customChat: customChat)
         }
         .alert("Can't Open Chat", isPresented: errorIsPresented) {
             Button("OK") {}

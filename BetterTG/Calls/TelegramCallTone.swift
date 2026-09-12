@@ -1,7 +1,6 @@
 // TelegramCallTone.swift
 
-import AVFoundation
-import CoreMedia
+import AudioToolbox
 import Foundation
 
 /// A Sendable PCM representation of one of Telegram-iOS's bundled call tones. The native call
@@ -19,64 +18,62 @@ struct TelegramCallTone: Sendable {
             return nil
         }
 
-        let outputSettings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM as NSNumber,
-            AVSampleRateKey: 48000 as NSNumber,
-            AVLinearPCMBitDepthKey: 16 as NSNumber,
-            AVLinearPCMIsNonInterleaved: false as NSNumber,
-            AVLinearPCMIsFloatKey: false as NSNumber,
-            AVLinearPCMIsBigEndianKey: false as NSNumber,
-            AVNumberOfChannelsKey: 1 as NSNumber,
-        ]
-        let asset = AVURLAsset(url: url)
+        var audioFile: ExtAudioFileRef?
+        guard ExtAudioFileOpenURL(url as CFURL, &audioFile) == noErr, let audioFile else {
+            log("[Call] could not open tone \(resourceName).mp3")
+            return nil
+        }
+        defer { ExtAudioFileDispose(audioFile) }
 
-        guard let reader = try? AVAssetReader(asset: asset) else {
-            log("[Call] could not create audio reader for \(resourceName).mp3")
-            return nil
+        var clientFormat = AudioStreamBasicDescription(
+            mSampleRate: 48000,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 2,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 2,
+            mChannelsPerFrame: 1,
+            mBitsPerChannel: 16,
+            mReserved: 0,
+        )
+        let formatStatus = withUnsafePointer(to: &clientFormat) { format in
+            ExtAudioFileSetProperty(
+                audioFile,
+                kExtAudioFileProperty_ClientDataFormat,
+                UInt32(MemoryLayout<AudioStreamBasicDescription>.size),
+                format,
+            )
         }
-        let output = AVAssetReaderAudioMixOutput(audioTracks: asset.tracks, audioSettings: outputSettings)
-        guard reader.canAdd(output) else {
-            log("[Call] could not decode tone \(resourceName).mp3")
-            return nil
-        }
-        reader.add(output)
-        guard reader.startReading() else {
-            log("[Call] could not start decoding tone \(resourceName).mp3")
+        guard formatStatus == noErr else {
+            log("[Call] could not configure tone \(resourceName).mp3 (status=\(formatStatus))")
             return nil
         }
 
         var samples = Data()
-        while reader.status == .reading, let sampleBuffer = output.copyNextSampleBuffer() {
-            var audioBufferList = AudioBufferList()
-            var retainedBlockBuffer: CMBlockBuffer?
-            let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-                sampleBuffer,
-                bufferListSizeNeededOut: nil,
-                bufferListOut: &audioBufferList,
-                bufferListSize: MemoryLayout<AudioBufferList>.size,
-                blockBufferAllocator: nil,
-                blockBufferMemoryAllocator: nil,
-                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-                blockBufferOut: &retainedBlockBuffer,
-            )
+        let framesPerChunk: UInt32 = 4096
+        var bytes = [UInt8](repeating: 0, count: Int(framesPerChunk) * Int(clientFormat.mBytesPerFrame))
+        while true {
+            var frameCount = framesPerChunk
+            let status = bytes.withUnsafeMutableBytes { storage in
+                var buffers = AudioBufferList(
+                    mNumberBuffers: 1,
+                    mBuffers: AudioBuffer(
+                        mNumberChannels: clientFormat.mChannelsPerFrame,
+                        mDataByteSize: UInt32(storage.count),
+                        mData: storage.baseAddress,
+                    ),
+                )
+                return ExtAudioFileRead(audioFile, &frameCount, &buffers)
+            }
             guard status == noErr else {
-                log("[Call] could not read samples from \(resourceName).mp3 (status=\(status))")
+                log("[Call] could not decode tone \(resourceName).mp3 (status=\(status))")
                 return nil
             }
-
-            let size = Int(CMSampleBufferGetTotalSampleSize(sampleBuffer))
-            if size > 0, let bytes = audioBufferList.mBuffers.mData {
-                samples.append(bytes.assumingMemoryBound(to: UInt8.self), count: size)
-            }
-            _ = retainedBlockBuffer
+            guard frameCount > 0 else { break }
+            samples.append(contentsOf: bytes.prefix(Int(frameCount) * Int(clientFormat.mBytesPerFrame)))
         }
 
-        guard reader.status == .completed, !samples.isEmpty else {
-            log(
-                "[Call] tone decoding failed for \(resourceName).mp3: \(reader.error?.localizedDescription ?? "unknown error")",
-            )
-            return nil
-        }
+        guard !samples.isEmpty else { return nil }
         return TelegramCallTone(samples: samples, sampleRate: 48000, loopCount: loopCount)
     }
 

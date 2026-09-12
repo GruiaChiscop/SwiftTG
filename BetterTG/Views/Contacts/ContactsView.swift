@@ -102,7 +102,7 @@ struct ContactsView: View {
         // `rootVM.navigate`, which mutates the *Chats* tab's path and force-switches to it - opening
         // a contact's chat should stay in Contacts, with Back genuinely returning here.
         .navigationDestination(item: $pushedChat) { customChat in
-            ChatView(customChat: customChat, backButtonTitleOverride: "Contacts")
+            ChatView(customChat: customChat)
         }
     }
 

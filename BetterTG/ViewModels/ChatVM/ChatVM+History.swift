@@ -3,6 +3,45 @@
 @preconcurrency import TDLibKit
 
 extension ChatVM {
+    func loadInitialMessages() {
+        guard conversationPreparationTask == nil else { return }
+
+        let chatId = customChat.chat.id
+        let service = service
+        conversationPreparationTask = Task { @MainActor [weak self] in
+            // With `forceRead: false`, TDLib only advances the read state for an open chat. Await
+            // this before exposing loaded rows to the collection view so the first visible batch
+            // cannot race the earlier fire-and-forget `openChat` call.
+            _ = try? await service.openChat(chatId: chatId)
+            guard let self, !Task.isCancelled else { return }
+
+            if case .messageTopicForum(let forum) = messageTopic,
+               let topic = try? await service.getForumTopic(
+                   chatId: chatId,
+                   forumTopicId: forum.forumTopicId,
+               )
+            {
+                initialUnreadCount = topic.unreadCount
+                initialLastReadInboxMessageId = topic.lastReadInboxMessageId
+                conversationUnreadCount = topic.unreadCount
+            } else if case .messageTopicThread(let thread) = messageTopic,
+                      let info = try? await service.getMessageThread(
+                          chatId: chatId,
+                          messageId: thread.messageThreadId,
+                      )
+            {
+                initialUnreadCount = info.unreadMessageCount
+                conversationUnreadCount = info.unreadMessageCount
+            }
+            conversationPrepared = true
+            conversationPreparationTask = nil
+            if let latestMessageSnapshot {
+                handle(latestMessageSnapshot)
+            }
+            loadMessages()
+        }
+    }
+
     func loadMessages() {
         guard loadingMessagesTask == nil, !hasReachedBeginningOfHistory else { return }
         let fromMessageId = messages.first?.message.id ?? initialMessageId ?? 0
@@ -141,24 +180,41 @@ extension ChatVM {
         guard viewMessagesTask == nil else { return }
 
         viewMessagesTask = Task { @MainActor [weak self] in
-            // Collect every row made visible by the current layout pass, then send one TDLib call.
-            await Task.yield()
-            guard let self, !Task.isCancelled else { return }
+            guard let self else { return }
+            defer { viewMessagesTask = nil }
 
-            let messageIds = Array(pendingViewedMessageIds)
-            pendingViewedMessageIds.removeAll(keepingCapacity: true)
-            viewMessagesTask = nil
-            guard !messageIds.isEmpty else { return }
+            // Collect every row made visible by a layout pass. If another pass occurs while TDLib
+            // is processing the batch, the loop drains those newly visible ids next.
+            while !Task.isCancelled {
+                await Task.yield()
+                let messageIds = Array(pendingViewedMessageIds)
+                pendingViewedMessageIds.removeAll(keepingCapacity: true)
+                guard !messageIds.isEmpty else { return }
 
-            let chatId = customChat.chat.id
-            let service = service
-            Task.background {
-                try? await service.viewMessages(
-                    chatId: chatId,
-                    forceRead: true,
+                _ = try? await service.viewMessages(
+                    chatId: customChat.chat.id,
+                    // The chat is open while this screen exists; don't force messages read after
+                    // TDLib considers it closed during a navigation transition.
+                    forceRead: false,
                     messageIds: messageIds,
-                    source: nil,
+                    source: .messageSourceChatHistory,
                 )
+
+                if case .messageTopicForum(let forum) = messageTopic,
+                   let topic = try? await service.getForumTopic(
+                       chatId: customChat.chat.id,
+                       forumTopicId: forum.forumTopicId,
+                   ), !Task.isCancelled
+                {
+                    conversationUnreadCount = topic.unreadCount
+                } else if case .messageTopicThread(let thread) = messageTopic,
+                          let info = try? await service.getMessageThread(
+                              chatId: customChat.chat.id,
+                              messageId: thread.messageThreadId,
+                          ), !Task.isCancelled
+                {
+                    conversationUnreadCount = info.unreadMessageCount
+                }
             }
         }
     }

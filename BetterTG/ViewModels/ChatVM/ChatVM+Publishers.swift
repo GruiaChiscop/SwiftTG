@@ -73,12 +73,16 @@ extension ChatVM {
         withAnimation { onlineStatus = status }
     }
 
-    @MainActor private func handle(_ snapshot: TelegramMessageSnapshot) {
+    @MainActor func handle(_ snapshot: TelegramMessageSnapshot) {
         if let appliedMessageSnapshotVersion, snapshot.version <= appliedMessageSnapshotVersion {
             return
         }
-        appliedMessageSnapshotVersion = snapshot.version
         latestMessageSnapshot = snapshot
+        // A CurrentValueSubject can synchronously replay cached history while `openChat` and the
+        // topic-specific unread state are still loading. Don't let that replay position the chat
+        // or expose cells for read reporting before conversation preparation has completed.
+        guard conversationPrepared else { return }
+        appliedMessageSnapshotVersion = snapshot.version
         if loadedMessageIds.isEmpty, initialMessageId == nil, snapshot.hasMergedHistory {
             let matchingIds = snapshot.orderedMessageIds
                 .filter { snapshot.messages[$0].map(messageMatchesTopic) ?? false }
@@ -94,6 +98,10 @@ extension ChatVM {
         switch change {
         case .readInbox(let value):
             customChat.unreadCount = value.unreadCount
+            customChat.lastReadInboxMessageId = value.lastReadInboxMessageId
+            if messageTopic == nil {
+                conversationUnreadCount = value.unreadCount
+            }
             reconcileMessages(with: snapshot)
         case .readOutbox(let value):
             customChat.lastReadOutboxMessageId = value.lastReadOutboxMessageId

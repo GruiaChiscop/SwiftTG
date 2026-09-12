@@ -19,8 +19,23 @@ import TDLibKit
         self.initialMessageId = initialMessageId
         self.movesAccessibilityFocusToInitialMessage = movesAccessibilityFocusToInitialMessage
         self.messageTopic = messageTopic
-        self.initialUnreadCount = customChat.unreadCount
-        self.initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
+        if case .messageTopicForum = messageTopic {
+            // A forum topic has its own read state; the enclosing chat's counters aggregate every
+            // topic and would position the topic at the wrong unread boundary.
+            self.initialUnreadCount = 0
+            self.initialLastReadInboxMessageId = 0
+            self.conversationUnreadCount = 0
+        } else if case .messageTopicThread = messageTopic {
+            // Comment threads likewise expose a thread-specific unread count. TDLib doesn't
+            // expose a last-read id for them, so ChatView derives the boundary from that count.
+            self.initialUnreadCount = 0
+            self.initialLastReadInboxMessageId = 0
+            self.conversationUnreadCount = 0
+        } else {
+            self.initialUnreadCount = customChat.unreadCount
+            self.initialLastReadInboxMessageId = customChat.lastReadInboxMessageId
+            self.conversationUnreadCount = customChat.unreadCount
+        }
         self.service = service
         self.composer = MessageComposer(
             chatId: customChat.chat.id,
@@ -52,6 +67,7 @@ import TDLibKit
 
     deinit {
         conversationStatusTask?.cancel()
+        conversationPreparationTask?.cancel()
         presenceExpiryTask?.cancel()
         pinnedMessagesTask?.cancel()
         guard hasStarted else { return }
@@ -77,8 +93,9 @@ import TDLibKit
     /// within `customChat`, rather than the chat's whole history - `nil` preserves the original
     /// full-chat behavior everywhere below.
     let messageTopic: MessageTopic?
-    let initialUnreadCount: Int
-    let initialLastReadInboxMessageId: Int64
+    var initialUnreadCount: Int
+    var initialLastReadInboxMessageId: Int64
+    var conversationUnreadCount: Int
 
     let composer: MessageComposer
     let voiceRecorder: VoiceRecordingController
@@ -142,6 +159,8 @@ import TDLibKit
     @ObservationIgnored var pendingViewedMessageIds = Set<Int64>()
     @ObservationIgnored var viewMessagesTask: Task<Void, Never>?
     @ObservationIgnored var conversationStatusTask: Task<Void, Never>?
+    @ObservationIgnored var conversationPreparationTask: Task<Void, Never>?
+    @ObservationIgnored var conversationPrepared = false
     /// One-shot timer that downgrades a stale "Online" once `UserStatusOnline.expires` passes
     /// without a fresh `updateUserStatus` from the server. See `applyUserPresence(_:)`.
     @ObservationIgnored var presenceExpiryTask: Task<Void, Never>?
@@ -208,15 +227,11 @@ import TDLibKit
 
         let chatId = customChat.chat.id
         isChatTranslationEnabled = TelegramChatTranslationPreferences.isEnabled(chatId: chatId)
-        Task { _ = try? await service.openChat(chatId: chatId) }
-        // Opening the chat reads its messages; drop any lingering system notifications for it so
-        // Notification Center doesn't keep stale banners after the user taps one to get here.
-        TelegramDeliveredNotifications.clear(for: customChat.chat)
         setPublishers()
         startVideoChatObservation()
         refreshConversationStatus()
         refreshPinnedMessages()
-        loadMessages()
+        loadInitialMessages()
         loadThreadRootMessageIfNeeded()
 
         Task.main {

@@ -111,6 +111,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A1000000000000000000000C /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A10000000000000000000005 /* BetterTGMac */;
+		};
 		DFD75B772D3DA0D8004E7CA6 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -142,7 +149,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A10000000000000000000003 /* BetterTGMac */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BetterTGMac; sourceTree = "<group>"; };
+		A10000000000000000000003 /* BetterTGMac */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000C /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BetterTGMac; sourceTree = "<group>"; };
 		A20000000000000000000001 /* BetterTGShared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BetterTGShared; sourceTree = "<group>"; };
 		A20000000000000000000002 /* BetterTG/Secret */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BetterTG/Secret; sourceTree = "<group>"; };
 		B30000000000000000000002 /* BetterTGTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = BetterTGTests; sourceTree = "<group>"; };

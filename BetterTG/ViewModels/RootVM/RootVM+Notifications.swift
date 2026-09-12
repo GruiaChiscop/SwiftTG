@@ -15,6 +15,8 @@ struct TelegramInAppNotificationBanner: Identifiable, Equatable {
     let title: String
     let body: String
     let isSilent: Bool
+    let messageId: Int64?
+    let messageTopic: MessageTopic?
 }
 
 extension RootVM {
@@ -88,20 +90,29 @@ extension RootVM {
               pendingNotificationTarget == target
         else { return }
 
+        let messageTopic = await notificationMessageTopic(for: target, in: customChat)
+        guard generation == notificationOpenGeneration else { return }
         pendingNotificationTarget = nil
-        openChatReplacingStack(customChat)
+        openChatReplacingStack(customChat, messageId: target.messageId, messageTopic: messageTopic)
     }
 
     /// Telegram surfaces a notification's chat as a fresh top-level screen: any chat already
     /// pushed is replaced, so Back returns to the chat list - not to whichever chat the user
     /// happened to have open when the notification arrived. Used for both the system push tap
     /// and the in-app banner tap.
-    @MainActor private func openChatReplacingStack(_ customChat: CustomChat) {
-        if case .customChat(let current, _, _) = path.last, current.id == customChat.id {
+    @MainActor private func openChatReplacingStack(
+        _ customChat: CustomChat,
+        messageId: Int64? = nil,
+        messageTopic: MessageTopic? = nil,
+    ) {
+        if case .customChat(let current, _, let currentTopic, _) = path.last,
+           current.id == customChat.id,
+           currentTopic == messageTopic
+        {
             return
         }
         guard !path.isEmpty else {
-            path.append(.customChat(customChat))
+            path.append(.customChat(customChat, messageId: messageId, messageTopic: messageTopic))
             return
         }
         // Swapping the whole stack in one assignment (`[chatA]` -> `[chatB]`) doesn't reliably
@@ -111,8 +122,22 @@ extension RootVM {
         path.removeAll()
         Task { @MainActor [weak self] in
             await Task.yield()
-            self?.path.append(.customChat(customChat))
+            self?.path.append(.customChat(customChat, messageId: messageId, messageTopic: messageTopic))
         }
+    }
+
+    private func notificationMessageTopic(
+        for target: TelegramNotificationTarget,
+        in customChat: CustomChat,
+    ) async -> MessageTopic? {
+        if let forumTopicId = target.forumTopicId {
+            return .messageTopicForum(MessageTopicForum(forumTopicId: forumTopicId))
+        }
+        guard customChat.supergroup?.isForum == true,
+              let messageId = target.messageId,
+              let message = try? await service.getMessage(chatId: customChat.chat.id, messageId: messageId)
+        else { return nil }
+        return message.topicId
     }
 
     private func customChat(forBasicGroupId basicGroupId: Int64) async -> CustomChat? {
@@ -138,9 +163,11 @@ extension RootVM {
     @MainActor func handleNotificationGroupUpdate(_ group: UpdateNotificationGroup) {
         guard UIApplication.shared.applicationState == .active else { return }
 
-        // A group update for the chat that's already on screen means those messages are being
-        // read - clear any system notifications that were delivered for it while backgrounded.
-        if currentlyOpenChatId == group.chatId {
+        // Suppress only notifications belonging to the conversation actually on screen. A forum
+        // topic list isn't a conversation, and opening one topic must not silence the others.
+        if !group.addedNotifications.isEmpty,
+           group.addedNotifications.allSatisfy({ notificationBelongsToVisibleConversation($0, chatId: group.chatId) })
+        {
             Task { @MainActor [weak self] in
                 guard let self, let chat = await getCustomChat(from: group.chatId)?.chat else { return }
                 TelegramDeliveredNotifications.clear(for: chat)
@@ -167,13 +194,15 @@ extension RootVM {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let title = await getCustomChat(from: chatId)?.displayTitle ?? "SwiftTG"
-            guard currentlyOpenChatId != chatId else { return }
+            guard !notificationBelongsToVisibleConversation(notification, chatId: chatId) else { return }
             enqueueInAppNotification(TelegramInAppNotificationBanner(
                 id: bannerId,
                 chatId: chatId,
                 title: title,
                 body: body,
                 isSilent: isSilent,
+                messageId: Self.notificationMessageId(notification),
+                messageTopic: Self.notificationMessageTopic(notification),
             ))
         }
     }
@@ -189,7 +218,7 @@ extension RootVM {
         dismissInAppNotification()
         Task { @MainActor [weak self] in
             guard let self, let chat = await getCustomChat(from: banner.chatId) else { return }
-            openChatReplacingStack(chat)
+            openChatReplacingStack(chat, messageId: banner.messageId, messageTopic: banner.messageTopic)
         }
     }
 
@@ -206,6 +235,30 @@ extension RootVM {
     /// Tolerance for skew between the device wall clock and TDLib's server-set `notification.date`
     /// when deciding whether a notification predates the last foreground transition.
     private static let notificationBannerBacklogGrace: TimeInterval = 3
+
+    private func notificationBelongsToVisibleConversation(
+        _ notification: TDLibKit.Notification,
+        chatId: Int64,
+    ) -> Bool {
+        guard let visibleConversation, visibleConversation.chatId == chatId else { return false }
+        guard let visibleTopic = visibleConversation.topic else { return true }
+        guard case .notificationTypeNewMessage(let value) = notification.type else {
+            // A push-only notification doesn't carry a MessageTopic. Don't suppress something we
+            // can't prove belongs to the topic on screen.
+            return false
+        }
+        return value.message.topicId == visibleTopic
+    }
+
+    private static func notificationMessageId(_ notification: TDLibKit.Notification) -> Int64? {
+        guard case .notificationTypeNewMessage(let value) = notification.type else { return nil }
+        return value.message.id
+    }
+
+    private static func notificationMessageTopic(_ notification: TDLibKit.Notification) -> MessageTopic? {
+        guard case .notificationTypeNewMessage(let value) = notification.type else { return nil }
+        return value.message.topicId
+    }
 
     /// Mirrors `MacSessionModel+Notifications.swift`'s `notificationBody(_:)` - kept in sync by
     /// hand since the two run against different live connections (iOS's single global `TDLib`

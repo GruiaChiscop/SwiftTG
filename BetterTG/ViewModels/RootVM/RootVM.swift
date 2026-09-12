@@ -7,7 +7,12 @@ import TDLibKit
 // MARK: - Route
 
 enum Route: Hashable {
-    case customChat(CustomChat, messageId: Int64? = nil, movesAccessibilityFocus: Bool = false)
+    case customChat(
+        CustomChat,
+        messageId: Int64? = nil,
+        messageTopic: MessageTopic? = nil,
+        movesAccessibilityFocus: Bool = false,
+    )
     case archive(CustomFolder)
 
     // MARK: Internal
@@ -15,11 +20,12 @@ enum Route: Hashable {
     static func == (lhs: Route, rhs: Route) -> Bool {
         switch (lhs, rhs) {
         case (
-            .customChat(let lhsChat, let lhsMessageId, let lhsMovesFocus),
-            .customChat(let rhsChat, let rhsMessageId, let rhsMovesFocus),
+            .customChat(let lhsChat, let lhsMessageId, let lhsMessageTopic, let lhsMovesFocus),
+            .customChat(let rhsChat, let rhsMessageId, let rhsMessageTopic, let rhsMovesFocus),
         ):
             lhsChat.id == rhsChat.id
                 && lhsMessageId == rhsMessageId
+                && lhsMessageTopic == rhsMessageTopic
                 && lhsMovesFocus == rhsMovesFocus
         case (.archive(let lhsFolder), .archive(let rhsFolder)):
             lhsFolder.id == rhsFolder.id
@@ -30,10 +36,11 @@ enum Route: Hashable {
 
     func hash(into hasher: inout Hasher) {
         switch self {
-        case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
+        case .customChat(let customChat, let messageId, let messageTopic, let movesAccessibilityFocus):
             hasher.combine("customChat")
             hasher.combine(customChat.id)
             hasher.combine(messageId)
+            hasher.combine(messageTopic)
             hasher.combine(movesAccessibilityFocus)
         case .archive(let customFolder):
             hasher.combine("archive")
@@ -67,6 +74,14 @@ struct ChatListLoadKey: Hashable, Sendable {
 
     let chatId: Int64
     let listKey: ListKey
+}
+
+// MARK: - TelegramVisibleConversation
+
+struct TelegramVisibleConversation: Equatable {
+    let presentationId: UUID
+    let chatId: Int64
+    let topic: MessageTopic?
 }
 
 // MARK: - RootVM
@@ -124,6 +139,7 @@ struct ChatListLoadKey: Hashable, Sendable {
     @ObservationIgnored var shareRequestProcessingTask: Task<Void, Never>?
     @ObservationIgnored var pendingInAppNotificationBanners = [TelegramInAppNotificationBanner]()
     @ObservationIgnored var inAppNotificationDismissTask: Task<Void, Never>?
+    @ObservationIgnored var visibleConversation: TelegramVisibleConversation?
     /// When the app most recently came to the foreground. In-app notification banners are only shown
     /// for notifications dated after this - on launch/reconnect TDLib replays `updateNotificationGroup`
     /// for every chat that still has pending notifications, and without this gate a whole backlog of
@@ -131,13 +147,10 @@ struct ChatListLoadKey: Hashable, Sendable {
     /// `delayNotificatonsUntil` timestamp suppression. See `handleNotificationGroupUpdate`.
     @ObservationIgnored var notificationBannerActiveSince = Date()
 
-    /// The chat currently pushed on screen, if any - `path` is the single shared `NavigationStack`
-    /// path every chat opens through (including from the Contacts tab; see `MainView`'s `onChange`
-    /// that switches to the Chats tab whenever `path` becomes non-empty), so its last route is a
-    /// reliable "what's on screen right now" signal.
+    /// The chat whose message history is actually visible. A forum's topic-list route is not a
+    /// visible conversation and must not suppress notifications from every topic in that forum.
     var currentlyOpenChatId: Int64? {
-        guard case .customChat(let chat, _, _) = path.last else { return nil }
-        return chat.id
+        visibleConversation?.chatId
     }
     
     var loggedIn: Bool {
@@ -166,6 +179,15 @@ struct ChatListLoadKey: Hashable, Sendable {
 
     func navigate(to route: Route) {
         path.append(route)
+    }
+
+    func presentConversation(_ conversation: TelegramVisibleConversation) {
+        visibleConversation = conversation
+    }
+
+    func dismissConversation(presentationId: UUID) {
+        guard visibleConversation?.presentationId == presentationId else { return }
+        visibleConversation = nil
     }
 
     /// Drives TDLib's `"online"` option from the app's foreground state. Without this the server

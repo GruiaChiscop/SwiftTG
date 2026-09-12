@@ -27,17 +27,23 @@ struct MainView: View {
                     MainNavigationRootView()
                         .navigationDestination(for: Route.self) { route in
                             switch route {
-                            case .customChat(let customChat, let messageId, let movesAccessibilityFocus):
+                            case .customChat(
+                                let customChat,
+                                let messageId,
+                                let messageTopic,
+                                let movesAccessibilityFocus,
+                            ):
                                 // A forum-enabled supergroup shows its topic list first, matching
-                                // Telegram-iOS - a link to a specific message still opens straight
-                                // into the flat message stream it lives in.
-                                if customChat.supergroup?.isForum == true, messageId == nil {
+                                // Telegram-iOS. A notification/deep link carrying a topic opens
+                                // that topic directly instead of stopping at this list.
+                                if customChat.supergroup?.isForum == true, messageId == nil, messageTopic == nil {
                                     ForumTopicsListView(customChat: customChat, service: rootVM.service)
                                 } else {
                                     ChatView(
                                         customChat: customChat,
                                         initialMessageId: messageId,
                                         movesAccessibilityFocusToInitialMessage: movesAccessibilityFocus,
+                                        messageTopic: messageTopic,
                                     )
                                 }
                             case .archive(let customFolder):
@@ -105,6 +111,7 @@ private struct MainNavigationRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("Chats")
+        .nativeNavigationBackButtonTitle(unreadBackButtonTitle)
         .searchable(
             text: $rootVM.query,
             placement: .navigationBarDrawer(displayMode: .always),
@@ -244,4 +251,9 @@ private struct MainNavigationRootView: View {
     #if DEBUG
     @State private var showsLoginPreview = false
     #endif
+
+    private var unreadBackButtonTitle: String {
+        let count = rootVM.allChats.lazy.filter(\.hasUnreadMessages).count
+        return count > 0 ? "\(count)" : "Chats"
+    }
 }

@@ -1096,18 +1096,39 @@ enum TelegramVideoNoteTranscoder {
         else { throw TelegramVideoNoteRecorderError.exportUnavailable }
 
         let outputSide = CGFloat(side)
-        let composition = try await AVMutableVideoComposition.videoComposition(with: asset) { request in
-            let crop = centeredSquareCrop(in: request.sourceImage.extent)
-            let scale = outputSide / max(1, crop.width)
-            let image = request.sourceImage
-                .cropped(to: crop)
-                .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
-                .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                .cropped(to: CGRect(x: 0, y: 0, width: outputSide, height: outputSide))
-            request.finish(with: image, context: nil)
+        let composition: AVVideoComposition
+        if #available(iOS 26.0, macOS 26.0, *) {
+            let filteredComposition = try await AVVideoComposition(applyingFiltersTo: asset) { parameters in
+                let crop = centeredSquareCrop(in: parameters.sourceImage.extent)
+                let scale = outputSide / max(1, crop.width)
+                let image = parameters.sourceImage
+                    .cropped(to: crop)
+                    .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
+                    .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                    .cropped(to: CGRect(x: 0, y: 0, width: outputSide, height: outputSide))
+                return AVCIImageFilteringResult(resultImage: image)
+            }
+            var configuration = try await AVVideoComposition.Configuration(for: asset)
+            configuration.customVideoCompositorClass = filteredComposition.customVideoCompositorClass
+            configuration.instructions = filteredComposition.instructions
+            configuration.renderSize = CGSize(width: outputSide, height: outputSide)
+            configuration.frameDuration = CMTime(value: 1, timescale: 30)
+            composition = AVVideoComposition(configuration: configuration)
+        } else {
+            let legacyComposition = try await AVMutableVideoComposition.videoComposition(with: asset) { request in
+                let crop = centeredSquareCrop(in: request.sourceImage.extent)
+                let scale = outputSide / max(1, crop.width)
+                let image = request.sourceImage
+                    .cropped(to: crop)
+                    .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
+                    .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                    .cropped(to: CGRect(x: 0, y: 0, width: outputSide, height: outputSide))
+                request.finish(with: image, context: nil)
+            }
+            legacyComposition.renderSize = CGSize(width: outputSide, height: outputSide)
+            legacyComposition.frameDuration = CMTime(value: 1, timescale: 30)
+            composition = legacyComposition
         }
-        composition.renderSize = CGSize(width: outputSide, height: outputSide)
-        composition.frameDuration = CMTime(value: 1, timescale: 30)
         exporter.videoComposition = composition
         let effectiveTrimRange = TelegramVideoNoteEditing.normalizedTrimRange(
             start: trimRange?.lowerBound ?? 0,

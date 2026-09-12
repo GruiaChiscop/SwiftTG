@@ -24,14 +24,12 @@ import TDLibKit
         }
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            for url in displayedDocuments {
-                TelegramOutgoingFileStaging.shared.discard(fileURL: url)
-            }
-            for image in displayedImages {
-                TelegramOutgoingFileStaging.shared.discard(fileURL: image.url)
-            }
+    isolated deinit {
+        for url in displayedDocuments {
+            TelegramOutgoingFileStaging.shared.discard(fileURL: url)
+        }
+        for image in displayedImages {
+            TelegramOutgoingFileStaging.shared.discard(fileURL: image.url)
         }
     }
 

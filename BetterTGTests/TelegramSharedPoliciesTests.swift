@@ -235,7 +235,17 @@ struct TelegramSharedPoliciesTests {
         ])
 
         #expect(target?.chatIds == [12345])
-        #expect(target?.messageId == 678)
+        #expect(target?.messageId == 678 << 20)
+    }
+
+    @Test func `notification payload separates forum topic from notification grouping id`() {
+        let target = TelegramNotificationPayload.target(from: [
+            "thread-id": "chat.-100123",
+            "threadId": "456",
+        ])
+
+        #expect(target?.chatIds == [-100_123])
+        #expect(target?.forumTopicId == 456)
     }
 
     @Test func `notification payload extracts peer hints used by Telegram push`() {

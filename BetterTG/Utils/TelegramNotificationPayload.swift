@@ -10,6 +10,7 @@ struct TelegramNotificationTarget: Equatable {
     var basicGroupIds = [Int64]()
     var supergroupIds = [Int64]()
     var messageId: Int64?
+    var forumTopicId: Int?
 
     var isEmpty: Bool {
         chatIds.isEmpty && userIds.isEmpty && basicGroupIds.isEmpty && supergroupIds.isEmpty
@@ -25,7 +26,7 @@ enum TelegramNotificationPayload {
         var target = TelegramNotificationTarget()
 
         appendValues(
-            for: ["chat_id", "chatId", "chatID", "tdlib_chat_id", "thread-id", "threadId", "threadID"],
+            for: ["chat_id", "chatId", "chatID", "tdlib_chat_id", "thread-id"],
             from: userInfo,
             to: &target.chatIds,
         )
@@ -37,8 +38,9 @@ enum TelegramNotificationPayload {
             to: &target.supergroupIds,
         )
 
-        target.messageId = firstInt64(
-            for: ["tdlib_message_id", "message_id", "messageId", "msg_id", "msgId"],
+        target.messageId = notificationMessageId(from: userInfo)
+        target.forumTopicId = firstInt(
+            for: ["threadId", "threadID", "thread_id", "topic_id", "topicId"],
             from: userInfo,
         )
 
@@ -63,8 +65,14 @@ enum TelegramNotificationPayload {
 
             if target.messageId == nil {
                 target.messageId = parseInt64(
-                    dict["tdlib_message_id"] ?? dict["message_id"] ?? dict["messageId"] ?? dict["msg_id"] ??
-                        dict["msgId"],
+                    dict["tdlib_message_id"] ?? dict["message_id"] ?? dict["messageId"],
+                ) ?? normalizedServerMessageId(parseInt64(dict["msg_id"] ?? dict["msgId"]))
+            }
+
+            if target.forumTopicId == nil {
+                target.forumTopicId = parseInt(
+                    dict["threadId"] ?? dict["threadID"] ?? dict["thread_id"] ?? dict["topic_id"] ??
+                        dict["topicId"],
                 )
             }
 
@@ -105,6 +113,34 @@ enum TelegramNotificationPayload {
             }
         }
         return nil
+    }
+
+    private static func firstInt(for keys: [String], from userInfo: [AnyHashable: Any]) -> Int? {
+        guard let value = firstInt64(for: keys, from: userInfo) else { return nil }
+        return Int(exactly: value)
+    }
+
+    private static func notificationMessageId(from userInfo: [AnyHashable: Any]) -> Int64? {
+        if let tdlibId = firstInt64(
+            for: ["tdlib_message_id", "message_id", "messageId"],
+            from: userInfo,
+        ) {
+            return tdlibId
+        }
+        return normalizedServerMessageId(firstInt64(for: ["msg_id", "msgId"], from: userInfo))
+    }
+
+    /// Telegram's APNs `msg_id` is the raw MTProto server id. TDLib represents the same message by
+    /// shifting it left by `MessageId::SERVER_ID_SHIFT` (20).
+    private static func normalizedServerMessageId(_ serverMessageId: Int64?) -> Int64? {
+        guard let serverMessageId, serverMessageId > 0 else { return nil }
+        let (messageId, overflow) = serverMessageId.multipliedReportingOverflow(by: 1 << 20)
+        return overflow ? nil : messageId
+    }
+
+    private static func parseInt(_ value: Any?) -> Int? {
+        guard let value = parseInt64(value) else { return nil }
+        return Int(exactly: value)
     }
 
     private static func rawPayloadObjects(from userInfo: [AnyHashable: Any]) -> [Any] {
