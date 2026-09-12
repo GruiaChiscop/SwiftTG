@@ -37,7 +37,10 @@ struct CallStatusView: View {
     // MARK: Private
 
     private var pendingStatusText: String {
-        guard let call else { return "" }
+        // `call` goes nil the instant the call ends, but this view can stay on screen after that
+        // (e.g. while a terminal tone plays out) - an empty string here would render a `Text` with
+        // no label, an accessibility element VoiceOver focuses on and reads nothing for.
+        guard let call else { return "Call Ended" }
         switch call.state {
         case .callStatePending(let pending):
             if !call.isOutgoing {
