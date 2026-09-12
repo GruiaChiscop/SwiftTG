@@ -545,20 +545,6 @@ struct ChatView: View {
 
     private func positionInitialMessagesIfNeeded() async {
         guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
-        positionedInitialMessages = true
-
-        // `canMarkMessagesRead` (below, in `bodyView`) only reaches the collection view
-        // controller on SwiftUI's next render of this body - it hasn't yet at the point
-        // `positionedInitialMessages` flips true above. Without this yield, the initial jump to
-        // the unread header/message happens immediately, under the *old* (false) value, so every
-        // row it makes visible has its `willDisplay` read-report dropped; nothing then explicitly
-        // re-scans what ended up visible except the one-time "became enabled" catch-up, which is
-        // one layout pass too late for cells the reuse pool hasn't finished settling on yet. Wait
-        // for that render before issuing the scroll so the normal `willDisplay` path already sees
-        // `canMarkMessagesRead == true`.
-        await Task.yield()
-        await Task.yield()
-        guard !Task.isCancelled else { return }
 
         let accessibilityTarget: InitialAccessibilityTarget
         if let initialMessageId = chatVM.initialMessageId {
@@ -580,6 +566,18 @@ struct ChatView: View {
                     .none
                 }
         }
+
+        // Only now - after the jump above has already been issued (and, in the common case,
+        // already landed synchronously on the collection view controller) - allow read-reporting
+        // and pagination. `canMarkMessagesRead` (below, in `bodyView`) reaching the controller is
+        // what makes it call `reportVisibleMessages()` once, retroactively, over whatever ended up
+        // visible; flipping this *before* the jump raced that one-time catch-up against the jump's
+        // own `willDisplay` calls landing under the still-stale value, and a couple of rows could
+        // lose their read report depending on exactly when SwiftUI's next render happened to land.
+        // Setting it after removes the race entirely: whether the jump completed synchronously
+        // above or is still queued as the navigator's pending request, `update(_:)` always flushes
+        // that request *before* running the catch-up scan.
+        positionedInitialMessages = true
 
         // The navigator queues a target until its collection-view row exists. Give the hosted row
         // another layout pass before assigning VoiceOver focus.
