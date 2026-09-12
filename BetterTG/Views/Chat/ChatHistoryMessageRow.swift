@@ -36,12 +36,12 @@ struct ChatHistoryMessageRow: View {
                 customMessage: customMessage,
                 messageAccessibilityFocused: messageAccessibilityFocused,
             )
-                .frame(
-                    maxWidth: Utils.maxMessageContentWidth,
-                    alignment: customMessage.serviceMessageText != nil
-                        ? .center
-                        : (customMessage.message.isOutgoing ? .trailing : .leading),
-                )
+            .frame(
+                maxWidth: Utils.maxMessageContentWidth,
+                alignment: customMessage.serviceMessageText != nil
+                    ? .center
+                    : (customMessage.message.isOutgoing ? .trailing : .leading),
+            )
 
             if customMessage.serviceMessageText != nil || !customMessage.message.isOutgoing {
                 Spacer(minLength: 0)

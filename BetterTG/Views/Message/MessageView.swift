@@ -208,11 +208,6 @@ struct MessageView: View {
         return nil
     }
 
-    private func synchronizeAccessibilityPlaybackState() {
-        accessibilityPlaybackElapsed = liveAccessibilityPlaybackElapsed
-        accessibilityStatePrefix = liveAccessibilityStatePrefix
-    }
-
     /// A channel post (or an anonymous "as the group" admin post) has no `User` sender at all, so
     /// falling back straight to "Unknown" there was wrong for every such message - fall back to the
     /// sender chat's own title instead, matching how macOS resolves the same case.
@@ -926,6 +921,11 @@ struct MessageView: View {
             .accessibilityActions {
                 messageAccessibilityActions
             }
+    }
+
+    private func synchronizeAccessibilityPlaybackState() {
+        accessibilityPlaybackElapsed = liveAccessibilityPlaybackElapsed
+        accessibilityStatePrefix = liveAccessibilityStatePrefix
     }
 
     private func toggleAudioMessage(_ messageAudio: MessageAudio) {
