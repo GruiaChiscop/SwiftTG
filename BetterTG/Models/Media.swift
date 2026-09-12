@@ -22,6 +22,9 @@ import Observation
         MainActor.assumeIsolated {
             engine.trace = { voicePlaybackTrace($0) }
             engine.onWillPlay = { [weak self] in self?.setAudioSessionPlayback() ?? false }
+            engine.onStopped = { [weak self] in
+                self?.traceVoiceOverFocusAfterPlaybackStops()
+            }
         }
     }
 
@@ -83,7 +86,24 @@ import Observation
     // MARK: Private
 
     @ObservationIgnored private let engine: VoiceMessagePlaybackEngine
+    @ObservationIgnored private var focusTraceTask: Task<Void, Never>?
     private let audioSession = AVAudioSession.sharedInstance()
+
+    @MainActor private func traceVoiceOverFocusAfterPlaybackStops() {
+        focusTraceTask?.cancel()
+        focusTraceTask = Task { @MainActor in
+            voiceOverFocusTrace("stop+0ms")
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            voiceOverFocusTrace("stop+500ms")
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            voiceOverFocusTrace("stop+2500ms")
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            voiceOverFocusTrace("stop+4500ms")
+        }
+    }
 
     private func setAudioSessionPlayback() -> Bool {
         do {

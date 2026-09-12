@@ -15,13 +15,13 @@ struct MessageVoiceNoteView: View {
 
     var body: some View {
         AsyncTdFile(id: voiceNote.voice.id) { voice in
-            voiceNoteView
+            voiceNoteView(isDownloading: false, file: voice)
                 .onAppear {
                     voiceLocalPath = voice.local.path
                     onLocalPathResolved(voice.local.path)
                 }
-        } placeholder: {
-            voiceNoteView
+        } placeholder: { file in
+            voiceNoteView(isDownloading: true, file: file)
         }
         .padding(4)
         .disabled(voiceLocalPath == nil)
@@ -30,7 +30,7 @@ struct MessageVoiceNoteView: View {
         .accessibilityHidden(true)
     }
     
-    var voiceNoteView: some View {
+    func voiceNoteView(isDownloading: Bool, file: File?) -> some View {
         VStack(spacing: 5) {
             HStack(spacing: 10) {
                 if !isViewOnce {
@@ -51,17 +51,16 @@ struct MessageVoiceNoteView: View {
                         .fill(.white)
                         .frame(width: 34)
                         .overlay {
-                            Group {
-                                if isCurrentVoiceActive {
-                                    Image(systemName: "pause.fill")
-                                        .transition(.scale)
-                                } else {
-                                    Image(systemName: isViewOnce ? "1.circle.fill" : "play.fill")
-                                        .transition(.scale)
-                                }
+                            ZStack {
+                                Image(systemName: playbackImageName)
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(Color.gray6)
+                                    .opacity(isDownloading ? 0 : 1)
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .tint(Color.gray6)
+                                    .opacity(isDownloading ? 1 : 0)
                             }
-                            .font(.system(size: 18))
-                            .foregroundStyle(Color.gray6)
                         }
                 }
                 .accessibilityValue(formattedDuration(from: voiceNote.duration))
@@ -77,17 +76,21 @@ struct MessageVoiceNoteView: View {
             }
             .font(.system(size: 24))
 
-            HStack(spacing: 0) {
-                Text(media.savedMediaPath == voiceLocalPath ? formattedDuration(from: media.currentTime) : "0:00")
-                Text(" / ")
-                Text(formattedDuration(from: voiceNote.duration))
+            ZStack {
+                Text(TelegramFileTransferProgress.downloadLabel(file: file))
+                    .opacity(isDownloading ? 1 : 0)
+                HStack(spacing: 0) {
+                    Text(media.savedMediaPath == voiceLocalPath ? formattedDuration(from: media.currentTime) : "0:00")
+                    Text(" / ")
+                    Text(formattedDuration(from: voiceNote.duration))
+                }
+                .opacity(isDownloading ? 0 : 1)
             }
             .font(.system(.caption, design: .rounded))
             .foregroundStyle(.white.opacity(0.5))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 15)
-        .animation(.default, value: isCurrentVoiceActive)
     }
     
     func formattedDuration(from duration: some BinaryInteger) -> String {
@@ -100,4 +103,14 @@ struct MessageVoiceNoteView: View {
     @State private var voiceLocalPath: String?
 
     private var isCurrentVoiceActive: Bool { media.savedMediaPath == voiceLocalPath && media.isPlaying }
+
+    private var playbackImageName: String {
+        if isCurrentVoiceActive {
+            "pause.fill"
+        } else if isViewOnce {
+            "1.circle.fill"
+        } else {
+            "play.fill"
+        }
+    }
 }

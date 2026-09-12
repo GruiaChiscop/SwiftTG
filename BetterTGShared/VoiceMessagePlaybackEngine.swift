@@ -273,6 +273,7 @@ import SwiftOGG
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self, self.generation == scheduledGeneration else { return }
+                    self.trace("buffer completed generation=\(scheduledGeneration)")
                     self.stop()
                 }
             }

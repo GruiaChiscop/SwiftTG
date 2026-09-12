@@ -8,6 +8,7 @@ struct MessageView: View {
     // MARK: Internal
 
     let customMessage: CustomMessage
+    let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
 
     @Environment(ChatVM.self) var chatVM
     @Environment(\.telegramBubbleCornerRadius) var bubbleCornerRadius
@@ -26,8 +27,7 @@ struct MessageView: View {
     @State var isSavingGif = false
     @State var isAddingContact = false
     @State var documentTransferStatus: String?
-    @State var documentDownloadIsPaused = false
-    @State var documentDownloadCancellationTask: Task<Void, Never>?
+    @State var documentPreviewRequest = 0
     @State var selectedStickerPack: TelegramStickerPackReference?
     @State var pendingStickerFromPack: Sticker?
     @State var stickerToEdit: Sticker?
@@ -35,9 +35,12 @@ struct MessageView: View {
     @State var showsMicrophonePermissionAlert = false
     @State var showsConferenceJoinError = false
     @State var reportRequest: TelegramReportRequest?
+    @State var accessibilityPlaybackElapsed = 0
+    @State var accessibilityStatePrefix: String?
+    @State var freezesAccessibilityPlaybackState = false
 
     var accessibilityDescription: String {
-        var prefix = ""
+        var prefix = accessibilityStatePrefix.map { "\($0). " } ?? ""
 
         if let forwardedFrom = customMessage.forwardedFrom {
             prefix += "Forwarded from \(forwardedFrom). "
@@ -81,7 +84,6 @@ struct MessageView: View {
             parts.append(status)
         }
         if let voiceNote = customMessage.messageVoiceNote {
-            let elapsed = media.savedMediaPath == voiceNoteLocalPath ? Int(media.currentTime) : 0
             let presentation = TelegramVoiceNotePresentation(
                 message: customMessage.message,
                 content: voiceNote,
@@ -89,7 +91,10 @@ struct MessageView: View {
             if presentation.isViewOnce {
                 parts.append("view once")
             }
-            parts.append(telegramVoicePlaybackDescription(duration: voiceNote.voiceNote.duration, elapsed: elapsed))
+            parts.append(telegramVoicePlaybackDescription(
+                duration: voiceNote.voiceNote.duration,
+                elapsed: accessibilityPlaybackElapsed,
+            ))
         }
         if let videoNote = customMessage.messageVideoNote {
             parts.append(TelegramVideoNotePresentation(
@@ -98,10 +103,10 @@ struct MessageView: View {
             ).accessibilityDetails)
         }
         if let messageAudio = customMessage.messageAudio {
-            let elapsed = audioPlayer.currentFileId == messageAudio.audio.audio.id
-                ? audioPlayer.currentTime
-                : 0
-            parts.append(telegramVoicePlaybackDescription(duration: messageAudio.audio.duration, elapsed: elapsed))
+            parts.append(telegramVoicePlaybackDescription(
+                duration: messageAudio.audio.duration,
+                elapsed: accessibilityPlaybackElapsed,
+            ))
             if audioPlayer.currentFileId == messageAudio.audio.audio.id {
                 if audioPlayer.isBuffering {
                     parts.append("Buffering")
@@ -148,6 +153,65 @@ struct MessageView: View {
     }
 
     // MARK: Private
+
+    private var liveAccessibilityPlaybackElapsed: Int {
+        if customMessage.messageVoiceNote != nil,
+           media.savedMediaPath == voiceNoteLocalPath
+        {
+            return Int(media.currentTime)
+        }
+        if let messageAudio = customMessage.messageAudio,
+           audioPlayer.currentFileId == messageAudio.audio.audio.id
+        {
+            return audioPlayer.currentTime
+        }
+        return 0
+    }
+
+    private var liveAccessibilityStatePrefix: String? {
+        if customMessage.messageVoiceNote != nil {
+            if media.savedMediaPath == voiceNoteLocalPath, media.isPlaying {
+                return "Playing"
+            }
+            if voiceNoteLocalPath == nil {
+                return "Downloading"
+            }
+        }
+        if let messageAudio = customMessage.messageAudio,
+           audioPlayer.currentFileId == messageAudio.audio.audio.id
+        {
+            if audioPlayer.isPlaying {
+                return "Playing"
+            }
+            if audioPlayer.isBuffering {
+                return "Downloading"
+            }
+        }
+        if let messageVideoNote = customMessage.messageVideoNote,
+           videoNotePlayer.currentFileId == messageVideoNote.videoNote.video.id
+        {
+            if videoNotePlayer.isPlaying {
+                return "Playing"
+            }
+            if videoNotePlayer.isLoading {
+                return "Downloading"
+            }
+        }
+        if let documentTransferStatus {
+            if documentTransferStatus.hasPrefix("Downloading") {
+                return "Downloading"
+            }
+            if documentTransferStatus.hasPrefix("Preparing preview") {
+                return "Preparing preview"
+            }
+        }
+        return nil
+    }
+
+    private func synchronizeAccessibilityPlaybackState() {
+        accessibilityPlaybackElapsed = liveAccessibilityPlaybackElapsed
+        accessibilityStatePrefix = liveAccessibilityStatePrefix
+    }
 
     /// A channel post (or an anonymous "as the group" admin post) has no `User` sender at all, so
     /// falling back straight to "Unknown" there was wrong for every such message - fall back to the
@@ -547,8 +611,7 @@ struct MessageView: View {
                     },
                     onVoiceNoteLocalPathResolved: { voiceNoteLocalPath = $0 },
                     onDocumentTransferStatusChange: { documentTransferStatus = $0 },
-                    documentDownloadIsPaused: documentDownloadIsPaused,
-                    onDocumentDownloadToggle: toggleDocumentDownload,
+                    documentPreviewRequest: documentPreviewRequest,
                 ),
             )
         }
@@ -716,6 +779,26 @@ struct MessageView: View {
                 reactionPicker
                     .presentationCompactAdaptation(.popover)
             }
+            .onAppear {
+                synchronizeAccessibilityPlaybackState()
+            }
+            .onChange(of: liveAccessibilityPlaybackElapsed) { _, _ in
+                guard !freezesAccessibilityPlaybackState else { return }
+                synchronizeAccessibilityPlaybackState()
+            }
+            .onChange(of: liveAccessibilityStatePrefix) { _, _ in
+                guard !freezesAccessibilityPlaybackState else { return }
+                synchronizeAccessibilityPlaybackState()
+            }
+            .onChange(of: messageAccessibilityFocused.wrappedValue) { _, focusedMessageId in
+                if focusedMessageId == customMessage.id {
+                    synchronizeAccessibilityPlaybackState()
+                    freezesAccessibilityPlaybackState = true
+                } else if focusedMessageId != nil {
+                    freezesAccessibilityPlaybackState = false
+                    synchronizeAccessibilityPlaybackState()
+                }
+            }
     }
 
     private var row: some View {
@@ -801,8 +884,8 @@ struct MessageView: View {
                 }
             }
             .modify {
-                if customMessage.messageDocument != nil, documentTransferStatus != nil {
-                    $0.accessibilityAction { toggleDocumentDownload() }
+                if customMessage.messageDocument != nil {
+                    $0.accessibilityAction { documentPreviewRequest &+= 1 }
                 } else {
                     $0
                 }
@@ -843,27 +926,6 @@ struct MessageView: View {
             .accessibilityActions {
                 messageAccessibilityActions
             }
-    }
-
-    private func toggleDocumentDownload() {
-        guard let fileId = customMessage.messageDocument?.document.document.id else { return }
-        if documentDownloadIsPaused {
-            let cancellationTask = documentDownloadCancellationTask
-            documentDownloadCancellationTask = nil
-            Task { @MainActor in
-                await cancellationTask?.value
-                documentDownloadIsPaused = false
-            }
-        } else {
-            documentDownloadIsPaused = true
-            let service = chatVM.service
-            documentDownloadCancellationTask = Task {
-                _ = try? await service.cancelDownloadFile(
-                    fileId: fileId,
-                    onlyIfPending: false,
-                )
-            }
-        }
     }
 
     private func toggleAudioMessage(_ messageAudio: MessageAudio) {

@@ -32,7 +32,10 @@ struct ChatHistoryMessageRow: View {
                 Spacer().frame(width: 5)
             }
 
-            MessageView(customMessage: customMessage)
+            MessageView(
+                customMessage: customMessage,
+                messageAccessibilityFocused: messageAccessibilityFocused,
+            )
                 .frame(
                     maxWidth: Utils.maxMessageContentWidth,
                     alignment: customMessage.serviceMessageText != nil

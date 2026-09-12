@@ -44,7 +44,6 @@ struct ChatHistoryCollectionView: UIViewControllerRepresentable {
             canLoadOlderMessages: canLoadOlderMessages,
             canMarkMessagesRead: canMarkMessagesRead,
             messageAccessibilityFocused: messageAccessibilityFocused,
-            focusedMessageId: messageAccessibilityFocused.wrappedValue,
             dynamicTypeSize: dynamicTypeSize,
             bubbleCornerRadius: bubbleCornerRadius,
             colorScheme: colorScheme,
