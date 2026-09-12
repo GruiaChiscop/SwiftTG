@@ -13,6 +13,17 @@ struct TelegramCallTone: Sendable {
     let sampleRate: Int
     let loopCount: Int
 
+    /// Exact wall-clock time this tone takes to finish `loopCount` full plays. `samples` is mono
+    /// 16-bit PCM, so each frame is 2 bytes. Callers that need to wait out a tone (or keep the
+    /// audio device alive long enough for it to finish) should use this instead of a guessed
+    /// constant - a fixed guess drifts out of sync with whichever tone is actually playing and
+    /// clips it right before it ends.
+    var duration: TimeInterval {
+        let frameCount = samples.count / 2
+        guard sampleRate > 0 else { return 0 }
+        return Double(frameCount) / Double(sampleRate) * Double(loopCount)
+    }
+
     /// `@concurrent`: keeps both the track-loading `await` and the synchronous decode loop below
     /// off the caller's actor - `TelegramCallSession.preloadTonesIfNeeded()` calls this from
     /// `@MainActor`, and a call tone decode has no business running any part of itself on the

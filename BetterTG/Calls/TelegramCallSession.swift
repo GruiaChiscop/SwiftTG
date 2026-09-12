@@ -1246,8 +1246,6 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
     private static var didStartPreloadingTones = false
     private static var preloadTonesTask: Task<Void, Never>?
 
-    private static let terminalToneLifetime: TimeInterval = 2
-    private static let endedTonePlaybackDuration: TimeInterval = 1.25
     private static let callFeedbackUserId: Int64 = 4_244_000
     /// Number of 1s speaker re-assertions after a triggering event before the settle window ends.
     private static let videoAudioRouteSettleTicks = 5
@@ -2439,9 +2437,9 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
                     isDisconnected: isDisconnected,
                     isVideo: call.isVideo,
                 )
-                if let endedToneStartedAt, completion != nil {
+                if let endedToneStartedAt, completion != nil, let endedTone = Self.endedTone {
                     let elapsed = Foundation.Date().timeIntervalSince(endedToneStartedAt)
-                    let remaining = Self.endedTonePlaybackDuration - elapsed
+                    let remaining = endedTone.duration - elapsed
                     if remaining > 0 {
                         try? await Task.sleep(for: .seconds(remaining))
                     }
@@ -2483,7 +2481,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
         terminalToneStopTask?.cancel()
         terminalToneStopTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .seconds(Self.terminalToneLifetime))
+                try await Task.sleep(for: .seconds(tone.duration))
             } catch {
                 return
             }
@@ -3198,7 +3196,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
         pictureInPictureController?.stop()
         pictureInPictureController = nil
         pictureInPictureSourceView = nil
-        let retentionDuration = finalTone == nil ? 0 : Self.terminalToneLifetime
+        let retentionDuration = finalTone?.duration ?? 0
         if debugInformationCallId != nil || logCallId != nil || ratingLogCallId != nil {
             let service = service
             let callRatingLogCapture = callRatingLogCapture
@@ -3287,7 +3285,6 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
             resetConferencePreparation(coordinator)
         }
         let hadCall = activeCall != nil || reportedIncomingCallId != nil || isEngineRunning
-        let wasOutgoing = activeCall?.isOutgoing == true
         let selectedTerminalTone = terminalToneStartedAt == nil ? terminalTone : Self.endedTone
         let didStartTerminalTone = playTerminalToneIfNeeded(selectedTerminalTone) != nil
         activeCall = nil
@@ -3307,11 +3304,16 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
             finalTone: didStartTerminalTone ? selectedTerminalTone : nil,
         )
         if notifyCallKit, hadCall {
-            if didStartTerminalTone, wasOutgoing {
+            // Reporting the call as ended to CallKit right away lets the system deactivate the
+            // audio session almost immediately, cutting off whichever busy/failed/ended tone just
+            // started. This used to only wait when we placed the call (`wasOutgoing`), but a call
+            // we received can end the exact same way when the other side hangs up or the call
+            // fails - the tone needs the same grace period regardless of who dialed.
+            if didStartTerminalTone, let toneDuration = selectedTerminalTone?.duration {
                 delayedCallKitEndTask?.cancel()
                 delayedCallKitEndTask = Task { [weak self] in
                     do {
-                        try await Task.sleep(for: .seconds(Self.terminalToneLifetime))
+                        try await Task.sleep(for: .seconds(toneDuration))
                     } catch {
                         return
                     }
