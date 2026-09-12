@@ -3,7 +3,6 @@
 import AVFoundation
 import SwiftUI
 import TDLibKit
-import UIKit
 
 // MARK: - CallView
 
@@ -158,6 +157,7 @@ struct CallView: View {
                                 .overlay {
                                     Circle()
                                         .stroke(.white.opacity(0.2), lineWidth: 1)
+                                        .accessibilityHidden(true)
                                 }
                                 .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
                         }
