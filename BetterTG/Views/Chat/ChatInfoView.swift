@@ -10,41 +10,49 @@ struct ChatInfoView: View {
     // MARK: Internal
 
     var body: some View {
+        withAlerts(withSheets(listContent))
+    }
+
+    // MARK: Private
+
+    private var listContent: some View {
         List {
             ChatInfoIdentitySection(
                 info: info,
+                isMuted: isMuted(info),
                 onMicrophonePermissionDenied: { showsMicrophonePermissionAlert = true },
                 onCameraPermissionDenied: { showsCameraPermissionAlert = true },
+                onMuteButtonTapped: {
+                    if isMuted(info) {
+                        setMuteDuration(0)
+                    } else {
+                        showMuteOptions = true
+                    }
+                },
             )
 
             if let info {
-                ChatInfoProfileInformationSection(info: info) { errorMessage = $0 }
+                ChatInfoUnofficialAppWarningSection(info: info)
+                ChatInfoProfileInformationSection(
+                    info: info,
+                    canAddContact: canAddContact,
+                    onAddContact: { showsAddContact = true },
+                ) { errorMessage = $0 }
                 ChatInfoNotificationsSection(
-                    isMuted: isMuted(info),
                     defaultShowPreview: info.defaultShowPreview,
                     defaultMuteStories: info.defaultMuteStories,
-                    onMuteButtonTapped: {
-                        if isMuted(info) {
-                            setMuteDuration(0)
-                        } else {
-                            showMuteOptions = true
-                        }
-                    },
                     onError: { errorMessage = $0 },
                 )
-                ChatInfoAutoDeleteSection(info: info) { errorMessage = $0 }
                 videoChatSection
+                ChatInfoGroupSettingsSection(info: info)
                 ChatInfoMemberDetailsSection(info: info) { membersFilter = $0 }
                 ChatInfoMembersPreviewSection(info: info)
-                ChatInfoGroupSettingsSection(info: info)
                 ChatInfoSharedContentSection(
                     info: info,
                     onOpenSharedMedia: { showsSharedMedia = true },
                     onOpenScheduledMessages: { showsScheduledMessages = true },
                     onOpenCommonGroups: { showsCommonGroups = true },
                 )
-                ChatInfoUnofficialAppWarningSection(info: info)
-                actionsSection(info)
             } else if isLoading {
                 Section {
                     HStack {
@@ -65,6 +73,7 @@ struct ChatInfoView: View {
         }
         .navigationTitle("Chat Info")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { toolbarContent }
         .navigationDestination(item: $membersFilter) { filter in
             ChatInfoMembersView(
                 chatId: chat.id,
@@ -86,6 +95,10 @@ struct ChatInfoView: View {
             chatVM.refreshVideoChat()
             await loadInfo()
         }
+    }
+
+    private func withSheets(_ content: some View) -> some View {
+        content
         .sheet(item: $reportRequest) { request in
             TelegramReportView(service: chatVM.service, request: request)
         }
@@ -163,6 +176,10 @@ struct ChatInfoView: View {
                 }
             }
         }
+    }
+
+    private func withAlerts(_ content: some View) -> some View {
+        content
         .alert("Start \(videoChatTitle)", isPresented: $showsVideoChatStartOptions) {
             Button("Start Now") {
                 startVideoChat()
@@ -257,8 +274,6 @@ struct ChatInfoView: View {
         }
     }
 
-    // MARK: Private
-
     @Environment(ChatVM.self) private var chatVM
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -280,6 +295,8 @@ struct ChatInfoView: View {
     @State private var membersFilter: TelegramChatInfoMemberFilter?
     @State private var showMuteOptions = false
     @State private var muteOverride: Bool?
+    @State private var autoDeleteOverride: Int?
+    @State private var isSavingAutoDelete = false
     @State private var showsCameraPermissionAlert = false
     @State private var showsMicrophonePermissionAlert = false
     @State private var showsRtmpSetup = false
@@ -329,6 +346,60 @@ struct ChatInfoView: View {
     private var canAddContact: Bool {
         guard let info else { return false }
         return info.privateChatUserId != nil && !info.isContact
+    }
+
+    /// Telegram-iOS's `PeerAutoremoveSetupScreen` preset stops: Off, 1 day, 1 week, 31 days.
+    private static let autoDeletePresets: [(title: String, seconds: Int)] = [
+        ("Off", 0),
+        ("1 Day", 86400),
+        ("1 Week", 604_800),
+        ("1 Month", 2_678_400),
+    ]
+
+    private func autoDeleteSeconds(_ info: TelegramChatInfoData) -> Int {
+        autoDeleteOverride ?? info.messageAutoDeleteTime
+    }
+
+    private func canEditAutoDelete(_ info: TelegramChatInfoData) -> Bool {
+        guard !chat.isSavedMessages else { return false }
+        switch chat.kind {
+        case .bot, .privateChat:
+            return true
+        case .channel, .group:
+            return info.canChangeInfo
+        }
+    }
+
+    private static func autoDeleteLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 0: "Off"
+        case 86400: "1 day"
+        case 604_800: "1 week"
+        case 2_678_400: "1 month"
+        case let value where value % 86400 == 0: "\(value / 86400) days"
+        default: "\(max(1, seconds / 3600)) hours"
+        }
+    }
+
+    private func setAutoDelete(_ seconds: Int) {
+        guard let info, seconds != autoDeleteSeconds(info), !isSavingAutoDelete else { return }
+        let previous = autoDeleteSeconds(info)
+        autoDeleteOverride = seconds
+        isSavingAutoDelete = true
+        let service = chatVM.service
+        let chatId = chat.id
+        Task {
+            defer { isSavingAutoDelete = false }
+            do {
+                _ = try await service.setChatMessageAutoDeleteTime(
+                    chatId: chatId,
+                    messageAutoDeleteTime: seconds,
+                )
+            } catch {
+                autoDeleteOverride = previous
+                errorMessage = telegramErrorDescription(error)
+            }
+        }
     }
 
     @ViewBuilder private var videoChatSection: some View {
@@ -397,62 +468,102 @@ struct ChatInfoView: View {
         }
     }
 
-    @ViewBuilder private func actionsSection(_ info: TelegramChatInfoData) -> some View {
+    @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
+        if let info, hasMoreMenuItems(info) {
+            ToolbarItem(placement: .primaryAction) {
+                moreMenu(info)
+            }
+        }
+    }
+
+    /// Matches Telegram-iOS: these live in the nav bar's "..." menu, not as list rows - only
+    /// "Add to Contacts" (a `ChatInfoProfileInformationSection` row) and the destructive-adjacent
+    /// mute control (a header quick-action) are pulled out into the scrolling content itself.
+    private func hasMoreMenuItems(_ info: TelegramChatInfoData) -> Bool {
         let policy = chat.actionPolicy
-        if canStartSecretChat
-            || canAddContact
+        return canStartSecretChat
+            || canEditAutoDelete(info)
+            || autoDeleteSeconds(info) > 0
             || info.blockableUserId != nil
             || chat.chat.canBeReported
             || policy.canLeave
             || policy.canClearHistory
             || policy.canDeleteChat
-        {
-            Section {
-                if canAddContact {
-                    Button("Add to Contacts", systemImage: "person.crop.circle.badge.plus") {
-                        showsAddContact = true
-                    }
-                }
+    }
 
-                if canStartSecretChat {
-                    Button("Start Secret Chat", systemImage: "lock.fill") {
-                        showsStartSecretChatConfirmation = true
-                    }
-                    .disabled(isStartingSecretChat)
-                }
+    private func moreMenu(_ info: TelegramChatInfoData) -> some View {
+        Menu {
+            moreMenuContent(info)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .accessibilityLabel("More")
+    }
 
-                if info.blockableUserId != nil {
-                    Button(
-                        blockActionTitle(info),
-                        role: info.isBlocked ? nil : .destructive,
-                    ) {
-                        toggleBlocked()
-                    }
-                }
+    @ViewBuilder private func moreMenuContent(_ info: TelegramChatInfoData) -> some View {
+        let policy = chat.actionPolicy
 
-                if chat.chat.canBeReported {
-                    let title = chat.kind == .privateChat ? "Report User" : "Report"
-                    Button(title, role: .destructive) {
-                        reportRequest = TelegramReportRequest(chatId: chat.id, messageIds: [], title: title)
-                    }
-                }
+        if canStartSecretChat {
+            Button("Start Secret Chat", systemImage: "lock.fill") {
+                showsStartSecretChatConfirmation = true
+            }
+            .disabled(isStartingSecretChat)
+        }
 
-                if let leaveTitle = policy.leaveActionTitle {
-                    Button(leaveTitle, role: .destructive) {
-                        showLeaveConfirmation = true
-                    }
-                }
+        if canEditAutoDelete(info) {
+            Menu("Auto-Delete Messages", systemImage: "timer") {
+                autoDeletePresetButtons(info)
+            }
+            .disabled(isSavingAutoDelete)
+        } else if autoDeleteSeconds(info) > 0 {
+            Label("Auto-Delete: \(Self.autoDeleteLabel(autoDeleteSeconds(info)))", systemImage: "timer")
+        }
 
-                if policy.canClearHistory {
-                    Button("Clear History", role: .destructive) {
-                        showClearHistoryConfirmation = true
-                    }
-                }
+        if policy.canClearHistory {
+            Button("Clear History", systemImage: "trash", role: .destructive) {
+                showClearHistoryConfirmation = true
+            }
+        }
 
-                if policy.canDeleteChat, policy.leaveActionTitle == nil {
-                    Button(policy.deleteActionTitle, role: .destructive) {
-                        showDeleteConfirmation = true
-                    }
+        if let leaveTitle = policy.leaveActionTitle {
+            Button(leaveTitle, systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                showLeaveConfirmation = true
+            }
+        }
+
+        if policy.canDeleteChat, policy.leaveActionTitle == nil {
+            Button(policy.deleteActionTitle, systemImage: "trash", role: .destructive) {
+                showDeleteConfirmation = true
+            }
+        }
+
+        if info.blockableUserId != nil {
+            Button(
+                blockActionTitle(info),
+                systemImage: info.isBlocked ? "checkmark.circle" : "hand.raised.slash",
+                role: info.isBlocked ? nil : .destructive,
+            ) {
+                toggleBlocked()
+            }
+        }
+
+        if chat.chat.canBeReported {
+            let title = chat.kind == .privateChat ? "Report User" : "Report"
+            Button(title, systemImage: "exclamationmark.triangle", role: .destructive) {
+                reportRequest = TelegramReportRequest(chatId: chat.id, messageIds: [], title: title)
+            }
+        }
+    }
+
+    @ViewBuilder private func autoDeletePresetButtons(_ info: TelegramChatInfoData) -> some View {
+        ForEach(Self.autoDeletePresets, id: \.seconds) { preset in
+            Button {
+                setAutoDelete(preset.seconds)
+            } label: {
+                if autoDeleteSeconds(info) == preset.seconds {
+                    Label(preset.title, systemImage: "checkmark")
+                } else {
+                    Text(preset.title)
                 }
             }
         }
@@ -504,12 +615,14 @@ struct ChatInfoView: View {
         }
     }
 
-    private func isMuted(_ info: TelegramChatInfoData) -> Bool {
+    /// Header quick-action, so it needs to render (best-effort) before `info` finishes loading.
+    private func isMuted(_ info: TelegramChatInfoData?) -> Bool {
         if let muteOverride {
             return muteOverride
         }
         let settings = chat.notificationSettings
-        return settings.useDefaultMuteFor ? info.defaultMuteFor > 0 : settings.muteFor > 0
+        guard settings.useDefaultMuteFor else { return settings.muteFor > 0 }
+        return (info?.defaultMuteFor ?? 0) > 0
     }
 
     private func setMuteDuration(_ duration: Int) {

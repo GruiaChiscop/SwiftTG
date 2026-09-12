@@ -10,11 +10,14 @@ struct ChatInfoProfileInformationSection: View {
     // MARK: Internal
 
     let info: TelegramChatInfoData
+    let canAddContact: Bool
+    let onAddContact: () -> Void
     let onError: (String) -> Void
 
     var body: some View {
         if !info.usernames.isEmpty || info.phoneNumber != nil || info.birthdate != nil || info.about != nil
             || info.privacyPolicyURL != nil || info.usesPrivacyCommand || info.personalChatId != 0
+            || canAddContact
         {
             Section {
                 if let phoneNumber = info.phoneNumber {
@@ -79,6 +82,12 @@ struct ChatInfoProfileInformationSection: View {
                         Label("Privacy Policy", systemImage: "hand.raised")
                     }
                     .disabled(isSendingPrivacyCommand)
+                }
+
+                if canAddContact {
+                    Button(action: onAddContact) {
+                        Label("Add to Contacts", systemImage: "person.crop.circle.badge.plus")
+                    }
                 }
             }
         }

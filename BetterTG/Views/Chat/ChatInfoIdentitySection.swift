@@ -8,8 +8,10 @@ struct ChatInfoIdentitySection: View {
     // MARK: Internal
 
     let info: TelegramChatInfoData?
+    let isMuted: Bool
     let onMicrophonePermissionDenied: () -> Void
     let onCameraPermissionDenied: () -> Void
+    let onMuteButtonTapped: () -> Void
 
     var body: some View {
         Section {
@@ -44,9 +46,11 @@ struct ChatInfoIdentitySection: View {
                 ChatInfoHeaderActionsView(
                     canStartAudioCall: info?.canStartAudioCall == true,
                     canStartVideoCall: info?.canStartVideoCall == true,
+                    isMuted: isMuted,
                     startAudioCall: startAudioCall,
                     startVideoCall: startVideoCall,
                     search: openConversationSearch,
+                    onMuteButtonTapped: onMuteButtonTapped,
                 )
             }
             .frame(maxWidth: .infinity)

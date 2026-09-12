@@ -7,9 +7,11 @@ import SwiftUI
 struct ChatInfoHeaderActionsView: View {
     let canStartAudioCall: Bool
     let canStartVideoCall: Bool
+    let isMuted: Bool
     let startAudioCall: () -> Void
     let startVideoCall: () -> Void
     let search: () -> Void
+    let onMuteButtonTapped: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -36,6 +38,16 @@ struct ChatInfoHeaderActionsView: View {
                 }
                 .buttonStyle(.bordered)
             }
+
+            Button(action: onMuteButtonTapped) {
+                VStack(spacing: 4) {
+                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    Text(isMuted ? "Unmute" : "Mute")
+                        .font(.caption)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
 
             Button(action: search) {
                 VStack(spacing: 4) {
