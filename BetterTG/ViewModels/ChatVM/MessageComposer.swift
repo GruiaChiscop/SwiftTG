@@ -37,7 +37,6 @@ import TDLibKit
 
     var editCustomMessage: CustomMessage?
     var replyMessage: CustomMessage?
-    var showSendButton = false
     var showDetail = false
     var displayedImages = [SelectedImage]()
     var displayedDocuments = [URL]()
@@ -60,6 +59,14 @@ import TDLibKit
 
     var activeLinkPreviewComposer: TelegramLinkPreviewComposer {
         editCustomMessage == nil ? linkPreviewComposer : editLinkPreviewComposer
+    }
+
+    var showSendButton: Bool {
+        editCustomMessage != nil
+            || !displayedDocuments.isEmpty
+            || !displayedImages.isEmpty
+            || !editMessageText.characters.isEmpty
+            || !text.characters.isEmpty
     }
 
     var canEditMessage: Bool {
@@ -130,7 +137,6 @@ import TDLibKit
         discardDisplayedDocuments()
         discardDisplayedImages()
         displayedDocuments = stagedURLs
-        setShowSendButton()
     }
 
     /// Unlike `stageDocuments(_:)`, adds to whatever's already staged instead of replacing it - for
@@ -155,7 +161,6 @@ import TDLibKit
             throw error
         }
         displayedDocuments.append(contentsOf: stagedURLs)
-        setShowSendButton()
     }
 
     func discardDisplayedDocuments() {
@@ -343,13 +348,6 @@ import TDLibKit
             draftMessage: draftMessage,
             topicId: topicId,
         )
-    }
-
-    func setShowSendButton() {
-        guard editCustomMessage == nil else { return withAnimation { showSendButton = true } }
-        let value = !displayedDocuments.isEmpty || !displayedImages.isEmpty
-            || !editMessageText.characters.isEmpty || !text.characters.isEmpty
-        withAnimation { showSendButton = value }
     }
 
     func setEditMessageText(from message: Message?) {

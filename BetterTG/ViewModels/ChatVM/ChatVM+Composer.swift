@@ -27,10 +27,7 @@ extension ChatVM {
         set { composer.replyMessage = newValue }
     }
 
-    var showSendButton: Bool {
-        get { composer.showSendButton }
-        set { composer.showSendButton = newValue }
-    }
+    var showSendButton: Bool { composer.showSendButton }
 
     var showDetail: Bool {
         get { composer.showDetail }
@@ -180,7 +177,6 @@ extension ChatVM {
         }
     }
 
-    func setShowSendButton() { composer.setShowSendButton() }
     func setEditMessageText(from message: Message?) { composer.setEditMessageText(from: message) }
     func updateDraft() async { await composer.updateDraft() }
     func startTimer() { voiceRecorder.startTimer() }

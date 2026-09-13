@@ -522,6 +522,7 @@ struct ChatBottomArea: View {
         .frame(width: 40, height: 40)
         .contentShape(.rect)
         .transition(.scale)
+        .animation(.default, value: chatVM.showSendButton)
         .modify {
             if chatVM.recordingLocked {
                 $0.onTapGesture { sendCurrentRecording() }
@@ -536,11 +537,6 @@ struct ChatBottomArea: View {
                     .onTapGesture { toggleRecordingMode() }
             }
         }
-        .onChange(of: chatVM.editMessageText, chatVM.setShowSendButton)
-        .onChange(of: chatVM.text, chatVM.setShowSendButton)
-        .onChange(of: chatVM.displayedImages, chatVM.setShowSendButton)
-        .onChange(of: chatVM.displayedDocuments, chatVM.setShowSendButton)
-        .onChange(of: chatVM.editCustomMessage, chatVM.setShowSendButton)
         .disabled(chatVM.isSubmittingMessage)
         .modify {
             if chatVM.recordingLocked, !currentRecordingIsViewOnce {
