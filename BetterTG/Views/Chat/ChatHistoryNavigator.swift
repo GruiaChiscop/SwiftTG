@@ -10,7 +10,7 @@ import SwiftUI
 
 // MARK: - ChatHistoryNavigator
 
-/// Stable bridge between SwiftUI/ChatVM commands and the currently mounted collection view.
+/// Stable bridge between SwiftUI/ChatVM commands and the currently mounted history table.
 /// Requests remain pending while their row has not arrived yet, which also covers navigation that
 /// first has to fetch a history window around a message.
 @MainActor final class ChatHistoryNavigator {

@@ -1,10 +1,10 @@
-// ChatHistoryCollectionView.swift
+// ChatHistoryTableView.swift
 
 import SwiftUI
 
-// MARK: - ChatHistoryCollectionView
+// MARK: - ChatHistoryTableView
 
-struct ChatHistoryCollectionView: UIViewControllerRepresentable {
+struct ChatHistoryTableView: UIViewControllerRepresentable {
     // MARK: Internal
 
     let chatVM: ChatVM
@@ -21,18 +21,18 @@ struct ChatHistoryCollectionView: UIViewControllerRepresentable {
     let onScrollButtonFocused: () -> Void
 
     static func dismantleUIViewController(
-        _ controller: ChatHistoryCollectionViewController,
+        _ controller: ChatHistoryTableViewController,
         coordinator _: Void,
     ) {
         controller.navigatorDidDismantle()
     }
 
-    func makeUIViewController(context _: Context) -> ChatHistoryCollectionViewController {
-        ChatHistoryCollectionViewController(navigator: navigator)
+    func makeUIViewController(context _: Context) -> ChatHistoryTableViewController {
+        ChatHistoryTableViewController(navigator: navigator)
     }
 
-    func updateUIViewController(_ controller: ChatHistoryCollectionViewController, context _: Context) {
-        controller.update(ChatHistoryCollectionViewController.Configuration(
+    func updateUIViewController(_ controller: ChatHistoryTableViewController, context _: Context) {
+        controller.update(ChatHistoryTableViewController.Configuration(
             chatVM: chatVM,
             messages: messages,
             unreadMessageId: unreadMessageId,

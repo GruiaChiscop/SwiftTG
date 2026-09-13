@@ -182,6 +182,40 @@ private func getEntities(
     return entities
 }
 
+/// Bounds the text measured by the row's SwiftUI layout. This is only a work limit:
+/// character/newline counts do not bound rendered height. `MessageTextPreview` also fits the
+/// preview to the history viewport. VoiceOver and the full-text reader use the original text.
+private let messageTextTruncationCharacterLimit = 500
+private let messageTextTruncationLineLimit = 14
+
+/// Returns a shortened copy of `text` with a trailing "…" if it exceeds the character/line caps
+/// above, or `nil` if `text` already fits within them (nothing to truncate).
+func truncatedMessageDisplayText(_ text: AttributedString) -> AttributedString? {
+    var newlineCount = 0
+    var characterCount = 0
+    var cutIndex: AttributedString.Index?
+
+    for index in text.characters.indices {
+        characterCount += 1
+        if text.characters[index] == "\n" {
+            newlineCount += 1
+            if newlineCount >= messageTextTruncationLineLimit {
+                cutIndex = text.characters.index(after: index)
+                break
+            }
+        }
+        if characterCount >= messageTextTruncationCharacterLimit {
+            cutIndex = text.characters.index(after: index)
+            break
+        }
+    }
+
+    guard let cutIndex, cutIndex < text.endIndex else { return nil }
+    var truncated = AttributedString(text[text.startIndex..<cutIndex])
+    truncated += AttributedString("…")
+    return truncated
+}
+
 func stringRange(
     for string: String,
     start: Int,

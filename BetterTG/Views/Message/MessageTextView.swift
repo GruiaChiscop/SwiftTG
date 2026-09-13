@@ -4,30 +4,25 @@ import SwiftUI
 import TDLibKit
 
 struct MessageTextView: View {
-    // MARK: Lifecycle
-
-    init(formattedText: FormattedText, trailingText: AttributedString? = nil) {
-        self.formattedText = formattedText
-        self.trailingText = trailingText
-    }
-
     // MARK: Internal
 
     let formattedText: FormattedText
-    let trailingText: AttributedString?
+    var trailingText: AttributedString?
+    let showFullText: () -> Void
 
     var body: some View {
-        Text(displayedText)
-            .fixedSize(horizontal: false, vertical: true)
+        let fullText = getAttributedString(from: formattedText)
+        let shortenedText = truncatedMessageDisplayText(fullText)
+        MessageTextPreview(
+            text: shortenedText ?? fullText,
+            isShortened: shortenedText != nil,
+            trailingText: trailingText,
+            maximumHeight: viewport.textPreviewHeight,
+            showFullText: showFullText,
+        )
     }
 
     // MARK: Private
 
-    private var displayedText: AttributedString {
-        var result = getAttributedString(from: formattedText)
-        if let trailingText {
-            result.append(trailingText)
-        }
-        return result
-    }
+    @Environment(ChatHistoryViewport.self) private var viewport
 }

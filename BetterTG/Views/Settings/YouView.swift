@@ -103,6 +103,11 @@ struct YouView: View {
                 } label: {
                     Label("Conference Lab", systemImage: "person.3")
                 }
+                NavigationLink {
+                    ChatScrollLogView()
+                } label: {
+                    Label("Chat Scroll Log", systemImage: "scroll")
+                }
             }
             #endif
         }

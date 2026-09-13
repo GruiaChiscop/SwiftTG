@@ -153,6 +153,38 @@ enum TDLibFixtures {
         )
     }
 
+    static func user(id: Int64, firstName: String = "Test") -> User {
+        User(
+            accentColorId: 0,
+            activeStoryState: nil,
+            addedToAttachmentMenu: false,
+            backgroundCustomEmojiId: 0,
+            emojiStatus: nil,
+            firstName: firstName,
+            haveAccess: true,
+            id: id,
+            isCloseFriend: false,
+            isContact: false,
+            isMutualContact: false,
+            isPremium: false,
+            isSupport: false,
+            languageCode: "",
+            lastName: "",
+            paidMessageStarCount: 0,
+            phoneNumber: "",
+            profileAccentColorId: -1,
+            profileBackgroundCustomEmojiId: 0,
+            profilePhoto: nil,
+            restrictionInfo: nil,
+            restrictsNewChats: false,
+            status: .userStatusEmpty,
+            type: .userTypeRegular,
+            upgradedGiftColors: nil,
+            usernames: nil,
+            verificationStatus: nil,
+        )
+    }
+
     static func call(
         id: Int,
         userId: Int64 = 1,

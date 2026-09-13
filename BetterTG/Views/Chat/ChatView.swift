@@ -272,7 +272,7 @@ struct ChatView: View {
     }
     
     var bodyView: some View {
-        ChatHistoryCollectionView(
+        ChatHistoryTableView(
             chatVM: chatVM,
             messages: chatVM.messages,
             unreadMessageId: initialUnreadMessageId,
@@ -568,7 +568,7 @@ struct ChatView: View {
         }
 
         // Only now - after the jump above has already been issued (and, in the common case,
-        // already landed synchronously on the collection view controller) - allow read-reporting
+        // already landed synchronously on the history controller) - allow read-reporting
         // and pagination. `canMarkMessagesRead` (below, in `bodyView`) reaching the controller is
         // what makes it call `reportVisibleMessages()` once, retroactively, over whatever ended up
         // visible; flipping this *before* the jump raced that one-time catch-up against the jump's
@@ -579,7 +579,7 @@ struct ChatView: View {
         // that request *before* running the catch-up scan.
         positionedInitialMessages = true
 
-        // The navigator queues a target until its collection-view row exists. Give the hosted row
+        // The navigator queues a target until its table row exists. Give the hosted row
         // another layout pass before assigning VoiceOver focus.
         await Task.yield()
         await Task.yield()
@@ -628,7 +628,7 @@ struct ChatView: View {
 
     private func focusMessage(_ messageId: Int64) {
         Task { @MainActor in
-            // Let the collection view create the requested hosted row before assigning focus.
+            // Let the table view create the requested hosted row before assigning focus.
             await Task.yield()
             await Task.yield()
             historyNavigator.scrollToMessage(

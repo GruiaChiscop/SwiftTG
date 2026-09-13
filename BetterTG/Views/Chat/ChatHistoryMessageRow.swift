@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - ChatHistoryMessageRow
 
-/// Keeps observation local to one hosted collection-view cell, so metadata changes do not rebuild
+/// Keeps observation local to one hosted table-view cell, so metadata changes do not rebuild
 /// the entire history surface.
 struct ChatHistoryMessageRow: View {
     let customMessage: CustomMessage

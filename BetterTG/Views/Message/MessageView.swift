@@ -20,6 +20,7 @@ struct MessageView: View {
     @State var showDeleteOptions = false
     @State var showReactionOptions = false
     @State var showReactionDetails = false
+    @State var showsFullMessageText = false
     @State var isLoadingComments = false
     @State var resolvedComments: TelegramResolvedCommentsThread?
     @State var commentsErrorMessage: String?
@@ -478,6 +479,7 @@ struct MessageView: View {
                     MessageTextView(
                         formattedText: formattedText,
                         trailingText: visualMessageMetadataText,
+                        showFullText: { showsFullMessageText = true },
                     )
                     if customMessage.showsTranslation {
                         Text("Translated")
@@ -681,6 +683,11 @@ struct MessageView: View {
     /// to build the sprawling combined type at all.
     private var messageBody: some View {
         accessibilityGroupedRow
+            .sheet(isPresented: $showsFullMessageText) {
+                if let formattedText = displayedFormattedText {
+                    FullMessageTextView(formattedText: formattedText)
+                }
+            }
             .sheet(item: $shownAlbum) { album in
                 ChatViewAlbum(album: album.photos, selection: album.selection)
             }

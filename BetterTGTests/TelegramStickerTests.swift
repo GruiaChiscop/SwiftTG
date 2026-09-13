@@ -174,9 +174,9 @@ struct TelegramStickerTests {
         #expect(removed == [11])
     }
 
-    @MainActor @Test func `sticker editor renders a Telegram sized PNG`() throws {
+    @MainActor @Test func `sticker editor renders a Telegram sized PNG`() async throws {
         let source = try #require(Self.solidColorImage(size: CGSize(width: 40, height: 20)))
-        let pngData = try TelegramStickerEditorRendering.pngData(
+        let pngData = try await TelegramStickerEditorRendering.pngData(
             sourceImage: source,
             snapshot: .init(strokes: [], overlays: []),
         )

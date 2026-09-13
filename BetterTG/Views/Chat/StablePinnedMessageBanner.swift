@@ -136,6 +136,15 @@ struct StablePinnedMessageBanner: UIViewRepresentable {
         BannerView(coordinator: context.coordinator)
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: BannerView, context _: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite else { return nil }
+        return uiView.systemLayoutSizeFitting(
+            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel,
+        )
+    }
+
     func updateUIView(_ banner: BannerView, context: Context) {
         context.coordinator.openMessage = openMessage
         context.coordinator.showAllMessages = showAllMessages
