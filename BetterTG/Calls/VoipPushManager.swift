@@ -331,6 +331,8 @@ extension VoipPushManager: @MainActor PKPushRegistryDelegate {
         let userInfo = payload.dictionaryPayload
         let didReportPlaceholder = CallKitManager.shared.reportIncomingPlaceholder(
             callUniqueId: Self.callUniqueId(from: userInfo),
+            userId: Self.int64Value(userInfo["from_id"]),
+            displayName: userInfo["from_title"] as? String,
         )
         let conferenceInvitation = Self.conferenceInvitation(from: userInfo)
         if let conferenceInvitation {

@@ -222,12 +222,14 @@ import TDLibKit
         log("[CallKit] updated uuid=\(uuid) as conference")
     }
 
-    /// Reports a placeholder incoming call immediately, before TDLib has told us who it's from -
-    /// PushKit requires a `CXProvider` report within a very tight window of every VoIP push, well
-    /// before there's time to fetch the caller's name. `reportIncoming(_:)` below reconciles this
-    /// placeholder with the real call once TDLib's own `updateCall` arrives shortly after, instead
-    /// of reporting a second, duplicate call.
-    @discardableResult func reportIncomingPlaceholder(callUniqueId: Int64?) -> Bool {
+    /// Reports a placeholder incoming call immediately. PushKit requires a `CXProvider` report
+    /// within a very tight window, so use the caller title already carried by the VoIP payload and
+    /// let `reportIncoming(_:)` reconcile the placeholder with TDLib's real call update later.
+    @discardableResult func reportIncomingPlaceholder(
+        callUniqueId: Int64?,
+        userId: Int64?,
+        displayName: String?,
+    ) -> Bool {
         pruneRecentlyEndedCalls()
         if let callUniqueId, recentlyEndedCallUniqueIds[callUniqueId] != nil {
             // The live TDLib update can beat its VoIP push. That call has already been reported to
@@ -248,9 +250,14 @@ import TDLibKit
         isCurrentCallPlaceholder = true
         isCurrentCallOutgoing = false
         log("[CallKit] reportIncomingPlaceholder uuid=\(uuid)")
+        let presentedName = displayName.flatMap { $0.isEmpty ? nil : $0 } ?? "Telegram"
+        currentUserId = userId
         provider.reportNewIncomingCall(
             with: uuid,
-            update: Self.update(handle: Self.callKitHandle(displayName: nil), displayName: nil),
+            update: Self.update(
+                handle: Self.callKitHandle(displayName: presentedName),
+                displayName: presentedName,
+            ),
         ) { [weak self] error in
             Task { @MainActor [weak self] in
                 if let error {
@@ -308,10 +315,6 @@ import TDLibKit
 
     private static func telegramRedialIdentifier(userId: Int64) -> String {
         "tg:\(userId)"
-    }
-
-    private static func telegramCallHandle(userId: Int64) -> CXHandle {
-        CXHandle(type: .generic, value: telegramRedialIdentifier(userId: userId))
     }
 
     private static func telegramUserId(from person: INPerson) -> Int64? {
@@ -428,7 +431,7 @@ import TDLibKit
             provider.reportNewIncomingCall(
                 with: uuid,
                 update: Self.update(
-                    handle: Self.telegramCallHandle(userId: call.userId),
+                    handle: Self.callKitHandle(displayName: nil),
                     displayName: "Telegram",
                     hasVideo: call.isVideo,
                 ),
@@ -444,10 +447,13 @@ import TDLibKit
         currentTelegramCallUniqueId = call.uniqueId.rawValue
         isCurrentCallPlaceholder = false
         isCurrentCallOutgoing = false
-        let handle = Self.telegramCallHandle(userId: call.userId)
         provider.reportCall(
             with: uuid,
-            updated: Self.update(handle: handle, displayName: "Telegram", hasVideo: call.isVideo),
+            updated: Self.update(
+                handle: Self.callKitHandle(displayName: nil),
+                displayName: "Telegram",
+                hasVideo: call.isVideo,
+            ),
         )
 
         Task { [weak self] in
@@ -457,7 +463,11 @@ import TDLibKit
             log("[CallKit] updating caller display name to \(name)")
             provider.reportCall(
                 with: uuid,
-                updated: Self.update(handle: handle, displayName: name, hasVideo: call.isVideo),
+                updated: Self.update(
+                    handle: Self.callKitHandle(displayName: name),
+                    displayName: name,
+                    hasVideo: call.isVideo,
+                ),
             )
         }
     }
@@ -476,8 +486,7 @@ import TDLibKit
             provider.reportNewIncomingCall(
                 with: uuid,
                 update: Self.update(
-                    handle: invitation.inviterUserId.map(Self.telegramCallHandle)
-                        ?? Self.callKitHandle(displayName: invitation.displayTitle),
+                    handle: Self.callKitHandle(displayName: invitation.displayTitle ?? "Group Call"),
                     displayName: invitation.displayTitle ?? "Group Call",
                     hasVideo: invitation.isVideo,
                 ),
@@ -494,13 +503,12 @@ import TDLibKit
         currentTelegramCallUniqueId = invitation.uniqueId
         isCurrentCallPlaceholder = false
         isCurrentCallOutgoing = false
-        let handle = invitation.inviterUserId.map(Self.telegramCallHandle)
-            ?? Self.callKitHandle(displayName: invitation.displayTitle)
+        let displayName = invitation.displayTitle ?? "Group Call"
         provider.reportCall(
             with: uuid,
             updated: Self.update(
-                handle: handle,
-                displayName: invitation.displayTitle ?? "Group Call",
+                handle: Self.callKitHandle(displayName: displayName),
+                displayName: displayName,
                 hasVideo: invitation.isVideo,
             ),
         )
@@ -512,7 +520,11 @@ import TDLibKit
             guard !name.isEmpty, currentCallUUID == uuid else { return }
             provider.reportCall(
                 with: uuid,
-                updated: Self.update(handle: handle, displayName: name, hasVideo: invitation.isVideo),
+                updated: Self.update(
+                    handle: Self.callKitHandle(displayName: name),
+                    displayName: name,
+                    hasVideo: invitation.isVideo,
+                ),
             )
         }
     }
