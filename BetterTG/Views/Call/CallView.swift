@@ -160,6 +160,9 @@ struct CallView: View {
                                         .accessibilityHidden(true)
                                 }
                                 .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+                                .accessibilityRepresentation {
+                                    EmptyView()
+                                }
                         }
                     }
 

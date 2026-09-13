@@ -1516,6 +1516,22 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
         }
     }
 
+    /// Keep permission handling inside the Telegram answer flow so CallKit can fulfill its system
+    /// action immediately. Checking the cached status avoids an unnecessary asynchronous round trip
+    /// for the common, already-resolved case and prompts only when permission is undetermined.
+    private static func requestMicrophoneAccess() async -> Bool {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            true
+        case .undetermined:
+            await AVAudioApplication.requestRecordPermission()
+        case .denied:
+            false
+        @unknown default:
+            false
+        }
+    }
+
     private static func connections(from servers: [CallServer]) -> [TelegramCallEngine.Connection] {
         let reflectorIds = servers
             .compactMap { server -> TdInt64? in
@@ -2366,7 +2382,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
                     isAnswering = false
                 }
             }
-            let microphoneGranted = await AVAudioApplication.requestRecordPermission()
+            let microphoneGranted = await Self.requestMicrophoneAccess()
             guard activeCall?.id == call.id else {
                 log("[Call] answer superseded while waiting for microphone permission")
                 return

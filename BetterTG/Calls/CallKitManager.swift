@@ -587,25 +587,14 @@ extension CallKitManager: @MainActor CXProviderDelegate {
             action.fail()
             return
         }
-        Task {
-            let granted = await AVAudioApplication.requestRecordPermission()
-            guard currentCallUUID == action.callUUID else {
-                log("[CallKit] answer action superseded while waiting for microphone permission")
-                action.fail()
-                return
-            }
-            guard granted else {
-                log("[CallKit] microphone permission denied; incoming call rejected")
-                TelegramCallSession.shared.endFromSystem()
-                isEndingLocally = true
-                provider.reportCall(with: action.callUUID, endedAt: nil, reason: .failed)
-                clearCurrentCall(ifMatching: action.callUUID)
-                action.fail()
-                return
-            }
-            TelegramCallSession.shared.answerFromSystem()
-            action.fulfill()
-        }
+        // Matches Telegram-iOS's own CXAnswerCallAction handler (CallKitIntegration.swift): fulfill
+        // immediately and unconditionally. Microphone permission is checked asynchronously, fully
+        // decoupled from this action, inside TelegramCallSession's own answer flow - awaiting a
+        // permission round-trip here before fulfilling was the same class of bug as the call-tone
+        // preloading regression: CallKit expects a prompt response to this delegate callback, and
+        // blocking on it made answering (including VoiceOver's Magic Tap) unreliable.
+        TelegramCallSession.shared.answerFromSystem()
+        action.fulfill()
     }
 
     func provider(_: CXProvider, perform action: CXEndCallAction) {
