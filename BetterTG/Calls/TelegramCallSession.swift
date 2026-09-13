@@ -1266,6 +1266,7 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
     private var terminalToneStartedAt: Foundation.Date?
     private var isPreCallAudioDevicePrepared = false
     private var isCallKitAudioSessionActive = false
+    private var shouldRestoreSpeakerOverrideAfterCallKitDeactivation = false
     private var isEffectiveAudioSessionActive = false
     private var isAudioInterrupted = false
     private var areMediaServicesAvailable = true
@@ -2511,6 +2512,10 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
     private func applyAudioSessionActive(_ active: Bool) {
         isCallKitAudioSessionActive = active
         applyEffectiveAudioSessionState()
+        if !active, shouldRestoreSpeakerOverrideAfterCallKitDeactivation {
+            shouldRestoreSpeakerOverrideAfterCallKitDeactivation = false
+            restoreSpeakerOverride()
+        }
         refreshAudioRoutes()
         routeVideoToSpeakerIfNeeded()
         // CallKit taking over the audio session is the moment it's most likely to bounce the output
@@ -3279,14 +3284,23 @@ extension GroupCallVideoQuality: @retroactive @unchecked Sendable {}
         showsCameraPreview = false
         showsCameraPermissionAlert = false
         showsMicrophonePermissionAlert = false
-        if isSpeakerOn {
-            do {
-                try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
-            } catch {
-                log("Error restoring call audio route: \(error)")
-            }
+        if isSpeakerOn, isCallKitAudioSessionActive {
+            // Keep the selected output until CallKit has finished the terminal tone and
+            // deactivated its audio session. Clearing the override here briefly moves that tone
+            // (and the still-visible call UI) from the speaker to the receiver.
+            shouldRestoreSpeakerOverrideAfterCallKitDeactivation = true
+        } else if isSpeakerOn {
+            restoreSpeakerOverride()
         }
         refreshAudioRoutes()
+    }
+
+    private func restoreSpeakerOverride() {
+        do {
+            try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
+        } catch {
+            log("Error restoring call audio route: \(error)")
+        }
     }
 
     private func finishCurrentCall(
