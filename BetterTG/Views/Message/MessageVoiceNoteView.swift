@@ -14,7 +14,7 @@ struct MessageVoiceNoteView: View {
     @State var media = Media.shared
 
     var body: some View {
-        AsyncTdFile(id: voiceNote.voice.id) { voice in
+        AsyncTdFile(id: voiceNote.voice.id, autoDownloads: autoDownloadsVoiceNote) { voice in
             voiceNoteView(isDownloading: false, file: voice)
                 .onAppear {
                     voiceLocalPath = voice.local.path
@@ -24,7 +24,6 @@ struct MessageVoiceNoteView: View {
             voiceNoteView(isDownloading: true, file: file)
         }
         .padding(4)
-        .disabled(voiceLocalPath == nil)
         // MessageView exposes one stable accessibility element whose default
         // activation toggles playback, matching Telegram's message behavior.
         .accessibilityHidden(true)
@@ -43,7 +42,9 @@ struct MessageVoiceNoteView: View {
                 }
 
                 Button {
-                    guard voiceLocalPath != nil else { return }
+                    // `onPlaybackToggle` (`ChatVM.toggleVoiceMessage`) downloads on demand when
+                    // there's no local path yet, same as VoiceOver's row-level activation already
+                    // does - a not-yet-prefetched voice note still plays on an explicit tap.
                     TelegramAudioPlayer.shared.stop()
                     onPlaybackToggle()
                 } label: {
@@ -101,6 +102,17 @@ struct MessageVoiceNoteView: View {
     // MARK: Private
 
     @State private var voiceLocalPath: String?
+
+    /// Just a background-prefetch gate so playback is instant once tapped when allowed - actual
+    /// playback (`onPlaybackToggle`) always downloads on demand regardless of this.
+    private var autoDownloadsVoiceNote: Bool {
+        let settings = TelegramAutoDownloadStore.effectiveSettings(for: TelegramNetworkTypeMonitor.shared.current)
+        return TelegramAutoDownloadPolicy.shouldAutoDownload(
+            kind: .voiceNote,
+            fileSize: max(voiceNote.voice.size, voiceNote.voice.expectedSize),
+            settings: settings,
+        )
+    }
 
     private var isCurrentVoiceActive: Bool { media.savedMediaPath == voiceLocalPath && media.isPlaying }
 

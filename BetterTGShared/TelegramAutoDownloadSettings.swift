@@ -84,17 +84,28 @@ enum TelegramAutoDownloadStore {
         UserDefaults.standard.set(data, forKey: defaultsKey(for: type))
     }
 
-    /// Re-applies the persisted (or preset-derived) auto-download settings to TDLib. Call this on
-    /// launch, since TDLib doesn't remember the choice across client restarts on its own.
-    static func applyStored(service: any TelegramService) async {
+    /// Re-applies the persisted (or preset-derived) auto-download settings to TDLib, and caches
+    /// the fetched presets for `effectiveSettings(for:)` below. Call this on launch, since TDLib
+    /// doesn't remember the choice across client restarts on its own.
+    @MainActor static func applyStored(service: any TelegramService) async {
         guard let presets = try? await service.getAutoDownloadSettingsPresets() else { return }
+        cachedPresets = presets
         for item in telegramAutoDownloadNetworkItems {
             let settings = stored(for: item.type, fallback: preset(for: item.type, in: presets))
             _ = try? await service.setAutoDownloadSettings(settings: settings, type: item.type)
         }
     }
 
+    /// Synchronous lookup for gating a single download decision - message rows call this on every
+    /// appearance, so it must not await. Falls back to an approximation of TDLib's own presets
+    /// for the brief window before `applyStored` has fetched the real ones at launch.
+    @MainActor static func effectiveSettings(for type: NetworkType) -> AutoDownloadSettings {
+        stored(for: type, fallback: cachedPresets.map { preset(for: type, in: $0) } ?? fallbackSettings(for: type))
+    }
+
     // MARK: Private
+
+    @MainActor private static var cachedPresets: AutoDownloadSettingsPresets?
 
     private static func defaultsKey(for type: NetworkType) -> String {
         switch type {
@@ -103,6 +114,22 @@ enum TelegramAutoDownloadStore {
         case .networkTypeMobileRoaming: "BetterTG.autoDownload.roaming"
         case .networkTypeNone, .networkTypeOther: "BetterTG.autoDownload.other"
         }
+    }
+
+    private static func fallbackSettings(for type: NetworkType) -> AutoDownloadSettings {
+        let maxVideoFileSize: Int64 = type == .networkTypeWiFi ? 10_485_760 : 2_621_440
+        let maxOtherFileSize: Int64 = type == .networkTypeWiFi ? 3_145_728 : 1_048_576
+        return AutoDownloadSettings(
+            isAutoDownloadEnabled: true,
+            maxOtherFileSize: maxOtherFileSize,
+            maxPhotoFileSize: 1_048_576,
+            maxVideoFileSize: maxVideoFileSize,
+            preloadLargeVideos: type == .networkTypeWiFi,
+            preloadNextAudio: true,
+            preloadStories: true,
+            useLessDataForCalls: type != .networkTypeWiFi,
+            videoUploadBitrate: 0,
+        )
     }
 }
 

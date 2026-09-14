@@ -9,11 +9,17 @@ struct TdImage: View {
     let photo: Photo
     let size: PhotoSizeType
     let contentMode: ContentMode
+    var autoDownloads = true
+    var downloadRequest = 0
     var onLoad: (PhotoSize, File) -> Void = { _, _ in }
-    
+
     var body: some View {
         if let size = photo.sizes.getSize(size) {
-            AsyncTdImage(id: size.photo.id) { image, file in
+            AsyncTdImage(
+                id: size.photo.id,
+                autoDownloads: autoDownloads,
+                downloadRequest: downloadRequest,
+            ) { image, file in
                 image
                     .resizable()
                     .aspectRatio(contentMode: contentMode)

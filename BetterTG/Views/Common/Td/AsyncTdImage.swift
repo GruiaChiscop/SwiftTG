@@ -13,12 +13,16 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
         id: Int,
         maxPixelSize: Int = 1024,
         service: any TelegramService = TDLib.shared.service,
+        autoDownloads: Bool = true,
+        downloadRequest: Int = 0,
         @ViewBuilder content: @escaping (Image, File) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder,
     ) {
         self.id = id
         self.maxPixelSize = maxPixelSize
         self.service = service
+        self.autoDownloads = autoDownloads
+        self.downloadRequest = downloadRequest
         self.content = content
         self.placeholder = placeholder
     }
@@ -26,9 +30,13 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
     // MARK: Internal
 
     let id: Int
+    /// When `false`, the file isn't fetched just because this view appeared - only an increment
+    /// to `downloadRequest` (a caller-owned "tap to download" trigger) starts the transfer.
+    let autoDownloads: Bool
+    let downloadRequest: Int
     @ViewBuilder let content: (Image, File) -> Content
     @ViewBuilder let placeholder: () -> Placeholder
-    
+
     var body: some View {
         ZStack {
             if let image, let file {
@@ -37,7 +45,10 @@ struct AsyncTdImage<Content: View, Placeholder: View>: View {
                 placeholder()
             }
         }
-        .task(id: id) { await download(id) }
+        .task(id: "\(id):\(autoDownloads):\(downloadRequest)") {
+            guard autoDownloads || downloadRequest > 0 else { return }
+            await download(id)
+        }
         .onReceive(service.filePublisher(fileId: id)) { file in
             Task.main { await setImage(from: file) }
         }

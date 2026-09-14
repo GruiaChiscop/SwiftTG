@@ -86,11 +86,16 @@ struct MessageContentView: View {
     }
 
     func makeMessagePhoto(from messagePhoto: MessagePhoto, albumMessage: Message? = nil) -> some View {
-        TdImage(photo: messagePhoto.photo, size: .yBox, contentMode: .fill)
-            .onTapGesture { onMediaTap(albumMessage) }
-            .accessibilityLabel(messagePhoto.caption.text.isEmpty ? "Photo" : "Photo: \(messagePhoto.caption.text)")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { onMediaTap(albumMessage) }
+        TdImage(
+            photo: messagePhoto.photo,
+            size: .yBox,
+            contentMode: .fill,
+            autoDownloads: autoDownloadsPhoto(messagePhoto),
+        )
+        .onTapGesture { onMediaTap(albumMessage) }
+        .accessibilityLabel(messagePhoto.caption.text.isEmpty ? "Photo" : "Photo: \(messagePhoto.caption.text)")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onMediaTap(albumMessage) }
     }
 
     func makeMessageVideo(from messageVideo: MessageVideo, albumMessage: Message? = nil) -> some View {
@@ -154,5 +159,18 @@ struct MessageContentView: View {
         )
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onMediaTap(nil) }
+    }
+
+    /// Mirrors Telegram-iOS's "photo" auto-download category: gated by size/network settings when
+    /// the row is just passively visible. Opening the full-screen viewer (`onMediaTap`) always
+    /// downloads regardless, matching an explicit tap-to-view request.
+    func autoDownloadsPhoto(_ messagePhoto: MessagePhoto) -> Bool {
+        guard let file = messagePhoto.photo.sizes.getSize(.yBox)?.photo else { return true }
+        let settings = TelegramAutoDownloadStore.effectiveSettings(for: TelegramNetworkTypeMonitor.shared.current)
+        return TelegramAutoDownloadPolicy.shouldAutoDownload(
+            kind: .photo,
+            fileSize: max(file.size, file.expectedSize),
+            settings: settings,
+        )
     }
 }

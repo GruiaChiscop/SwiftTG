@@ -10,12 +10,16 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
         id: Int,
         service: any TelegramService = TDLib.shared.service,
         isPaused: Bool = false,
+        autoDownloads: Bool = true,
+        downloadRequest: Int = 0,
         @ViewBuilder content: @escaping (File) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder,
     ) {
         self.id = id
         self.service = service
         self.isPaused = isPaused
+        self.autoDownloads = autoDownloads
+        self.downloadRequest = downloadRequest
         self.content = content
         self.placeholder = { _ in placeholder() }
     }
@@ -24,12 +28,16 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
         id: Int,
         service: any TelegramService = TDLib.shared.service,
         isPaused: Bool = false,
+        autoDownloads: Bool = true,
+        downloadRequest: Int = 0,
         @ViewBuilder content: @escaping (File) -> Content,
         @ViewBuilder placeholder: @escaping (File?) -> Placeholder,
     ) {
         self.id = id
         self.service = service
         self.isPaused = isPaused
+        self.autoDownloads = autoDownloads
+        self.downloadRequest = downloadRequest
         self.content = content
         self.placeholder = placeholder
     }
@@ -38,9 +46,13 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
 
     let id: Int
     let isPaused: Bool
+    /// When `false`, the file isn't fetched just because this view appeared - only an increment
+    /// to `downloadRequest` (a caller-owned "tap to download" trigger) starts the transfer.
+    let autoDownloads: Bool
+    let downloadRequest: Int
     @ViewBuilder let content: (File) -> Content
     @ViewBuilder let placeholder: (File?) -> Placeholder
-    
+
     var body: some View {
         ZStack {
             Group {
@@ -55,8 +67,8 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
             }
             .transition(.opacity)
         }
-        .task(id: "\(id):\(isPaused)") {
-            guard !isPaused else { return }
+        .task(id: "\(id):\(isPaused):\(autoDownloads):\(downloadRequest)") {
+            guard !isPaused, autoDownloads || downloadRequest > 0 else { return }
             await download(id)
         }
         .onReceive(service.filePublisher(fileId: id)) { updatedFile in

@@ -94,6 +94,7 @@ struct MacRootView: View {
             MacChatWorkspace(model: model)
                 .task {
                     await TelegramKeepMediaPolicy.applyStoredPolicy(service: model.service)
+                    await TelegramAutoDownloadStore.applyStored(service: model.service)
                 }
                 .overlay(alignment: .top) {
                     if let unconfirmedSession = model.unconfirmedSession,

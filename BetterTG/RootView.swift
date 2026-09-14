@@ -59,6 +59,7 @@ struct RootView: View {
             // Login can finish while the app is backgrounded, so preserve the actual scene state.
             rootVM.updateOnlinePresence(active: scenePhase == .active)
             await TelegramKeepMediaPolicy.applyStoredPolicy(service: TDLib.shared.service)
+            await TelegramAutoDownloadStore.applyStored(service: TDLib.shared.service)
             // Prompt for notifications, then contacts, directly after login - matches
             // Telegram-iOS's own post-login `DeviceAccess.authorizeAccess` sequence. Contacts
             // sync stays gated on the user's Data & Privacy toggle so an explicit opt-out sticks.
