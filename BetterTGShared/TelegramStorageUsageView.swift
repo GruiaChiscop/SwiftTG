@@ -17,6 +17,8 @@ struct TelegramStorageUsageChatRow: Identifiable {
 // MARK: - TelegramStorageUsageStore
 
 enum TelegramStorageUsageStore {
+    // MARK: Internal
+
     /// Chats beyond `getStorageStatistics`'s `chatLimit` are folded into one anonymous
     /// `chatId == 0` entry - dropped here rather than shown as an opaque "Other Chats" row,
     /// matching Unigram (another TDLib-based client): a real chat in there becomes its own row
@@ -59,6 +61,94 @@ enum TelegramStorageUsageStore {
         return totals
             .map { (category: $0.key, size: $0.value.size, count: $0.value.count) }
             .sorted { $0.size > $1.size }
+    }
+
+    /// The chart never shows a folded "Other" slice while expanded - at that point every category
+    /// already has its own row, so a combined slice would double-count that portion of the pie.
+    static func chartEntries(
+        from categoryRows: [(category: TelegramNetworkUsageCategory, size: Int64, count: Int)],
+        isOtherExpanded: Bool,
+    ) -> [TelegramStorageDisplayEntry] {
+        guard categoryRows.count > maxIndividualCategories, !isOtherExpanded else {
+            return categoryRows.map { .category($0.category, size: $0.size, count: $0.count) }
+        }
+        let shown = categoryRows.prefix(maxIndividualCategories)
+        let folded = categoryRows.dropFirst(maxIndividualCategories)
+        var entries = shown.map { TelegramStorageDisplayEntry.category($0.category, size: $0.size, count: $0.count) }
+        entries.append(.grouped(
+            categories: folded.map(\.category),
+            size: folded.reduce(0) { $0 + $1.size },
+            count: folded.reduce(0) { $0 + $1.count },
+        ))
+        return entries
+    }
+
+    /// Splits into what always shows individually and what folds under a `DisclosureGroup` - the
+    /// list (unlike the chart) leans on that native control for the "Other" row instead of a
+    /// hand-rolled one, so expand/collapse behavior and its VoiceOver state announcement both come
+    /// from the system for free instead of being reimplemented.
+    static func splitForDisplay(
+        _ categoryRows: [(category: TelegramNetworkUsageCategory, size: Int64, count: Int)],
+    ) -> (
+        shown: [(category: TelegramNetworkUsageCategory, size: Int64, count: Int)],
+        folded: [(category: TelegramNetworkUsageCategory, size: Int64, count: Int)],
+    ) {
+        guard categoryRows.count > maxIndividualCategories else {
+            return (categoryRows, [])
+        }
+        return (
+            Array(categoryRows.prefix(maxIndividualCategories)),
+            Array(categoryRows.dropFirst(maxIndividualCategories)),
+        )
+    }
+
+    // MARK: Private
+
+    /// Telegram-iOS's own Storage Usage chart caps individually-shown categories at 5, folding
+    /// the rest into one "Other" slice.
+    private static let maxIndividualCategories = 5
+}
+
+// MARK: - TelegramStorageDisplayEntry
+
+/// One slice shown in the chart - either a real category, or the small-categories fold
+/// Telegram-iOS calls "Other". Tapping a `.grouped` slice expands it (via `onTapGrouped`) instead
+/// of selecting it, matching `StorageCategoriesComponent`'s own action: expand if it has
+/// subcategories, otherwise toggle selection. The list below the chart doesn't use this type - it
+/// renders folded categories with a native `DisclosureGroup` instead (see
+/// `TelegramStorageUsageStore.splitForDisplay`).
+enum TelegramStorageDisplayEntry: Identifiable {
+    case category(TelegramNetworkUsageCategory, size: Int64, count: Int)
+    case grouped(categories: [TelegramNetworkUsageCategory], size: Int64, count: Int)
+
+    // MARK: Internal
+
+    var id: String {
+        switch self {
+        case .category(let category, _, _): "category-\(category)"
+        case .grouped: "grouped"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .category(let category, _, _): category.title
+        case .grouped: "Other"
+        }
+    }
+
+    var size: Int64 {
+        switch self {
+        case .category(_, let size, _): size
+        case .grouped(_, let size, _): size
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .category(let category, _, _): category.color
+        case .grouped: .gray
+        }
     }
 }
 
@@ -103,32 +193,106 @@ struct TelegramStorageCategorySelection: Equatable {
 
 // MARK: - TelegramStorageCategoryChart
 
-/// A donut chart of category sizes, mirroring Telegram-iOS's own Storage Usage header chart.
-/// Unselected categories fade, same as tapping a slice/row there dims the rest.
+/// A donut chart of category sizes, mirroring Telegram-iOS's own Storage Usage header chart:
+/// unselected categories fade, each slice carries its own percentage label, the center of the
+/// donut hole shows the running total, and tapping a slice directly selects it (or expands the
+/// "Other" fold) the same as tapping its row below.
 struct TelegramStorageCategoryChart: View {
     // MARK: Internal
 
-    let categoryRows: [(category: TelegramNetworkUsageCategory, size: Int64, count: Int)]
+    let entries: [TelegramStorageDisplayEntry]
     let selection: TelegramStorageCategorySelection
+    let centerTotal: Int64
+    let onSelectCategory: (TelegramNetworkUsageCategory) -> Void
+    let onTapGrouped: () -> Void
 
     var body: some View {
-        Chart(categoryRows, id: \.category) { entry in
+        Chart(entries) { entry in
             SectorMark(
                 angle: .value("Size", entry.size),
                 innerRadius: .ratio(0.6),
                 angularInset: 1.5,
             )
             .cornerRadius(4)
-            .foregroundStyle(entry.category.color)
-            .opacity(selection.isIncluded(entry.category) ? 1 : 0.25)
-            .accessibilityLabel(entry.category.title)
+            .foregroundStyle(entry.color)
+            .opacity(isIncluded(entry) ? 1 : 0.25)
+            .annotation(position: .overlay) {
+                if let percentageText = percentageText(for: entry) {
+                    Text(percentageText)
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                        .opacity(isIncluded(entry) ? 1 : 0.25)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityLabel(entry.title)
             .accessibilityValue(formattedBytes(entry.size))
         }
+        .chartAngleSelection(value: $selectedSize)
+        .chartLegend(.hidden)
         .frame(height: 200)
         .padding(.vertical, 8)
+        .overlay {
+            VStack(spacing: 2) {
+                Text(formattedBytes(centerTotal))
+                    .font(.headline)
+                    .monospacedDigit()
+                Text("Total")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityHidden(true)
+        }
+        .onChange(of: selectedSize) { _, newValue in
+            guard let newValue, let tapped = entry(forCumulativeValue: newValue) else { return }
+            selectedSize = nil
+            switch tapped {
+            case .category(let category, _, _):
+                onSelectCategory(category)
+            case .grouped:
+                onTapGrouped()
+            }
+        }
     }
 
     // MARK: Private
+
+    @State private var selectedSize: Int64?
+
+    private var totalSliceSize: Int64 {
+        entries.reduce(0) { $0 + $1.size }
+    }
+
+    private func isIncluded(_ entry: TelegramStorageDisplayEntry) -> Bool {
+        switch entry {
+        case .category(let category, _, _):
+            selection.isIncluded(category)
+        case .grouped(let categories, _, _):
+            categories.contains { selection.isIncluded($0) }
+        }
+    }
+
+    /// Skips the label on slices too thin to legibly hold text of their own.
+    private func percentageText(for entry: TelegramStorageDisplayEntry) -> String? {
+        guard totalSliceSize > 0 else { return nil }
+        let fraction = Double(entry.size) / Double(totalSliceSize)
+        guard fraction >= 0.05 else { return nil }
+        return "\(Int((fraction * 100).rounded()))%"
+    }
+
+    /// `chartAngleSelection` reports the cumulative plot value at the tapped angle, not which mark
+    /// was tapped directly - resolved back to an entry by walking the same cumulative order the
+    /// chart renders slices in.
+    private func entry(forCumulativeValue value: Int64) -> TelegramStorageDisplayEntry? {
+        var cumulative: Int64 = 0
+        for entry in entries {
+            cumulative += entry.size
+            if value <= cumulative {
+                return entry
+            }
+        }
+        return entries.last
+    }
 
     private func formattedBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
@@ -194,17 +358,44 @@ struct TelegramStorageUsageView: View {
 
                 Section {
                     if !categoryRows.isEmpty {
-                        TelegramStorageCategoryChart(categoryRows: categoryRows, selection: selection)
+                        TelegramStorageCategoryChart(
+                            entries: TelegramStorageUsageStore.chartEntries(
+                                from: categoryRows,
+                                isOtherExpanded: isOtherExpanded,
+                            ),
+                            selection: selection,
+                            centerTotal: selection.totalSize(in: categoryRows),
+                            onSelectCategory: { selection.toggle($0) },
+                            onTapGrouped: { isOtherExpanded.toggle() },
+                        )
                     }
                     LabeledContent("Total", value: formattedBytes(selection.totalSize(in: categoryRows)))
                     LabeledContent("Files", value: "\(statistics.count)")
-                    ForEach(categoryRows, id: \.category) { entry in
+                    let displayRows = TelegramStorageUsageStore.splitForDisplay(categoryRows)
+                    ForEach(displayRows.shown, id: \.category) { entry in
                         TelegramStorageCategoryRow(
                             category: entry.category,
                             size: entry.size,
                             isSelected: selection.isSelected(entry.category),
                             onTap: { selection.toggle(entry.category) },
                         )
+                    }
+                    if !displayRows.folded.isEmpty {
+                        DisclosureGroup(isExpanded: $isOtherExpanded) {
+                            ForEach(displayRows.folded, id: \.category) { entry in
+                                TelegramStorageCategoryRow(
+                                    category: entry.category,
+                                    size: entry.size,
+                                    isSelected: selection.isSelected(entry.category),
+                                    onTap: { selection.toggle(entry.category) },
+                                )
+                            }
+                        } label: {
+                            LabeledContent(
+                                "Other",
+                                value: formattedBytes(displayRows.folded.reduce(0) { $0 + $1.size }),
+                            )
+                        }
                     }
                 } footer: {
                     if categoryRows.contains(where: { $0.category == .avatars }) {
@@ -300,6 +491,7 @@ struct TelegramStorageUsageView: View {
     @State private var errorMessage: String?
     @State private var hasLoaded = false
     @State private var isLoading = false
+    @State private var isOtherExpanded = false
     @State private var isWorking = false
     @State private var rows = [TelegramStorageUsageChatRow]()
     @State private var selection = TelegramStorageCategorySelection()
@@ -403,15 +595,39 @@ struct TelegramStorageUsageChatDetailView: View {
         List {
             Section {
                 if !categoryRows.isEmpty {
-                    TelegramStorageCategoryChart(categoryRows: categoryRows, selection: selection)
+                    TelegramStorageCategoryChart(
+                        entries: TelegramStorageUsageStore.chartEntries(
+                            from: categoryRows,
+                            isOtherExpanded: isOtherExpanded,
+                        ),
+                        selection: selection,
+                        centerTotal: selection.totalSize(in: categoryRows),
+                        onSelectCategory: { selection.toggle($0) },
+                        onTapGrouped: { isOtherExpanded.toggle() },
+                    )
                 }
-                ForEach(categoryRows, id: \.category) { entry in
+                let displayRows = TelegramStorageUsageStore.splitForDisplay(categoryRows)
+                ForEach(displayRows.shown, id: \.category) { entry in
                     TelegramStorageCategoryRow(
                         category: entry.category,
                         size: entry.size,
                         isSelected: selection.isSelected(entry.category),
                         onTap: { selection.toggle(entry.category) },
                     )
+                }
+                if !displayRows.folded.isEmpty {
+                    DisclosureGroup(isExpanded: $isOtherExpanded) {
+                        ForEach(displayRows.folded, id: \.category) { entry in
+                            TelegramStorageCategoryRow(
+                                category: entry.category,
+                                size: entry.size,
+                                isSelected: selection.isSelected(entry.category),
+                                onTap: { selection.toggle(entry.category) },
+                            )
+                        }
+                    } label: {
+                        LabeledContent("Other", value: formattedBytes(displayRows.folded.reduce(0) { $0 + $1.size }))
+                    }
                 }
 
                 if sharedMediaDestination != nil {
@@ -455,6 +671,7 @@ struct TelegramStorageUsageChatDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsClear = false
     @State private var errorMessage: String?
+    @State private var isOtherExpanded = false
     @State private var isWorking = false
     @State private var selection = TelegramStorageCategorySelection()
     @State private var showsSharedMedia = false

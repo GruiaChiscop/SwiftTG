@@ -5,6 +5,8 @@ import TDLibKit
 import Testing
 
 struct TelegramStorageUsageViewTests {
+    // MARK: Internal
+
     @Test func `category rows group and sum by-file-type entries`() {
         let byFileType = [
             StorageStatisticsByFileType(count: 3, fileType: .fileTypePhoto, size: 300),
@@ -81,5 +83,69 @@ struct TelegramStorageUsageViewTests {
         let allDerived = TelegramNetworkUsageCategory.allCases.flatMap(\.clearableFileTypes)
         #expect(Set(allDerived).count == allDerived.count)
         #expect(Set(allDerived) == Set(telegramClearableFileTypes))
+    }
+
+    @Test func `five or fewer categories never fold, in either chart or list form`() {
+        let rows = Self.sizedRows(count: 5)
+        let chart = TelegramStorageUsageStore.chartEntries(from: rows, isOtherExpanded: false)
+        let displayRows = TelegramStorageUsageStore.splitForDisplay(rows)
+        #expect(chart.count == 5)
+        #expect(displayRows.shown.count == 5)
+        #expect(displayRows.folded.isEmpty)
+        #expect(chart.allSatisfy {
+            if case .category = $0 {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    @Test func `beyond five categories, the chart folds the smallest into one collapsed Other slice`() {
+        let rows = Self.sizedRows(count: 8)
+        let chart = TelegramStorageUsageStore.chartEntries(from: rows, isOtherExpanded: false)
+
+        #expect(chart.count == 6)
+        guard case .grouped(let categories, let size, let count) = chart.last else {
+            Issue.record("Expected the last chart entry to be grouped")
+            return
+        }
+        #expect(categories.count == 3)
+        #expect(size == rows.suffix(3).reduce(0) { $0 + $1.size })
+        #expect(count == rows.suffix(3).reduce(0) { $0 + $1.count })
+    }
+
+    @Test func `expanding removes the grouped chart slice entirely, showing every category individually`() {
+        let rows = Self.sizedRows(count: 8)
+        let chart = TelegramStorageUsageStore.chartEntries(from: rows, isOtherExpanded: true)
+
+        #expect(chart.count == 8)
+        #expect(chart.allSatisfy {
+            if case .category = $0 {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    @Test func `splitForDisplay separates the top 5 from everything else, for a native DisclosureGroup to fold`() {
+        let rows = Self.sizedRows(count: 8)
+        let displayRows = TelegramStorageUsageStore.splitForDisplay(rows)
+
+        #expect(displayRows.shown.count == 5)
+        #expect(displayRows.folded.count == 3)
+        #expect(displayRows.shown.map(\.category) == rows.prefix(5).map(\.category))
+        #expect(displayRows.folded.map(\.category) == rows.suffix(3).map(\.category))
+    }
+
+    // MARK: Private
+
+    /// `count` distinct categories (taken from `allCases`, which has more than 5), each with a
+    /// strictly decreasing size so sort order is unambiguous.
+    private static func sizedRows(count: Int) -> [(category: TelegramNetworkUsageCategory, size: Int64, count: Int)] {
+        Array(TelegramNetworkUsageCategory.allCases.prefix(count)).enumerated().map { index, category in
+            (category: category, size: Int64((count - index) * 100), count: index + 1)
+        }
     }
 }
