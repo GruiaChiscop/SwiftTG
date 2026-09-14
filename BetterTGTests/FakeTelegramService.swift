@@ -33,12 +33,15 @@ final class FakeTelegramService: TelegramService {
         let ids: [Int64]?
         let forceRead: Bool?
     }
-    let viewedMessages = Mutex([ViewedMessages]())
+
     struct HistoryRequest: Sendable {
         let fromMessageId: Int64?
         let limit: Int?
     }
+
+    let viewedMessages = Mutex([ViewedMessages]())
     let historyRequests = Mutex([HistoryRequest]())
+
     var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> { Empty().eraseToAnyPublisher() }
     var chatListPublisher: AnyPublisher<ChatListSnapshot, Never> { Empty().eraseToAnyPublisher() }
     var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> { Empty().eraseToAnyPublisher() }
@@ -320,7 +323,7 @@ final class FakeTelegramService: TelegramService {
         limit: Int?,
         offset _: Int?,
         onlyLocal _: Bool?,
-    ) async throws -> Messages {
+    ) async -> Messages {
         historyRequests.withLock { $0.append(HistoryRequest(fromMessageId: fromMessageId, limit: limit)) }
         return Messages(messages: [], totalCount: 0)
     }
@@ -378,6 +381,18 @@ final class FakeTelegramService: TelegramService {
     }
 
     func getStorageStatisticsFast() async throws -> StorageStatisticsFast {
+        throw FakeTelegramServiceError.unimplemented
+    }
+
+    func getStorageStatistics(chatLimit _: Int?) async throws -> StorageStatistics {
+        throw FakeTelegramServiceError.unimplemented
+    }
+
+    func getNetworkStatistics(onlyCurrent _: Bool?) async throws -> NetworkStatistics {
+        throw FakeTelegramServiceError.unimplemented
+    }
+
+    func resetNetworkStatistics() async throws -> Ok {
         throw FakeTelegramServiceError.unimplemented
     }
 
@@ -1185,7 +1200,7 @@ final class FakeTelegramService: TelegramService {
         forceRead: Bool?,
         messageIds: [Int64]?,
         source _: MessageSource?,
-    ) async throws -> Ok {
+    ) async -> Ok {
         viewedMessages.withLock { $0.append(ViewedMessages(chatId: chatId, ids: messageIds, forceRead: forceRead)) }
         return Ok()
     }

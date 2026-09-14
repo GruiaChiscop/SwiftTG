@@ -154,6 +154,9 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     func getCountryCode() async throws -> Text
     func getGroupsInCommon(limit: Int?, offsetChatId: Int64?, userId: Int64?) async throws -> Chats
     func getStorageStatisticsFast() async throws -> StorageStatisticsFast
+    func getStorageStatistics(chatLimit: Int?) async throws -> StorageStatistics
+    func getNetworkStatistics(onlyCurrent: Bool?) async throws -> NetworkStatistics
+    func resetNetworkStatistics() async throws -> Ok
     func getEmojiCategories(type: EmojiCategoryType?) async throws -> EmojiCategories
     func getInstalledStickerSets(stickerType: StickerType?) async throws -> StickerSets
     func getPremiumStickers(limit: Int?) async throws -> Stickers
@@ -635,6 +638,18 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
 extension TelegramSession: TelegramService {
     func getStorageStatisticsFast() async throws -> StorageStatisticsFast {
         try await client.getStorageStatisticsFast()
+    }
+
+    func getStorageStatistics(chatLimit: Int?) async throws -> StorageStatistics {
+        try await client.getStorageStatistics(chatLimit: chatLimit)
+    }
+
+    func getNetworkStatistics(onlyCurrent: Bool?) async throws -> NetworkStatistics {
+        try await client.getNetworkStatistics(onlyCurrent: onlyCurrent)
+    }
+
+    func resetNetworkStatistics() async throws -> Ok {
+        try await client.resetNetworkStatistics()
     }
 
     func setOption(name: String?, value: OptionValue?) async throws -> Ok {

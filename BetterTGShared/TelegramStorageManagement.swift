@@ -54,6 +54,35 @@ enum TelegramKeepMediaPolicy: Int, CaseIterable, Identifiable {
     }
 }
 
+/// File types `optimizeStorage`/`clearCache` are allowed to remove from the local cache. Shared by
+/// the aggregate "Clear Cache" action and the per-chat clear action in `TelegramStorageUsageView`.
+let telegramClearableFileTypes: [FileType] = [
+    .fileTypeAnimation,
+    .fileTypeAudio,
+    .fileTypeDocument,
+    .fileTypeLivePhotoVideo,
+    .fileTypeNotificationSound,
+    .fileTypePhoto,
+    .fileTypePhotoStory,
+    .fileTypeProfilePhoto,
+    .fileTypeSecret,
+    .fileTypeSecretThumbnail,
+    .fileTypeSecure,
+    .fileTypeSelfDestructingLivePhotoVideo,
+    .fileTypeSelfDestructingPhoto,
+    .fileTypeSelfDestructingVideo,
+    .fileTypeSelfDestructingVideoNote,
+    .fileTypeSelfDestructingVoiceNote,
+    .fileTypeSticker,
+    .fileTypeThumbnail,
+    .fileTypeUnknown,
+    .fileTypeVideo,
+    .fileTypeVideoNote,
+    .fileTypeVideoStory,
+    .fileTypeVoiceNote,
+    .fileTypeWallpaper,
+]
+
 // MARK: - TelegramStorageSettingsView
 
 struct TelegramStorageSettingsView: View {
@@ -68,14 +97,56 @@ struct TelegramStorageSettingsView: View {
     var body: some View {
         Form {
             Section("Storage Usage") {
-                LabeledContent("Cached media", value: formattedCacheSize)
-                LabeledContent("Cached files", value: "\(cachedFileCount)")
-                LabeledContent("Database", value: formattedDatabaseSize)
+                if hasLoadedStatistics {
+                    LabeledContent("Cached media", value: formattedCacheSize)
+                    LabeledContent("Cached files", value: "\(cachedFileCount)")
+                    LabeledContent("Database", value: formattedDatabaseSize)
 
-                Button("Clear Cache", role: .destructive) {
-                    confirmsCacheClear = true
+                    #if os(iOS)
+                        NavigationLink {
+                            TelegramStorageUsageView(service: service)
+                        } label: {
+                            Label("View by Chat", systemImage: "list.bullet")
+                        }
+                    #else
+                        Button {
+                            presentedDataSetting = .storageByChat
+                        } label: {
+                            Label("View by Chat", systemImage: "list.bullet")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                    #endif
+
+                    Button("Clear Cache", role: .destructive) {
+                        confirmsCacheClear = true
+                    }
+                    .disabled(isWorking || cachedFileCount == 0)
+                } else {
+                    HStack {
+                        Spacer()
+                        ProgressView("Calculating Storage Usage…")
+                        Spacer()
+                    }
                 }
-                .disabled(isWorking || cachedFileCount == 0)
+            }
+
+            Section {
+                #if os(iOS)
+                    NavigationLink {
+                        TelegramNetworkUsageView(service: service)
+                    } label: {
+                        Label("Network Usage", systemImage: "chart.bar")
+                    }
+                #else
+                    Button {
+                        presentedDataSetting = .networkUsage
+                    } label: {
+                        Label("Network Usage", systemImage: "chart.bar")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                #endif
             }
 
             Section {
@@ -169,11 +240,15 @@ struct TelegramStorageSettingsView: View {
         }
         .navigationTitle("Data and Storage")
         .task {
-            await TelegramKeepMediaPolicy.applyStoredPolicy(service: service)
-            await TelegramAutoDownloadStore.applyStored(service: service)
-            await proxyStatusStore.refresh(service: service)
-            await refreshStatistics()
-            await loadSensitiveContentOptions()
+            // None of these depend on one another - run them concurrently so the storage
+            // calculation (the only one with a dedicated loading state below) starts immediately
+            // instead of sitting queued behind unrelated work.
+            async let keepMediaPolicy: () = TelegramKeepMediaPolicy.applyStoredPolicy(service: service)
+            async let autoDownloadSettings: () = TelegramAutoDownloadStore.applyStored(service: service)
+            async let proxyStatus: () = proxyStatusStore.refresh(service: service)
+            async let statistics: () = refreshStatistics()
+            async let sensitiveContentOptions: () = loadSensitiveContentOptions()
+            _ = await (keepMediaPolicy, autoDownloadSettings, proxyStatus, statistics, sensitiveContentOptions)
         }
         .onChange(of: keepMediaDays) { _, newValue in
             guard let policy = TelegramKeepMediaPolicy(rawValue: newValue) else { return }
@@ -213,7 +288,9 @@ struct TelegramStorageSettingsView: View {
     private enum DataSetting: String, Identifiable {
         case automaticMediaDownload
         case autoSaveMedia
+        case networkUsage
         case proxy
+        case storageByChat
 
         // MARK: Internal
 
@@ -226,38 +303,15 @@ struct TelegramStorageSettingsView: View {
             TelegramAutoDownloadSettingsView(service: service)
         case .autoSaveMedia:
             TelegramAutoSaveSettingsView(service: service)
+        case .networkUsage:
+            TelegramNetworkUsageView(service: service)
         case .proxy:
             TelegramProxySettingsView(service: service)
+        case .storageByChat:
+            TelegramStorageUsageView(service: service)
         }
     }
     #endif
-
-    private static let clearableFileTypes: [FileType] = [
-        .fileTypeAnimation,
-        .fileTypeAudio,
-        .fileTypeDocument,
-        .fileTypeLivePhotoVideo,
-        .fileTypeNotificationSound,
-        .fileTypePhoto,
-        .fileTypePhotoStory,
-        .fileTypeProfilePhoto,
-        .fileTypeSecret,
-        .fileTypeSecretThumbnail,
-        .fileTypeSecure,
-        .fileTypeSelfDestructingLivePhotoVideo,
-        .fileTypeSelfDestructingPhoto,
-        .fileTypeSelfDestructingVideo,
-        .fileTypeSelfDestructingVideoNote,
-        .fileTypeSelfDestructingVoiceNote,
-        .fileTypeSticker,
-        .fileTypeThumbnail,
-        .fileTypeUnknown,
-        .fileTypeVideo,
-        .fileTypeVideoNote,
-        .fileTypeVideoStory,
-        .fileTypeVoiceNote,
-        .fileTypeWallpaper,
-    ]
 
     @AppStorage(TelegramKeepMediaPolicy.defaultsKey) private var keepMediaDays = TelegramKeepMediaPolicy.forever
         .rawValue
@@ -266,13 +320,14 @@ struct TelegramStorageSettingsView: View {
     @State private var cachedFileCount = 0
     @State private var cachedFilesSize: Int64 = 0
     @State private var databaseSize: Int64 = 0
+    @State private var hasLoadedStatistics = false
     @State private var canIgnoreSensitiveContentRestrictions = false
     @State private var confirmsCacheClear = false
     @State private var errorMessage: String?
     @State private var ignoresSensitiveContentRestrictions = false
     @State private var isSavingSensitiveContent = false
     @State private var isWorking = false
-    @State private var workingLabel = "Calculating storage usage…"
+    @State private var workingLabel = "Working…"
     #if os(macOS)
     @State private var presentedDataSetting: DataSetting?
     #endif
@@ -344,9 +399,10 @@ struct TelegramStorageSettingsView: View {
     }
 
     @MainActor private func refreshStatistics() async {
-        isWorking = true
-        workingLabel = "Calculating storage usage…"
-        defer { isWorking = false }
+        // Its own inline "Calculating Storage Usage…" placeholder covers this load - not the
+        // shared `isWorking` banner at the bottom of the form, which would otherwise show
+        // alongside it and say the same thing twice.
+        defer { hasLoadedStatistics = true }
         do {
             let statistics = try await service.getStorageStatisticsFast()
             cachedFilesSize = statistics.filesSize
@@ -367,7 +423,7 @@ struct TelegramStorageSettingsView: View {
                 chatLimit: 25,
                 count: Int(Int32.max),
                 excludeChatIds: [],
-                fileTypes: Self.clearableFileTypes,
+                fileTypes: telegramClearableFileTypes,
                 immunityDelay: 0,
                 returnDeletedFileStatistics: false,
                 size: Int64.max,
