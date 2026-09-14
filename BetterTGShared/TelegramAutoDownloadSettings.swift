@@ -103,6 +103,22 @@ enum TelegramAutoDownloadStore {
         stored(for: type, fallback: cachedPresets.map { preset(for: type, in: $0) } ?? fallbackSettings(for: type))
     }
 
+    /// Discards every customization and returns all three network types to TDLib's own presets,
+    /// matching Telegram-iOS's "Reset Automatic Media Download Settings" action. Returns the
+    /// freshly reset settings so the caller can update its own display without a second fetch.
+    @MainActor static func resetToDefaults(service: any TelegramService) async -> [NetworkType: AutoDownloadSettings]? {
+        guard let presets = try? await service.getAutoDownloadSettingsPresets() else { return nil }
+        cachedPresets = presets
+        var resetSettings = [NetworkType: AutoDownloadSettings]()
+        for item in telegramAutoDownloadNetworkItems {
+            UserDefaults.standard.removeObject(forKey: defaultsKey(for: item.type))
+            let settings = preset(for: item.type, in: presets)
+            _ = try? await service.setAutoDownloadSettings(settings: settings, type: item.type)
+            resetSettings[item.type] = settings
+        }
+        return resetSettings
+    }
+
     // MARK: Private
 
     @MainActor private static var cachedPresets: AutoDownloadSettingsPresets?
@@ -145,14 +161,25 @@ struct TelegramAutoDownloadSettingsView: View {
     // MARK: Internal
 
     var body: some View {
-        List(telegramAutoDownloadNetworkItems) { item in
-            Button {
-                selectedItem = item
-            } label: {
-                LabeledContent(item.title, value: statusText(for: item.type))
-                    .contentShape(Rectangle())
+        List {
+            Section {
+                ForEach(telegramAutoDownloadNetworkItems) { item in
+                    Button {
+                        selectedItem = item
+                    } label: {
+                        LabeledContent(item.title, value: statusText(for: item.type))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+
+            Section {
+                Button("Reset Automatic Media Download Settings", role: .destructive) {
+                    confirmsReset = true
+                }
+                .disabled(isResetting)
+            }
         }
         .navigationTitle("Automatic Download")
         .task {
@@ -170,6 +197,12 @@ struct TelegramAutoDownloadSettingsView: View {
                 settings[item.type] = newSettings
             }
         }
+        .alert("Reset Automatic Media Download Settings?", isPresented: $confirmsReset) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) { Task { await resetToDefaults() } }
+        } message: {
+            Text("This discards any custom size limits or toggles you've set for Wi-Fi, Mobile Data, and Roaming.")
+        }
         .alert("Couldn't Load Auto-Download Settings", isPresented: errorIsPresented) {
             Button("OK") {}
         } message: {
@@ -179,8 +212,10 @@ struct TelegramAutoDownloadSettingsView: View {
 
     // MARK: Private
 
+    @State private var confirmsReset = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
+    @State private var isResetting = false
     @State private var presets: AutoDownloadSettingsPresets?
     @State private var selectedItem: TelegramAutoDownloadNetworkItem?
     @State private var settings = [NetworkType: AutoDownloadSettings]()
@@ -217,6 +252,16 @@ struct TelegramAutoDownloadSettingsView: View {
         } catch {
             errorMessage = telegramErrorDescription(error)
         }
+    }
+
+    @MainActor private func resetToDefaults() async {
+        isResetting = true
+        defer { isResetting = false }
+        guard let resetSettings = await TelegramAutoDownloadStore.resetToDefaults(service: service) else {
+            errorMessage = "Couldn't reset auto-download settings."
+            return
+        }
+        settings = resetSettings
     }
 }
 
