@@ -12,15 +12,6 @@ private struct PresentedChatActionError: Identifiable {
     let message: String
 }
 
-// MARK: - InitialAccessibilityTarget
-
-private enum InitialAccessibilityTarget: Equatable {
-    case composer
-    case message(Int64)
-    case none
-    case unreadHeader
-}
-
 // MARK: - ChatView
 
 struct ChatView: View {
@@ -109,6 +100,8 @@ struct ChatView: View {
                 }
                 .onDisappear {
                     isConversationVisible = false
+                    cancelInitialAccessibilityFocus()
+                    opening.leave(navigator: historyNavigator)
                     if chatVM.historyNavigator === historyNavigator {
                         chatVM.historyNavigator = nil
                     }
@@ -116,7 +109,12 @@ struct ChatView: View {
                 }
                 .task(id: chatVM.initialMessagesLoaded) {
                     guard chatVM.initialMessagesLoaded else { return }
-                    await positionInitialMessagesIfNeeded()
+                    positionInitialMessagesIfNeeded()
+                }
+                .onChange(of: opening.focusTarget) { _, target in
+                    if case .message(let id) = target {
+                        accessibilityFocusedMessageId = id
+                    }
                 }
                 .onChange(of: chatVM.scrollRequestMessageId) { _, messageId in
                     guard let messageId else { return }
@@ -147,7 +145,7 @@ struct ChatView: View {
                 if chatVM.customChat.canPostMessages || chatVM.isCommentThread {
                     ChatBottomArea(
                         focused: $focused,
-                        voiceOverFocusRequest: composerVoiceOverFocusRequest,
+                        voiceOverFocusRequest: opening.composerFocusRequest,
                     ) {
                         guard let message = chatVM.messageActionError else { return }
                         presentedActionError = PresentedChatActionError(message: message)
@@ -278,11 +276,11 @@ struct ChatView: View {
             unreadMessageId: initialUnreadMessageId,
             shouldShowProfileImage: chatVM.customChat.shouldShowProfileImage,
             isPreview: isPreview,
-            canLoadOlderMessages: positionedInitialMessages,
-            canMarkMessagesRead: positionedInitialMessages
+            canLoadOlderMessages: opening.isReady,
+            canMarkMessagesRead: opening.isReady
                 && isConversationVisible
                 && scenePhase == .active,
-            unreadHeaderVoiceOverFocusRequest: unreadHeaderVoiceOverFocusRequest,
+            unreadHeaderVoiceOverFocusRequest: opening.unreadFocusRequest,
             navigator: historyNavigator,
             messageAccessibilityFocused: $accessibilityFocusedMessageId,
             onBackgroundTap: { focused = false },
@@ -324,26 +322,26 @@ struct ChatView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var conversationSearchFocused
-    @State private var initialAccessibilityFocusWasCancelled = false
-    @State private var composerVoiceOverFocusRequest = 0
+    @State private var opening = ChatOpeningCoordinator()
     @State private var conversationPresentationId = UUID()
     @State private var isConversationVisible = false
     @State private var historyNavigator = ChatHistoryNavigator()
     @State private var navigationBarHeight = CGFloat.zero
-    @State private var positionedInitialMessages = false
     @State private var rootVM = RootVM.shared
     @State private var showsChatInfo = false
     @State private var showsPinnedMessages = false
     @State private var showsCameraPermissionAlert = false
     @State private var showsMicrophonePermissionAlert = false
     @State private var presentedActionError: PresentedChatActionError?
-    @State private var unreadHeaderVoiceOverFocusRequest = 0
 
     private var topGradientHeight: CGFloat {
         UIApplication.safeAreaInsets.top + navigationBarHeight
     }
 
     private var initialUnreadMessageId: Int64? {
+        if let plan = opening.plan {
+            return plan.unreadMessageId
+        }
         guard chatVM.initialUnreadCount > 0 else { return nil }
         if case .messageTopicThread = chatVM.messageTopic {
             // MessageThreadInfo has an unread count but no last-read inbox id. The history is in
@@ -543,78 +541,29 @@ struct ChatView: View {
         openURL(url)
     }
 
-    private func positionInitialMessagesIfNeeded() async {
-        guard chatVM.initialMessagesLoaded, !positionedInitialMessages else { return }
-
-        let accessibilityTarget: InitialAccessibilityTarget
-        if let initialMessageId = chatVM.initialMessageId {
-            historyNavigator.scrollToMessage(initialMessageId, anchor: .center, animated: false)
-            accessibilityTarget = chatVM.movesAccessibilityFocusToInitialMessage
-                ? .message(initialMessageId)
-                : .none
-        } else if let initialUnreadMessageId {
-            historyNavigator.scrollToUnreadHeader(startingAt: initialUnreadMessageId)
-            accessibilityTarget = .unreadHeader
-        } else {
-            historyNavigator.scrollToBottom(animated: false)
-            accessibilityTarget =
-                if !isPreview, chatVM.customChat.canPostMessages || chatVM.isCommentThread {
-                    .composer
-                } else if let lastMessageId = chatVM.messages.last?.id {
-                    .message(lastMessageId)
-                } else {
-                    .none
-                }
-        }
-
-        // Only now - after the jump above has already been issued (and, in the common case,
-        // already landed synchronously on the history controller) - allow read-reporting
-        // and pagination. `canMarkMessagesRead` (below, in `bodyView`) reaching the controller is
-        // what makes it call `reportVisibleMessages()` once, retroactively, over whatever ended up
-        // visible; flipping this *before* the jump raced that one-time catch-up against the jump's
-        // own `willDisplay` calls landing under the still-stale value, and a couple of rows could
-        // lose their read report depending on exactly when SwiftUI's next render happened to land.
-        // Setting it after removes the race entirely: whether the jump completed synchronously
-        // above or is still queued as the navigator's pending request, `update(_:)` always flushes
-        // that request *before* running the catch-up scan.
-        positionedInitialMessages = true
-
-        // The navigator queues a target until its table row exists. Give the hosted row
-        // another layout pass before assigning VoiceOver focus.
-        await Task.yield()
-        await Task.yield()
-        guard !Task.isCancelled else { return }
-
-        guard UIAccessibility.isVoiceOverRunning,
-              accessibilityTarget != .none,
-              !initialAccessibilityFocusWasCancelled
-        else { return }
-        await Task.yield()
-        await Task.yield()
-        guard !Task.isCancelled else { return }
-        switch accessibilityTarget {
-        case .composer:
-            composerVoiceOverFocusRequest += 1
-        case .message(let messageId):
-            accessibilityFocusedMessageId = nil
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            accessibilityFocusedMessageId = messageId
-        case .none:
-            break
-        case .unreadHeader:
-            unreadHeaderVoiceOverFocusRequest += 1
-        }
+    private func positionInitialMessagesIfNeeded() {
+        guard chatVM.initialMessagesLoaded, isConversationVisible, !Task.isCancelled else { return }
+        chatScrollTrace("positionInitialMessagesIfNeeded: starting opening")
+        opening.begin(
+            plan: .make(
+                initialMessageId: chatVM.initialMessageId,
+                movesFocusToInitialMessage: chatVM.movesAccessibilityFocusToInitialMessage,
+                unreadMessageId: initialUnreadMessageId,
+                lastMessageId: chatVM.messages.last?.id,
+                canCompose: !isPreview && (chatVM.customChat.canPostMessages || chatVM.isCommentThread),
+            ),
+            navigator: historyNavigator,
+            allowsFocus: !isPreview && UIAccessibility.isVoiceOverRunning,
+        )
     }
 
     private func cancelInitialAccessibilityFocus() {
-        initialAccessibilityFocusWasCancelled = true
+        opening.cancelFocus()
         accessibilityFocusedMessageId = nil
-        composerVoiceOverFocusRequest = 0
-        unreadHeaderVoiceOverFocusRequest = 0
     }
 
     private func scrollToMessage(_ messageId: Int64) {
+        cancelInitialAccessibilityFocus()
         Task { @MainActor in
             await Task.yield()
             historyNavigator.scrollToMessage(messageId, anchor: .center, animated: true)
@@ -627,6 +576,7 @@ struct ChatView: View {
     }
 
     private func focusMessage(_ messageId: Int64) {
+        cancelInitialAccessibilityFocus()
         Task { @MainActor in
             // Let the table view create the requested hosted row before assigning focus.
             await Task.yield()

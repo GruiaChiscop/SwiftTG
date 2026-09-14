@@ -5,7 +5,11 @@ import SwiftUI
 import Testing
 import UIKit
 
+// MARK: - ChatHistoryTableViewControllerTests
+
 @MainActor struct ChatHistoryTableViewControllerTests {
+    // MARK: Internal
+
     @Test func `updating the controller renders one row per history item`() async {
         let controller = makeController()
         let chatVM = makeChatVM()
@@ -151,10 +155,169 @@ import UIKit
         #expect(offsetBefore != offsetAfter) // sanity: the resize actually did something
     }
 
+    @Test func `unread navigation remains pending until the table has a viewport`() async throws {
+        let navigator = ChatHistoryNavigator()
+        let controller = ChatHistoryTableViewController(navigator: navigator)
+        let vm = makeChatVM()
+        let messages = makeMessages(count: 10, chatVM: vm)
+        navigator.scrollToUnreadHeader(startingAt: messages[4].id)
+        controller.update(makeConfiguration(chatVM: vm, messages: messages, unreadMessageId: messages[4].id))
+        await waitUntilRowCount(controller, equals: 12)
+        #expect(navigator.hasPendingRequest)
+        controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 400)
+        controller.view.layoutIfNeeded()
+        controller.viewDidLayoutSubviews()
+        #expect(!navigator.hasPendingRequest)
+        let path = try #require(controller.dataSource.indexPath(for: .unread(messages[4].id)))
+        #expect(controller.tableView.rectForRow(at: path).intersects(controller.tableView.bounds))
+    }
+
+    @Test func `native unread focus survives reconfiguration without being requested twice`() async {
+        var jobs = [@MainActor @Sendable () -> Void]()
+        var posts = [UIView]()
+        let focus = VoiceOverFocusController(
+            isVoiceOverRunning: { true },
+            schedule: { jobs.append($0) },
+            postFocus: { posts.append($0) },
+            waitForTransition: { _, _ in false },
+        )
+        let navigator = ChatHistoryNavigator()
+        let controller = ChatHistoryTableViewController(navigator: navigator, focusController: focus)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 500))
+        window.rootViewController = controller
+        window.isHidden = false
+        defer { window.isHidden = true }
+        controller.view.frame = window.bounds
+        let vm = makeChatVM()
+        let messages = makeMessages(count: 10, chatVM: vm)
+        navigator.scrollToUnreadHeader(startingAt: messages[4].id)
+        let config = makeConfiguration(
+            chatVM: vm,
+            messages: messages,
+            isPreview: false,
+            unreadMessageId: messages[4].id,
+            unreadRequest: 1,
+        )
+        controller.update(config)
+        await waitUntilRowCount(controller, equals: 12)
+        controller.view.layoutIfNeeded()
+        controller.viewDidAppear(false)
+        while !jobs.isEmpty {
+            jobs.removeFirst()()
+        }
+        #expect(posts.count == 1)
+        let header = posts.first
+        #expect(header?.accessibilityLabel == "20 unread messages")
+        #expect(header?.accessibilityTraits.contains(.header) == true)
+        controller.update(config)
+        controller.viewDidLayoutSubviews()
+        while !jobs.isEmpty {
+            jobs.removeFirst()()
+        }
+        #expect(posts.count == 1)
+        #expect(header?.window === window)
+    }
+
+    @Test func `initial read receipt requires a non-preview active conversation`() async {
+        let controller = makeController()
+        let vm = makeChatVM()
+        vm.initialUnreadCount = 159
+        vm.initialReadThroughMessageId = 200
+        vm.initialMessagesLoaded = true
+        let messages = makeMessages(count: 3, chatVM: vm)
+        controller.update(makeConfiguration(chatVM: vm, messages: messages, isPreview: true, canMarkMessagesRead: true))
+        await waitUntilRowCount(controller, equals: 4)
+        controller.view.layoutIfNeeded()
+        #expect(vm.initialReadTask == nil)
+        controller.update(makeConfiguration(
+            chatVM: vm,
+            messages: messages,
+            isPreview: false,
+            canMarkMessagesRead: false,
+        ))
+        #expect(vm.initialReadTask == nil)
+        controller.update(makeConfiguration(
+            chatVM: vm,
+            messages: messages,
+            isPreview: false,
+            canMarkMessagesRead: true,
+        ))
+        // Changing preview state applies a snapshot; the immediately following read-enabled
+        // configuration must not invalidate its pending completion and lose the receipt.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        await vm.initialReadTask?.value
+        #expect(vm.didMarkInitialMessagesRead)
+    }
+
+    @Test func `initial positioning is acknowledged only after table appearance with a visible target`() async throws {
+        let navigator = ChatHistoryNavigator()
+        let controller = ChatHistoryTableViewController(navigator: navigator)
+        let vm = makeChatVM()
+        let messages = makeMessages(count: 10, chatVM: vm)
+        var acknowledgements = 0
+        navigator.positionInitially(.unread(messages[4].id)) { result in
+            if case .positioned = result {
+                acknowledgements += 1
+            }
+        }
+        controller.loadViewIfNeeded()
+        controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 500)
+        controller.update(makeConfiguration(chatVM: vm, messages: messages, unreadMessageId: messages[4].id))
+        await waitUntilRowCount(controller, equals: 12)
+        controller.view.layoutIfNeeded()
+        #expect(navigator.hasPendingInitialPosition)
+        #expect(acknowledgements == 0)
+        let window = UIWindow(frame: controller.view.frame)
+        window.rootViewController = controller
+        window.isHidden = false
+        defer { window.isHidden = true }
+        controller.view.layoutIfNeeded()
+        controller.viewDidAppear(false)
+        #expect(!navigator.hasPendingRequest)
+        #expect(acknowledgements == 1)
+        let path = try #require(controller.dataSource.indexPath(for: .unread(messages[4].id)))
+        #expect(controller.tableView.cellForRow(at: path).map(VoiceOverFocusController.isVisible) == true)
+        controller.viewDidLayoutSubviews()
+        navigator.flushPendingRequest()
+        #expect(acknowledgements == 1)
+    }
+
+    @Test func `an empty conversation completes initial positioning for composer focus`() async {
+        let navigator = ChatHistoryNavigator()
+        let controller = ChatHistoryTableViewController(navigator: navigator)
+        var positioned = false
+        navigator.positionInitially(.bottom(animated: false)) { result in
+            if case .positioned = result {
+                positioned = true
+            }
+        }
+        controller.update(makeConfiguration(chatVM: makeChatVM(), messages: []))
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 500))
+        window.rootViewController = controller
+        window.isHidden = false
+        defer { window.isHidden = true }
+        controller.view.frame = window.bounds
+        controller.view.layoutIfNeeded()
+        controller.viewDidAppear(false)
+        #expect(positioned)
+        #expect(!navigator.hasPendingRequest)
+    }
+
     // MARK: Private
 
+    private let accessibilityFocusHost = AccessibilityFocusHost()
+
     private func makeController() -> ChatHistoryTableViewController {
-        ChatHistoryTableViewController(navigator: ChatHistoryNavigator())
+        let controller = ChatHistoryTableViewController(navigator: ChatHistoryNavigator())
+        controller.loadViewIfNeeded()
+        controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 800)
+        controller.view.layoutIfNeeded()
+        return controller
     }
 
     private func makeChatVM() -> ChatVM {
@@ -189,20 +352,23 @@ import UIKit
         isPreview: Bool = true,
         canLoadOlderMessages: Bool = false,
         canMarkMessagesRead: Bool = false,
+        unreadMessageId: Int64? = nil,
+        unreadRequest: Int = 0,
+        dynamicTypeSize: DynamicTypeSize = .large,
     ) -> ChatHistoryTableViewController.Configuration {
         ChatHistoryTableViewController.Configuration(
             chatVM: chatVM,
             messages: messages,
-            unreadMessageId: nil,
-            unreadCount: 0,
+            unreadMessageId: unreadMessageId,
+            unreadCount: unreadMessageId == nil ? 0 : 20,
             currentUnreadCount: 0,
-            unreadHeaderVoiceOverFocusRequest: 0,
+            unreadHeaderVoiceOverFocusRequest: unreadRequest,
             shouldShowProfileImage: false,
             isPreview: isPreview,
             canLoadOlderMessages: canLoadOlderMessages,
             canMarkMessagesRead: canMarkMessagesRead,
             messageAccessibilityFocused: accessibilityFocusHost.$focusedMessageId,
-            dynamicTypeSize: .large,
+            dynamicTypeSize: dynamicTypeSize,
             bubbleCornerRadius: 16,
             colorScheme: .dark,
             layoutDirection: .leftToRight,
@@ -212,15 +378,15 @@ import UIKit
         )
     }
 
-    private let accessibilityFocusHost = AccessibilityFocusHost()
-
     private func waitUntilRowCount(
         _ controller: ChatHistoryTableViewController,
         equals expected: Int,
         maxAttempts: Int = 200,
     ) async {
         for _ in 0..<maxAttempts {
-            if controller.tableView.numberOfRows(inSection: 0) == expected { return }
+            if controller.tableView.numberOfRows(inSection: 0) == expected {
+                return
+            }
             await Task.yield()
         }
     }

@@ -8,8 +8,9 @@ import UIKit
 @MainActor final class ChatHistoryTableViewController: UIViewController, ChatHistoryNavigating {
     // MARK: Lifecycle
 
-    init(navigator: ChatHistoryNavigator) {
+    init(navigator: ChatHistoryNavigator, focusController: VoiceOverFocusController = VoiceOverFocusController()) {
         self.navigator = navigator
+        self.unreadFocusController = focusController
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -39,6 +40,12 @@ import UIKit
         let onBackgroundTap: () -> Void
         let onScrollButtonFocused: () -> Void
     }
+
+    // Not `private`: exposed at internal (module) visibility so `@testable import` tests can read
+    // the real scroll geometry (`tableView.contentOffset`, `dataSource.indexPath(for:)`) instead of
+    // inferring it indirectly. No behavior change - still invisible outside this module.
+    var tableView: ChatHistoryUITableView!
+    var dataSource: UITableViewDiffableDataSource<Int, ChatHistoryItem.ID>!
 
     override func loadView() {
         let containerView = UIView()
@@ -76,7 +83,13 @@ import UIKit
                       for: indexPath,
                   ) as? ChatHistoryTableCell
             else { return UITableViewCell() }
-            cell.configure(rootView: rootView(for: item, configuration: configuration))
+            let unreadCount: Int? =
+                if case .unread(let count, _) = item.kind {
+                    count
+                } else {
+                    nil
+                }
+            cell.configure(rootView: rootView(for: item, configuration: configuration), unreadCount: unreadCount)
             return cell
         }
 
@@ -112,25 +125,27 @@ import UIKit
         #endif
     }
 
-    #if DEBUG
-    /// Companion to `ChatScrollDiagnostics`'s own focus-notification listener: logs the real,
-    /// measured height of every currently-visible row alongside each VoiceOver focus change.
-    @objc private func debugLogVisibleRowHeights(_: Notification) {
-        guard let indexPaths = tableView.indexPathsForVisibleRows, !indexPaths.isEmpty else { return }
-        let heights = indexPaths.compactMap { indexPath -> String? in
-            guard let id = dataSource.itemIdentifier(for: indexPath) else { return nil }
-            let height = tableView.rectForRow(at: indexPath).height
-            return "\(id): \(Int(height))pt"
-        }
-        chatScrollTrace(
-            "viewport=\(Int(tableView.bounds.height))pt offset=\(Int(tableView.contentOffset.y)) " +
-                "visible row heights: \(heights.joined(separator: ", "))",
-        )
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        hasAppeared = true
+        navigator.flushPendingRequest()
+        focusInitialUnreadHeaderIfNeeded()
     }
-    #endif
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        hasAppeared = false
+        navigator.cancelInitialPositioning()
+        unreadFocusController.cancel()
+        pendingUnreadFocusView = nil
+    }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        defer {
+            navigator.flushPendingRequest()
+            focusInitialUnreadHeaderIfNeeded()
+        }
         let newSize = tableView.bounds.size
         guard newSize != lastBoundsSize else { return }
         let visibleAnchor = captureVisibleAnchor()
@@ -152,17 +167,14 @@ import UIKit
         }
         navigator.flushPendingRequest()
         updateScrollState()
+        reportVisibleMessages()
     }
 
     func update(_ configuration: Configuration) {
         loadViewIfNeeded()
-        updateGeneration += 1
-        let generation = updateGeneration
         let oldConfiguration = self.configuration
         let oldItems = items
         let oldItemsById = itemsById
-        let canMarkMessagesReadBecameEnabled = oldConfiguration?.canMarkMessagesRead != true
-            && configuration.canMarkMessagesRead
         let canLoadOlderMessagesBecameEnabled = oldConfiguration?.canLoadOlderMessages != true
             && configuration.canLoadOlderMessages
         let wasAtBottom = !items.isEmpty && lastIsAtBottom
@@ -180,6 +192,13 @@ import UIKit
             }
 
         self.configuration = configuration
+        if oldConfiguration?.chatVM !== configuration.chatVM {
+            reportedMessageIds.removeAll()
+        }
+        if configuration.unreadHeaderVoiceOverFocusRequest == 0 {
+            unreadFocusController.cancel()
+            pendingUnreadFocusView = nil
+        }
         scrollToBottomButton.update(unreadCount: configuration.currentUnreadCount)
         scrollToBottomButton.setVisible(
             configuration.chatVM.showScrollToBottomButton,
@@ -194,11 +213,15 @@ import UIKit
                 lastIsNearTop = false
                 updateScrollState()
             }
-            if canMarkMessagesReadBecameEnabled {
-                reportVisibleMessages()
-            }
+            reportVisibleMessages()
+            focusInitialUnreadHeaderIfNeeded()
             return
         }
+
+        // A configuration-only update must not invalidate an outstanding snapshot completion.
+        updateGeneration += 1
+        let generation = updateGeneration
+        isApplyingSnapshot = true
 
         var snapshot = NSDiffableDataSourceSnapshot<Int, ChatHistoryItem.ID>()
         snapshot.appendSections([0])
@@ -223,6 +246,7 @@ import UIKit
         )
         dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
             guard let self, generation == updateGeneration else { return }
+            isApplyingSnapshot = false
             tableView.layoutIfNeeded()
             updateTopContentInset()
             tableView.layoutIfNeeded()
@@ -240,14 +264,14 @@ import UIKit
                 lastIsNearTop = false
             }
             updateScrollState()
-            if canMarkMessagesReadBecameEnabled {
-                reportVisibleMessages()
-            }
+            reportVisibleMessages()
+            focusInitialUnreadHeaderIfNeeded()
         }
     }
 
     func perform(_ request: ChatHistoryNavigator.Request) -> Bool {
         loadViewIfNeeded()
+        guard !isApplyingSnapshot, !tableView.bounds.isEmpty else { return false }
         tableView.layoutIfNeeded()
         switch request {
         case .bottom(let animated):
@@ -259,11 +283,40 @@ import UIKit
                 animated: animated && configuration?.reduceMotion != true,
             )
         case .unread(let messageId):
+            guard scroll(to: .unread(messageId), anchor: .top, animated: false) else { return false }
+            // UITableView first scrolls against estimated heights; layout materializes the row.
+            tableView.layoutIfNeeded()
             return scroll(to: .unread(messageId), anchor: .top, animated: false)
         }
     }
 
+    /// Initial presentation has a stricter completion contract than ordinary scroll commands:
+    /// the screen has appeared, the snapshot is applied, and the target row is actually visible.
+    func performInitial(_ request: ChatHistoryNavigator.Request) -> Bool {
+        loadViewIfNeeded()
+        guard hasAppeared, view.window != nil, !isApplyingSnapshot, !tableView.bounds.isEmpty else { return false }
+        if case .bottom = request, items.isEmpty {
+            return configuration != nil
+        }
+        guard perform(request) else { return false }
+        tableView.layoutIfNeeded()
+        // Resolve estimated heights before acknowledging the destination.
+        guard perform(request) else { return false }
+        tableView.layoutIfNeeded()
+        let targetID: ChatHistoryItem.ID? =
+            switch request {
+            case .bottom: items.last?.id
+            case .message(let id, _, _): .message(id)
+            case .unread(let id): .unread(id)
+            }
+        guard let targetID, let indexPath = dataSource.indexPath(for: targetID),
+              let cell = tableView.cellForRow(at: indexPath)
+        else { return false }
+        return VoiceOverFocusController.isVisible(cell)
+    }
+
     func navigatorDidDismantle() {
+        unreadFocusController.cancel()
         navigator.detach(self)
     }
 
@@ -283,14 +336,14 @@ import UIKit
         let offsetFromViewportTop: CGFloat
     }
 
+    private let unreadFocusController: VoiceOverFocusController
+    private var hasAppeared = false
+    private var deliveredUnreadFocusRequest = 0
+    private var pendingUnreadFocusRequest = 0
+    private weak var pendingUnreadFocusView: UIView?
     private let navigator: ChatHistoryNavigator
     private let viewport = ChatHistoryViewport()
     private let scrollToBottomButton = ChatScrollToBottomButton(type: .custom)
-    // Not `private`: exposed at internal (module) visibility so `@testable import` tests can read
-    // the real scroll geometry (`tableView.contentOffset`, `dataSource.indexPath(for:)`) instead of
-    // inferring it indirectly. No behavior change - still invisible outside this module.
-    var tableView: ChatHistoryUITableView!
-    var dataSource: UITableViewDiffableDataSource<Int, ChatHistoryItem.ID>!
     private var configuration: Configuration?
     private var items = [ChatHistoryItem]()
     private var itemsById = [ChatHistoryItem.ID: ChatHistoryItem]()
@@ -298,6 +351,8 @@ import UIKit
     private var lastIsAtBottom = true
     private var lastIsNearTop = false
     private var updateGeneration = 0
+    private var isApplyingSnapshot = false
+    private var reportedMessageIds = Set<Int64>()
     private var programmaticScrollInProgress = false
 
     private var minimumContentOffsetY: CGFloat {
@@ -309,6 +364,12 @@ import UIKit
             minimumContentOffsetY,
             tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom,
         )
+    }
+
+    /// VoiceOver navigation need not set the scroll view's dragging/decelerating flags. Let it
+    /// own scrolling during reading; explicit initial positioning and navigation still work.
+    private var allowsAutomaticBottomScroll: Bool {
+        !UIAccessibility.isVoiceOverRunning && !navigator.hasPendingInitialPosition
     }
 
     private func rootView(for item: ChatHistoryItem, configuration: Configuration) -> some View {
@@ -329,6 +390,23 @@ import UIKit
         .dynamicTypeSize(configuration.dynamicTypeSize)
         .tint(Color(uiColor: tableView.tintColor))
     }
+
+    #if DEBUG
+    /// Companion to `ChatScrollDiagnostics`'s own focus-notification listener: logs the real,
+    /// measured height of every currently-visible row alongside each VoiceOver focus change.
+    @objc private func debugLogVisibleRowHeights(_: Notification) {
+        guard let indexPaths = tableView.indexPathsForVisibleRows, !indexPaths.isEmpty else { return }
+        let heights = indexPaths.compactMap { indexPath -> String? in
+            guard let id = dataSource.itemIdentifier(for: indexPath) else { return nil }
+            let height = tableView.rectForRow(at: indexPath).height
+            return "\(id): \(Int(height))pt"
+        }
+        chatScrollTrace(
+            "viewport=\(Int(tableView.bounds.height))pt offset=\(Int(tableView.contentOffset.y)) " +
+                "visible row heights: \(heights.joined(separator: ", "))",
+        )
+    }
+    #endif
 
     private func environmentSignature(_ configuration: Configuration) -> EnvironmentSignature {
         EnvironmentSignature(
@@ -392,6 +470,10 @@ import UIKit
     }
 
     private func contentSizeDidChange() {
+        defer {
+            navigator.flushPendingRequest()
+            focusInitialUnreadHeaderIfNeeded()
+        }
         let shouldKeepBottom = lastIsAtBottom && allowsAutomaticBottomScroll
             && !tableView.isDragging && !tableView.isDecelerating
         chatScrollTrace("contentSizeDidChange -> \(tableView.contentSize) shouldKeepBottom=\(shouldKeepBottom)")
@@ -402,12 +484,7 @@ import UIKit
         } else {
             updateScrollState()
         }
-    }
-
-    /// VoiceOver navigation need not set the scroll view's dragging/decelerating flags. Let it
-    /// own scrolling during reading; explicit initial positioning and navigation still work.
-    private var allowsAutomaticBottomScroll: Bool {
-        !UIAccessibility.isVoiceOverRunning
+        reportVisibleMessages()
     }
 
     private func scrollToBottom(animated: Bool) -> Bool {
@@ -419,7 +496,9 @@ import UIKit
             updateScrollState()
             return true
         }
-        chatScrollTrace("scrollToBottom(animated: \(animated)) offset \(tableView.contentOffset.y) -> \(maximumContentOffsetY)")
+        chatScrollTrace(
+            "scrollToBottom(animated: \(animated)) offset \(tableView.contentOffset.y) -> \(maximumContentOffsetY)",
+        )
         programmaticScrollInProgress = true
         tableView.scrollToRow(at: indexPath, at: .bottom, animated: animated)
         if !animated {
@@ -446,16 +525,55 @@ import UIKit
         return true
     }
 
+    private func focusInitialUnreadHeaderIfNeeded() {
+        guard hasAppeared, !isApplyingSnapshot, !navigator.hasPendingRequest,
+              let configuration, !configuration.isPreview,
+              configuration.unreadHeaderVoiceOverFocusRequest != 0,
+              configuration.unreadHeaderVoiceOverFocusRequest != deliveredUnreadFocusRequest,
+              let messageId = configuration.unreadMessageId,
+              let indexPath = dataSource.indexPath(for: .unread(messageId)),
+              let cell = tableView.cellForRow(at: indexPath),
+              VoiceOverFocusController.isVisible(cell)
+        else { return }
+        let request = configuration.unreadHeaderVoiceOverFocusRequest
+        if pendingUnreadFocusView !== cell || pendingUnreadFocusRequest != request {
+            pendingUnreadFocusView = cell
+            pendingUnreadFocusRequest = request
+            unreadFocusController.requestFocus(on: cell, canDeliver: { [weak self, weak cell] in
+                guard let self, let cell, hasAppeared, !isApplyingSnapshot,
+                      !navigator.hasPendingRequest,
+                      self.configuration?.unreadHeaderVoiceOverFocusRequest == request,
+                      let path = dataSource.indexPath(for: .unread(messageId))
+                else { return false }
+                return tableView.cellForRow(at: path) === cell
+            }, onDelivery: { [weak self] in
+                self?.deliveredUnreadFocusRequest = request
+                self?.pendingUnreadFocusView = nil
+            })
+        } else {
+            unreadFocusController.viewDidLayout(cell)
+        }
+    }
+
     private func reportVisibleMessages() {
+        guard !isApplyingSnapshot, !navigator.hasPendingRequest, !tableView.bounds.isEmpty else { return }
+        if configuration?.isPreview == false, configuration?.canMarkMessagesRead == true {
+            configuration?.chatVM.markInitialMessagesRead()
+        }
         tableView.indexPathsForVisibleRows?.forEach(reportMessage(at:))
     }
 
     private func reportMessage(at indexPath: IndexPath) {
         guard configuration?.isPreview == false,
               configuration?.canMarkMessagesRead == true,
+              !isApplyingSnapshot,
+              !navigator.hasPendingRequest,
               let id = dataSource.itemIdentifier(for: indexPath),
-              let messageId = itemsById[id]?.messageId
+              let messageId = itemsById[id]?.messageId,
+              tableView.rectForRow(at: indexPath).intersects(tableView.bounds),
+              reportedMessageIds.insert(messageId).inserted
         else { return }
+        chatScrollTrace("mark visible message read: \(messageId)")
         configuration?.chatVM.viewMessage(id: messageId)
     }
 
@@ -518,15 +636,18 @@ extension ChatHistoryTableViewController: UITableViewDelegate {
 
     func scrollViewDidScroll(_: UIScrollView) {
         updateScrollState()
+        reportVisibleMessages()
     }
 
     func scrollViewDidEndScrollingAnimation(_: UIScrollView) {
         programmaticScrollInProgress = false
         updateScrollState()
+        reportVisibleMessages()
     }
 
     func scrollViewDidEndDecelerating(_: UIScrollView) {
         updateScrollState()
+        reportVisibleMessages()
     }
 
     func tableView(_: UITableView, willDisplay _: UITableViewCell, forRowAt indexPath: IndexPath) {

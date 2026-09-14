@@ -25,6 +25,11 @@ private final class MessageUITextView: UITextView {
         voiceOverFocusController.viewDidMoveToWindow(self)
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        voiceOverFocusController.viewDidLayout(self)
+    }
+
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         guard action == #selector(paste(_:)), UIPasteboard.general.hasImages else {
             return super.canPerformAction(action, withSender: sender)
@@ -124,11 +129,20 @@ private struct MessageUITextViewRepresentable: UIViewRepresentable {
         return textView
     }
 
+    static func dismantleUIView(_ textView: MessageUITextView, coordinator _: Coordinator) {
+        textView.cancelVoiceOverFocusRequest()
+    }
+
     func updateUIView(_ textView: MessageUITextView, context: Context) {
         let contextChanged = context.coordinator.contextID != contextID
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
         textView.onPasteImages = onPasteImages
+
+        if contextChanged {
+            context.coordinator.lastVoiceOverFocusRequest = 0
+            textView.cancelVoiceOverFocusRequest()
+        }
 
         if voiceOverFocusRequest == 0 {
             context.coordinator.lastVoiceOverFocusRequest = 0

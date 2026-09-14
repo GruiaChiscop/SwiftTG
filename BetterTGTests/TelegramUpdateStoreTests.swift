@@ -9,23 +9,23 @@ import Testing
 struct TelegramUpdateStoreTests {
     // MARK: Internal
 
-    @Test func `call is published and replayed to a subscriber`() throws {
+    @Test func `call is published and replayed to a subscriber`() {
         let store = TelegramUpdateStore()
         let call = TDLibFixtures.call(id: 1)
         store.publish(.updateCall(.init(call: call)))
 
-        let received = try waitForCall(store: store) { $0 == call }
+        let received = waitForCall(store: store) { $0 == call }
         #expect(received == call)
 
-        let replayed = try waitForCall(store: store) { $0 == call }
+        let replayed = waitForCall(store: store) { $0 == call }
         #expect(replayed == call)
     }
 
-    @Test func `discarded call is published with its discard reason intact`() throws {
+    @Test func `discarded call is published with its discard reason intact`() {
         let store = TelegramUpdateStore()
         let ready = TDLibFixtures.call(id: 2)
         store.publish(.updateCall(.init(call: ready)))
-        _ = try waitForCall(store: store) { $0 == ready }
+        _ = waitForCall(store: store) { $0 == ready }
 
         let discarded = TDLibFixtures.call(
             id: 2,
@@ -40,15 +40,15 @@ struct TelegramUpdateStoreTests {
 
         // The store must deliver the terminal call as-is, not collapse it to nil - callers need the
         // real state to know (and log) why a call ended, not just that it did.
-        let replayed = try waitForCall(store: store) { $0 == discarded }
+        let replayed = waitForCall(store: store) { $0 == discarded }
         #expect(replayed == discarded)
     }
 
-    @Test func `call ended with an error is published with its error intact`() throws {
+    @Test func `call ended with an error is published with its error intact`() {
         let store = TelegramUpdateStore()
         let ready = TDLibFixtures.call(id: 3)
         store.publish(.updateCall(.init(call: ready)))
-        _ = try waitForCall(store: store) { $0 == ready }
+        _ = waitForCall(store: store) { $0 == ready }
 
         let errored = TDLibFixtures.call(
             id: 3,
@@ -56,7 +56,7 @@ struct TelegramUpdateStoreTests {
         )
         store.publish(.updateCall(.init(call: errored)))
 
-        let replayed = try waitForCall(store: store) { $0 == errored }
+        let replayed = waitForCall(store: store) { $0 == errored }
         #expect(replayed == errored)
     }
 

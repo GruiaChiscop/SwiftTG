@@ -20,8 +20,8 @@ struct ChatHistoryRowView: View {
                 shouldShowProfileImage: shouldShowProfileImage,
                 messageAccessibilityFocused: messageAccessibilityFocused,
             )
-        case .unread(let count, let request):
-            UnreadMessagesHeader(count: count, voiceOverFocusRequest: request)
+        case .unread(let count, _):
+            UnreadMessagesHeader(count: count)
         }
     }
 }

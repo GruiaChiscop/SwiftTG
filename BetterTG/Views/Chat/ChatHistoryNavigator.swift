@@ -6,6 +6,7 @@ import SwiftUI
 
 @MainActor protocol ChatHistoryNavigating: AnyObject {
     func perform(_ request: ChatHistoryNavigator.Request) -> Bool
+    func performInitial(_ request: ChatHistoryNavigator.Request) -> Bool
 }
 
 // MARK: - ChatHistoryNavigator
@@ -41,6 +42,31 @@ import SwiftUI
         case unread(Int64)
     }
 
+    enum InitialPositioningResult {
+        case positioned
+        case superseded
+        case cancelled
+    }
+
+    var hasPendingRequest: Bool { pendingRequest != nil }
+    var hasPendingInitialPosition: Bool { pendingRequest != nil && initialCompletion != nil }
+
+    func positionInitially(_ request: Request, completion: @escaping (InitialPositioningResult) -> Void) {
+        cancelInitialPositioning()
+        requestGeneration &+= 1
+        pendingRequest = request
+        initialCompletion = completion
+        flushPendingRequest()
+    }
+
+    func cancelInitialPositioning() {
+        guard let completion = initialCompletion else { return }
+        requestGeneration &+= 1
+        pendingRequest = nil
+        initialCompletion = nil
+        completion(.cancelled)
+    }
+
     func attach(_ target: any ChatHistoryNavigating) {
         self.target = target
         flushPendingRequest()
@@ -64,21 +90,35 @@ import SwiftUI
     }
 
     func flushPendingRequest() {
-        guard let pendingRequest, target?.perform(pendingRequest) == true else { return }
-        self.pendingRequest = nil
+        guard !isPerformingRequest, let pendingRequest else { return }
+        isPerformingRequest = true
+        let generation = requestGeneration
+        defer { isPerformingRequest = false }
+        let completed = initialCompletion == nil
+            ? target?.perform(pendingRequest)
+            : target?.performInitial(pendingRequest)
+        if completed == true, generation == requestGeneration {
+            self.pendingRequest = nil
+            let completion = initialCompletion
+            initialCompletion = nil
+            completion?(.positioned)
+        }
     }
 
     // MARK: Private
 
     private weak var target: (any ChatHistoryNavigating)?
     private var pendingRequest: Request?
+    private var initialCompletion: ((InitialPositioningResult) -> Void)?
+    private var isPerformingRequest = false
+    private var requestGeneration = 0
 
     private func submit(_ request: Request) {
-        pendingRequest =
-            if target?.perform(request) == true {
-                nil
-            } else {
-                request
-            }
+        let superseded = initialCompletion
+        initialCompletion = nil
+        requestGeneration &+= 1
+        pendingRequest = request
+        superseded?(.superseded)
+        flushPendingRequest()
     }
 }

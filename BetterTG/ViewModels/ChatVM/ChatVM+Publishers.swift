@@ -115,7 +115,8 @@ extension ChatVM {
                 pendingScrollMessageIds.insert(value.message.id)
             }
             reconcileMessages(with: snapshot)
-        case .deleteMessages:
+        case .deleteMessages(let value):
+            loadedMessageIds.subtract(value.messageIds)
             reconcileMessages(with: snapshot)
         case .messageContentChanged(let value):
             invalidateMessageAndReplies(messageId: value.messageId, version: snapshot.version)
@@ -348,11 +349,14 @@ extension ChatVM {
     }
 
     @MainActor private func updateInitialLoadingState(from snapshot: TelegramMessageSnapshot) {
-        guard !initialMessagesLoaded, snapshot.hasMergedHistory else { return }
+        guard !initialMessagesLoaded, hasLoadedInitialHistory, snapshot.hasMergedHistory,
+              loadedMessageIds.isSubset(of: Set(snapshot.orderedMessageIds))
+        else { return }
         let relevantIds = Set(snapshot.orderedMessageIds).intersection(loadedMessageIds)
         let allMessagesRendered = relevantIds.allSatisfy { renderedMessages[$0] != nil }
         guard allMessagesRendered else { return }
-        withAnimation { initialMessagesLoaded = true }
+        initialMessagesLoaded = true
+        chatScrollTrace("updateInitialLoadingState: initialMessagesLoaded=true")
         refreshDetectedChatLanguage()
     }
 

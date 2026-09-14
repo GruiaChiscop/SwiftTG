@@ -19,6 +19,9 @@ import TDLibKit
         self.initialMessageId = initialMessageId
         self.movesAccessibilityFocusToInitialMessage = movesAccessibilityFocusToInitialMessage
         self.messageTopic = messageTopic
+        self.initialReadThroughMessageId = messageTopic == nil
+            ? (customChat.lastMessage ?? customChat.chat.lastMessage)?.id
+            : nil
         if case .messageTopicForum = messageTopic {
             // A forum topic has its own read state; the enclosing chat's counters aggregate every
             // topic and would position the topic at the wrong unread boundary.
@@ -120,6 +123,10 @@ import TDLibKit
     var messagePendingForward: CustomMessage?
     var messages = [CustomMessage]()
     var initialMessagesLoaded = false
+    @ObservationIgnored var hasLoadedInitialHistory = false
+    @ObservationIgnored var initialReadThroughMessageId: Int64?
+    @ObservationIgnored var didMarkInitialMessagesRead = false
+    @ObservationIgnored var initialReadTask: Task<Void, Never>?
     var pinnedMessages = [Message]()
     var isLoadingPinnedMessages = false
     var pinnedMessagesError: String?

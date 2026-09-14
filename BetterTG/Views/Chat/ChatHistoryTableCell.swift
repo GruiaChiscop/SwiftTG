@@ -23,7 +23,13 @@ import UIKit
 
     static let reuseIdentifier = "ChatHistoryTableCell"
 
-    func configure(rootView: some View) {
+    func configure(rootView: some View, unreadCount: Int? = nil) {
+        // The table cell owns the header element. Rebuilding SwiftUI's hosted visual content
+        // must not replace the element under the VoiceOver cursor.
+        isAccessibilityElement = unreadCount != nil
+        contentView.accessibilityElementsHidden = unreadCount != nil
+        accessibilityLabel = unreadCount.map { "\($0) unread \($0 == 1 ? "message" : "messages")" }
+        accessibilityTraits = unreadCount == nil ? [] : .header
         contentConfiguration = UIHostingConfiguration {
             rootView
         }

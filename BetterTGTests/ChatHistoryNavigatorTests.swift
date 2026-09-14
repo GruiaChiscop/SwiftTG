@@ -89,6 +89,10 @@ import Testing
     var messageRequests = [MessageRequest]()
     var unreadRequests = [Int64]()
 
+    func performInitial(_ request: ChatHistoryNavigator.Request) -> Bool {
+        perform(request)
+    }
+
     func perform(_ request: ChatHistoryNavigator.Request) -> Bool {
         switch request {
         case .bottom(let animated):

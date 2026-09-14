@@ -8,11 +8,13 @@ extension ChatVM {
 
         let chatId = customChat.chat.id
         let service = service
+        chatScrollTrace("loadInitialMessages: awaiting openChat")
         conversationPreparationTask = Task { @MainActor [weak self] in
             // With `forceRead: false`, TDLib only advances the read state for an open chat. Await
             // this before exposing loaded rows to the collection view so the first visible batch
             // cannot race the earlier fire-and-forget `openChat` call.
             _ = try? await service.openChat(chatId: chatId)
+            chatScrollTrace("loadInitialMessages: openChat returned")
             guard let self, !Task.isCancelled else { return }
 
             if case .messageTopicForum(let forum) = messageTopic,
@@ -38,16 +40,18 @@ extension ChatVM {
             if let latestMessageSnapshot {
                 handle(latestMessageSnapshot)
             }
+            chatScrollTrace("loadInitialMessages: conversation prepared, loading messages")
             loadMessages()
         }
     }
 
     func loadMessages() {
         guard loadingMessagesTask == nil, !hasReachedBeginningOfHistory else { return }
-        let fromMessageId = messages.first?.message.id ?? initialMessageId ?? 0
-        let loadsAroundInitialMessage = initialMessageId != nil && messages.isEmpty
+        chatScrollTrace("loadMessages: fetching history page")
+        let fromMessageId = hasLoadedInitialHistory ? (messages.first?.id ?? 0) : (initialMessageId ?? 0)
+        let loadsAroundInitialMessage = initialMessageId != nil && !hasLoadedInitialHistory
         let initialWindowTarget =
-            loadedMessageIds.isEmpty && initialMessageId == nil
+            !hasLoadedInitialHistory && initialMessageId == nil
                 ? Self.initialHistoryWindowSize
                 : nil
         loadingMessagesGeneration += 1
@@ -81,13 +85,17 @@ extension ChatVM {
             let limit = loadsAroundInitialMessage ? 31 : (remainingInitialMessages ?? 30)
             let offset = loadsAroundInitialMessage ? -15 : 0
 
+            chatScrollTrace("_loadMessages: requesting page \(requestIndex + 1)/\(maximumRequestCount) " +
+                "fromMessageId=\(nextFromMessageId) limit=\(limit)")
             guard let history = try? await fetchHistoryPage(
                 fromMessageId: nextFromMessageId,
                 limit: limit,
                 offset: offset,
             ), let page = history.messages else {
+                chatScrollTrace("_loadMessages: page \(requestIndex + 1) fetch failed or empty")
                 break
             }
+            chatScrollTrace("_loadMessages: page \(requestIndex + 1) returned \(page.count) messages")
 
             if page.isEmpty {
                 reachedBeginning = true
@@ -105,15 +113,24 @@ extension ChatVM {
             nextFromMessageId = boundaryMessage.id
         }
 
+        let newestLoadedMessageId = collectedMessages.map(\.id).max()
         let loadedIds = collectedIds
         let didReachBeginning = reachedBeginning
         await main {
             self.loadedMessageIds.formUnion(loadedIds)
+            if !self.hasLoadedInitialHistory {
+                self.hasLoadedInitialHistory = true
+                chatScrollTrace("_loadMessages: hasLoadedInitialHistory=true, \(loadedIds.count) ids loaded")
+                // Scoped histories must use their own latest message, never the parent chat's.
+                if self.initialReadThroughMessageId == nil {
+                    self.initialReadThroughMessageId = newestLoadedMessageId
+                }
+            }
             if didReachBeginning {
                 self.hasReachedBeginningOfHistory = true
             }
         }
-        if !collectedMessages.isEmpty {
+        if !collectedMessages.isEmpty || !initialMessagesLoaded {
             service.mergeMessageHistory(chatId: customChat.chat.id, messages: collectedMessages)
         }
         await main {
@@ -171,6 +188,34 @@ extension ChatVM {
             self.service.mergeMessageHistory(chatId: chatId, messages: [rootMessage])
             await main {
                 _ = self.loadedMessageIds.insert(rootMessage.id)
+            }
+        }
+    }
+
+    /// Opening a conversation clears the unread range present on entry. The UI keeps its
+    /// separate initial unread snapshot so the header does not disappear as receipts arrive.
+    /// The caller gates this on an active, visible, non-preview conversation after positioning.
+    func markInitialMessagesRead() {
+        guard initialMessagesLoaded, initialMessageId == nil, messageTopic == nil, initialUnreadCount > 0,
+              !didMarkInitialMessagesRead, let messageId = initialReadThroughMessageId
+        else { return }
+        didMarkInitialMessagesRead = true
+        let service = service
+        let chatId = chatId
+        chatScrollTrace("mark initial history read through: \(messageId)")
+        // This receipt belongs to the completed opening, so a quick Back must not cancel it or
+        // make TDLib ignore it just because closeChat reaches the service first.
+        initialReadTask = Task {
+            do {
+                _ = try await service.viewMessages(
+                    chatId: chatId,
+                    forceRead: true,
+                    messageIds: [messageId],
+                    source: .messageSourceChatHistory,
+                )
+                chatScrollTrace("initial history read receipt accepted: \(messageId)")
+            } catch {
+                chatScrollTrace("initial history read receipt failed: \(error)")
             }
         }
     }

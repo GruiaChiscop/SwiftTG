@@ -5,6 +5,7 @@
 // swiftlint:disable all
 @preconcurrency import Combine
 import Foundation
+import Synchronization
 @preconcurrency import TDLibKit
 
 // MARK: - FakeTelegramServiceError
@@ -24,9 +25,20 @@ enum FakeTelegramServiceError: Swift.Error {
 
 /// Mechanically generated no-op/throwing conformance to `TelegramService`, used so tests can
 /// construct a real `ChatVM` (and therefore a real `ChatHistoryTableViewController`) without a
-/// live TDLib connection. Every requirement either throws `FakeTelegramServiceError`, does
-/// nothing, or returns an empty publisher - nothing here is ever meant to do real work.
+/// live TDLib connection. History requests and read receipts are recorded for regression tests; other requirements
+/// throw `FakeTelegramServiceError`, do nothing, or return an empty publisher.
 final class FakeTelegramService: TelegramService {
+    struct ViewedMessages: Sendable {
+        let chatId: Int64?
+        let ids: [Int64]?
+        let forceRead: Bool?
+    }
+    let viewedMessages = Mutex([ViewedMessages]())
+    struct HistoryRequest: Sendable {
+        let fromMessageId: Int64?
+        let limit: Int?
+    }
+    let historyRequests = Mutex([HistoryRequest]())
     var authorizationStatePublisher: AnyPublisher<AuthorizationState, Never> { Empty().eraseToAnyPublisher() }
     var chatListPublisher: AnyPublisher<ChatListSnapshot, Never> { Empty().eraseToAnyPublisher() }
     var chatFoldersPublisher: AnyPublisher<UpdateChatFolders?, Never> { Empty().eraseToAnyPublisher() }
@@ -304,12 +316,13 @@ final class FakeTelegramService: TelegramService {
 
     func getChatHistory(
         chatId _: Int64?,
-        fromMessageId _: Int64?,
-        limit _: Int?,
+        fromMessageId: Int64?,
+        limit: Int?,
         offset _: Int?,
         onlyLocal _: Bool?,
     ) async throws -> Messages {
-        throw FakeTelegramServiceError.unimplemented
+        historyRequests.withLock { $0.append(HistoryRequest(fromMessageId: fromMessageId, limit: limit)) }
+        return Messages(messages: [], totalCount: 0)
     }
 
     func getChats(chatList _: ChatList?, limit _: Int?) async throws -> Chats {
@@ -1168,12 +1181,13 @@ final class FakeTelegramService: TelegramService {
     }
 
     func viewMessages(
-        chatId _: Int64?,
-        forceRead _: Bool?,
-        messageIds _: [Int64]?,
+        chatId: Int64?,
+        forceRead: Bool?,
+        messageIds: [Int64]?,
         source _: MessageSource?,
     ) async throws -> Ok {
-        throw FakeTelegramServiceError.unimplemented
+        viewedMessages.withLock { $0.append(ViewedMessages(chatId: chatId, ids: messageIds, forceRead: forceRead)) }
+        return Ok()
     }
 
     func optimizeStorage(

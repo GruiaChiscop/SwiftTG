@@ -8,7 +8,6 @@ struct UnreadMessagesHeader: View {
     // MARK: Internal
 
     let count: Int
-    let voiceOverFocusRequest: Int
 
     var body: some View {
         HStack(spacing: 10) {
@@ -25,13 +24,6 @@ struct UnreadMessagesHeader: View {
         }
         .padding(.vertical, 6)
         .accessibilityHidden(true)
-        .overlay {
-            VoiceOverFocusTarget(
-                label: title,
-                traits: .header,
-                request: voiceOverFocusRequest,
-            )
-        }
     }
 
     // MARK: Private
