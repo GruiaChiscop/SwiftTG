@@ -15,7 +15,8 @@ struct TelegramNetworkUsageSettingsTests {
         #expect(TelegramNetworkUsageCategory(fileType: .fileTypeAudio) == .music)
         #expect(TelegramNetworkUsageCategory(fileType: .fileTypeSticker) == .stickers)
         #expect(TelegramNetworkUsageCategory(fileType: .fileTypeAnimation) == .animations)
-        #expect(TelegramNetworkUsageCategory(fileType: .fileTypeWallpaper) == .other)
+        #expect(TelegramNetworkUsageCategory(fileType: .fileTypeWallpaper) == .wallpaper)
+        #expect(TelegramNetworkUsageCategory(fileType: .fileTypeSecret) == .other)
         #expect(TelegramNetworkUsageCategory(fileType: nil) == .other)
     }
 

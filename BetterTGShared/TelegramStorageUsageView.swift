@@ -17,21 +17,19 @@ struct TelegramStorageUsageChatRow: Identifiable {
 // MARK: - TelegramStorageUsageStore
 
 enum TelegramStorageUsageStore {
-    /// Chats beyond `getStorageStatistics`'s `chatLimit` are folded into one `chatId == 0` entry -
-    /// resolved to "Other Chats" here rather than a failed `getChat` lookup.
+    /// Chats beyond `getStorageStatistics`'s `chatLimit` are folded into one anonymous
+    /// `chatId == 0` entry - dropped here rather than shown as an opaque "Other Chats" row,
+    /// matching Unigram (another TDLib-based client): a real chat in there becomes its own row
+    /// once `chatLimit` grows enough (see "Load More"), and anything left over is Profile Photos,
+    /// which the category breakdown above already reports on its own.
     static func resolveRows(
         byChat: [StorageStatisticsByChat],
         service: any TelegramService,
     ) async -> [TelegramStorageUsageChatRow] {
         await withTaskGroup(of: TelegramStorageUsageChatRow.self) { group in
-            for stats in byChat {
+            for stats in byChat where stats.chatId != 0 {
                 group.addTask {
-                    let title: String =
-                        if stats.chatId == 0 {
-                            "Other Chats"
-                        } else {
-                            await (try? service.getChat(chatId: stats.chatId))?.title ?? "Unknown Chat"
-                        }
+                    let title = await (try? service.getChat(chatId: stats.chatId))?.title ?? "Unknown Chat"
                     return TelegramStorageUsageChatRow(chatId: stats.chatId, title: title, stats: stats)
                 }
             }
@@ -180,8 +178,9 @@ struct TelegramStorageCategoryRow: View {
 struct TelegramStorageUsageView: View {
     // MARK: Lifecycle
 
-    init(service: any TelegramService) {
+    init(service: any TelegramService, sharedMediaDestination: ((Int64, String) -> AnyView)? = nil) {
         self.service = service
+        self.sharedMediaDestination = sharedMediaDestination
     }
 
     // MARK: Internal
@@ -210,7 +209,7 @@ struct TelegramStorageUsageView: View {
                 } footer: {
                     if categoryRows.contains(where: { $0.category == .avatars }) {
                         Text(
-                            "Profile Photos are chat and contact avatars, not attached to any single chat - they always show up under \"Other Chats\" below.",
+                            "Profile Photos are chat and contact avatars, not attached to any single chat - they don't appear under any chat below.",
                         )
                     }
                 }
@@ -235,6 +234,7 @@ struct TelegramStorageUsageView: View {
                                     service: service,
                                     row: row,
                                     onCleared: { await load() },
+                                    sharedMediaDestination: sharedMediaDestination,
                                 )
                             } label: {
                                 LabeledContent(row.title, value: formattedBytes(row.stats.size))
@@ -306,11 +306,18 @@ struct TelegramStorageUsageView: View {
     @State private var statistics: StorageStatistics?
 
     private let service: any TelegramService
+    private let sharedMediaDestination: ((Int64, String) -> AnyView)?
 
-    /// A non-empty `chatId == 0` bucket means there are more chats beyond `chatLimit` than we
-    /// asked to see individually.
+    /// Whether there's a real chat beyond `chatLimit` still waiting to be revealed. Profile
+    /// Photos always land in the `chatId == 0` bucket regardless of `chatLimit` (see
+    /// `TelegramStorageUsageStore.resolveRows`), so they're excluded here - otherwise "Load More"
+    /// would never go away for an account with any avatar cache at all, even once every real chat
+    /// is already shown individually.
     private var hasMoreChats: Bool {
-        (statistics?.byChat.first { $0.chatId == 0 }?.size ?? 0) > 0
+        guard let otherChat = statistics?.byChat.first(where: { $0.chatId == 0 }) else { return false }
+        let residualCategories = TelegramStorageUsageStore.categoryRows(byFileType: otherChat.byFileType)
+            .filter { $0.category != .avatars }
+        return residualCategories.contains { $0.size > 0 }
     }
 
     private var errorIsPresented: Binding<Bool> {
@@ -387,6 +394,10 @@ struct TelegramStorageUsageChatDetailView: View {
     let row: TelegramStorageUsageChatRow
     /// Awaited by the caller to refresh its own list once this chat's cache is cleared.
     let onCleared: () async -> Void
+    /// Injected by the app target so this cross-platform screen can present the shared-media
+    /// browser without `BetterTGShared` depending on a platform app's own view types - `nil` hides
+    /// the row entirely (currently supplied on iOS only).
+    var sharedMediaDestination: ((Int64, String) -> AnyView)?
 
     var body: some View {
         List {
@@ -402,23 +413,30 @@ struct TelegramStorageUsageChatDetailView: View {
                         onTap: { selection.toggle(entry.category) },
                     )
                 }
+
+                if sharedMediaDestination != nil {
+                    Button {
+                        showsSharedMedia = true
+                    } label: {
+                        Label("View Shared Media", systemImage: "photo.on.rectangle")
+                    }
+                }
             }
 
             Section {
                 Button(clearButtonTitle, role: .destructive) {
                     confirmsClear = true
                 }
-                .disabled(isWorking || row.chatId == 0)
-            } footer: {
-                if row.chatId == 0 {
-                    Text(otherChatsFooterText)
-                }
+                .disabled(isWorking)
             }
         }
         .navigationTitle(row.title)
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+            .sheet(isPresented: $showsSharedMedia) {
+                sharedMediaDestination?(row.chatId, row.title)
+            }
             .alert(clearAlertTitle, isPresented: $confirmsClear) {
                 Button("Cancel", role: .cancel) {}
                 Button("Clear", role: .destructive) { Task { await clear() } }
@@ -439,16 +457,10 @@ struct TelegramStorageUsageChatDetailView: View {
     @State private var errorMessage: String?
     @State private var isWorking = false
     @State private var selection = TelegramStorageCategorySelection()
+    @State private var showsSharedMedia = false
 
     private var categoryRows: [(category: TelegramNetworkUsageCategory, size: Int64, count: Int)] {
         TelegramStorageUsageStore.categoryRows(byFileType: row.stats.byFileType)
-    }
-
-    private var otherChatsFooterText: String {
-        categoryRows.contains(where: { $0.category == .avatars })
-            ? "\"Other Chats\" groups several chats together, and always holds Profile Photos "
-                + "specifically - those are avatars, never attached to any single chat."
-            : "\"Other Chats\" groups several chats together and can't be cleared individually here."
     }
 
     private var errorIsPresented: Binding<Bool> {

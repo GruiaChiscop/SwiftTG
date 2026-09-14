@@ -22,6 +22,9 @@ enum TelegramNetworkUsageCategory: CaseIterable, Identifiable {
     /// is requested - conflating it with `.photos` reads as "some chat's photos went missing"
     /// when nothing actually went missing.
     case avatars
+    /// Chat/theme wallpaper images. Like `.avatars`, not obviously "some chat's files" - Unigram
+    /// (another TDLib-based client) keeps it apart from generic "Other" for the same reason.
+    case wallpaper
     case calls
     case other
 
@@ -34,6 +37,8 @@ enum TelegramNetworkUsageCategory: CaseIterable, Identifiable {
                 .photos
             case .fileTypeProfilePhoto:
                 .avatars
+            case .fileTypeWallpaper:
+                .wallpaper
             case .fileTypeLivePhotoVideo, .fileTypeSelfDestructingLivePhotoVideo, .fileTypeSelfDestructingVideo,
                  .fileTypeVideo, .fileTypeVideoStory:
                 .videos
@@ -69,6 +74,7 @@ enum TelegramNetworkUsageCategory: CaseIterable, Identifiable {
         case .stickers: "Stickers"
         case .animations: "Animations"
         case .avatars: "Profile Photos"
+        case .wallpaper: "Wallpaper"
         case .calls: "Calls"
         case .other: "Other"
         }
@@ -89,6 +95,7 @@ enum TelegramNetworkUsageCategory: CaseIterable, Identifiable {
         case .stickers: .yellow
         case .animations: .mint
         case .avatars: .indigo
+        case .wallpaper: .brown
         case .calls: .teal
         case .other: .gray
         }

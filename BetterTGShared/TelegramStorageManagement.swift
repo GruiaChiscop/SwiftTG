@@ -88,8 +88,9 @@ let telegramClearableFileTypes: [FileType] = [
 struct TelegramStorageSettingsView: View {
     // MARK: Lifecycle
 
-    init(service: any TelegramService) {
+    init(service: any TelegramService, sharedMediaDestination: ((Int64, String) -> AnyView)? = nil) {
         self.service = service
+        self.sharedMediaDestination = sharedMediaDestination
     }
 
     // MARK: Internal
@@ -104,7 +105,7 @@ struct TelegramStorageSettingsView: View {
 
                     #if os(iOS)
                         NavigationLink {
-                            TelegramStorageUsageView(service: service)
+                            TelegramStorageUsageView(service: service, sharedMediaDestination: sharedMediaDestination)
                         } label: {
                             Label("View by Chat", systemImage: "list.bullet")
                         }
@@ -333,6 +334,7 @@ struct TelegramStorageSettingsView: View {
     #endif
 
     private let service: any TelegramService
+    private let sharedMediaDestination: ((Int64, String) -> AnyView)?
     private let proxyStatusStore = TelegramProxyStatusStore.shared
 
     private var errorIsPresented: Binding<Bool> {

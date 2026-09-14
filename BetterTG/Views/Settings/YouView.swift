@@ -77,7 +77,16 @@ struct YouView: View {
                 }
 
                 NavigationLink {
-                    TelegramStorageSettingsView(service: service)
+                    TelegramStorageSettingsView(service: service) { chatId, chatTitle in
+                        AnyView(
+                            SharedMediaView(chatId: chatId, chatTitle: chatTitle, service: service) { messageId in
+                                Task { @MainActor in
+                                    guard let customChat = await rootVM.getCustomChat(from: chatId) else { return }
+                                    rootVM.navigate(to: .customChat(customChat, messageId: messageId))
+                                }
+                            },
+                        )
+                    }
                 } label: {
                     Label("Data and Storage", systemImage: "internaldrive")
                 }
@@ -143,6 +152,7 @@ struct YouView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var isLoggingOut = false
+    @State private var rootVM = RootVM.shared
     @State private var showsEditProfile = false
     @State private var showsLogoutConfirmation = false
     @State private var user: User?
