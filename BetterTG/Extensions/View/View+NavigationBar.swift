@@ -155,10 +155,24 @@ struct NavigationBarAccessor: UIViewControllerRepresentable {
         }
         
         private func reportHeightIfNeeded(for navigationBar: UINavigationBar) {
+            // During a push/pop transition, UIKit animates `navigationBar.bounds` itself as it
+            // interpolates between the source and destination bar configurations - this KVO fires
+            // on (close to) every rendered frame of that ~350-400ms animation. Reporting each of
+            // those intermediate heights as a SwiftUI state change forces a full body
+            // re-evaluation and layout pass every time, which was showing up as a burst of ~20
+            // `viewDidLayoutSubviews` calls on the embedded chat table right after opening a chat.
+            // Chats that use this force `.navigationBarTitleDisplayMode(.inline)`, so there's no
+            // large-title-collapse-on-scroll case that needs live, in-transition tracking here -
+            // skip while a transition is in flight; `viewWillAppear`/`viewDidAppear` already report
+            // the settled height once it finishes.
+            if let coordinator = navigationController?.transitionCoordinator, coordinator.isAnimated {
+                return
+            }
             let height = navigationBar.bounds.height
             guard height.isFinite else { return }
             guard abs(height - lastReportedHeight) > 0.5 else { return }
             lastReportedHeight = height
+            chatScrollTrace("NavigationBarAccessor reporting height \(height)")
             callback?(navigationBar)
         }
     }

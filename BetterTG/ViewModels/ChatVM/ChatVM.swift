@@ -66,6 +66,7 @@ import TDLibKit
             } else {
                 conversationCommunityStatus(for: customChat)
             }
+        chatScrollTrace("ChatVM init chatId=\(chatId)")
     }
 
     deinit {
@@ -74,8 +75,18 @@ import TDLibKit
         presenceExpiryTask?.cancel()
         pinnedMessagesTask?.cancel()
         viewMessagesTask?.cancel()
-        guard hasStarted else { return }
+        loadingMessagesTask?.cancel()
+        displayedMessagesRebuildTask?.cancel()
+        scheduledMessagesTask?.cancel()
+        videoChatRefreshTask?.cancel()
+        initialReadTask?.cancel()
         let chatId = chatId
+        let hasStarted = hasStarted
+        // DEBUG-only lifecycle trace: lets a "device got warm after opening several chats" report
+        // be checked against whether ChatVMs are actually deallocating one-for-one with chats
+        // being navigated away from, instead of guessing at a leak from static code alone.
+        Task { @MainActor in chatScrollTrace("ChatVM deinit chatId=\(chatId) hasStarted=\(hasStarted)") }
+        guard hasStarted else { return }
         let service = service
         Task { _ = try? await service.closeChat(chatId: chatId) }
     }

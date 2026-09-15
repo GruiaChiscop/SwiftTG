@@ -69,6 +69,9 @@ struct AsyncTdFile<Content: View, Placeholder: View>: View {
         }
         .task(id: "\(id):\(isPaused):\(autoDownloads):\(downloadRequest)") {
             guard !isPaused, autoDownloads || downloadRequest > 0 else { return }
+            chatScrollTrace(
+                "AsyncTdFile downloading fileId=\(id) autoDownloads=\(autoDownloads) downloadRequest=\(downloadRequest)",
+            )
             await download(id)
         }
         .onReceive(service.filePublisher(fileId: id)) { updatedFile in

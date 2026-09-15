@@ -318,6 +318,13 @@ import UIKit
     func navigatorDidDismantle() {
         unreadFocusController.cancel()
         navigator.detach(self)
+        // Drop the strong ChatVM/message references immediately rather than waiting on however
+        // long UIKit takes to actually deallocate this controller after SwiftUI dismantles it -
+        // configuration's chatVM keeps live Combine subscriptions (message updates, presence,
+        // etc.) that would otherwise keep doing real work for a chat no longer on screen.
+        configuration = nil
+        items = []
+        itemsById = [:]
     }
 
     // MARK: Private
