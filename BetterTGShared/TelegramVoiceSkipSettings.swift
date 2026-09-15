@@ -2,28 +2,33 @@
 
 import Foundation
 
-/// How far Skip Forward/Backward move within a voice message, and how that's scaled down for
-/// notes shorter than the configured amount so a single skip doesn't just overshoot straight to
-/// an endpoint every time (matching the user's own observation of WhatsApp's behavior: a very
-/// short note steps by 1 second instead of the normal amount).
+/// How far Skip Forward/Backward move within a voice message - fully automatic, based on the
+/// user's own observation of WhatsApp's behavior: short notes step by a small amount, longer ones
+/// by progressively bigger ones, and repeated taps always land exactly on 0 or the end rather than
+/// overshooting into a clamp on the last tap. Not a user-facing setting - they explicitly didn't
+/// want to configure this themselves.
 enum TelegramVoiceSkipSettings {
-    static let presets = [5, 10, 15, 30]
-
-    static let defaultsKey = "BetterTG.voicePlayback.skipInterval"
-
-    static var interval: Int {
-        get {
-            let stored = UserDefaults.standard.integer(forKey: defaultsKey)
-            return presets.contains(stored) ? stored : 5
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: defaultsKey)
-        }
+    /// The next Skip Forward/Backward landing position from `current`, in seconds - stepped by
+    /// `nominalStep(forDuration:)`, but adjusted so `duration / step` divides evenly, so the exact
+    /// same step size applied repeatedly from 0 always lands precisely on `duration` on the last
+    /// tap instead of overshooting into a clamp (and therefore an oddly small final step).
+    static func nextPosition(from current: Double, duration: Int, forward: Bool) -> Double {
+        guard duration > 0 else { return 0 }
+        let nominal = Double(nominalStep(forDuration: duration))
+        let totalSteps = max(1, (Double(duration) / nominal).rounded())
+        let step = Double(duration) / totalSteps
+        let target = forward ? current + step : current - step
+        return forward ? min(Double(duration), target) : max(0, target)
     }
 
-    /// The configured interval, unless the note is shorter than it - then falls back to 1 second
-    /// so skipping still does something meaningful instead of always landing on an endpoint.
-    static func effectiveStep(forDuration duration: Int) -> Int {
-        duration < interval ? 1 : interval
+    /// Approximates the user's own tested WhatsApp observation: 1-10s notes step by 1s, 11-60s by
+    /// 3s, longer ones by 6s. The exact tier boundaries/values above 10s weren't fully certain
+    /// ("cred că ajunge la 6") - adjust if a real device test shows otherwise.
+    private static func nominalStep(forDuration duration: Int) -> Int {
+        switch duration {
+        case ...10: 1
+        case 11...60: 3
+        default: 6
+        }
     }
 }

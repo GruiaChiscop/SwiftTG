@@ -224,18 +224,6 @@ struct TelegramStorageSettingsView: View {
                         "Pause Music While Recording stops other audio from playing while you record a video message. Raise to Listen switches a playing voice message to the earpiece when you hold the phone to your ear.",
                     )
                 }
-
-                Section {
-                    Picker("Skip Interval", selection: $voiceSkipInterval) {
-                        ForEach(TelegramVoiceSkipSettings.presets, id: \.self) { seconds in
-                            Text("\(seconds) Seconds").tag(seconds)
-                        }
-                    }
-                } footer: {
-                    Text(
-                        "How far Skip Forward/Skip Backward move within a voice message. A message shorter than this steps by 1 second instead.",
-                    )
-                }
             #endif
 
             Section("Connection Type") {
@@ -344,7 +332,6 @@ struct TelegramStorageSettingsView: View {
     #if os(iOS)
         @AppStorage(TelegramPauseMusicSetting.defaultsKey) private var pauseMusicWhileRecording = true
         @AppStorage(TelegramRaiseToListenSetting.defaultsKey) private var raiseToListen = false
-        @AppStorage(TelegramVoiceSkipSettings.defaultsKey) private var voiceSkipInterval = 5
     #endif
     @State private var cachedFileCount = 0
     @State private var cachedFilesSize: Int64 = 0
