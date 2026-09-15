@@ -691,7 +691,13 @@ struct MessageView: View {
                 // `.accessibilityHidden(false)` override on a descendant - the Playback Speed
                 // control (visible inside MessageVoiceNoteView, matching WhatsApp's "1x" pill) has
                 // to be wired as a sibling, outside that boundary, to be independently reachable.
-                .overlay(alignment: .topLeading) {
+                // `.accessibilitySortPriority` pins the row ahead of it explicitly, rather than
+                // relying on `.topTrailing` alignment alone to produce that ordering - a `.topLeading`
+                // anchor here previously put it ahead of the row in VoiceOver's swipe order, so
+                // double-tapping what looked like "the message" was actually cycling speed instead
+                // of toggling play/pause.
+                .accessibilitySortPriority(1)
+                .overlay(alignment: .topTrailing) {
                     if isCurrentVoiceNoteActive {
                         Button {
                             media.cyclePlaybackRate()
@@ -701,6 +707,7 @@ struct MessageView: View {
                         .frame(width: 1, height: 1)
                         .accessibilityLabel("Playback Speed")
                         .accessibilityValue(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
+                        .accessibilitySortPriority(0)
                     }
                 },
         )
