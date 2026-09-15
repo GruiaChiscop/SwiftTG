@@ -76,6 +76,12 @@ struct MessageVoiceNoteView: View {
                 }
 
                 if isCurrentVoiceActive {
+                    // Purely a visual affordance for sighted users - this whole view is
+                    // `.accessibilityHidden(true)` below (an ancestor `.accessibilityElement(children:
+                    // .ignore)` in MessageView would swallow this regardless of any override here
+                    // anyway), so VoiceOver reachability for this control is wired separately, as a
+                    // sibling of the ignored row rather than a descendant of it (see MessageView's
+                    // `mainColumn`).
                     Button {
                         media.cyclePlaybackRate()
                     } label: {

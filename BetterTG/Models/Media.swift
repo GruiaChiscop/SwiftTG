@@ -43,7 +43,9 @@ import UIKit
     @discardableResult
     func cyclePlaybackRate() -> Float {
         let newRate = TelegramVoicePlaybackRateSettings.next(after: playbackRate)
-        MainActor.assumeIsolated { engine.playbackRate = newRate }
+        MainActor.assumeIsolated {
+            engine.playbackRate = newRate
+        }
         TelegramVoicePlaybackRateSettings.rate = newRate
         return newRate
     }

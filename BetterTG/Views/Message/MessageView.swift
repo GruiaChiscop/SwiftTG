@@ -694,7 +694,26 @@ struct MessageView: View {
         if isPollMessage || isChecklistMessage || isActiveOutgoingLiveLocation {
             return AnyView(column)
         }
-        return AnyView(messageAccessibilityElement(column))
+        return AnyView(
+            messageAccessibilityElement(column)
+                // `messageAccessibilityElement` collapses the whole row into one
+                // `.accessibilityElement(children: .ignore)` stop, which swallows any
+                // `.accessibilityHidden(false)` override on a descendant - the Playback Speed
+                // control (visible inside MessageVoiceNoteView, matching WhatsApp's "1x" pill) has
+                // to be wired as a sibling, outside that boundary, to be independently reachable.
+                .overlay(alignment: .topLeading) {
+                    if isCurrentVoiceNoteActive {
+                        Button {
+                            media.cyclePlaybackRate()
+                        } label: {
+                            Color.clear
+                        }
+                        .frame(width: 1, height: 1)
+                        .accessibilityLabel("Playback Speed")
+                        .accessibilityValue(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
+                    }
+                },
+        )
     }
 
     private var callPeer: (id: Int64, displayName: String)? {
@@ -906,11 +925,6 @@ struct MessageView: View {
                     $0
                         .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
                         .accessibilityAddTraits(.startsMediaSession)
-                }
-            }
-            .modify {
-                if isCurrentVoiceNoteActive {
-                    $0.accessibilityAction(named: "Playback Speed") { media.cyclePlaybackRate() }
                 }
             }
             .modify {
