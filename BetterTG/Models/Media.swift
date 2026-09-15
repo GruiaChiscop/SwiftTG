@@ -22,6 +22,7 @@ import UIKit
         self.engine = MainActor.assumeIsolated { VoiceMessagePlaybackEngine() }
         MainActor.assumeIsolated {
             engine.trace = { voicePlaybackTrace($0) }
+            engine.playbackRate = TelegramVoicePlaybackRateSettings.rate
             engine.onWillPlay = { [weak self] in self?.setAudioSessionPlayback() ?? false }
             engine.onPlayStarted = { [weak self] in self?.startRaiseToListenMonitoring() }
             engine.onStopped = { [weak self] in self?.stopRaiseToListenMonitoring() }
@@ -35,6 +36,17 @@ import UIKit
     var savedMediaPath: String { MainActor.assumeIsolated { engine.currentPath } ?? "" }
     var isPlaying: Bool { MainActor.assumeIsolated { engine.isPlaying } }
     var currentTime: Int32 { Int32(MainActor.assumeIsolated { engine.currentTime }) }
+    var playbackRate: Float { MainActor.assumeIsolated { engine.playbackRate } }
+
+    /// Cycles through `TelegramVoicePlaybackRateSettings.presets` and persists the choice for
+    /// every voice note played afterward. Returns the new rate so callers can announce it.
+    @discardableResult
+    func cyclePlaybackRate() -> Float {
+        let newRate = TelegramVoicePlaybackRateSettings.next(after: playbackRate)
+        MainActor.assumeIsolated { engine.playbackRate = newRate }
+        TelegramVoicePlaybackRateSettings.rate = newRate
+        return newRate
+    }
 
     func stop() {
         MainActor.assumeIsolated { engine.stop() }

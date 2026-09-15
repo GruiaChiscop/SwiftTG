@@ -158,6 +158,14 @@ struct MessageView: View {
 
     // MARK: Private
 
+    /// Gates the Skip Back/Forward/Playback Speed accessibility actions - matches the visible seek
+    /// buttons' own `.disabled(!isCurrentVoiceActive)` in `MessageVoiceNoteView`, since seeking a
+    /// voice note that isn't the one currently loaded in the shared player would silently act on
+    /// whatever else happens to be loaded instead.
+    private var isCurrentVoiceNoteActive: Bool {
+        customMessage.messageVoiceNote != nil && media.savedMediaPath == voiceNoteLocalPath && media.isPlaying
+    }
+
     private var liveAccessibilityPlaybackElapsed: Int {
         if customMessage.messageVoiceNote != nil,
            media.savedMediaPath == voiceNoteLocalPath
@@ -888,6 +896,20 @@ struct MessageView: View {
                     $0
                         .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
                         .accessibilityAddTraits(.startsMediaSession)
+                }
+            }
+            .modify {
+                if isCurrentVoiceNoteActive {
+                    $0
+                        .accessibilityAction(named: "Playback Speed") {
+                            let newRate = media.cyclePlaybackRate()
+                            UIAccessibility.post(
+                                notification: .announcement,
+                                argument: "Speed \(TelegramVoicePlaybackRateSettings.title(for: newRate))",
+                            )
+                        }
+                        .accessibilityAction(named: "Skip Forward 5 Seconds") { media.seekForward() }
+                        .accessibilityAction(named: "Skip Back 5 Seconds") { media.seekBackward() }
                 }
             }
             .modify {

@@ -74,6 +74,15 @@ struct MessageVoiceNoteView: View {
                     }
                     .disabled(!isCurrentVoiceActive)
                 }
+
+                if isCurrentVoiceActive {
+                    Button {
+                        media.cyclePlaybackRate()
+                    } label: {
+                        Text(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
+                }
             }
             .font(.system(size: 24))
 

@@ -22,6 +22,12 @@ import SwiftOGG
     private(set) var allowsSeeking = true
     var duration = 0
 
+    /// 1.0 = normal speed. `AVAudioUnitTimePitch` keeps pitch constant as this changes, unlike
+    /// `AVAudioUnitVarispeed`, which would make a sped-up voice sound chipmunk-like.
+    var playbackRate: Float = 1 {
+        didSet { timePitch.rate = playbackRate }
+    }
+
     /// Diagnostic hook; no-op by default. iOS wires this to `voicePlaybackTrace`.
     var trace: (String) -> Void = { _ in }
     /// Called right before playback starts; returning `false` aborts `play()` before the engine
@@ -122,6 +128,7 @@ import SwiftOGG
 
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private let playerNode = AVAudioPlayerNode()
+    @ObservationIgnored private let timePitch = AVAudioUnitTimePitch()
     @ObservationIgnored private var audioBuffer: AVAudioPCMBuffer?
     @ObservationIgnored private var sampleRate: Double = 48000
     @ObservationIgnored private var scheduledStartFrame: AVAudioFramePosition = 0
@@ -239,8 +246,13 @@ import SwiftOGG
         if playerNode.engine == nil {
             engine.attach(playerNode)
         }
+        if timePitch.engine == nil {
+            engine.attach(timePitch)
+            timePitch.rate = playbackRate
+        }
         engine.disconnectNodeOutput(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: buffer.format)
+        engine.connect(playerNode, to: timePitch, format: buffer.format)
+        engine.connect(timePitch, to: engine.mainMixerNode, format: buffer.format)
         audioBuffer = buffer
         sampleRate = buffer.format.sampleRate
         schedule(buffer: buffer, from: 0)
