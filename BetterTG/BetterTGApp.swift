@@ -134,6 +134,16 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
         guard !Utils.isRunningTests else { return true }
         UNUserNotificationCenter.current().delegate = self
         Self.registerNotificationCategories()
+        // Cheap to call again on any defaults change (just updates the registered category set) -
+        // simplest way for the "Display Names on Lockscreen" settings toggle (a plain @AppStorage
+        // Bool in a different module) to take effect without a direct cross-module call.
+        userDefaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main,
+        ) { _ in
+            Task { @MainActor in Self.registerNotificationCategories() }
+        }
         PushNotificationsManager.shared.start()
         CallKitManager.shared.start()
         VoipPushManager.shared.start()
@@ -240,6 +250,8 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
 
     // MARK: Private
 
+    private var userDefaultsObserver: NSObjectProtocol?
+
     /// The action identifier within each repliable category below - Telegram's own push payload
     /// already stamps `aps.category` with one of `repliableCategoryIdentifiers` directly (confirmed
     /// by inspecting a real payload), matching the exact identifiers Telegram-iOS itself registers
@@ -257,6 +269,9 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
     /// matching how WhatsApp's notifications behave there. Registering it is enough; iOS applies it
     /// to every push tagged with a matching `aps.category`, no server or payload change needed.
     private static func registerNotificationCategories() {
+        let options: UNNotificationCategoryOptions = TelegramLockscreenNamePreference.isEnabled
+            ? [.hiddenPreviewsShowTitle]
+            : []
         let reply = UNTextInputNotificationAction(
             identifier: replyActionIdentifier,
             title: "Reply",
@@ -270,7 +285,7 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
                 actions: [reply],
                 intentIdentifiers: [],
                 hiddenPreviewsBodyPlaceholder: "New Message",
-                options: [.hiddenPreviewsShowTitle],
+                options: options,
             )
         }
         // "c" (channel) and "t" (reaction) aren't repliable (see `repliableCategoryIdentifiers`'s
@@ -281,14 +296,14 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
                 actions: [],
                 intentIdentifiers: [],
                 hiddenPreviewsBodyPlaceholder: "New Message",
-                options: [.hiddenPreviewsShowTitle],
+                options: options,
             ),
             UNNotificationCategory(
                 identifier: "t",
                 actions: [],
                 intentIdentifiers: [],
                 hiddenPreviewsBodyPlaceholder: "New Reaction",
-                options: [.hiddenPreviewsShowTitle],
+                options: options,
             ),
         ]
         UNUserNotificationCenter.current().setNotificationCategories(Set(repliableCategories + nonRepliableCategories))

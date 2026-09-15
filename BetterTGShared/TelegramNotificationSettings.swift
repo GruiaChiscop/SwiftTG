@@ -216,6 +216,14 @@ struct TelegramNotificationsView: View {
             }
 
             Section {
+                Toggle("Display Names on Lockscreen", isOn: showNamesOnLockscreenBinding)
+            } footer: {
+                Text(
+                    "Keep the sender's name visible on the lock screen even when the system hides message previews there.",
+                )
+            }
+
+            Section {
                 Picker("Badge Counter", selection: badgeCountStyleBinding) {
                     ForEach(TelegramBadgeCountStyle.allCases) { style in
                         Text(style.title).tag(style)
@@ -310,6 +318,7 @@ struct TelegramNotificationsView: View {
     @State private var inAppVibrateEnabled = TelegramInAppNotificationPreferences.vibrateEnabled
     @State private var inAppPreviewsEnabled = TelegramInAppNotificationPreferences.previewsEnabled
     @State private var badgeCountStyle = TelegramBadgeCountPreference.style
+    @State private var showNamesOnLockscreen = TelegramLockscreenNamePreference.isEnabled
     #endif
 
     private let service: any TelegramService
@@ -379,6 +388,16 @@ struct TelegramNotificationsView: View {
             set: { newValue in
                 inAppPreviewsEnabled = newValue
                 TelegramInAppNotificationPreferences.previewsEnabled = newValue
+            },
+        )
+    }
+
+    private var showNamesOnLockscreenBinding: Binding<Bool> {
+        Binding(
+            get: { showNamesOnLockscreen },
+            set: { newValue in
+                showNamesOnLockscreen = newValue
+                TelegramLockscreenNamePreference.isEnabled = newValue
             },
         )
     }
