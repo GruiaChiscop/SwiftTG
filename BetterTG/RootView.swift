@@ -70,12 +70,35 @@ struct RootView: View {
         }
         // Applies everywhere in the subtree - link taps in message text, chat bios, link
         // previews, etc. - so `t.me`/`telegram.me`/`tg:` links resolve in-app instead of always
-        // bouncing to Safari. Anything else keeps the system's own default handling.
+        // bouncing to Safari. Anything else follows the user's "Open Links In" choice.
         .environment(\.openURL, OpenURLAction { url in
-            guard TelegramDeepLink.isTelegramLink(url) else { return .systemAction }
+            guard TelegramDeepLink.isTelegramLink(url) else {
+                switch TelegramOpenLinksSettings.preference {
+                case .inApp:
+                    inAppBrowserURL = url
+                    return .handled
+                case let preference:
+                    guard let externalURL = preference.externalURL(for: url),
+                          UIApplication.shared.canOpenURL(externalURL)
+                    else { return .systemAction }
+                    UIApplication.shared.open(externalURL)
+                    return .handled
+                }
+            }
             rootVM.handleDeepLink(url)
             return .handled
         })
+        .sheet(isPresented: Binding(
+            get: { inAppBrowserURL != nil },
+            set: { isPresented in
+                if !isPresented { inAppBrowserURL = nil }
+            },
+        )) {
+            if let inAppBrowserURL {
+                SafariView(url: inAppBrowserURL)
+                    .ignoresSafeArea()
+            }
+        }
         .alert(
             "Join Chat?",
             isPresented: Binding(
@@ -199,6 +222,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var rootVM = RootVM.shared
     @State private var callSession = TelegramCallSession.shared
+    @State private var inAppBrowserURL: URL?
 
     private func presentCallRatingSuccessIfNeeded() async {
         guard let token = callSession.callRatingSuccessToken else { return }

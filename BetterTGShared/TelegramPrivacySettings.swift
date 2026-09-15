@@ -308,6 +308,12 @@ struct TelegramPrivacyView: View {
                     } label: {
                         LabeledContent("Passkeys", value: passkeyCount == 0 ? "Off" : "On")
                     }
+
+                    NavigationLink {
+                        TelegramOpenLinksSettingsView { openLinksPreference = $0 }
+                    } label: {
+                        LabeledContent("Open Links In", value: openLinksPreference.title)
+                    }
                 #else
                     Button {
                         presentedSecurityItem = .blockedUsers
@@ -570,6 +576,7 @@ struct TelegramPrivacyView: View {
     @State private var deleteAccountPassword = ""
     @State private var deleteAccountFailure: String?
     @State private var passkeyCount = 0
+    @State private var openLinksPreference = TelegramOpenLinksSettings.preference
     @State private var rules = [UserPrivacySetting: UserPrivacySettingRules]()
     @State private var selectedItem: TelegramPrivacyItem?
     #if os(macOS)

@@ -25,6 +25,17 @@
 			</array>
 		</dict>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>x-safari-https</string>
+		<string>x-safari-http</string>
+		<string>googlechrome</string>
+		<string>googlechromes</string>
+		<string>firefox</string>
+		<string>microsoft-edge-https</string>
+		<string>microsoft-edge-http</string>
+		<string>brave</string>
+	</array>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SwiftTG uses your location in the background to keep a live location share updated while you move.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
