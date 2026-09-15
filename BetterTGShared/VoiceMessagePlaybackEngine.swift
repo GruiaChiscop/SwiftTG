@@ -115,11 +115,13 @@ import SwiftOGG
     }
 
     func seekForward() {
-        seek(to: playerTime + 5)
+        let step = TelegramVoiceSkipSettings.effectiveStep(forDuration: duration)
+        seek(to: playerTime + Double(step))
     }
 
     func seekBackward() {
-        seek(to: max(0, playerTime - 5))
+        let step = TelegramVoiceSkipSettings.effectiveStep(forDuration: duration)
+        seek(to: max(0, playerTime - Double(step)))
     }
 
     // MARK: Private

@@ -92,6 +92,15 @@ struct MessageVoiceNoteView: View {
             }
             .font(.system(size: 24))
 
+            TelegramVoiceWaveformView(samples: waveformSamples, progress: playbackProgress) { fraction in
+                if isCurrentVoiceActive {
+                    media.seek(to: fraction * Double(voiceNote.duration))
+                } else {
+                    TelegramAudioPlayer.shared.stop()
+                    onPlaybackToggle()
+                }
+            }
+
             ZStack {
                 Text(TelegramFileTransferProgress.downloadLabel(file: file) ?? "")
                     .opacity(isDownloading ? 1 : 0)
@@ -130,6 +139,13 @@ struct MessageVoiceNoteView: View {
     }
 
     private var isCurrentVoiceActive: Bool { media.savedMediaPath == voiceLocalPath && media.isPlaying }
+
+    private var waveformSamples: [UInt8] { TelegramVoiceWaveform.decode(voiceNote.waveform) }
+
+    private var playbackProgress: Double {
+        guard isCurrentVoiceActive, voiceNote.duration > 0 else { return 0 }
+        return min(1, Double(media.currentTime) / Double(voiceNote.duration))
+    }
 
     private var playbackImageName: String {
         if isCurrentVoiceActive {

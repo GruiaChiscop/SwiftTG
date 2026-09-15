@@ -166,16 +166,6 @@ struct MessageView: View {
         customMessage.messageVoiceNote != nil && media.savedMediaPath == voiceNoteLocalPath && media.isPlaying
     }
 
-    /// Skipping by 5 seconds on something barely longer than that just lands on an endpoint every
-    /// time - Telegram-iOS has no discrete skip controls to compare against (it drags a scrubber
-    /// instead, which scales with duration on its own), so this is our own threshold: below it,
-    /// the Skip Forward/Skip Backward actions don't appear at all rather than being present but
-    /// pointless.
-    private var isVoiceNoteLongEnoughToSkip: Bool {
-        guard let voiceNote = customMessage.messageVoiceNote else { return false }
-        return voiceNote.voiceNote.duration > 10
-    }
-
     private var liveAccessibilityPlaybackElapsed: Int {
         if customMessage.messageVoiceNote != nil,
            media.savedMediaPath == voiceNoteLocalPath
@@ -928,7 +918,7 @@ struct MessageView: View {
                 }
             }
             .modify {
-                if isCurrentVoiceNoteActive, isVoiceNoteLongEnoughToSkip {
+                if isCurrentVoiceNoteActive {
                     $0
                         .accessibilityAction(named: "Skip Forward") { media.seekForward() }
                         .accessibilityAction(named: "Skip Backward") { media.seekBackward() }

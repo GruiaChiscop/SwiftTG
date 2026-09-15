@@ -36,7 +36,12 @@ import UIKit
     var savedMediaPath: String { MainActor.assumeIsolated { engine.currentPath } ?? "" }
     var isPlaying: Bool { MainActor.assumeIsolated { engine.isPlaying } }
     var currentTime: Int32 { Int32(MainActor.assumeIsolated { engine.currentTime }) }
+    var duration: Int { MainActor.assumeIsolated { engine.duration } }
     var playbackRate: Float { MainActor.assumeIsolated { engine.playbackRate } }
+
+    func seek(to seconds: TimeInterval) {
+        MainActor.assumeIsolated { engine.seek(to: seconds) }
+    }
 
     /// Cycles through `TelegramVoicePlaybackRateSettings.presets` and persists the choice for
     /// every voice note played afterward. Returns the new rate so callers can announce it.
