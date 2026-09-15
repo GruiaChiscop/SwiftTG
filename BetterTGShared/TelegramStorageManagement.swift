@@ -215,6 +215,17 @@ struct TelegramStorageSettingsView: View {
                 }
             }
 
+            #if os(iOS)
+                Section {
+                    Toggle("Pause Music While Recording", isOn: $pauseMusicWhileRecording)
+                    Toggle("Raise to Listen", isOn: $raiseToListen)
+                } footer: {
+                    Text(
+                        "Pause Music While Recording stops other audio from playing while you record a video message. Raise to Listen switches a playing voice message to the earpiece when you hold the phone to your ear.",
+                    )
+                }
+            #endif
+
             Section("Connection Type") {
                 #if os(iOS)
                     NavigationLink {
@@ -318,6 +329,10 @@ struct TelegramStorageSettingsView: View {
         .rawValue
     @AppStorage(TelegramCallSettings.dataSavingDefaultsKey) private var callDataSaving = TelegramCallSettings
         .dataSaving
+    #if os(iOS)
+        @AppStorage(TelegramPauseMusicSetting.defaultsKey) private var pauseMusicWhileRecording = true
+        @AppStorage(TelegramRaiseToListenSetting.defaultsKey) private var raiseToListen = false
+    #endif
     @State private var cachedFileCount = 0
     @State private var cachedFilesSize: Int64 = 0
     @State private var databaseSize: Int64 = 0

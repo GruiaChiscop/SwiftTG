@@ -544,14 +544,17 @@ enum TelegramVideoNoteCameraPosition: Sendable {
     #if os(iOS)
     private func configureAudioSessionForRecording() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        // No `.mixWithOthers`, ever - see `Media.setAudioSessionRecord()`'s matching comment.
-        // Letting other audio keep playing through the speaker while recording risks it bleeding
-        // into the recorded video note itself.
-        let options: AVAudioSession.CategoryOptions = [
+        // Unlike voice notes (see `Media.setAudioSessionRecord()`'s matching comment, which never
+        // mixes), video notes respect the "Pause Music While Recording" setting - matching
+        // Telegram-iOS, where the same toggle only gates video-note recording.
+        var options: AVAudioSession.CategoryOptions = [
             .allowBluetoothHFP,
             .defaultToSpeaker,
             .overrideMutedMicrophoneInterruption,
         ]
+        if !TelegramPauseMusicSetting.isEnabled {
+            options.insert(.mixWithOthers)
+        }
         try audioSession.setCategory(
             .playAndRecord,
             mode: .videoRecording,
