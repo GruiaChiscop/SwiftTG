@@ -59,6 +59,7 @@ struct MainView: View {
                         }
                 }
             }
+            .badge(unreadChatCount)
 
             Tab("You", systemImage: "person.crop.circle", value: MainTab.you) {
                 NavigationStack {
@@ -84,6 +85,10 @@ struct MainView: View {
 
     @Bindable private var rootVM = RootVM.shared
     @State private var selectedTab = MainTab.chats
+
+    private var unreadChatCount: Int {
+        rootVM.allChats.lazy.filter(\.hasUnreadMessages).count
+    }
 }
 
 // MARK: - MainNavigationRootView
