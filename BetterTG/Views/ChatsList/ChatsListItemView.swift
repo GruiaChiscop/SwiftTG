@@ -137,6 +137,9 @@ extension CustomChat {
         if unreadCount != 0 {
             parts.append("\(unreadCount) unread")
         }
+        if isMuted {
+            parts.append("Muted")
+        }
         if position.isPinned {
             parts.append("Pinned")
         }
