@@ -456,6 +456,9 @@ struct MacMessageRow: View {
         ) {
             parts.append(status)
         }
+        if let viewCount = telegramMessageViewCountDescription(message) {
+            parts.append(viewCount)
+        }
         return parts.joined(separator: ", ")
     }
 
@@ -470,6 +473,9 @@ struct MacMessageRow: View {
             lastReadOutboxMessageId: lastReadOutboxMessageId,
         ) {
             parts.append(status)
+        }
+        if let viewCount = telegramMessageViewCountDescription(message) {
+            parts.append(viewCount)
         }
         return parts.joined(separator: ", ")
     }
@@ -486,6 +492,9 @@ struct MacMessageRow: View {
             lastReadOutboxMessageId: lastReadOutboxMessageId,
         ) {
             parts.append(status)
+        }
+        if let viewCount = telegramMessageViewCountDescription(message) {
+            parts.append(viewCount)
         }
         return parts.joined(separator: ", ")
     }
@@ -672,6 +681,9 @@ struct MacMessageRow: View {
                     HStack(spacing: 5) {
                         if let editStatus = telegramMessageEditStatus(message) {
                             Text(editStatus)
+                        }
+                        if let viewCount = telegramMessageViewCountDescription(message) {
+                            Text(viewCount)
                         }
                         Text(Date(timeIntervalSince1970: TimeInterval(message.date)), format: .dateTime.hour().minute())
                         if let status = telegramMessageDeliveryStatus(
@@ -1370,6 +1382,9 @@ struct MacMessageRow: View {
         lastReadOutboxMessageId: lastReadOutboxMessageId,
     ) {
         parts.append(status)
+    }
+    if let viewCount = telegramMessageViewCountDescription(message) {
+        parts.append(viewCount)
     }
     if case .messageVoiceNote(let content) = message.content {
         if message.selfDestructType == .messageSelfDestructTypeImmediately {

@@ -156,6 +156,16 @@ func telegramMessageDateDescription(_ timestamp: Int) -> String {
     Date(timeIntervalSince1970: TimeInterval(timestamp)).formatted(date: .abbreviated, time: .shortened)
 }
 
+/// `nil` for any message TDLib hasn't reported a view count for - in practice that's every
+/// message except channel posts, but this gates on the count itself (matching Telegram-iOS's own
+/// `impressionCount == 0 ? nil : impressionCount`) rather than on chat kind, so it also covers any
+/// other context TDLib ever attaches a view count to. Spells the number out in full rather than
+/// abbreviating ("1.2K") to match this app's own convention for member/subscriber counts.
+func telegramMessageViewCountDescription(_ message: Message) -> String? {
+    guard let viewCount = message.interactionInfo?.viewCount, viewCount > 0 else { return nil }
+    return viewCount == 1 ? "1 view" : "\(viewCount.formatted()) views"
+}
+
 /// Short label for a chat list row's preview date: just the time for today, otherwise the date -
 /// showing a bare time for an old message would misread as "sent today".
 func telegramChatListTimestamp(

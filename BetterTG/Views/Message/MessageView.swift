@@ -84,6 +84,9 @@ struct MessageView: View {
         ) {
             parts.append(status)
         }
+        if let viewCount = telegramMessageViewCountDescription(customMessage.message) {
+            parts.append(viewCount)
+        }
         if let voiceNote = customMessage.messageVoiceNote {
             let presentation = TelegramVoiceNotePresentation(
                 message: customMessage.message,
@@ -362,6 +365,9 @@ struct MessageView: View {
         ) {
             parts.append(status)
         }
+        if let viewCount = telegramMessageViewCountDescription(customMessage.message) {
+            parts.append(viewCount)
+        }
         return parts.joined(separator: ", ")
     }
 
@@ -377,6 +383,9 @@ struct MessageView: View {
         ) {
             parts.append(status)
         }
+        if let viewCount = telegramMessageViewCountDescription(customMessage.message) {
+            parts.append(viewCount)
+        }
         return parts.joined(separator: ", ")
     }
 
@@ -384,6 +393,9 @@ struct MessageView: View {
         var value = " "
         if telegramMessageEditStatus(customMessage.message) != nil {
             value += "edited "
+        }
+        if let viewCount = telegramMessageViewCountDescription(customMessage.message) {
+            value += "\(viewCount) "
         }
         value += chatVM.dateFormatter.string(from: customMessage.date)
         if let visualDeliveryStatusGlyph {
