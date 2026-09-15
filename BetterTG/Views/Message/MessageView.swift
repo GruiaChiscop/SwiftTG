@@ -303,7 +303,8 @@ struct MessageView: View {
     }
 
     private var hasAccessibilityGroup: Bool {
-        !isPollMessage && !isChecklistMessage && (!textLinks.isEmpty || separatePreviewAccessibilityLink != nil)
+        !isPollMessage && !isChecklistMessage
+            && (!textLinks.isEmpty || separatePreviewAccessibilityLink != nil || isCurrentVoiceNoteActive)
     }
 
     private var audioPlaylist: [Audio] {
@@ -640,7 +641,7 @@ struct MessageView: View {
     /// type) in another `_ConditionalContent`, which is exactly the pattern that made `body` slow
     /// to begin with.
     private var accessibilityGroupedRow: AnyView {
-        hasAccessibilityGroup ? AnyView(linkAccessibilityGroup(row)) : AnyView(row)
+        hasAccessibilityGroup ? AnyView(messageAccessibilityGroup(row)) : AnyView(row)
     }
 
     /// Pre-erased for the same reason as `accessibilityGroupedRow`.
@@ -684,33 +685,7 @@ struct MessageView: View {
         if isPollMessage || isChecklistMessage || isActiveOutgoingLiveLocation {
             return AnyView(column)
         }
-        return AnyView(
-            messageAccessibilityElement(column)
-                // `messageAccessibilityElement` collapses the whole row into one
-                // `.accessibilityElement(children: .ignore)` stop, which swallows any
-                // `.accessibilityHidden(false)` override on a descendant - the Playback Speed
-                // control (visible inside MessageVoiceNoteView, matching WhatsApp's "1x" pill) has
-                // to be wired as a sibling, outside that boundary, to be independently reachable.
-                // `.accessibilitySortPriority` pins the row ahead of it explicitly, rather than
-                // relying on `.topTrailing` alignment alone to produce that ordering - a `.topLeading`
-                // anchor here previously put it ahead of the row in VoiceOver's swipe order, so
-                // double-tapping what looked like "the message" was actually cycling speed instead
-                // of toggling play/pause.
-                .accessibilitySortPriority(1)
-                .overlay(alignment: .topTrailing) {
-                    if isCurrentVoiceNoteActive {
-                        Button {
-                            media.cyclePlaybackRate()
-                        } label: {
-                            Color.clear
-                        }
-                        .frame(width: 1, height: 1)
-                        .accessibilityLabel("Playback Speed")
-                        .accessibilityValue(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
-                        .accessibilitySortPriority(0)
-                    }
-                },
-        )
+        return AnyView(messageAccessibilityElement(column))
     }
 
     private var callPeer: (id: Int64, displayName: String)? {
@@ -876,7 +851,7 @@ struct MessageView: View {
         .accessibilityHidden(hasAccessibilityGroup)
     }
 
-    private func linkAccessibilityGroup(_ content: some View) -> some View {
+    private func messageAccessibilityGroup(_ content: some View) -> some View {
         content
             .accessibilityElement(children: .contain)
             .accessibilityChildren {
@@ -900,6 +875,12 @@ struct MessageView: View {
                     Button("Reactions") { showReactionDetails = true }
                         .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
                 }
+                if isCurrentVoiceNoteActive {
+                    Button("Playback Speed") { media.cyclePlaybackRate() }
+                        .accessibilityValue(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
+                    Button("Skip Forward") { media.seekForward() }
+                    Button("Skip Backward") { media.seekBackward() }
+                }
             }
     }
 
@@ -922,13 +903,6 @@ struct MessageView: View {
                     $0
                         .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
                         .accessibilityAddTraits(.startsMediaSession)
-                }
-            }
-            .modify {
-                if isCurrentVoiceNoteActive {
-                    $0
-                        .accessibilityAction(named: "Skip Forward") { media.seekForward() }
-                        .accessibilityAction(named: "Skip Backward") { media.seekBackward() }
                 }
             }
             .modify {
