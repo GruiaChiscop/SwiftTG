@@ -96,6 +96,12 @@ struct YouView: View {
                 } label: {
                     Label("Appearance", systemImage: "paintpalette")
                 }
+
+                NavigationLink {
+                    TelegramPowerSavingSettingsView()
+                } label: {
+                    Label("Power Saving", systemImage: "battery.25")
+                }
             }
 
             Section {

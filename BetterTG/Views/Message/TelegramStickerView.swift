@@ -56,7 +56,7 @@ struct TelegramStickerView: View {
                         TelegramStickerAnimationView(
                             fileURL: URL(filePath: file.local.path),
                             renderSize: displaySize,
-                            shouldPlay: isVisible && scenePhase == .active && !reduceMotion,
+                            shouldPlay: isVisible && scenePhase == .active && !reduceMotion && !powerSavingActive,
                         )
                     } placeholder: {
                         placeholder
@@ -69,7 +69,7 @@ struct TelegramStickerView: View {
                     AsyncTdFile(id: presentation.fileId, service: service) { file in
                         TelegramStickerVideoView(
                             fileURL: URL(filePath: file.local.path),
-                            shouldPlay: isVisible && scenePhase == .active && !reduceMotion,
+                            shouldPlay: isVisible && scenePhase == .active && !reduceMotion && !powerSavingActive,
                         )
                     } placeholder: {
                         videoPreview
@@ -91,6 +91,7 @@ struct TelegramStickerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var isVisible = false
+    private var powerSavingActive: Bool { TelegramPowerSavingMonitor.shared.isActive }
 
     private var presentation: TelegramStickerPresentation {
         TelegramStickerPresentation(sticker)
