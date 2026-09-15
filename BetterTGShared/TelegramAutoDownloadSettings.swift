@@ -5,10 +5,11 @@ import SwiftUI
 
 // MARK: - TelegramAutoDownloadSizeOption
 
-/// TDLib has no getter for the currently-active auto-download settings (only presets to seed
-/// defaults from) - the client is expected to own that state. We persist the chosen settings
-/// per network type locally and push them to TDLib with `setAutoDownloadSettings` whenever they
-/// change or the app launches, mirroring how the official clients handle this.
+/// TDLib has no getter for the currently-active auto-download settings - the client is expected
+/// to own that state. We persist the chosen settings per network type locally (starting from our
+/// own defaults, see `TelegramAutoDownloadStore.defaultSettings(for:)`) and push them to TDLib
+/// with `setAutoDownloadSettings` whenever they change or the app launches, mirroring how the
+/// official clients handle this.
 enum TelegramAutoDownloadSizeOption: Int64, CaseIterable, Identifiable, Hashable {
     case off = 0
     case oneMB = 1_048_576
@@ -60,21 +61,34 @@ let telegramAutoDownloadNetworkItems: [TelegramAutoDownloadNetworkItem] = [
 enum TelegramAutoDownloadStore {
     // MARK: Internal
 
-    static func preset(for type: NetworkType, in presets: AutoDownloadSettingsPresets) -> AutoDownloadSettings {
-        switch type {
-        case .networkTypeWiFi: presets.high
-        case .networkTypeMobile: presets.medium
-        case .networkTypeMobileRoaming: presets.low
-        case .networkTypeNone, .networkTypeOther: presets.medium
-        }
+    /// TDLib's own `getAutoDownloadSettingsPresets()` is deliberately not used as a source of
+    /// caps: its "high" (Wi-Fi) preset's `maxOtherFileSize` turned out permissive enough to
+    /// auto-download several-hundred-MB app installers without a tap, which no reasonable default
+    /// should do. Unigram (another TDLib-based client) made the same call - its own "reset to
+    /// defaults" action has the equivalent `FromPreset(presets.High)` call commented out in favor
+    /// of its own hardcoded numbers: `AutoDownloadSettings.Default` uses a flat 10 MB video / 3 MB
+    /// document cap, the same regardless of network type. These match that exactly, rather than
+    /// inventing separate (and untested) Wi-Fi/Mobile numbers of our own.
+    static func defaultSettings(for type: NetworkType) -> AutoDownloadSettings {
+        AutoDownloadSettings(
+            isAutoDownloadEnabled: true,
+            maxOtherFileSize: 3_145_728,
+            maxPhotoFileSize: 1_048_576,
+            maxVideoFileSize: 10_485_760,
+            preloadLargeVideos: true,
+            preloadNextAudio: true,
+            preloadStories: true,
+            useLessDataForCalls: type != .networkTypeWiFi,
+            videoUploadBitrate: 0,
+        )
     }
 
-    static func stored(for type: NetworkType, fallback: AutoDownloadSettings) -> AutoDownloadSettings {
+    static func stored(for type: NetworkType) -> AutoDownloadSettings {
         guard
             let data = UserDefaults.standard.data(forKey: defaultsKey(for: type)),
             let decoded = try? JSONDecoder().decode(AutoDownloadSettings.self, from: data)
         else {
-            return fallback
+            return defaultSettings(for: type)
         }
         return decoded
     }
@@ -84,35 +98,28 @@ enum TelegramAutoDownloadStore {
         UserDefaults.standard.set(data, forKey: defaultsKey(for: type))
     }
 
-    /// Re-applies the persisted (or preset-derived) auto-download settings to TDLib, and caches
-    /// the fetched presets for `effectiveSettings(for:)` below. Call this on launch, since TDLib
-    /// doesn't remember the choice across client restarts on its own.
+    /// Re-applies the persisted (or default) auto-download settings to TDLib. Call this on
+    /// launch, since TDLib doesn't remember the choice across client restarts on its own.
     @MainActor static func applyStored(service: any TelegramService) async {
-        guard let presets = try? await service.getAutoDownloadSettingsPresets() else { return }
-        cachedPresets = presets
         for item in telegramAutoDownloadNetworkItems {
-            let settings = stored(for: item.type, fallback: preset(for: item.type, in: presets))
-            _ = try? await service.setAutoDownloadSettings(settings: settings, type: item.type)
+            _ = try? await service.setAutoDownloadSettings(settings: stored(for: item.type), type: item.type)
         }
     }
 
     /// Synchronous lookup for gating a single download decision - message rows call this on every
-    /// appearance, so it must not await. Falls back to an approximation of TDLib's own presets
-    /// for the brief window before `applyStored` has fetched the real ones at launch.
+    /// appearance, so it must not await.
     @MainActor static func effectiveSettings(for type: NetworkType) -> AutoDownloadSettings {
-        stored(for: type, fallback: cachedPresets.map { preset(for: type, in: $0) } ?? fallbackSettings(for: type))
+        stored(for: type)
     }
 
-    /// Discards every customization and returns all three network types to TDLib's own presets,
+    /// Discards every customization and returns all three network types to our own defaults,
     /// matching Telegram-iOS's "Reset Automatic Media Download Settings" action. Returns the
     /// freshly reset settings so the caller can update its own display without a second fetch.
-    @MainActor static func resetToDefaults(service: any TelegramService) async -> [NetworkType: AutoDownloadSettings]? {
-        guard let presets = try? await service.getAutoDownloadSettingsPresets() else { return nil }
-        cachedPresets = presets
+    @MainActor static func resetToDefaults(service: any TelegramService) async -> [NetworkType: AutoDownloadSettings] {
         var resetSettings = [NetworkType: AutoDownloadSettings]()
         for item in telegramAutoDownloadNetworkItems {
             UserDefaults.standard.removeObject(forKey: defaultsKey(for: item.type))
-            let settings = preset(for: item.type, in: presets)
+            let settings = defaultSettings(for: item.type)
             _ = try? await service.setAutoDownloadSettings(settings: settings, type: item.type)
             resetSettings[item.type] = settings
         }
@@ -121,8 +128,6 @@ enum TelegramAutoDownloadStore {
 
     // MARK: Private
 
-    @MainActor private static var cachedPresets: AutoDownloadSettingsPresets?
-
     private static func defaultsKey(for type: NetworkType) -> String {
         switch type {
         case .networkTypeWiFi: "BetterTG.autoDownload.wifi"
@@ -130,22 +135,6 @@ enum TelegramAutoDownloadStore {
         case .networkTypeMobileRoaming: "BetterTG.autoDownload.roaming"
         case .networkTypeNone, .networkTypeOther: "BetterTG.autoDownload.other"
         }
-    }
-
-    private static func fallbackSettings(for type: NetworkType) -> AutoDownloadSettings {
-        let maxVideoFileSize: Int64 = type == .networkTypeWiFi ? 10_485_760 : 2_621_440
-        let maxOtherFileSize: Int64 = type == .networkTypeWiFi ? 3_145_728 : 1_048_576
-        return AutoDownloadSettings(
-            isAutoDownloadEnabled: true,
-            maxOtherFileSize: maxOtherFileSize,
-            maxPhotoFileSize: 1_048_576,
-            maxVideoFileSize: maxVideoFileSize,
-            preloadLargeVideos: type == .networkTypeWiFi,
-            preloadNextAudio: true,
-            preloadStories: true,
-            useLessDataForCalls: type != .networkTypeWiFi,
-            videoUploadBitrate: 0,
-        )
     }
 }
 
@@ -185,14 +174,13 @@ struct TelegramAutoDownloadSettingsView: View {
         .task {
             guard !hasLoaded else { return }
             hasLoaded = true
-            await loadSettings()
+            loadSettings()
         }
         .sheet(item: $selectedItem) { item in
             TelegramAutoDownloadDetailView(
                 service: service,
                 item: item,
-                settings: settings[item.type] ?? presets
-                    .map { TelegramAutoDownloadStore.preset(for: item.type, in: $0) },
+                settings: settings[item.type] ?? TelegramAutoDownloadStore.defaultSettings(for: item.type),
             ) { newSettings in
                 settings[item.type] = newSettings
             }
@@ -203,65 +191,34 @@ struct TelegramAutoDownloadSettingsView: View {
         } message: {
             Text("This discards any custom size limits or toggles you've set for Wi-Fi, Mobile Data, and Roaming.")
         }
-        .alert("Couldn't Load Auto-Download Settings", isPresented: errorIsPresented) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
     }
 
     // MARK: Private
 
     @State private var confirmsReset = false
-    @State private var errorMessage: String?
     @State private var hasLoaded = false
     @State private var isResetting = false
-    @State private var presets: AutoDownloadSettingsPresets?
     @State private var selectedItem: TelegramAutoDownloadNetworkItem?
     @State private var settings = [NetworkType: AutoDownloadSettings]()
 
     private let service: any TelegramService
 
-    private var errorIsPresented: Binding<Bool> {
-        Binding(
-            get: { errorMessage != nil },
-            set: { isPresented in
-                if !isPresented {
-                    errorMessage = nil
-                }
-            },
-        )
-    }
-
     private func statusText(for type: NetworkType) -> String {
         (settings[type]?.isAutoDownloadEnabled ?? true) ? "On" : "Off"
     }
 
-    @MainActor private func loadSettings() async {
-        do {
-            let loadedPresets = try await service.getAutoDownloadSettingsPresets()
-            presets = loadedPresets
-            var resolvedSettings = [NetworkType: AutoDownloadSettings]()
-            for item in telegramAutoDownloadNetworkItems {
-                resolvedSettings[item.type] = TelegramAutoDownloadStore.stored(
-                    for: item.type,
-                    fallback: TelegramAutoDownloadStore.preset(for: item.type, in: loadedPresets),
-                )
-            }
-            settings = resolvedSettings
-        } catch {
-            errorMessage = telegramErrorDescription(error)
+    @MainActor private func loadSettings() {
+        var resolvedSettings = [NetworkType: AutoDownloadSettings]()
+        for item in telegramAutoDownloadNetworkItems {
+            resolvedSettings[item.type] = TelegramAutoDownloadStore.stored(for: item.type)
         }
+        settings = resolvedSettings
     }
 
     @MainActor private func resetToDefaults() async {
         isResetting = true
         defer { isResetting = false }
-        guard let resetSettings = await TelegramAutoDownloadStore.resetToDefaults(service: service) else {
-            errorMessage = "Couldn't reset auto-download settings."
-            return
-        }
-        settings = resetSettings
+        settings = await TelegramAutoDownloadStore.resetToDefaults(service: service)
     }
 }
 
