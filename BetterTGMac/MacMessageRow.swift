@@ -170,23 +170,6 @@ struct MacMessageRow: View {
         TelegramLocationPresentation(message.content)
     }
 
-    private var documentTransferStatus: String? {
-        guard case .messageDocument(let content) = message.content else { return nil }
-        return switch documentTransferPhase {
-        case .downloading:
-            TelegramFileTransferProgress.downloadStatus(
-                fileName: content.document.fileName,
-                file: documentDownloadFile,
-            )
-        case .paused:
-            "Download paused, \(content.document.fileName)"
-        case .preparingPreview:
-            "Preparing preview for \(content.document.fileName)"
-        case nil:
-            nil
-        }
-    }
-
     private var documentTransferProgress: Double? {
         guard documentTransferPhase == .downloading else { return nil }
         return TelegramFileTransferProgress.fraction(documentDownloadFile)
@@ -1050,7 +1033,10 @@ struct MacMessageRow: View {
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("message-\(message.id)")
             .accessibilityLabel(accessibilityDescription)
-            .accessibilityValue(documentTransferStatus ?? "")
+            // `documentTransferLabel` deliberately omits the filename - `accessibilityDescription`
+            // above already names it via "File: <name>" for a document message, so repeating it
+            // in the value read right after would just say the same name twice.
+            .accessibilityValue(documentTransferLabel ?? "")
             .modifier(OptionalAccessibilityActivation(
                 isEnabled: hasDefaultActivation,
                 action: activateMessage,

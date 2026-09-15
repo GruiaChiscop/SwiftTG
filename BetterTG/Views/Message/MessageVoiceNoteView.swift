@@ -21,7 +21,7 @@ struct MessageVoiceNoteView: View {
                     onLocalPathResolved(voice.local.path)
                 }
         } placeholder: { file in
-            voiceNoteView(isDownloading: true, file: file)
+            voiceNoteView(isDownloading: file?.local.isDownloadingActive == true, file: file)
         }
         .padding(4)
         // MessageView exposes one stable accessibility element whose default
@@ -78,7 +78,7 @@ struct MessageVoiceNoteView: View {
             .font(.system(size: 24))
 
             ZStack {
-                Text(TelegramFileTransferProgress.downloadLabel(file: file))
+                Text(TelegramFileTransferProgress.downloadLabel(file: file) ?? "")
                     .opacity(isDownloading ? 1 : 0)
                 HStack(spacing: 0) {
                     Text(media.savedMediaPath == voiceLocalPath ? formattedDuration(from: media.currentTime) : "0:00")

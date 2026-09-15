@@ -39,6 +39,10 @@ struct MessageDocumentView: View {
                             Text("Preparing preview…")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        } else if let size = documentSizeLabel {
+                            Text(size)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,7 +51,9 @@ struct MessageDocumentView: View {
             }
             .buttonStyle(.plain)
             .disabled(isPreparingPreview)
-            .accessibilityLabel("Document \(document.fileName)")
+            .accessibilityLabel(
+                documentSizeLabel.map { "Document \(document.fileName), \($0)" } ?? "Document \(document.fileName)",
+            )
             .accessibilityValue(isPreparingPreview ? "Preparing preview" : "")
             .onAppear {
                 availableFile = file
@@ -63,7 +69,15 @@ struct MessageDocumentView: View {
             let status = TelegramFileTransferProgress.downloadStatus(
                 fileName: document.fileName,
                 file: file,
+                fallbackSizeLabel: documentSizeLabel,
             )
+            // Bubbled up via `onTransferStatusChange` to become the *enclosing message row's*
+            // own `.accessibilityValue` (see `MessageView.documentTransferStatus`) - that row's
+            // `.accessibilityLabel` already states the filename via "File: <name>", so repeating
+            // it in the value read right after would just be the same name twice.
+            let rowTransferStatus = TelegramFileTransferProgress.downloadLabel(file: file)
+                ?? TelegramFileTransferProgress.idleSizeLabel(file: file)
+                ?? documentSizeLabel
             Button(action: requestPreview) {
                 HStack(spacing: 10) {
                     if let progress = TelegramFileTransferProgress.fraction(file) {
@@ -78,9 +92,14 @@ struct MessageDocumentView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(document.fileName)
                             .lineLimit(2)
-                        Text(TelegramFileTransferProgress.downloadLabel(file: file))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if let label = TelegramFileTransferProgress.downloadLabel(file: file)
+                            ?? TelegramFileTransferProgress.idleSizeLabel(file: file)
+                            ?? documentSizeLabel
+                        {
+                            Text(label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -92,9 +111,9 @@ struct MessageDocumentView: View {
             .accessibilityAddTraits(.updatesFrequently)
             .onAppear {
                 availableFile = nil
-                onTransferStatusChange(status)
+                onTransferStatusChange(rowTransferStatus)
             }
-            .onChange(of: status) { _, newStatus in
+            .onChange(of: rowTransferStatus) { _, newStatus in
                 onTransferStatusChange(newStatus)
             }
         }
@@ -118,15 +137,30 @@ struct MessageDocumentView: View {
     @State private var opensWhenDownloadCompletes = false
     @State private var manualDownloadRequest = 0
 
+    /// `document.document` is the `File` embedded directly in the message content, populated with
+    /// the message itself - unlike the live `File?` `AsyncTdFile` passes to its closures, which
+    /// stays `nil`/sizeless until a real transfer actually starts. Use this wherever a size needs
+    /// to show up for a file nobody has downloaded or tapped yet, e.g. just scrolling past it.
+    private var documentSizeLabel: String? {
+        TelegramFileTransferProgress.totalSizeLabel(bytes: max(document.document.size, document.document.expectedSize))
+    }
+
     /// Mirrors Telegram-iOS's "file" auto-download category. Tapping the placeholder below always
     /// starts a real download regardless (see `requestPreview`), matching an explicit request.
     private var autoDownloadsDocument: Bool {
         let settings = TelegramAutoDownloadStore.effectiveSettings(for: TelegramNetworkTypeMonitor.shared.current)
-        return TelegramAutoDownloadPolicy.shouldAutoDownload(
+        let fileSize = max(document.document.size, document.document.expectedSize)
+        let decision = TelegramAutoDownloadPolicy.shouldAutoDownload(
             kind: .document,
-            fileSize: max(document.document.size, document.document.expectedSize),
+            fileSize: fileSize,
             settings: settings,
         )
+        chatScrollTrace(
+            "autoDownloadsDocument \(document.fileName): fileSize=\(fileSize) "
+                + "isAutoDownloadEnabled=\(settings.isAutoDownloadEnabled) "
+                + "maxOtherFileSize=\(settings.maxOtherFileSize) -> \(decision)",
+        )
+        return decision
     }
 
     private var previewErrorIsPresented: Binding<Bool> {
@@ -153,7 +187,9 @@ struct MessageDocumentView: View {
         guard !isPreparingPreview else { return }
         isPreparingPreview = true
         previewError = nil
-        onTransferStatusChange("Preparing preview for \(document.fileName)")
+        // Same reasoning as `rowTransferStatus` above: this becomes the row's accessibility
+        // value, and the row's own label already names the file.
+        onTransferStatusChange("Preparing preview")
         Task { @MainActor in
             defer {
                 isPreparingPreview = false
