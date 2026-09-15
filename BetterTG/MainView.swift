@@ -221,22 +221,35 @@ private struct MainNavigationRootView: View {
             HStack(spacing: 8) {
                 ForEach(rootVM.folders) { folder in
                     let isSelected = rootVM.currentFolder == folder.id
+                    let unreadChatCount = folder.unreadChatCount
                     Button {
                         withAnimation { rootVM.currentFolder = folder.id }
                     } label: {
-                        Text(folder.name)
-                            .font(.subheadline)
-                            .fontWeight(isSelected ? .semibold : .regular)
-                            .foregroundStyle(isSelected ? .white : .gray)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background {
-                                if isSelected {
-                                    Capsule().fill(.blue)
-                                }
+                        HStack(spacing: 5) {
+                            Text(folder.name)
+                                .font(.subheadline)
+                                .fontWeight(isSelected ? .semibold : .regular)
+                            if unreadChatCount > 0 {
+                                Text("\(unreadChatCount)")
+                                    .font(.caption2.bold())
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(isSelected ? .white.opacity(0.3) : Color.accentColor, in: Capsule())
                             }
+                        }
+                        .foregroundStyle(isSelected ? .white : .gray)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background {
+                            if isSelected {
+                                Capsule().fill(.blue)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        unreadChatCount > 0 ? "\(folder.name), \(unreadChatCount) unread" : folder.name,
+                    )
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }

@@ -48,6 +48,10 @@ import TDLibKit
         }
     }
     
+    var unreadChatCount: Int {
+        chats.lazy.filter(\.hasUnreadMessages).count
+    }
+
     var info: ChatFolderInfo? {
         switch type {
         case .folder(let info, _): info
