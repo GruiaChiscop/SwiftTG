@@ -252,6 +252,10 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
     /// aren't repliable and an unregistered category identifier just shows a plain notification.
     private static let repliableCategoryIdentifiers = ["r", "m", "gr", "gm"]
 
+    /// `.hiddenPreviewsShowTitle` keeps the sender/chat name visible on the lock screen even while
+    /// iOS's own system-wide "Show Previews: When Unlocked" setting is hiding the message body -
+    /// matching how WhatsApp's notifications behave there. Registering it is enough; iOS applies it
+    /// to every push tagged with a matching `aps.category`, no server or payload change needed.
     private static func registerNotificationCategories() {
         let reply = UNTextInputNotificationAction(
             identifier: replyActionIdentifier,
@@ -260,15 +264,34 @@ private let legacyStartCallActivityType = "INStartAudioCallIntent"
             textInputButtonTitle: "Send",
             textInputPlaceholder: "Message",
         )
-        let categories = repliableCategoryIdentifiers.map { identifier in
+        let repliableCategories = repliableCategoryIdentifiers.map { identifier in
             UNNotificationCategory(
                 identifier: identifier,
                 actions: [reply],
                 intentIdentifiers: [],
-                options: [],
+                hiddenPreviewsBodyPlaceholder: "New Message",
+                options: [.hiddenPreviewsShowTitle],
             )
         }
-        UNUserNotificationCenter.current().setNotificationCategories(Set(categories))
+        // "c" (channel) and "t" (reaction) aren't repliable (see `repliableCategoryIdentifiers`'s
+        // comment) so they get no reply action, but should keep the same lock-screen behavior.
+        let nonRepliableCategories = [
+            UNNotificationCategory(
+                identifier: "c",
+                actions: [],
+                intentIdentifiers: [],
+                hiddenPreviewsBodyPlaceholder: "New Message",
+                options: [.hiddenPreviewsShowTitle],
+            ),
+            UNNotificationCategory(
+                identifier: "t",
+                actions: [],
+                intentIdentifiers: [],
+                hiddenPreviewsBodyPlaceholder: "New Reaction",
+                options: [.hiddenPreviewsShowTitle],
+            ),
+        ]
+        UNUserNotificationCenter.current().setNotificationCategories(Set(repliableCategories + nonRepliableCategories))
     }
 
     /// Mirrors Telegram-iOS's own reply-from-notification flow: mark the message read as a side
