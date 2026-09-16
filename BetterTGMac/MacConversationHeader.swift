@@ -84,6 +84,7 @@ extension MacSessionModel {
         conversationHeaderActivities = [:]
         conversationHeaderOnlineMemberCount = 0
         conversationHeaderBaseStatus = fallbackKind.flatMap(macConversationFallbackStatus)
+        composerPlaceholder = nil
 
         conversationHeaderTask = Task { [weak self] in
             guard let self,
@@ -129,6 +130,11 @@ extension MacSessionModel {
                     isChannel: group.isChannel,
                     memberCount: memberCount,
                 )
+                composerPlaceholder = telegramComposerPlaceholder(
+                    isChannel: group.isChannel,
+                    defaultDisableNotification: chat.defaultDisableNotification,
+                    status: group.status,
+                )
             }
         }
     }
@@ -156,6 +162,15 @@ extension MacSessionModel {
                 isChannel: value.supergroup.isChannel,
                 memberCount: value.supergroup.memberCount,
             )
+            if !value.supergroup.isChannel {
+                composerPlaceholder = telegramIsAnonymousAdmin(value.supergroup.status) ? "Send Anonymously" : nil
+            }
+        case .updateChatDefaultDisableNotification(let value):
+            guard case .chatTypeSupergroup(let chatType) = openedChatType,
+                  chatType.isChannel,
+                  value.chatId == openedChatId
+            else { return }
+            composerPlaceholder = value.defaultDisableNotification ? "Silent Broadcast" : "Broadcast"
         case .updateBasicGroupFullInfo(let value):
             guard case .chatTypeBasicGroup(let chatType) = openedChatType,
                   chatType.basicGroupId == value.basicGroupId

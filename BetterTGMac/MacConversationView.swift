@@ -693,7 +693,7 @@ struct MacConversationView: View {
                     let isEditing = model.editingMessage != nil
                     MacComposerTextField(
                         text: isEditing ? $model.editMessageText : $model.messageText,
-                        accessibilityLabel: isEditing ? "Edit message" : "Message",
+                        accessibilityLabel: isEditing ? "Edit message" : (model.composerPlaceholder ?? "Message"),
                         contextID: model.editingMessage.map { AnyHashable($0.id) } ?? AnyHashable("composer"),
                         onPasteFiles: isEditing ? { _ in false } : model.attachPastedFiles,
                         onSubmit: { model.submitComposer() },

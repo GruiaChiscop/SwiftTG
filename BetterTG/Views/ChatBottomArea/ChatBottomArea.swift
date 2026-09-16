@@ -681,7 +681,7 @@ struct ChatBottomArea: View {
         @Bindable var chatVM = chatVM
         let isEditing = chatVM.editCustomMessage != nil
         return MessageTextEditor(
-            isEditing ? "Edit a message" : "Type a message",
+            isEditing ? "Edit a message" : (chatVM.composerPlaceholder ?? "Type a message"),
             text: isEditing ? $chatVM.editMessageText : $chatVM.text,
             contextID: chatVM.editCustomMessage.map { AnyHashable($0.id) } ?? AnyHashable("composer"),
             voiceOverFocusRequest: voiceOverFocusRequest,

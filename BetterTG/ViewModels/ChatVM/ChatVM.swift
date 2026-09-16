@@ -154,6 +154,12 @@ import TDLibKit
     /// Identity currently selected to send messages in this chat as (self, or a channel the user
     /// administers) - kept live from `updateChatMessageSender`. See `ChatVM+SendAs`.
     var sendAsIdentity: MessageSender?
+    /// Composer placeholder override - "Broadcast"/"Silent Broadcast" for channels, "Send
+    /// Anonymously" for an anonymous admin/creator, `nil` for the caller's own default. Kept live
+    /// from `updateSupergroup`/`updateChatDefaultDisableNotification`, since `customChat.chat`/
+    /// `.type` are frozen snapshots from whenever this chat was first loaded (see
+    /// `ChatVM+VideoChat`'s doc comment for the same caveat). See `ChatVM+ComposerPlaceholder`.
+    var composerPlaceholder: String?
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
@@ -252,6 +258,7 @@ import TDLibKit
         setPublishers()
         startVideoChatObservation()
         startSendAsObservation()
+        startComposerPlaceholderObservation()
         refreshConversationStatus()
         refreshPinnedMessages()
         loadInitialMessages()

@@ -158,7 +158,7 @@ import TDLibKit
         default: nil
         }
     }
-    
+
     var shouldShowProfileImage: Bool {
         switch type {
         case .bot, .user: false

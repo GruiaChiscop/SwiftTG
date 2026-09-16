@@ -15,6 +15,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     case .updateBasicGroup,
          .updateBasicGroupFullInfo,
          .updateChatAction,
+         .updateChatDefaultDisableNotification,
          .updateChatMessageSender,
          .updateChatOnlineMemberCount,
          .updateFavoriteStickers,
@@ -162,6 +163,11 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     /// `conversationHeaderStatus` for groups.
     var conversationHeaderOnlineMemberCount = 0
     var conversationHeaderActivities = [MessageSender: ChatAction]()
+    /// Overrides the composer's default placeholder for the opened chat - "Broadcast"/"Silent
+    /// Broadcast" for channels, "Send Anonymously" for an anonymous admin/creator; `nil` uses the
+    /// caller's own default. Computed alongside the conversation header status, from the same
+    /// already-fetched `Supergroup`/`Chat`. See `MacConversationHeader.prepareConversationHeader`.
+    var composerPlaceholder: String?
     /// Identities the user may send messages in the opened chat as, and the one currently
     /// selected - kept live from `updateChatMessageSender`. See `MacSessionModel+SendAs`.
     var sendAsCandidates = [ChatMessageSender]()
