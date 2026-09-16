@@ -49,16 +49,15 @@ struct TelegramPasskeysView: View {
             hasLoaded = true
             await loadPasskeys()
         }
-        .confirmationDialog(
+        .alert(
             "Remove this passkey?",
             isPresented: confirmsRemoval,
-            titleVisibility: .visible,
         ) {
+            Button("Cancel", role: .cancel) { passkeyPendingRemoval = nil }
             Button("Remove Passkey", role: .destructive) {
                 guard let passkey = passkeyPendingRemoval else { return }
                 Task { await remove(passkey) }
             }
-            Button("Cancel", role: .cancel) { passkeyPendingRemoval = nil }
         } message: {
             Text("You won't be able to use it to sign in to Telegram anymore.")
         }

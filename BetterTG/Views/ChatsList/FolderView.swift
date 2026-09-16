@@ -200,14 +200,14 @@ struct FolderView: View {
                 editingActionBar
             }
         }
-        .confirmationDialog(
+        .alert(
             "Delete \(selectedChatIds.count) chat\(selectedChatIds.count == 1 ? "" : "s")?",
             isPresented: $confirmsBulkDelete,
         ) {
-            Button("Delete", role: .destructive) { performBulkDelete() }
             Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { performBulkDelete() }
         }
-        .confirmationDialog(
+        .alert(
             "Mute \(chatToMute?.displayTitle ?? "chat")",
             isPresented: Binding(
                 get: { chatToMute != nil },
@@ -218,10 +218,10 @@ struct FolderView: View {
                 },
             ),
         ) {
+            Button("Cancel", role: .cancel) { chatToMute = nil }
             ForEach(TelegramMutePreset.allCases) { preset in
                 Button(preset.title) { muteSelectedChat(for: preset.duration) }
             }
-            Button("Cancel", role: .cancel) { chatToMute = nil }
         }
     }
 

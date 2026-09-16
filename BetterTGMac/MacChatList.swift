@@ -85,13 +85,14 @@ struct MacChatRow: View {
             await model.loadIdentityBadge(for: chat)
         }
         .contextMenu { chatActions }
-        .confirmationDialog("Mute \(chat.displayTitle)", isPresented: $showMuteOptions) {
+        .alert("Mute \(chat.displayTitle)", isPresented: $showMuteOptions) {
+            Button("Cancel", role: .cancel) {}
             ForEach(TelegramMutePreset.allCases) { preset in
                 Button(preset.title) { model.setMuteDuration(preset.duration, for: chat) }
             }
-            Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Delete \(chat.displayTitle)?", isPresented: $showDeleteOptions) {
+        .alert("Delete \(chat.displayTitle)?", isPresented: $showDeleteOptions) {
+            Button("Cancel", role: .cancel) {}
             if chat.actionPolicy.canDeleteCommunity {
                 Button("Delete for everyone", role: .destructive) {
                     Task { _ = await model.deleteCommunityFromInfo(chat) }
@@ -106,9 +107,9 @@ struct MacChatRow: View {
                     model.deleteChat(chat, forEveryone: true)
                 }
             }
-            Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryOptions) {
+        .alert("Clear history in \(chat.displayTitle)?", isPresented: $showClearHistoryOptions) {
+            Button("Cancel", role: .cancel) {}
             if chat.canBeDeletedOnlyForSelf {
                 Button("Clear only for me", role: .destructive) {
                     model.clearChatHistory(chat, forEveryone: false)
@@ -119,15 +120,14 @@ struct MacChatRow: View {
                     model.clearChatHistory(chat, forEveryone: true)
                 }
             }
-            Button("Cancel", role: .cancel) {}
         } message: {
             Text("All messages will be removed, but the chat will remain in your chat list.")
         }
-        .confirmationDialog("Leave \(chat.title)?", isPresented: $showLeaveConfirmation) {
+        .alert("Leave \(chat.title)?", isPresented: $showLeaveConfirmation) {
+            Button("Cancel", role: .cancel) {}
             Button(chat.kind == .channel ? "Leave Channel" : "Leave Group", role: .destructive) {
                 model.leaveChat(chat)
             }
-            Button("Cancel", role: .cancel) {}
         } message: {
             Text("You will leave this chat and it will be removed from your chat list.")
         }

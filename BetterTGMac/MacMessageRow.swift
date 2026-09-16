@@ -812,7 +812,8 @@ struct MacMessageRow: View {
             guard file.id == documentFileId else { return }
             documentDownloadFile = file
         }
-        .confirmationDialog("Delete message?", isPresented: $showDeleteOptions) {
+        .alert("Delete message?", isPresented: $showDeleteOptions) {
+            Button("Cancel", role: .cancel) {}
             if capabilities?.properties.canBeDeletedOnlyForSelf == true {
                 Button("Delete only for me", role: .destructive) {
                     model.delete(message, forEveryone: false)
@@ -823,15 +824,14 @@ struct MacMessageRow: View {
                     model.delete(message, forEveryone: true)
                 }
             }
-            Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("React", isPresented: $showReactionOptions) {
+        .alert("React", isPresented: $showReactionOptions) {
+            Button("Cancel", role: .cancel) {}
             ForEach(reactionChoices, id: \.self) { reaction in
                 Button(telegramReactionActionTitle(reaction, existing: messageReactions)) {
                     model.toggleReaction(reaction, on: message)
                 }
             }
-            Button("Cancel", role: .cancel) {}
         }
         .sheet(isPresented: $showPhotoPreview) {
             if case .messagePhoto(let content) = message.content,

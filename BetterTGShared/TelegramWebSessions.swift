@@ -71,15 +71,14 @@ struct TelegramWebSessionsView: View {
             hasLoaded = true
             await loadWebsites()
         }
-        .confirmationDialog(
+        .alert(
             "Disconnect all websites?",
             isPresented: $confirmsDisconnectAll,
-            titleVisibility: .visible,
         ) {
+            Button("Cancel", role: .cancel) {}
             Button("Disconnect All", role: .destructive) {
                 Task { await disconnectAll() }
             }
-            Button("Cancel", role: .cancel) {}
         } message: {
             Text("You will need to sign in again on every connected website.")
         }
