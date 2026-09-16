@@ -536,6 +536,8 @@ protocol TelegramService: TelegramContactsSyncing, Sendable {
     ) async throws -> Text
     func getVideoChatAvailableParticipants(chatId: Int64?) async throws -> MessageSenders
     func setVideoChatDefaultParticipant(chatId: Int64?, defaultParticipantId: MessageSender?) async throws -> Ok
+    func getChatAvailableMessageSenders(chatId: Int64?) async throws -> ChatMessageSenders
+    func setChatMessageSender(chatId: Int64?, messageSenderId: MessageSender?) async throws -> Ok
     func getGroupCallStreams(groupCallId: Int?) async throws -> GroupCallStreams
     func getGroupCallStreamSegment(
         channelId: Int?,
@@ -2210,6 +2212,14 @@ extension TelegramSession: TelegramService {
             chatId: chatId,
             defaultParticipantId: defaultParticipantId,
         )
+    }
+
+    func getChatAvailableMessageSenders(chatId: Int64?) async throws -> ChatMessageSenders {
+        try await client.getChatAvailableMessageSenders(chatId: chatId)
+    }
+
+    func setChatMessageSender(chatId: Int64?, messageSenderId: MessageSender?) async throws -> Ok {
+        try await client.setChatMessageSender(chatId: chatId, messageSenderId: messageSenderId)
     }
 
     func getGroupCallStreams(groupCallId: Int?) async throws -> GroupCallStreams {

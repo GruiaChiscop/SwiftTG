@@ -177,6 +177,12 @@ struct MacConversationView: View {
         .task {
             checklistIsAvailable = await TelegramChecklistSending.isAvailable(service: model.service)
         }
+        .task(id: model.sendAsIdentity) {
+            sendAsAccessibilityLabel = await telegramSendAsAccessibilityLabel(
+                for: model.sendAsIdentity,
+                service: model.service,
+            )
+        }
         .alert("Premium Required", isPresented: $showsChecklistPremiumAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -203,6 +209,12 @@ struct MacConversationView: View {
     @State private var showsVideoEffectPicker = false
     @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
+    @State private var sendAsAccessibilityLabel = "Send As"
+
+    private var isSendingAsChannel: Bool {
+        if case .messageSenderChat = model.sendAsIdentity { return true }
+        return false
+    }
 
     private var isViewingForumTopic: Bool {
         if case .messageTopicForum = model.openedTopic {
@@ -630,6 +642,27 @@ struct MacConversationView: View {
                 }
             } else {
                 HStack(alignment: .bottom, spacing: 10) {
+                    if model.sendAsCandidates.count > 1 {
+                        Button {
+                            model.showsSendAsPicker = true
+                        } label: {
+                            Image(systemName: isSendingAsChannel ? "megaphone.fill" : "person.crop.circle.fill")
+                        }
+                        .labelStyle(.iconOnly)
+                        .help("Send As")
+                        .accessibilityLabel(sendAsAccessibilityLabel)
+                        .disabled(model.editingMessage != nil)
+                        .sheet(isPresented: $model.showsSendAsPicker) {
+                            TelegramSendAsPicker(
+                                candidates: TelegramSendAsCandidates(senders: model.sendAsCandidates),
+                                currentSender: model.sendAsIdentity,
+                                service: model.service,
+                            ) { sender in
+                                model.setSendAsIdentity(sender)
+                            }
+                        }
+                    }
+
                     Menu("Attach", systemImage: "paperclip") {
                         Button("Photos", systemImage: "photo") { model.choosePhotos() }
                         Button("Files", systemImage: "doc") { model.chooseDocuments() }

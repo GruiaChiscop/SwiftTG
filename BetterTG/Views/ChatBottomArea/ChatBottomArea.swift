@@ -350,6 +350,15 @@ struct ChatBottomArea: View {
                 chatId: chatVM.customChat.chat.id,
             )
         }
+        .task(id: chatVM.customChat.chat.id) {
+            sendAsCandidates = chatVM.isGroupChat ? await chatVM.sendAsIdentities() : []
+        }
+        .task(id: chatVM.sendAsIdentity) {
+            sendAsAccessibilityLabel = await telegramSendAsAccessibilityLabel(
+                for: chatVM.sendAsIdentity,
+                service: chatVM.service,
+            )
+        }
         .task {
             checklistIsAvailable = await TelegramChecklistSending.isAvailable(service: chatVM.service)
         }
@@ -370,6 +379,28 @@ struct ChatBottomArea: View {
     @ViewBuilder var leftSide: some View {
         @Bindable var chatVM = chatVM
         HStack(spacing: 10) {
+            if sendAsCandidates.count > 1 {
+                Button {
+                    showsSendAsPicker = true
+                } label: {
+                    Image(systemName: isSendingAsChannel ? "megaphone.fill" : "person.crop.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 40, height: 40)
+                .disabled(chatVM.editCustomMessage != nil)
+                .accessibilityLabel(sendAsAccessibilityLabel)
+                .sheet(isPresented: $showsSendAsPicker) {
+                    TelegramSendAsPicker(
+                        candidates: TelegramSendAsCandidates(senders: sendAsCandidates),
+                        currentSender: chatVM.sendAsIdentity,
+                        service: chatVM.service,
+                    ) { sender in
+                        Task { await chatVM.setSendAsIdentity(sender) }
+                    }
+                }
+            }
+
             Menu {
                 Button {
                     withAnimation {
@@ -895,6 +926,9 @@ struct ChatBottomArea: View {
     @State private var showsVideoEffectPicker = false
     @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
+    @State private var sendAsCandidates = [MessageSender]()
+    @State private var showsSendAsPicker = false
+    @State private var sendAsAccessibilityLabel = "Send As"
 
     @State private var hasBegunRecording = false
     @State private var recordingMode = RecordingMode.voice
@@ -918,6 +952,11 @@ struct ChatBottomArea: View {
 
     private var viewOnceRecordingIsAvailable: Bool {
         chatVM.customChat.user != nil && !chatVM.customChat.isSavedMessages
+    }
+
+    private var isSendingAsChannel: Bool {
+        if case .messageSenderChat = chatVM.sendAsIdentity { return true }
+        return false
     }
 
     private func startSelectedRecording() async {

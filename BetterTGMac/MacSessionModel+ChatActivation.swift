@@ -87,6 +87,7 @@ extension MacSessionModel {
         messages = .empty(chatId: chatId)
         editingMessage = nil
         replyingToMessage = nil
+        refreshSendAsState(for: chatId, isGroupChat: openingChat?.kind == .group)
         editMessageText = NSAttributedString(string: "")
         messageCapabilities = [:]
         messageAvailableReactions = [:]

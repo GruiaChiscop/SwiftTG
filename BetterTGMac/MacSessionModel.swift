@@ -15,6 +15,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     case .updateBasicGroup,
          .updateBasicGroupFullInfo,
          .updateChatAction,
+         .updateChatMessageSender,
          .updateChatOnlineMemberCount,
          .updateFavoriteStickers,
          .updateNotificationGroup,
@@ -157,6 +158,11 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     /// `conversationHeaderStatus` for groups.
     var conversationHeaderOnlineMemberCount = 0
     var conversationHeaderActivities = [MessageSender: ChatAction]()
+    /// Identities the user may send messages in the opened chat as, and the one currently
+    /// selected - kept live from `updateChatMessageSender`. See `MacSessionModel+SendAs`.
+    var sendAsCandidates = [MessageSender]()
+    var sendAsIdentity: MessageSender?
+    var showsSendAsPicker = false
     var deepLinkErrorMessage: String?
     var pendingDeepLinkJoin: TelegramPendingDeepLinkJoin?
     var unconfirmedSession: UnconfirmedSession?
@@ -206,6 +212,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     @ObservationIgnored var senderNameRequests = [MacMessageSenderKey: Task<String?, Never>]()
     @ObservationIgnored var senderNamesByKey = [MacMessageSenderKey: String]()
     @ObservationIgnored var openTask: Task<Void, Never>?
+    @ObservationIgnored var sendAsTask: Task<Void, Never>?
     @ObservationIgnored var localFilePaths = [Int: String]()
     @ObservationIgnored var preferredCountryId: String?
     @ObservationIgnored var recordingTimer: Task<Void, Never>?
@@ -498,6 +505,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
                     self?.handleNotificationUpdate(update)
                     self?.handleConversationHeaderUpdate(update)
                     self?.handleUnconfirmedSessionUpdate(update)
+                    self?.handleSendAsUpdate(update)
                     if case .updateFavoriteStickers(let value) = update {
                         self?.favoriteStickers.apply(value)
                     }

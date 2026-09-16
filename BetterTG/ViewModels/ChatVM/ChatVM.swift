@@ -151,6 +151,9 @@ import TDLibKit
     /// See `ChatVM+VideoChat`.
     var videoChat = VideoChat(defaultParticipantId: nil, groupCallId: 0, hasParticipants: false)
     var videoChatCall: GroupCall?
+    /// Identity currently selected to send messages in this chat as (self, or a channel the user
+    /// administers) - kept live from `updateChatMessageSender`. See `ChatVM+SendAs`.
+    var sendAsIdentity: MessageSender?
     @ObservationIgnored var dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "HH:mm"
@@ -248,6 +251,7 @@ import TDLibKit
         isChatTranslationEnabled = TelegramChatTranslationPreferences.isEnabled(chatId: chatId)
         setPublishers()
         startVideoChatObservation()
+        startSendAsObservation()
         refreshConversationStatus()
         refreshPinnedMessages()
         loadInitialMessages()
