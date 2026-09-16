@@ -81,9 +81,11 @@ struct MacRootView: View {
 
     // MARK: Private
 
-    #if DEBUG
-    @State private var showsLoginPreview = false
-    #endif
+    private var whatsNewLink: some View {
+        Link(destination: TelegramSwiftTGNewsChannel.url) {
+            Label("What's New in SwiftTG", systemImage: "megaphone.fill")
+        }
+    }
 
     @ViewBuilder private var content: some View {
         if model.sessionEnded {
@@ -116,19 +118,10 @@ struct MacRootView: View {
                             model.activateChat(chat.id)
                         }
                     }
-                }
-                #if DEBUG
-                .toolbar {
                     ToolbarItem {
-                        Button("Preview Login", systemImage: "person.crop.circle.badge.questionmark") {
-                            showsLoginPreview = true
-                        }
+                        whatsNewLink
                     }
                 }
-                .sheet(isPresented: $showsLoginPreview) {
-                    MacAuthorizationView(model: model, isPreview: true)
-                }
-                #endif
         } else {
             MacAuthorizationView(model: model)
         }

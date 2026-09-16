@@ -60,6 +60,11 @@ struct MainView: View {
                 }
             }
             .badge(unreadChatCount)
+            // `.badge()`'s own VoiceOver integration has been unreliable here (reported as either
+            // silent or not appearing at all) - stating both explicitly, as the folder tabs bar
+            // below already does, leaves nothing for it to still inject on its own.
+            .accessibilityLabel("Chats")
+            .accessibilityValue(unreadChatCount > 0 ? "\(unreadChatCount) unread" : "")
 
             Tab("You", systemImage: "person.crop.circle", value: MainTab.you) {
                 NavigationStack {
@@ -188,28 +193,10 @@ private struct MainNavigationRootView: View {
                     }
                 }
             }
-            #if DEBUG
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Preview Login", systemImage: "person.crop.circle.badge.questionmark") {
-                    showsLoginPreview = true
-                }
-            }
-            #endif
-        }
-        #if DEBUG
-        .sheet(isPresented: $showsLoginPreview) {
-            NavigationStack {
-                LoginView(isPreview: true)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") {
-                                showsLoginPreview = false
-                            }
-                        }
-                    }
+                whatsNewLink
             }
         }
-        #endif
         .onAppear {
                 if rootVM.currentFolder == nil {
                     rootVM.currentFolder = rootVM.folders.first?.id
@@ -266,9 +253,12 @@ private struct MainNavigationRootView: View {
     // MARK: Private
 
     @Bindable private var rootVM = RootVM.shared
-    #if DEBUG
-    @State private var showsLoginPreview = false
-    #endif
+
+    private var whatsNewLink: some View {
+        Link(destination: TelegramSwiftTGNewsChannel.url) {
+            Label("What's New in SwiftTG", systemImage: "megaphone.fill")
+        }
+    }
 
     private var unreadBackButtonTitle: String {
         let count = rootVM.allChats.lazy.filter(\.hasUnreadMessages).count

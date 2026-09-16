@@ -383,7 +383,7 @@ struct TelegramPollView<MessageHeader: View>: View {
         isSelected: Bool,
         presentation: TelegramPollPresentation,
     ) -> String {
-        var parts = [isSelected ? "Checked" : "Not checked"]
+        var parts = [isSelected ? "Ticked" : "Not ticked"]
         if presentation.resultsVisible {
             parts.append("\(option.votePercentage) percent")
             parts.append(telegramPollVoteCountDescription(option.voterCount))
