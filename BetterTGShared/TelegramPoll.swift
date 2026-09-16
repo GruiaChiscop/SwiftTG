@@ -219,18 +219,6 @@ struct TelegramPollView<MessageHeader: View>: View {
                 optionControl(option, presentation: presentation)
             }
 
-            if presentation.canVote {
-                Button(presentation.hasVoted ? "Update Vote" : "Vote") {
-                    submit(Array(selection).sorted())
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    selection.isEmpty
-                        || selection == presentation.chosenOptionPositions
-                        || isSubmitting,
-                )
-            }
-
             if presentation.hasVoted, presentation.allowsRevoting, presentation.canVote {
                 Button("Retract vote") { submit([]) }
                     .disabled(isSubmitting)
@@ -294,11 +282,13 @@ struct TelegramPollView<MessageHeader: View>: View {
         let isSelected = selection.contains(option.position)
         if presentation.canVote {
             Button {
-                selection = telegramPollSelection(
+                let updated = telegramPollSelection(
                     afterToggling: option.position,
                     in: selection,
                     allowsMultipleAnswers: presentation.allowsMultipleAnswers,
                 )
+                selection = updated
+                submit(Array(updated).sorted())
             } label: {
                 optionLabel(option, isSelected: isSelected, presentation: presentation)
             }
