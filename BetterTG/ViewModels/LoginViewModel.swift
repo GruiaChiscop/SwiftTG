@@ -26,6 +26,10 @@ import TDLibKit
     var codeNextType: AuthenticationCodeType?
     var codeResendCountdown = 0
     var isSubmittingCode = false
+    /// Guards every step below that doesn't already have its own submitting flag - without it,
+    /// a double tap on Continue (or `onSubmit` firing alongside a tap) could fire the same TDLib
+    /// call twice, e.g. registering the account and uploading its profile photo twice over.
+    var isSubmittingStep = false
     var emailAddress = ""
     var emailAddressPattern = ""
     var emailCode = ""
@@ -178,8 +182,12 @@ import TDLibKit
                 }
             }
         case .twoFactor:
+            let trimmed = twoFactor.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !isSubmittingStep else { return }
             errorMessage = nil
+            isSubmittingStep = true
             Task {
+                defer { isSubmittingStep = false }
                 do {
                     _ = try await service.checkAuthenticationPassword(password: twoFactor)
                 } catch {
@@ -189,9 +197,11 @@ import TDLibKit
             }
         case .passwordRecovery:
             let trimmedCode = recoveryCode.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedCode.isEmpty, !newPassword.isEmpty else { return }
+            guard !trimmedCode.isEmpty, !newPassword.isEmpty, !isSubmittingStep else { return }
             errorMessage = nil
+            isSubmittingStep = true
             Task {
+                defer { isSubmittingStep = false }
                 do {
                     _ = try await service.recoverAuthenticationPassword(
                         recoveryCode: trimmedCode,
@@ -205,9 +215,11 @@ import TDLibKit
             }
         case .emailAddress:
             let trimmed = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return }
+            guard !trimmed.isEmpty, !isSubmittingStep else { return }
             errorMessage = nil
+            isSubmittingStep = true
             Task {
+                defer { isSubmittingStep = false }
                 do {
                     _ = try await service.setAuthenticationEmailAddress(emailAddress: trimmed)
                 } catch {
@@ -216,11 +228,15 @@ import TDLibKit
                 }
             }
         case .emailCode:
+            let trimmed = emailCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !isSubmittingStep else { return }
             errorMessage = nil
+            isSubmittingStep = true
             Task {
+                defer { isSubmittingStep = false }
                 do {
                     _ = try await service.checkAuthenticationEmailCode(
-                        code: .emailAddressAuthenticationCode(.init(code: emailCode)),
+                        code: .emailAddressAuthenticationCode(.init(code: trimmed)),
                     )
                 } catch {
                     guard !Task.isCancelled else { return }
@@ -229,14 +245,16 @@ import TDLibKit
             }
         case .registration:
             let trimmedFirstName = registrationFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedFirstName.isEmpty else { return }
+            guard !trimmedFirstName.isEmpty, !isSubmittingStep else { return }
             if let termsOfService, termsOfService.showPopup, !hasAcceptedTerms {
                 showsTermsConfirmation = true
                 return
             }
             errorMessage = nil
+            isSubmittingStep = true
             let trimmedLastName = registrationLastName.trimmingCharacters(in: .whitespacesAndNewlines)
             Task {
+                defer { isSubmittingStep = false }
                 do {
                     _ = try await service.registerUser(
                         disableNotification: nil,

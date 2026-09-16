@@ -121,6 +121,10 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var codeResendCountdown = 0
     var wantsToChangePhoneNumber = false
     var loginError: String?
+    /// Guards `runLoginRequest` against firing the same TDLib call twice - none of the login
+    /// buttons disable themselves while a request is in flight, so without this a stray double
+    /// click (or a click landing right after `onSubmit`) could register the account twice over.
+    var isSubmittingLogin = false
     var emailAddress = ""
     var emailCode = ""
     var registrationFirstName = ""

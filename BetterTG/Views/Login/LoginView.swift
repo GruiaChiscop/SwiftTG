@@ -274,7 +274,7 @@ struct LoginView: View {
                 model.continueLogin()
             } label: {
                 Group {
-                    if model.isSubmittingCode || model.isSubmittingPhoneNumber {
+                    if model.isSubmittingCode || model.isSubmittingPhoneNumber || model.isSubmittingStep {
                         ProgressView()
                     } else {
                         Text("Continue")
@@ -284,7 +284,12 @@ struct LoginView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(model.isSubmittingCode || model.isSubmittingPhoneNumber || !model.canSubmitCurrentStep)
+            .disabled(
+                model.isSubmittingCode
+                    || model.isSubmittingPhoneNumber
+                    || model.isSubmittingStep
+                    || !model.canSubmitCurrentStep,
+            )
             .padding()
         }
         .alert(

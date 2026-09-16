@@ -318,13 +318,12 @@ private struct MacAuthorizationView: View {
             focusesPhoneNumberAfterCountrySelection = false
             focusedPhoneField = .phoneNumber
         }
-        .confirmationDialog(
+        .alert(
             "Is this number correct?",
             isPresented: $confirmsPhoneNumber,
-            titleVisibility: .visible,
         ) {
-            Button("Yes, continue") { submitPhoneNumber() }
             Button("Edit Number", role: .cancel) {}
+            Button("Yes, continue") { submitPhoneNumber() }
         } message: {
             if isPreview {
                 Text("Debug preview only. No request will be sent to Telegram.")
@@ -332,7 +331,7 @@ private struct MacAuthorizationView: View {
                 Text("Telegram will send the login code to \(formattedPhoneNumber).")
             }
         }
-        .confirmationDialog(
+        .alert(
             "Terms of Service",
             isPresented: Binding(
                 get: { !isPreview && model.showsRegistrationTermsConfirmation },
@@ -342,10 +341,9 @@ private struct MacAuthorizationView: View {
                     }
                 },
             ),
-            titleVisibility: .visible,
         ) {
-            Button("Agree") { model.acceptRegistrationTermsAndContinue() }
             Button("Decline", role: .cancel) {}
+            Button("Agree") { model.acceptRegistrationTermsAndContinue() }
         } message: {
             Text(model.registrationTermsOfService?.text.text ?? "")
         }

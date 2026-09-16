@@ -216,8 +216,11 @@ extension MacSessionModel {
     // MARK: Private
 
     private func runLoginRequest(_ operation: @escaping @MainActor () async throws -> Ok) {
+        guard !isSubmittingLogin else { return }
         loginError = nil
+        isSubmittingLogin = true
         Task {
+            defer { isSubmittingLogin = false }
             do {
                 _ = try await operation()
             } catch {
