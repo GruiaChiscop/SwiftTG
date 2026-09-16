@@ -107,6 +107,12 @@ import SwiftOGG
         guard allowsSeeking, let audioBuffer else { return }
         let wasPlaying = isPlaying
         let targetFrame = AVAudioFramePosition(max(0, min(seconds, Double(duration))) * sampleRate)
+        // Scheduling an empty tail has no completion callback. Finish explicitly so a
+        // seek to the end cannot leave a silent, loaded note with controls still visible.
+        guard seconds < Double(duration), targetFrame < AVAudioFramePosition(audioBuffer.frameLength) else {
+            stop()
+            return
+        }
         schedule(buffer: audioBuffer, from: targetFrame)
         currentTime = Int(Double(targetFrame) / sampleRate)
         if wasPlaying {

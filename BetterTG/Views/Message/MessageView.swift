@@ -2,7 +2,6 @@
 
 import SwiftUI
 import TDLibKit
-import UIKit
 
 struct MessageView: View {
     // MARK: Internal
@@ -41,7 +40,10 @@ struct MessageView: View {
     @State var freezesAccessibilityPlaybackState = false
 
     var accessibilityDescription: String {
-        var prefix = accessibilityStatePrefix.map { "\($0). " } ?? ""
+        let playbackState = customMessage.messageVoiceNote != nil
+            ? liveAccessibilityStatePrefix
+            : accessibilityStatePrefix
+        var prefix = playbackState.map { "\($0). " } ?? ""
 
         if let forwardedFrom = customMessage.forwardedFrom {
             prefix += "Forwarded from \(forwardedFrom). "
@@ -56,9 +58,21 @@ struct MessageView: View {
         } else {
             let sender = customMessage.message.isOutgoing ? "You" : channelOrGroupAwareSenderName
             if customMessage.album.isEmpty {
-                let content = translatedText?.isEmpty == false
-                    ? translatedText!
-                    : telegramMessageContentDescription(customMessage.message)
+                let content: String
+                if let voiceNote = customMessage.messageVoiceNote {
+                    let presentation = TelegramVoiceNotePresentation(
+                        message: customMessage.message,
+                        content: voiceNote,
+                    )
+                    let caption = translatedText?.isEmpty == false ? translatedText! : voiceNote.caption.text
+                    content = "Voice message, \(telegramSpokenDuration(presentation.duration))"
+                        + (presentation.isViewOnce ? ", view once" : "")
+                        + (caption.isEmpty ? "" : ": \(caption)")
+                } else {
+                    content = translatedText?.isEmpty == false
+                        ? translatedText!
+                        : telegramMessageContentDescription(customMessage.message)
+                }
                 parts.append("\(sender): \(content)")
             } else {
                 let albumDescription = telegramMediaAlbumAccessibilityDescription(
@@ -87,18 +101,8 @@ struct MessageView: View {
         if let viewCount = telegramMessageViewCountDescription(customMessage.message) {
             parts.append(viewCount)
         }
-        if let voiceNote = customMessage.messageVoiceNote {
-            let presentation = TelegramVoiceNotePresentation(
-                message: customMessage.message,
-                content: voiceNote,
-            )
-            if presentation.isViewOnce {
-                parts.append("view once")
-            }
-            parts.append(telegramVoicePlaybackDescription(
-                duration: voiceNote.voiceNote.duration,
-                elapsed: accessibilityPlaybackElapsed,
-            ))
+        if customMessage.messageVoiceNote != nil {
+            parts.append("played \(telegramSpokenDuration(accessibilityPlaybackElapsed))")
         }
         if let videoNote = customMessage.messageVideoNote {
             parts.append(TelegramVideoNotePresentation(
@@ -158,12 +162,20 @@ struct MessageView: View {
 
     // MARK: Private
 
-    /// Gates the Skip Back/Forward/Playback Speed accessibility actions - matches the visible seek
-    /// buttons' own `.disabled(!isCurrentVoiceActive)` in `MessageVoiceNoteView`, since seeking a
-    /// voice note that isn't the one currently loaded in the shared player would silently act on
-    /// whatever else happens to be loaded instead.
+    // The row also contains Speed and Seek. Its focus cannot tell us whether
+    // VoiceOver is reading the message description or one of those controls.
+    @AccessibilityFocusState private var isVoiceDescriptionFocused: Bool
+
+    /// Gates the Skip Back/Forward/Playback Speed/Seek accessibility children - "loaded", not
+    /// "playing", matching `MessageVoiceNoteView`'s own (identically-named) property: pausing
+    /// shouldn't hide these, only switching to a different note (or this one finishing) should.
+    /// Also guards against seeking/adjusting whatever else happens to be loaded in the shared
+    /// player when this note isn't actually the current one.
     private var isCurrentVoiceNoteActive: Bool {
-        customMessage.messageVoiceNote != nil && media.savedMediaPath == voiceNoteLocalPath && media.isPlaying
+        guard customMessage.messageVoiceNote != nil,
+              let voiceNoteLocalPath, !voiceNoteLocalPath.isEmpty
+        else { return false }
+        return media.savedMediaPath == voiceNoteLocalPath
     }
 
     private var liveAccessibilityPlaybackElapsed: Int {
@@ -302,9 +314,15 @@ struct MessageView: View {
         return presentation
     }
 
+    /// A voice note keeps this `true` for the whole message lifetime, not just while active - so
+    /// the message stays `.contain` (several children possible) the whole time rather than
+    /// flipping between that and `.ignore` (one flat element) whenever playback starts/stops. Only
+    /// the *count* of children changes (Speed/Seek appear/disappear, still gated on
+    /// `isCurrentVoiceNoteActive` below), never the container type itself - VoiceOver was landing
+    /// on the last child instead of keeping focus on the row whenever that type itself flipped.
     private var hasAccessibilityGroup: Bool {
         !isPollMessage && !isChecklistMessage
-            && (!textLinks.isEmpty || separatePreviewAccessibilityLink != nil || isCurrentVoiceNoteActive)
+            && (!textLinks.isEmpty || separatePreviewAccessibilityLink != nil || customMessage.messageVoiceNote != nil)
     }
 
     private var audioPlaylist: [Audio] {
@@ -641,7 +659,15 @@ struct MessageView: View {
     /// type) in another `_ConditionalContent`, which is exactly the pattern that made `body` slow
     /// to begin with.
     private var accessibilityGroupedRow: AnyView {
-        hasAccessibilityGroup ? AnyView(messageAccessibilityGroup(row)) : AnyView(row)
+        if customMessage.messageVoiceNote != nil {
+            return AnyView(row.accessibilityRepresentation {
+                VStack {
+                    messageAccessibilityGroupContents
+                }
+                .accessibilityElement(children: .contain)
+            })
+        }
+        return hasAccessibilityGroup ? AnyView(messageAccessibilityGroup(row)) : AnyView(row)
     }
 
     /// Pre-erased for the same reason as `accessibilityGroupedRow`.
@@ -806,20 +832,41 @@ struct MessageView: View {
                 synchronizeAccessibilityPlaybackState()
             }
             .onChange(of: liveAccessibilityPlaybackElapsed) { _, _ in
+                if customMessage.messageVoiceNote != nil {
+                    guard !isVoiceDescriptionFocused else { return }
+                    accessibilityPlaybackElapsed = liveAccessibilityPlaybackElapsed
+                    return
+                }
                 guard !freezesAccessibilityPlaybackState else { return }
                 synchronizeAccessibilityPlaybackState()
             }
             .onChange(of: liveAccessibilityStatePrefix) { _, _ in
-                guard !freezesAccessibilityPlaybackState else { return }
+                // Voice descriptions read the player state directly; only other
+                // message types still use the cached prefix.
+                guard customMessage.messageVoiceNote == nil, !freezesAccessibilityPlaybackState else { return }
                 synchronizeAccessibilityPlaybackState()
             }
+            .onChange(of: isVoiceDescriptionFocused) { _, _ in
+                accessibilityPlaybackElapsed = liveAccessibilityPlaybackElapsed
+            }
             .onChange(of: messageAccessibilityFocused.wrappedValue) { _, focusedMessageId in
+                guard customMessage.messageVoiceNote == nil else { return }
                 if focusedMessageId == customMessage.id {
                     synchronizeAccessibilityPlaybackState()
                     freezesAccessibilityPlaybackState = true
                 } else if focusedMessageId != nil {
                     freezesAccessibilityPlaybackState = false
                     synchronizeAccessibilityPlaybackState()
+                }
+            }
+            .modify {
+                if customMessage.messageVoiceNote != nil {
+                    $0.onChange(of: isCurrentVoiceNoteActive) { oldValue, newValue in
+                        chatScrollTrace(
+                            "voice note isCurrentVoiceNoteActive transition messageId=\(customMessage.id) "
+                                + "\(oldValue) -> \(newValue) hasAccessibilityGroup=\(hasAccessibilityGroup)",
+                        )
+                    }
                 }
             }
     }
@@ -855,33 +902,65 @@ struct MessageView: View {
         content
             .accessibilityElement(children: .contain)
             .accessibilityChildren {
-                messageAccessibilityElement(Text(accessibilityDescription))
-                ForEach(textLinks) { link in
-                    Link(link.displayedText, destination: link.url)
-                        .modify {
-                            if let destination = TelegramTextFormatting.accessibilityDestination(for: link) {
-                                $0.accessibilityValue(destination)
-                            } else {
-                                $0
-                            }
-                        }
-                }
-                if let preview = separatePreviewAccessibilityLink, let destination = preview.url {
-                    Link(preview.accessibilityLinkLabel, destination: destination)
-                        .accessibilityRemoveTraits(.isButton)
-                        .accessibilityAddTraits(.isLink)
-                }
-                if !messageReactions.isEmpty {
-                    Button("Reactions") { showReactionDetails = true }
-                        .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
-                }
-                if isCurrentVoiceNoteActive {
-                    Button("Playback Speed") { media.cyclePlaybackRate() }
-                        .accessibilityValue(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
-                    Button("Skip Forward") { media.seekForward() }
-                    Button("Skip Backward") { media.seekBackward() }
+                messageAccessibilityGroupContents
+            }
+    }
+
+    @ViewBuilder
+    private var messageAccessibilityGroupContents: some View {
+        // These children are virtual - never actually laid out on screen - so VoiceOver
+        // can't sort them by real on-screen position like it does for ordinary views.
+        // Without an explicit priority it falls back to a geometry guess that doesn't
+        // match declaration order, so every child here gets one, highest first.
+        messageAccessibilityElement(Text(accessibilityDescription))
+            .modify {
+                if customMessage.messageVoiceNote != nil {
+                    $0.accessibilityFocused($isVoiceDescriptionFocused)
                 }
             }
+            .accessibilitySortPriority(6)
+        ForEach(Array(textLinks.enumerated()), id: \.element.id) { index, link in
+            Link(link.displayedText, destination: link.url)
+                .modify {
+                    if let destination = TelegramTextFormatting.accessibilityDestination(for: link) {
+                        $0.accessibilityValue(destination)
+                    } else {
+                        $0
+                    }
+                }
+                .accessibilitySortPriority(5 - Double(index) * 0.001)
+        }
+        if let preview = separatePreviewAccessibilityLink, let destination = preview.url {
+            Link(preview.accessibilityLinkLabel, destination: destination)
+                .accessibilityRemoveTraits(.isButton)
+                .accessibilityAddTraits(.isLink)
+                .accessibilitySortPriority(4)
+        }
+        if !messageReactions.isEmpty {
+            Button("Reactions") { showReactionDetails = true }
+                .accessibilityValue(telegramReactionDescription(messageReactions) ?? "")
+                .accessibilitySortPriority(3)
+        }
+        if let voiceNote = customMessage.messageVoiceNote {
+            // Keep the controls' identity across playback changes. Only their
+            // accessibility visibility changes when the note is loaded or released.
+            Button("Playback Speed") {
+                guard isCurrentVoiceNoteActive else { return }
+                media.cyclePlaybackRate()
+            }
+            .accessibilityValue(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
+            .accessibilitySortPriority(2)
+            .accessibilityHidden(!isCurrentVoiceNoteActive)
+            MessageVoiceSeekAccessibilityView(
+                localPath: voiceNoteLocalPath,
+                duration: voiceNote.voiceNote.duration,
+            )
+            .accessibilitySortPriority(1)
+            .accessibilityHidden(!isCurrentVoiceNoteActive || !TelegramVoiceNotePresentation(
+                message: customMessage.message,
+                content: voiceNote,
+            ).allowsSeeking)
+        }
     }
 
     private func messageAccessibilityElement(_ content: some View) -> some View {
@@ -902,6 +981,9 @@ struct MessageView: View {
                 if let messageVoiceNote = customMessage.messageVoiceNote {
                     $0
                         .onTapGesture { toggleVoiceMessage(messageVoiceNote) }
+                        // A virtual accessibility child cannot rely on a synthesized tap:
+                        // it can hit the waveform underneath and seek instead of pausing.
+                        .accessibilityAction { toggleVoiceMessage(messageVoiceNote) }
                         .accessibilityAddTraits(.startsMediaSession)
                 }
             }
@@ -919,41 +1001,46 @@ struct MessageView: View {
                     $0
                 }
             }
-            .modify {
+            .accessibilityActions {
+                // VoiceOver announces these in reverse declaration order: Backward,
+                // Reply and the other message actions, then Forward. Keep navigation
+                // actions in this same list so neither skip action ends up between them.
+                if customMessage.messageVoiceNote != nil {
+                    Button("Skip Forward") {
+                        guard isCurrentVoiceNoteActive else { return }
+                        media.seekForward()
+                    }
+                }
                 if hasNavigableReply {
-                    $0.accessibilityAction(named: "Go to Replied Message") {
+                    Button("Go to Replied Message") {
                         chatVM.navigateToRepliedMessage(from: customMessage.message)
                     }
                 }
-            }
-            .modify {
                 if let forwardedFrom = customMessage.forwardedFrom, canNavigateToForwardOrigin {
-                    $0.accessibilityAction(named: "Go to \(forwardedFrom)") {
+                    Button("Go to \(forwardedFrom)") {
                         chatVM.navigateToForwardOrigin(from: customMessage.message)
                     }
                 }
-            }
-            .modify {
                 if customMessage.messagePhoto != nil
                     || customMessage.messageVideo != nil
                     || !customMessage.album.isEmpty
                 {
-                    $0.accessibilityAction(named: mediaAccessibilityActionName) {
+                    Button(mediaAccessibilityActionName) {
                         openAlbum(albumMessage: nil)
                     }
                 }
-            }
-            .modify {
                 if customMessage.messageContact != nil {
-                    $0.accessibilityAction(named: contactActionTitle) {
+                    Button(contactActionTitle) {
                         activateContact()
                     }
-                } else {
-                    $0
                 }
-            }
-            .accessibilityActions {
                 messageAccessibilityActions
+                if customMessage.messageVoiceNote != nil {
+                    Button("Skip Backward") {
+                        guard isCurrentVoiceNoteActive else { return }
+                        media.seekBackward()
+                    }
+                }
             }
     }
 

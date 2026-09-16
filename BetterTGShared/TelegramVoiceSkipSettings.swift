@@ -8,6 +8,8 @@ import Foundation
 /// overshooting into a clamp on the last tap. Not a user-facing setting - they explicitly didn't
 /// want to configure this themselves.
 enum TelegramVoiceSkipSettings {
+    // MARK: Internal
+
     /// The next Skip Forward/Backward landing position from `current`, snapped to the nearest
     /// checkpoint in `checkpoints(forDuration:)` past it - see that function for how the step sizes
     /// stay whole seconds (mostly the nominal amount, occasionally one second more) while still
@@ -18,8 +20,12 @@ enum TelegramVoiceSkipSettings {
         if forward {
             return points.first { Double($0) > current + 0.01 }.map(Double.init) ?? Double(duration)
         }
-        return points.last { Double($0) < current - 0.01 }.map(Double.init) ?? 0
+        // Rewind past the displayed whole second. At 4.8s, jumping to 4s only
+        // restarts that second; short notes must go back to 3s instead.
+        return points.last { Double($0) < floor(current) - 0.01 }.map(Double.init) ?? 0
     }
+
+    // MARK: Private
 
     /// Whole-second landing positions from 0 to `duration`, `totalSteps` apart - each gap is
     /// `nominalStep(forDuration:)` seconds, rounded up or down by at most one second so

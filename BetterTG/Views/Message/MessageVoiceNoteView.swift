@@ -138,7 +138,13 @@ struct MessageVoiceNoteView: View {
         )
     }
 
-    private var isCurrentVoiceActive: Bool { media.savedMediaPath == voiceLocalPath && media.isPlaying }
+    /// "Loaded", not "playing" - a paused note is still the current one, and its controls (seek,
+    /// speed) should stay available, matching WhatsApp (pausing doesn't hide them, only actually
+    /// switching to a different note - or this one finishing - does).
+    private var isCurrentVoiceActive: Bool {
+        guard let voiceLocalPath, !voiceLocalPath.isEmpty else { return false }
+        return media.savedMediaPath == voiceLocalPath
+    }
 
     private var waveformSamples: [UInt8] { TelegramVoiceWaveform.decode(voiceNote.waveform) }
 
@@ -148,7 +154,7 @@ struct MessageVoiceNoteView: View {
     }
 
     private var playbackImageName: String {
-        if isCurrentVoiceActive {
+        if isCurrentVoiceActive, media.isPlaying {
             "pause.fill"
         } else if isViewOnce {
             "1.circle.fill"
