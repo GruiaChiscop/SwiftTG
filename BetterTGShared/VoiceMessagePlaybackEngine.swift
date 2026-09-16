@@ -1,6 +1,7 @@
 // VoiceMessagePlaybackEngine.swift
 
 @preconcurrency import AVFoundation
+import AudioToolbox
 import Observation
 import SwiftOGG
 
@@ -22,10 +23,10 @@ import SwiftOGG
     private(set) var allowsSeeking = true
     var duration = 0
 
-    /// 1.0 = normal speed. `AVAudioUnitTimePitch` keeps pitch constant as this changes, unlike
-    /// `AVAudioUnitVarispeed`, which would make a sped-up voice sound chipmunk-like.
+    /// 1.0 = normal speed. Use Telegram-iOS's time-domain stretcher to preserve voice
+    /// pitch when changing tempo (MediaPlayerAudioRenderer.swift), rather than NewTimePitch.
     var playbackRate: Float = 1 {
-        didSet { timePitch.rate = playbackRate }
+        didSet { applyPlaybackRate() }
     }
 
     /// Diagnostic hook; no-op by default. iOS wires this to `voicePlaybackTrace`.
@@ -134,7 +135,15 @@ import SwiftOGG
 
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private let playerNode = AVAudioPlayerNode()
-    @ObservationIgnored private let timePitch = AVAudioUnitTimePitch()
+    @ObservationIgnored private let timePitch = AVAudioUnitTimeEffect(
+        audioComponentDescription: AudioComponentDescription(
+            componentType: kAudioUnitType_FormatConverter,
+            componentSubType: kAudioUnitSubType_AUiPodTimeOther,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0,
+        ),
+    )
     @ObservationIgnored private var audioBuffer: AVAudioPCMBuffer?
     @ObservationIgnored private var sampleRate: Double = 48000
     @ObservationIgnored private var scheduledStartFrame: AVAudioFramePosition = 0
@@ -152,6 +161,20 @@ import SwiftOGG
               let time = playerNode.playerTime(forNodeTime: nodeTime)
         else { return Double(scheduledStartFrame) / sampleRate }
         return Double(scheduledStartFrame + time.sampleTime) / time.sampleRate
+    }
+
+    private func applyPlaybackRate() {
+        let status = AudioUnitSetParameter(
+            timePitch.audioUnit,
+            kTimePitchParam_Rate,
+            kAudioUnitScope_Global,
+            0,
+            playbackRate,
+            0,
+        )
+        if status != noErr {
+            trace("setting voice playback rate failed: \(status)")
+        }
     }
 
     private nonisolated static func makePCMBuffer(
@@ -254,7 +277,7 @@ import SwiftOGG
         }
         if timePitch.engine == nil {
             engine.attach(timePitch)
-            timePitch.rate = playbackRate
+            applyPlaybackRate()
         }
         engine.disconnectNodeOutput(playerNode)
         engine.connect(playerNode, to: timePitch, format: buffer.format)
