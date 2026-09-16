@@ -20,7 +20,7 @@ struct MacSessionEndedView: View {
                 .accessibilityAddTraits(.isHeader)
 
             Text(
-                "Your authorization for SwiftTG is no longer active. The session may have been terminated from another Telegram client or by Telegram.",
+                "Your authorisation for SwiftTG is no longer active. The session may have been terminated from another Telegram client or by Telegram.",
             )
             .multilineTextAlignment(.center)
 

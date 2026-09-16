@@ -289,7 +289,7 @@ extension MessageView {
             } catch is CancellationError {
                 return
             } catch {
-                chatVM.messageActionError = "Favorites couldn't be updated: \(telegramErrorDescription(error))"
+                chatVM.messageActionError = "Favourites couldn't be updated: \(telegramErrorDescription(error))"
             }
         }
     }

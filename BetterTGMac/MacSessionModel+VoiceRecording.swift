@@ -87,7 +87,7 @@ extension MacSessionModel {
         do {
             duration = try max(1, Int(ceil(recorder.stopAndWrite(to: url))))
         } catch {
-            messageActionError = "Voice recording could not be finalized: \(error.localizedDescription)"
+            messageActionError = "Voice recording could not be finalised: \(error.localizedDescription)"
             cancelVoiceRecording()
             return
         }

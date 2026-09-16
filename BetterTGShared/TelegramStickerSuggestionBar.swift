@@ -106,13 +106,13 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
             }
 
             Button(
-                isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                isFavorite ? "Remove from Favourites" : "Add to Favourites",
                 systemImage: isFavorite ? "star.slash" : "star",
             ) {
                 favoriteMutation = sticker
             }
         }
-        .accessibilityAction(named: isFavorite ? "Remove from Favorites" : "Add to Favorites") {
+        .accessibilityAction(named: isFavorite ? "Remove from Favourites" : "Add to Favourites") {
             favoriteMutation = sticker
         }
 
@@ -202,7 +202,7 @@ struct TelegramStickerSuggestionBar<Preview: View>: View {
         } catch is CancellationError {
             return
         } catch {
-            showError("Favorites couldn't be updated: \(telegramErrorDescription(error))")
+            showError("Favourites couldn't be updated: \(telegramErrorDescription(error))")
         }
     }
 

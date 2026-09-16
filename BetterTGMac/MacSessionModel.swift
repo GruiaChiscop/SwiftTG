@@ -468,7 +468,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
         case .authorizationStateClosed: "Telegram session closed"
         case .authorizationStateClosing: "Closing Telegram session…"
         case .authorizationStateLoggingOut: "Logging out…"
-        default: "Additional authorization required"
+        default: "Additional authorisation required"
         }
     }
 

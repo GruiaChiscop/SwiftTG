@@ -101,7 +101,7 @@ struct ActiveSessionsView: View {
                         "No Other Sessions",
                         systemImage: "checkmark.shield",
                         description: Text(
-                            "You can log in to Telegram from other mobile, tablet and desktop devices, using the same phone number. All your data will be instantly synchronized.",
+                            "You can log in to Telegram from other mobile, tablet and desktop devices, using the same phone number. All your data will be instantly synchronised.",
                         ),
                     )
                 }

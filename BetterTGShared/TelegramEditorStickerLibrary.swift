@@ -132,7 +132,7 @@ struct TelegramEditorStickerLibrary: View {
             .frame(maxWidth: .infinity)
         } else {
             if !favoriteStickers.isEmpty {
-                Text("Favorites")
+                Text("Favourites")
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
                 TelegramEditorStickerGrid(
@@ -184,7 +184,7 @@ struct TelegramEditorStickerLibrary: View {
             isLoading = false
             return
         } catch {
-            errors.append("Favorite stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
+            errors.append("Favourite stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         do {

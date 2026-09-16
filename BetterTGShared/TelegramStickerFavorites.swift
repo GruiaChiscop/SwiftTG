@@ -19,8 +19,8 @@ enum TelegramStickerFavoriteAction: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .add: "Add to Favorites"
-        case .remove: "Remove from Favorites"
+        case .add: "Add to Favourites"
+        case .remove: "Remove from Favourites"
         }
     }
 

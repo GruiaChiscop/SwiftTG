@@ -49,6 +49,13 @@ enum TelegramChatFolderIconOption: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// VoiceOver label for this icon - matches `rawValue` (the fixed TDLib icon name TDLib expects
+    /// verbatim) except where that name is American-spelled and the app's UI otherwise uses
+    /// British spelling.
+    var accessibilityName: String {
+        self == .favorite ? "Favourite" : rawValue
+    }
+
     var symbolName: String {
         switch self {
         case .all: "tray.full"
@@ -319,7 +326,7 @@ struct TelegramChatFolderEditView: View {
                                 .foregroundStyle(icon == option ? Color.accentColor : .primary)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(option.rawValue)
+                        .accessibilityLabel(option.accessibilityName)
                         .accessibilityAddTraits(icon == option ? [.isSelected] : [])
                     }
                 }

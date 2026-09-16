@@ -490,7 +490,7 @@ final class TelegramVideoNoteAssetWriterRecorder: NSObject, @unchecked Sendable 
                     complete(
                         context,
                         with: .failure(.writerFailed(
-                            context.writer.error?.localizedDescription ?? "The MP4 file could not be finalized",
+                            context.writer.error?.localizedDescription ?? "The MP4 file could not be finalised",
                         )),
                     )
                 }

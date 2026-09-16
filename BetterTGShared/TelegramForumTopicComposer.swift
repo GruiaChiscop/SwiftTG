@@ -178,7 +178,7 @@ struct TelegramForumTopicComposerView<IconPreview: View>: View {
                         .autocorrectionDisabled(false)
                 }
 
-                Section("Icon Color") {
+                Section("Icon Colour") {
                     colorPicker
                 }
 
@@ -244,7 +244,7 @@ struct TelegramForumTopicComposerView<IconPreview: View>: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Color")
+                .accessibilityLabel("Colour")
                 .accessibilityAddTraits(color == iconColor ? .isSelected : [])
             }
         }

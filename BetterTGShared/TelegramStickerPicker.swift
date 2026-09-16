@@ -238,7 +238,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
             }
 
             if !favoriteStickers.isEmpty {
-                sectionHeading("Favorites")
+                sectionHeading("Favourites")
                 stickerGrid(favoriteStickers)
             }
 
@@ -367,7 +367,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                     }
 
                     Button(
-                        isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                        isFavorite ? "Remove from Favourites" : "Add to Favourites",
                         systemImage: isFavorite ? "star.slash" : "star",
                     ) {
                         toggleFavorite(sticker)
@@ -390,7 +390,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                         Button("Remove from Recent") { removeFromRecent(sticker) }
                             .disabled(mutatingStickerFileId != nil)
                     }
-                    Button(isFavorite ? "Remove from Favorites" : "Add to Favorites") {
+                    Button(isFavorite ? "Remove from Favourites" : "Add to Favourites") {
                         toggleFavorite(sticker)
                     }
                     .disabled(mutatingStickerFileId != nil)
@@ -466,7 +466,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                 service.getFavoriteStickers().stickers,
             )
         } catch {
-            errors.append("Favorite stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
+            errors.append("Favourite stickers couldn't be loaded: \(telegramStickerErrorDescription(error))")
         }
 
         guard !Task.isCancelled else {
@@ -650,7 +650,7 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
                     recentStickers.removeAll { $0.sticker.id == fileId }
                 }
             } catch {
-                showFeedback("Favorites couldn't be updated: \(telegramStickerErrorDescription(error))")
+                showFeedback("Favourites couldn't be updated: \(telegramStickerErrorDescription(error))")
             }
             mutatingStickerFileId = nil
         }
@@ -784,7 +784,7 @@ private struct TelegramStickerSetPickerView<Preview: View, ContextPreview: View>
 
                                     let isFavorite = favoriteStickerFileIds.contains(sticker.sticker.id)
                                     Button(
-                                        isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                                        isFavorite ? "Remove from Favourites" : "Add to Favourites",
                                         systemImage: isFavorite ? "star.slash" : "star",
                                     ) {
                                         onToggleFavorite(sticker)

@@ -49,7 +49,7 @@ struct CallView: View {
 
             VStack {
                 HStack {
-                    Button("Minimize Call", systemImage: "chevron.down", action: session.minimizeCallView)
+                    Button("Minimise Call", systemImage: "chevron.down", action: session.minimizeCallView)
                         .labelStyle(.iconOnly)
                         .font(.title3.bold())
                         .frame(width: 44, height: 44)

@@ -1088,7 +1088,7 @@ struct MacMessageRow: View {
             } catch is CancellationError {
                 return
             } catch {
-                model.messageActionError = "Favorites couldn't be updated: \(telegramErrorDescription(error))"
+                model.messageActionError = "Favourites couldn't be updated: \(telegramErrorDescription(error))"
             }
         }
     }

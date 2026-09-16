@@ -324,8 +324,8 @@ struct TelegramAppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Color Scheme") {
-                Picker("Color Scheme", selection: $colorSchemeRawValue) {
+            Section("Colour Scheme") {
+                Picker("Colour Scheme", selection: $colorSchemeRawValue) {
                     ForEach(TelegramColorSchemeOption.allCases) { option in
                         Text(option.title).tag(option.rawValue)
                     }
@@ -334,7 +334,7 @@ struct TelegramAppearanceSettingsView: View {
                 .labelsHidden()
             }
 
-            Section("Accent Color") {
+            Section("Accent Colour") {
                 ForEach(TelegramAccentColor.allCases) { option in
                     Button {
                         accentColorRawValue = option.rawValue

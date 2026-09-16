@@ -16,7 +16,7 @@ struct TelegramEditorInspector: View {
                             .tag(style)
                     }
                 }
-                ColorPicker("Brush color", selection: $editorState.brushColor, supportsOpacity: true)
+                ColorPicker("Brush colour", selection: $editorState.brushColor, supportsOpacity: true)
                 LabeledContent("Brush size") {
                     Slider(value: $editorState.brushWidth, in: 0.003...0.05)
                         .frame(minWidth: 140)
