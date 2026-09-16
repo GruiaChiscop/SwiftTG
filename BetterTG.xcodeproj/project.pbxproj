@@ -847,7 +847,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTG/BetterTG.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_ASSET_PATHS = "\"BetterTG/Preview Assets.xcassets\"";
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				ENABLE_PREVIEWS = YES;
@@ -903,7 +903,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTG/BetterTG.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_ASSET_PATHS = "\"BetterTG/Preview Assets.xcassets\"";
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				ENABLE_PREVIEWS = YES;
@@ -956,7 +956,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGShare/BetterTGShare.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTGShare/Info.plist;
@@ -988,7 +988,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGShare/BetterTGShare.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTGShare/Info.plist;
@@ -1018,7 +1018,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGNotificationService/BetterTGNotificationService.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTGNotificationService/Info.plist;
@@ -1050,7 +1050,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGNotificationService/BetterTGNotificationService.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTGNotificationService/Info.plist;
@@ -1080,7 +1080,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGBroadcastUpload/BetterTGBroadcastUpload.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTGBroadcastUpload/Info.plist;
@@ -1113,7 +1113,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGBroadcastUpload/BetterTGBroadcastUpload.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BetterTGBroadcastUpload/Info.plist;
