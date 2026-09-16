@@ -926,7 +926,7 @@ struct ChatBottomArea: View {
     @State private var showsVideoEffectPicker = false
     @State private var showsStickersAndGifsPicker = false
     @State private var pollIsAvailable = false
-    @State private var sendAsCandidates = [MessageSender]()
+    @State private var sendAsCandidates = [ChatMessageSender]()
     @State private var showsSendAsPicker = false
     @State private var sendAsAccessibilityLabel = "Send As"
 

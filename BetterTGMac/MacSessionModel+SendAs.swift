@@ -7,6 +7,8 @@ extension MacSessionModel {
     /// Loads the identities the user may send messages in `chatId` as, plus the one currently
     /// selected - mirrors iOS's `ChatVM.sendAsIdentities()`/`startSendAsObservation()`. Only
     /// groups can have more than one, so private chats, bots and channels skip the round trip.
+    /// Some candidates need Telegram Premium to actually use (see `ChatMessageSender.needsPremium`);
+    /// the picker gates on that.
     func refreshSendAsState(for chatId: Int64, isGroupChat: Bool) {
         sendAsTask?.cancel()
         sendAsCandidates = []
@@ -14,8 +16,7 @@ extension MacSessionModel {
         guard isGroupChat else { return }
         sendAsTask = Task { [weak self] in
             guard let self else { return }
-            async let candidates = (try? service.getChatAvailableMessageSenders(chatId: chatId))?.senders
-                .map(\.sender) ?? []
+            async let candidates = (try? service.getChatAvailableMessageSenders(chatId: chatId))?.senders ?? []
             async let chat = try? service.getChat(chatId: chatId)
             let (resolvedCandidates, resolvedChat) = await (candidates, chat)
             guard !Task.isCancelled, openedChatId == chatId else { return }

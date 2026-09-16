@@ -164,7 +164,7 @@ private func isMacSessionPresentationUpdate(_ update: Update) -> Bool {
     var conversationHeaderActivities = [MessageSender: ChatAction]()
     /// Identities the user may send messages in the opened chat as, and the one currently
     /// selected - kept live from `updateChatMessageSender`. See `MacSessionModel+SendAs`.
-    var sendAsCandidates = [MessageSender]()
+    var sendAsCandidates = [ChatMessageSender]()
     var sendAsIdentity: MessageSender?
     var showsSendAsPicker = false
     var deepLinkErrorMessage: String?

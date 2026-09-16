@@ -23,9 +23,10 @@ extension ChatVM {
 
     /// Identities the current user may send messages in this chat as - self, plus any channel
     /// they administer that's linked to this group. More than one means the composer should offer
-    /// a "Send As" choice, mirroring `videoChatJoinIdentities()`.
-    func sendAsIdentities() async -> [MessageSender] {
-        await (try? service.getChatAvailableMessageSenders(chatId: customChat.chat.id))?.senders.map(\.sender) ?? []
+    /// a "Send As" choice, mirroring `videoChatJoinIdentities()`. Some candidates need Telegram
+    /// Premium to actually use (see `ChatMessageSender.needsPremium`); the picker gates on that.
+    func sendAsIdentities() async -> [ChatMessageSender] {
+        await (try? service.getChatAvailableMessageSenders(chatId: customChat.chat.id))?.senders ?? []
     }
 
     func setSendAsIdentity(_ sender: MessageSender) async {

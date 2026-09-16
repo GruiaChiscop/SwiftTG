@@ -5,13 +5,18 @@ import SwiftUI
 
 // MARK: - TelegramSendAsCandidates
 
-/// The identities a user may send messages in a chat as, when there is more than one.
+/// The identities a user may send messages in a chat as, when there is more than one. Keeps
+/// `needsPremium` alongside each sender - TDLib lists an identity as a "candidate" even when the
+/// user can't actually use it without Telegram Premium (e.g. commenting as a channel you
+/// administer in a group that channel isn't linked to); trying to send as one anyway fails server
+/// -side with `SEND_AS_PEER_INVALID`, so the picker has to gate on this itself. Mirrors Unigram's
+/// `ChatMessageSender.NeedsPremium` check in `DialogViewModel.SetSender`.
 struct TelegramSendAsCandidates: Identifiable {
-    let senders: [MessageSender]
+    let senders: [ChatMessageSender]
 
     var id: String {
         senders.map { sender in
-            switch sender {
+            switch sender.sender {
             case .messageSenderUser(let value): "u\(value.userId)"
             case .messageSenderChat(let value): "c\(value.chatId)"
             }
@@ -34,7 +39,7 @@ struct TelegramSendAsPicker: View {
         NavigationStack {
             List(rows) { row in
                 Button {
-                    select(row.sender)
+                    select(row)
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: row.isChannel ? "megaphone.fill" : "person.crop.circle.fill")
@@ -44,6 +49,11 @@ struct TelegramSendAsPicker: View {
                             .accessibilityHidden(true)
                         Text(row.title)
                         Spacer()
+                        if isLocked(row) {
+                            Image(systemName: "lock.fill")
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
                         if row.isCurrent {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(Color.accentColor)
@@ -53,6 +63,9 @@ struct TelegramSendAsPicker: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(
+                    isLocked(row) ? "\(row.title), Telegram Premium required" : row.title,
+                )
                 .accessibilityAddTraits(row.isCurrent ? [.isSelected] : [])
             }
             .overlay {
@@ -69,6 +82,13 @@ struct TelegramSendAsPicker: View {
                         Button("Cancel") { dismiss() }
                     }
                 }
+                .alert("Telegram Premium", isPresented: $showsPremiumAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(
+                        "Subscribe to **Telegram Premium** to be able to comment on behalf of your channels in any group chat.",
+                    )
+                }
         }
         #if os(macOS)
         .frame(minWidth: 320, minHeight: 360)
@@ -83,6 +103,7 @@ struct TelegramSendAsPicker: View {
         let title: String
         let isChannel: Bool
         let isCurrent: Bool
+        let needsPremium: Bool
 
         var id: String {
             switch sender {
@@ -94,32 +115,46 @@ struct TelegramSendAsPicker: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var rows = [Row]()
+    @State private var isCurrentUserPremium = false
+    @State private var showsPremiumAlert = false
 
     @MainActor private func load() async {
-        rows = await candidates.senders.concurrentCompactMap { sender in
-            switch sender {
+        async let premium = (try? service.getMe())?.isPremium == true
+        rows = await candidates.senders.concurrentCompactMap { candidate in
+            switch candidate.sender {
             case .messageSenderUser(let value):
                 guard let user = try? await service.getUser(userId: value.userId) else { return nil }
                 return Row(
-                    sender: sender,
+                    sender: candidate.sender,
                     title: telegramUserDisplayName(user),
                     isChannel: false,
-                    isCurrent: currentSender == sender,
+                    isCurrent: currentSender == candidate.sender,
+                    needsPremium: candidate.needsPremium,
                 )
             case .messageSenderChat(let value):
                 guard let chat = try? await service.getChat(chatId: value.chatId) else { return nil }
                 return Row(
-                    sender: sender,
+                    sender: candidate.sender,
                     title: chat.title,
                     isChannel: true,
-                    isCurrent: currentSender == sender,
+                    isCurrent: currentSender == candidate.sender,
+                    needsPremium: candidate.needsPremium,
                 )
             }
         }
+        isCurrentUserPremium = await premium
     }
 
-    private func select(_ sender: MessageSender) {
-        onSelect(sender)
+    private func isLocked(_ row: Row) -> Bool {
+        row.needsPremium && !isCurrentUserPremium
+    }
+
+    private func select(_ row: Row) {
+        guard !isLocked(row) else {
+            showsPremiumAlert = true
+            return
+        }
+        onSelect(row.sender)
         dismiss()
     }
 }

@@ -11,7 +11,7 @@ struct MessageVoiceSeekAccessibilityView: View {
 
     var body: some View {
         Slider(value: seekPosition, in: 0...Double(max(1, duration))) {
-            Text("Seek")
+            Text("Voice Message Position")
         }
         .accessibilityValue(
             "\(telegramSpokenDuration(Int(position))) of \(telegramSpokenDuration(duration))",
