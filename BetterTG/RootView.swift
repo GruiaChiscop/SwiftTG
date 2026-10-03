@@ -19,6 +19,9 @@ struct RootView: View {
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         TelegramAudioPlayerBar()
                     }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        TelegramVoiceNotePlayerBar()
+                    }
                     .overlay(alignment: .top) {
                         VStack(spacing: 8) {
                             if let unconfirmedSession = rootVM.unconfirmedSession,

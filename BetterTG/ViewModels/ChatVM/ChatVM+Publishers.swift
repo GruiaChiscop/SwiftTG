@@ -200,7 +200,7 @@ extension ChatVM {
 
         Task.background {
             await self.messageRenderLimiter.acquire()
-            let customMessage = await self.getCustomMessage(from: message)
+            let renderedFields = await self.getCustomMessage(from: message, loadDeferredFields: false)
             await self.messageRenderLimiter.release()
             await main {
                 guard self.renderStore.isRenderStillCurrent(
@@ -216,8 +216,21 @@ extension ChatVM {
                     message: message,
                     invalidationVersion: invalidationVersion,
                 )
-                self.renderedMessages[message.id] = customMessage
                 let replacedProvisionalMessage = self.provisionalMessageIds.remove(message.id) != nil
+                // Finishing a provisional row updates it in place - a fresh instance here would
+                // change this row's identity under chat history's diffing and force the table to
+                // reconfigure (and rebuild the accessibility elements of) a row that may still be
+                // under the VoiceOver cursor, even though nothing about it is visibly different.
+                let customMessage: CustomMessage
+                if replacedProvisionalMessage, let existing = self.renderedMessages[message.id] {
+                    existing.apply(resolvedFieldsFrom: renderedFields)
+                    customMessage = existing
+                } else {
+                    customMessage = renderedFields
+                    self.renderedMessages[message.id] = customMessage
+                }
+                self.loadAvailableReactions(for: customMessage)
+                self.loadTranslationEligibility(for: customMessage)
                 if self.replyMessage?.message.id == message.id {
                     self.replyMessage = customMessage
                 }

@@ -38,6 +38,7 @@ import UIKit
     var currentTime: Int32 { Int32(MainActor.assumeIsolated { engine.currentTime }) }
     var duration: Int { MainActor.assumeIsolated { engine.duration } }
     var playbackRate: Float { MainActor.assumeIsolated { engine.playbackRate } }
+    var allowsSeeking: Bool { MainActor.assumeIsolated { engine.allowsSeeking } }
 
     func seek(to seconds: TimeInterval) {
         MainActor.assumeIsolated { engine.seek(to: seconds) }
@@ -79,6 +80,18 @@ import UIKit
     func toggle(with path: String, duration: Int, allowsSeeking: Bool = true) {
         MainActor.assumeIsolated {
             engine.toggle(path: path, duration: duration, allowsSeeking: allowsSeeking)
+        }
+    }
+
+    /// Resumes/pauses whichever note is already loaded, without a specific message's `path` or
+    /// `allowsSeeking` at hand - for the player bar, which controls "whatever is currently
+    /// playing" rather than one particular voice note. Re-reads the engine's own current
+    /// `allowsSeeking` rather than defaulting it, since `toggle(with:)` always re-asserts
+    /// whatever it's passed, and a view-once note's `false` must survive this call.
+    func togglePlayPause() {
+        MainActor.assumeIsolated {
+            guard let path = engine.currentPath else { return }
+            engine.toggle(path: path, duration: engine.duration, allowsSeeking: engine.allowsSeeking)
         }
     }
 

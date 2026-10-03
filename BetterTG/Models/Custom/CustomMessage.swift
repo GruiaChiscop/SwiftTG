@@ -66,7 +66,28 @@ import TDLibKit
     /// an on-device ML model (`NLLanguageRecognizer`), too expensive to call from a plain computed
     /// property that SwiftUI might re-evaluate on every re-render of the row.
     var canBeTranslated = false
-    
+
+    /// Finishes a provisional row in place instead of swapping in a whole new `CustomMessage` -
+    /// a swap changes this instance's `ObjectIdentifier`, which chat history's diffing treats as
+    /// "the message changed" and reconfigures the table row even though nothing visible did,
+    /// which can tear down and rebuild that row's accessibility elements while VoiceOver is
+    /// still on it. `message` itself never differs between the two here (see the note above) -
+    /// only the fields TDLibKit resolves asynchronously do.
+    func apply(resolvedFieldsFrom other: CustomMessage) {
+        senderUser = other.senderUser
+        senderChatTitle = other.senderChatTitle
+        replyUser = other.replyUser
+        replySenderName = other.replySenderName
+        replyToMessage = other.replyToMessage
+        album = other.album
+        forwardedFrom = other.forwardedFrom
+        serviceMessageText = other.serviceMessageText
+        formattedText = other.formattedText
+        properties = other.properties
+        availableReactions = other.availableReactions
+        canBeTranslated = other.canBeTranslated
+    }
+
     var date: Foundation.Date { Date(timeIntervalSince1970: TimeInterval(message.date)) }
 
     /// How VoiceOver should name whoever the replied-to message is from: "you" when it's the user's

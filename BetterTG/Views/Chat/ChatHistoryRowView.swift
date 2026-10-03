@@ -13,9 +13,10 @@ struct ChatHistoryRowView: View {
         switch item.kind {
         case .day(let title):
             MessageDayHeader(title: title)
-        case .message(let message, _, let next):
+        case .message(let message, let previous, let next):
             ChatHistoryMessageRow(
                 customMessage: message,
+                previousMessage: previous,
                 nextMessage: next,
                 shouldShowProfileImage: shouldShowProfileImage,
                 messageAccessibilityFocused: messageAccessibilityFocused,

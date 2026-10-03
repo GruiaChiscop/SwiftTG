@@ -128,7 +128,12 @@ struct FolderView: View {
                             }
                             .accessibilityAddTraits(selectedChatIds.contains(customChat.id) ? [.isSelected] : [])
                         } else {
-                            NavigationLink(value: Route.customChat(customChat, messageId: nil)) {
+                            // Not `NavigationLink` - inside a `List`, it draws the system
+                            // disclosure chevron Telegram-iOS's chat list never has. `Button`
+                            // pushes the same `Route` onto the same path with no accessory.
+                            Button {
+                                rootVM.navigate(to: .customChat(customChat, messageId: nil))
+                            } label: {
                                 ChatsListItemView(customChat: customChat)
                             }
                         }
@@ -373,7 +378,9 @@ struct FolderView: View {
         if !rootVM.searchChatResults.isEmpty {
             Section {
                 ForEach(rootVM.searchChatResults) { customChat in
-                    NavigationLink(value: Route.customChat(customChat, messageId: nil)) {
+                    Button {
+                        rootVM.navigate(to: .customChat(customChat, messageId: nil))
+                    } label: {
                         ChatsListItemView(customChat: customChat)
                     }
                     .buttonStyle(.plain)
@@ -388,7 +395,9 @@ struct FolderView: View {
         if !rootVM.searchGlobalChatResults.isEmpty {
             Section {
                 ForEach(rootVM.searchGlobalChatResults) { customChat in
-                    NavigationLink(value: Route.customChat(customChat, messageId: nil)) {
+                    Button {
+                        rootVM.navigate(to: .customChat(customChat, messageId: nil))
+                    } label: {
                         ChatsListItemView(customChat: customChat)
                     }
                     .buttonStyle(.plain)

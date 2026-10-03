@@ -31,66 +31,30 @@ struct MessageVoiceNoteView: View {
     
     func voiceNoteView(isDownloading: Bool, file: File?) -> some View {
         VStack(spacing: 5) {
-            HStack(spacing: 10) {
-                if !isViewOnce {
-                    Button {
-                        media.seekBackward()
-                    } label: {
-                        Image(systemName: "gobackward.5")
-                    }
-                    .disabled(!isCurrentVoiceActive)
-                }
-
-                Button {
-                    // `onPlaybackToggle` (`ChatVM.toggleVoiceMessage`) downloads on demand when
-                    // there's no local path yet, same as VoiceOver's row-level activation already
-                    // does - a not-yet-prefetched voice note still plays on an explicit tap.
-                    TelegramAudioPlayer.shared.stop()
-                    onPlaybackToggle()
-                } label: {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 34)
-                        .overlay {
-                            ZStack {
-                                Image(systemName: playbackImageName)
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(Color.gray6)
-                                    .opacity(isDownloading ? 0 : 1)
-                                ProgressView()
-                                    .progressViewStyle(.circular)
-                                    .tint(Color.gray6)
-                                    .opacity(isDownloading ? 1 : 0)
-                            }
+            Button {
+                // `onPlaybackToggle` (`ChatVM.toggleVoiceMessage`) downloads on demand when
+                // there's no local path yet, same as VoiceOver's row-level activation already
+                // does - a not-yet-prefetched voice note still plays on an explicit tap.
+                TelegramAudioPlayer.shared.stop()
+                onPlaybackToggle()
+            } label: {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 34)
+                    .overlay {
+                        ZStack {
+                            Image(systemName: playbackImageName)
+                                .font(.system(size: 18))
+                                .foregroundStyle(Color.gray6)
+                                .opacity(isDownloading ? 0 : 1)
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(Color.gray6)
+                                .opacity(isDownloading ? 1 : 0)
                         }
-                }
-                .accessibilityValue(formattedDuration(from: voiceNote.duration))
-
-                if !isViewOnce {
-                    Button {
-                        media.seekForward()
-                    } label: {
-                        Image(systemName: "goforward.5")
                     }
-                    .disabled(!isCurrentVoiceActive)
-                }
-
-                if isCurrentVoiceActive {
-                    // Purely a visual affordance for sighted users - this whole view is
-                    // `.accessibilityHidden(true)` below (an ancestor `.accessibilityElement(children:
-                    // .ignore)` in MessageView would swallow this regardless of any override here
-                    // anyway), so VoiceOver reachability for this control is wired separately, as a
-                    // sibling of the ignored row rather than a descendant of it (see MessageView's
-                    // `mainColumn`).
-                    Button {
-                        media.cyclePlaybackRate()
-                    } label: {
-                        Text(TelegramVoicePlaybackRateSettings.title(for: media.playbackRate))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    }
-                }
             }
-            .font(.system(size: 24))
+            .accessibilityValue(formattedDuration(from: voiceNote.duration))
 
             TelegramVoiceWaveformView(samples: waveformSamples, progress: playbackProgress) { fraction in
                 if isCurrentVoiceActive {

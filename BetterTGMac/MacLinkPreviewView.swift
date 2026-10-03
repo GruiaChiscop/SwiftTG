@@ -10,10 +10,11 @@ struct MacLinkPreviewView: View {
     @Bindable var model: MacSessionModel
 
     let preview: LinkPreview
+    var opensDestination = true
 
     var body: some View {
         Group {
-            if let destination = presentation.url {
+            if opensDestination, let destination = presentation.url {
                 Link(destination: destination) {
                     previewCard
                 }

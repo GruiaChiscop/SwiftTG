@@ -7,7 +7,7 @@ import TDLibKit
 struct MessageDocumentView: View {
     // MARK: Internal
 
-    let document: Document
+    let document: TDLibKit.Document
     let service: any TelegramService
     let previewRequest: Int
     var onTransferStatusChange: (String?) -> Void = { _ in }

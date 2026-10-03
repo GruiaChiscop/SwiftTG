@@ -62,5 +62,17 @@ enum Utils {
         return simulator ? "Simulator \(model)" : model
     }()
 
-    @MainActor static var maxMessageContentWidth: CGFloat { screen.bounds.width * 0.8 - 32 }
+    /// Mirrors Telegram-iOS's own bubble-width formula (`ChatMessageItemWidthFill.widthFor` and
+    /// the `maximumContentWidth` derivation in `ChatMessageBubbleItemNode.layout`) instead of an
+    /// arbitrary percentage: a compact-width screen (phone portrait, <=500pt) gets a *fixed* inset
+    /// (`width - 36`), not a percentage - a percentage wastes the same proportion of every phone's
+    /// width, while Telegram's fixed inset lets a Pro Max-class screen actually use its extra
+    /// width for the bubble. Wide (iPad-class) screens instead fill 85% of it. `9` and `6` mirror
+    /// Telegram's `edgeInset * 3` and `contentInsets.left`, its own margin between the bubble's
+    /// background and the text it encloses.
+    @MainActor static var maxMessageContentWidth: CGFloat {
+        let width = screen.bounds.width
+        let tmpWidth = width <= 500 ? max(1, width - 36) : max(1, floor(width * 0.85))
+        return floor(tmpWidth - 9 - 6)
+    }
 }

@@ -8,7 +8,11 @@ extension ChatVM {
         return await getCustomMessage(from: message)
     }
 
-    func getCustomMessage(from message: Message) async -> CustomMessage {
+    /// `loadDeferredFields` gates the two off-critical-path loaders below (reactions,
+    /// translation eligibility) - `renderMessage` starts them itself, against whichever
+    /// `CustomMessage` instance ends up retained, since a provisional row's completion reuses
+    /// the existing instance instead of the one this call builds.
+    func getCustomMessage(from message: Message, loadDeferredFields: Bool = true) async -> CustomMessage {
         async let replyToMessageTask = getReplyToMessage(message.replyTo)
         async let forwardedFromTask = getForwardedFrom(message.forwardInfo?.origin)
         async let propertiesTask = service.getMessageProperties(
@@ -74,8 +78,10 @@ extension ChatVM {
             formattedText: formattedText,
             properties: properties,
         )
-        loadAvailableReactions(for: customMessage)
-        loadTranslationEligibility(for: customMessage)
+        if loadDeferredFields {
+            loadAvailableReactions(for: customMessage)
+            loadTranslationEligibility(for: customMessage)
+        }
         return customMessage
     }
 

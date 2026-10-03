@@ -565,14 +565,13 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
             }
         let installedQuery = normalizedQuery.isEmpty ? categoryEmojis.joined(separator: " ") : normalizedQuery
 
-        async let installed = try? service.getStickers(
+        let (installedResult, catalogResult) = await telegramStickerSearchResults(
+            service: service,
             chatId: chatId,
-            limit: 100,
-            query: installedQuery,
-            stickerType: .stickerTypeRegular,
+            installedQuery: installedQuery,
+            catalogQuery: normalizedQuery,
+            categoryEmojis: categoryEmojis,
         )
-        async let catalog = catalogSearch(query: normalizedQuery, categoryEmojis: categoryEmojis)
-        let (installedResult, catalogResult) = await (installed, catalog)
         guard !Task.isCancelled else { return }
 
         searchResults = telegramUniqueStickers((installedResult?.stickers ?? []) + (catalogResult ?? []))
@@ -580,27 +579,6 @@ struct TelegramStickerPickerContent<Preview: View, ContextPreview: View>: View {
         if installedResult == nil, catalogResult == nil {
             showFeedback("Sticker search failed.")
         }
-    }
-
-    private func catalogSearch(query: String, categoryEmojis: [String]) async -> [Sticker]? {
-        let resolvedEmojis =
-            if categoryEmojis.isEmpty {
-                await (try? service.searchEmojis(inputLanguageCodes: nil, text: query))?
-                    .emojiKeywords
-                    .map(\.emoji)
-                    .joined(separator: " ") ?? ""
-            } else {
-                categoryEmojis.joined(separator: " ")
-            }
-        return try? await service.searchStickers(
-            emojis: resolvedEmojis,
-            inputLanguageCodes: nil,
-            limit: 50,
-            offset: 0,
-            query: query,
-            stickerType: .stickerTypeRegular,
-        )
-        .stickers
     }
 
     private func send(
@@ -873,4 +851,55 @@ func telegramUniqueStickers(_ stickers: [Sticker]) -> [Sticker] {
 func telegramRecentStickers(_ stickers: [Sticker], excluding favorites: [Sticker]) -> [Sticker] {
     let favoriteFileIds = Set(favorites.map(\.sticker.id))
     return telegramUniqueStickers(stickers).filter { !favoriteFileIds.contains($0.sticker.id) }
+}
+
+/// Free functions, outside `TelegramStickerPickerContent`'s generic scope - `search()` there is a
+/// method of a type generic over `Preview`/`ContextPreview: View`, and `View` conformances can be
+/// actor-isolated, which made the compiler flag the `async let` child tasks below as possibly
+/// unsafe to start from inside that generic context, even though neither fetch touches `Preview`
+/// or `ContextPreview` at all.
+private func telegramStickerSearchResults(
+    service: any TelegramService,
+    chatId: Int64,
+    installedQuery: String,
+    catalogQuery: String,
+    categoryEmojis: [String],
+) async -> (installed: Stickers?, catalog: [Sticker]?) {
+    async let installed = try? service.getStickers(
+        chatId: chatId,
+        limit: 100,
+        query: installedQuery,
+        stickerType: .stickerTypeRegular,
+    )
+    async let catalog = telegramStickerCatalogSearch(
+        service: service,
+        query: catalogQuery,
+        categoryEmojis: categoryEmojis,
+    )
+    return await (installed, catalog)
+}
+
+private func telegramStickerCatalogSearch(
+    service: any TelegramService,
+    query: String,
+    categoryEmojis: [String],
+) async -> [Sticker]? {
+    let resolvedEmojis =
+        if categoryEmojis.isEmpty {
+            await (try? service.searchEmojis(inputLanguageCodes: nil, text: query))?
+                .emojiKeywords
+                .map(\.emoji)
+                .joined(separator: " ") ?? ""
+        } else {
+            categoryEmojis.joined(separator: " ")
+        }
+    return try? await service.searchStickers(
+        emojis: resolvedEmojis,
+        inputLanguageCodes: nil,
+        limit: 50,
+        offset: 0,
+        query: query,
+        stickerType: .stickerTypeRegular,
+    )
+    .stickers
 }

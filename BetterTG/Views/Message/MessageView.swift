@@ -7,6 +7,8 @@ struct MessageView: View {
     // MARK: Internal
 
     let customMessage: CustomMessage
+    let previousMessage: CustomMessage?
+    let nextMessage: CustomMessage?
     let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
 
     @Environment(ChatVM.self) var chatVM
@@ -252,6 +254,36 @@ struct MessageView: View {
 
     private var isStickerMessage: Bool {
         customMessage.messageSticker != nil
+    }
+
+    /// Mirrors Telegram-iOS's own grouping rule for consecutive same-sender messages
+    /// (`ChatMessageBubbleItemNode` groups by sender and calendar day before deciding neighbors).
+    private func isGrouped(with other: CustomMessage?) -> Bool {
+        guard let other,
+              customMessage.serviceMessageText == nil,
+              other.serviceMessageText == nil,
+              customMessage.message.senderId == other.message.senderId
+        else { return false }
+        return Calendar.autoupdatingCurrent.isDate(customMessage.date, inSameDayAs: other.date)
+    }
+
+    /// Mirrors Telegram-iOS's `messageBubbleArguments` (`ChatMessageBubbleImages.swift`): a
+    /// message grouped with a neighbor gets a smaller radius on the corner nearest that
+    /// neighbor, on this bubble's outer edge (the avatar side for an incoming message, the
+    /// trailing edge for an outgoing one) - so a consecutive run reads as one connected shape
+    /// instead of separate pills. Telegram's own default ratio (16pt main / 8pt auxiliary) is
+    /// exactly half; below 10pt it skips the reduction entirely rather than shrinking further.
+    private var bubbleCornerShape: UnevenRoundedRectangle {
+        let minRadius = bubbleCornerRadius >= 10 ? bubbleCornerRadius / 2 : bubbleCornerRadius
+        let outerTop = isGrouped(with: previousMessage) ? minRadius : bubbleCornerRadius
+        let outerBottom = isGrouped(with: nextMessage) ? minRadius : bubbleCornerRadius
+        let isOutgoing = customMessage.message.isOutgoing
+        return .rect(
+            topLeadingRadius: isOutgoing ? bubbleCornerRadius : outerTop,
+            bottomLeadingRadius: isOutgoing ? bubbleCornerRadius : outerBottom,
+            bottomTrailingRadius: isOutgoing ? outerBottom : bubbleCornerRadius,
+            topTrailingRadius: isOutgoing ? outerTop : bubbleCornerRadius,
+        )
     }
 
     private var isPollMessage: Bool {
@@ -686,7 +718,7 @@ struct MessageView: View {
                 messageBubbleColor
             }
         }
-        .clipShape(.rect(cornerRadius: bubbleCornerRadius))
+        .clipShape(bubbleCornerShape)
         .contextMenu {
             messageContextMenu
         }
@@ -743,6 +775,7 @@ struct MessageView: View {
                     service: chatVM.service,
                     chatId: customMessage.message.chatId,
                     messageId: customMessage.id,
+                    canGetAddedReactions: canGetAddedReactions,
                 )
             }
             .sheet(item: $resolvedComments) { resolvedThread in

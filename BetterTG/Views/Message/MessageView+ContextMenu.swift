@@ -224,6 +224,13 @@ extension MessageView {
         customMessage.message.interactionInfo?.reactions?.reactions ?? []
     }
 
+    /// TDLib's own gate on `getMessageAddedReactions` - channels routinely keep reactions
+    /// anonymous, and calling that method anyway just returns an error instead of a reactor
+    /// list. Checking this first avoids ever making the doomed call.
+    var canGetAddedReactions: Bool {
+        customMessage.message.interactionInfo?.reactions?.canGetAddedReactions ?? false
+    }
+
     var reactionChoices: [ReactionType] {
         telegramReactionChoices(existing: messageReactions, available: customMessage.availableReactions)
     }

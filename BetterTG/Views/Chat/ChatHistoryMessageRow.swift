@@ -8,6 +8,7 @@ import SwiftUI
 /// the entire history surface.
 struct ChatHistoryMessageRow: View {
     let customMessage: CustomMessage
+    let previousMessage: CustomMessage?
     let nextMessage: CustomMessage?
     let shouldShowProfileImage: Bool
     let messageAccessibilityFocused: AccessibilityFocusState<Int64?>.Binding
@@ -34,6 +35,8 @@ struct ChatHistoryMessageRow: View {
 
             MessageView(
                 customMessage: customMessage,
+                previousMessage: previousMessage,
+                nextMessage: nextMessage,
                 messageAccessibilityFocused: messageAccessibilityFocused,
             )
             .frame(

@@ -193,6 +193,7 @@ struct MacConversationView: View {
     // MARK: Private
 
     @FocusState private var conversationSearchFocused
+    @State private var selectedMessageId: Int64?
     @State private var isAtBottom = false
     @State private var isJoiningChat = false
     @State private var showsChatInfo = false
@@ -401,11 +402,22 @@ struct MacConversationView: View {
                 chat: chat,
                 unreadBoundaryMessageId: unreadBoundaryMessageId,
                 shouldFollowLatestMessage: shouldFollowLatestMessage,
+                selectedMessageId: $selectedMessageId,
                 isAtBottom: $isAtBottom,
+                onLoadOlder: {
+                    Task { await model.loadOlderMessages() }
+                },
             )
             .onChange(of: chat.chatId) {
+                selectedMessageId = nil
                 isAtBottom = false
                 model.latestHistoryTargetMessageId = nil
+            }
+            .onChange(of: selectedMessageId) { _, messageId in
+                guard let messageId,
+                      let message = model.messages.messages[messageId]
+                else { return }
+                Task { await model.loadAvailableReactions(for: message) }
             }
             .overlay(alignment: .bottomTrailing) {
                 if !isAtBottom,

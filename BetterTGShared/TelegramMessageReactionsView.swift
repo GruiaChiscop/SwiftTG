@@ -30,11 +30,18 @@ struct TelegramReactionDetailsView: View {
     let service: any TelegramService
     let chatId: Int64
     let messageId: Int64
+    let canGetAddedReactions: Bool
 
     var body: some View {
         NavigationStack {
             Group {
-                if entries.isEmpty, isLoading {
+                if !canGetAddedReactions {
+                    ContentUnavailableView(
+                        "Reactions Are Hidden",
+                        systemImage: "eye.slash",
+                        description: Text("The people who reacted to this message aren't shown here."),
+                    )
+                } else if entries.isEmpty, isLoading {
                     ProgressView("Loading reactions…")
                 } else if entries.isEmpty, let errorMessage {
                     ContentUnavailableView(
@@ -73,7 +80,10 @@ struct TelegramReactionDetailsView: View {
             }
         }
         .frame(minWidth: 320, minHeight: 260)
-        .task { await loadNextPage() }
+        .task {
+            guard canGetAddedReactions else { return }
+            await loadNextPage()
+        }
     }
 
     // MARK: Private
@@ -90,7 +100,7 @@ struct TelegramReactionDetailsView: View {
     @State private var errorMessage: String?
 
     @MainActor private func loadNextPage() async {
-        guard !isLoading, let offset = nextOffset else { return }
+        guard canGetAddedReactions, !isLoading, let offset = nextOffset else { return }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -121,7 +131,7 @@ struct TelegramReactionDetailsView: View {
         } catch is CancellationError {
             return
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = telegramErrorDescription(error)
         }
     }
 }

@@ -407,7 +407,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1430;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					A10000000000000000000005 = {
 						CreatedOnToolsVersion = 26.0;
@@ -615,6 +615,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGMac/BetterTGMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -636,6 +637,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Debug;
 		};
@@ -646,6 +648,7 @@
 				CODE_SIGN_ENTITLEMENTS = BetterTGMac/BetterTGMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = Y7J75349M6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -667,6 +670,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Release;
 		};
@@ -689,6 +693,7 @@
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BetterTG.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BetterTG";
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Debug;
 		};
@@ -709,6 +714,7 @@
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BetterTG.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BetterTG";
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Release;
 		};
@@ -859,6 +865,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "SwiftTG uses the camera for video calls, to send photos, record video messages, and scan QR codes to link a device.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "When you choose Sync Contacts, SwiftTG sends names and phone numbers from your address book to Telegram to find people you know.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "SwiftTG can use Face ID to quickly unlock the app instead of typing your passcode.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SwiftTG uses your location in the background to keep a live location share updated while you move.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SwiftTG uses your location to share it in a chat when you choose to.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftTG uses the microphone for voice and video calls and to record voice and video messages.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "SwiftTG needs to access Photos to save images you request.";
@@ -890,7 +897,8 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_USE_INTEGRATED_DRIVER = NO;
 				SWIFT_VERSION = 6;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Debug;
 		};
@@ -915,6 +923,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "SwiftTG uses the camera for video calls, to send photos, record video messages, and scan QR codes to link a device.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "When you choose Sync Contacts, SwiftTG sends names and phone numbers from your address book to Telegram to find people you know.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "SwiftTG can use Face ID to quickly unlock the app instead of typing your passcode.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SwiftTG uses your location in the background to keep a live location share updated while you move.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SwiftTG uses your location to share it in a chat when you choose to.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftTG uses the microphone for voice and video calls and to record voice and video messages.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "SwiftTG needs to access Photos to save images you request.";
@@ -945,7 +954,8 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_USE_INTEGRATED_DRIVER = NO;
 				SWIFT_VERSION = 6;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Release;
 		};
@@ -978,6 +988,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Debug;
 		};
@@ -1008,6 +1019,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Release;
 		};
@@ -1040,6 +1052,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Debug;
 		};
@@ -1070,6 +1083,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Release;
 		};
@@ -1103,6 +1117,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Debug;
 		};
@@ -1134,6 +1149,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
 				TARGETED_DEVICE_FAMILY = 1;
+				WATCHOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_WATCHOS_DEPLOYMENT_TARGET)";
 			};
 			name = Release;
 		};
